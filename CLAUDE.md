@@ -9,8 +9,8 @@
 **PBC 견적 계산기** — 페인팅 회사 PBC의 사내 견적 자동화 웹앱.
 
 - **사용자:** 본인 + 동료 1-3명, 사무실/원격 환경
-- **현재 단계:** v1.0 빌드 직전 (설계 완료, 코딩 시작 전)
-- **기술 스택:** Next.js 15 (App Router) + TypeScript + Tailwind + Supabase + Vercel
+- **현재 단계:** v1.0 구현 진행 중 (앱 스캐폴드, DB 마이그레이션, 계산 로직, Supabase 기본 셋업, Vercel 배포 설정 완료)
+- **기술 스택:** Next.js 16 (App Router) + React 19 + TypeScript + Tailwind CSS 4 + Supabase + Vercel
 - **외부 연동:** Jobber GraphQL API (읽기 전용, v1.1부터)
 - **금액 계산:** `decimal.js` 필수 (부동소수점 오차 회피)
 
@@ -21,6 +21,47 @@
 - `TODOS.md` — v1.1+ 작업 목록
 
 ---
+
+## 현재 앱 셋업 및 구현 상태
+
+2026-05-13 기준 현재 코드베이스 상태. 이 섹션은 Claude Code가 새 세션을 시작할 때 "이미 된 것"과 "아직 안 된 것"을 빠르게 구분하기 위한 운영 메모다.
+
+### 완료된 셋업
+
+- Next.js 16.2.6 + React 19.2.4 + TypeScript + Tailwind CSS 4 앱 스캐폴드 완료.
+- `package.json` 스크립트 준비: `dev`, `build`, `start`, `lint`, `test`, `test:run`, `test:coverage`, `typecheck`.
+- 핵심 의존성 설치 완료: `decimal.js`, `zod`, `@supabase/supabase-js`, `@supabase/ssr`, `vitest`, `@vitest/coverage-v8`.
+- Vercel 배포 설정 완료: `vercel.json`, Vercel 프로젝트 연결, main 브랜치 push 자동 배포.
+- `.env.example` 작성 완료, `.env.local`은 gitignore 대상.
+
+### 구현된 앱/라이브러리
+
+- `supabase/migrations/0001_initial_schema.sql`: `products`, `pricing_settings`, `quotes`, `quote_items` 테이블과 인덱스 생성.
+- `supabase/migrations/0002_rls_policies.sql`: 4개 테이블 RLS 활성화, v1.0 인증 사용자 공통 권한 정책 생성.
+- `lib/calculator.ts`: `decimal.js` 기반 5가지 공식, subtotal, final total, 입력 검증, `DEFAULT_PRICING_SETTINGS` 구현.
+- `tests/calculator.test.ts`: 계산 공식, Decimal 입력, 반일 작업, 0 자재비, 음수 입력, subtotal/final 계산 테스트 작성.
+- `tests/fixtures/historical-quotes.ts`: 회귀 fixture 구조와 샘플 1건 작성. 실제 PBC 과거 견적 3건으로 교체 필요.
+- `lib/supabase/client.ts`: 브라우저용 Supabase anon client.
+- `lib/supabase/server.ts`: 서버용 Supabase client와 service role client helper.
+- `lib/supabase/middleware.ts`: Supabase 세션 갱신 helper. 단, 현재 라우팅 게이트는 `proxy.ts`가 담당.
+- `proxy.ts`: Next.js 16 Proxy Runtime 호환 라우팅 게이트. `@supabase/ssr`를 직접 import하지 않고 Supabase auth cookie 존재 여부로 `/login`과 `/quotes` 리다이렉트 처리.
+- `lib/supabase/types.ts`: 현재 마이그레이션 기준 수동 Database 타입. 추후 Supabase generated types로 교체 예정.
+- `lib/validators.ts`: quote, pricing settings, product search용 Zod 스키마 초안.
+- `lib/utils.ts`: `cn`, CAD 통화 포맷, Decimal 기반 숫자 포맷 helper.
+- `app/page.tsx`: 루트 접근 시 `/login`으로 redirect.
+- `app/(auth)/login/page.tsx`: 로그인 placeholder UI. 실제 Supabase Auth submit 로직은 아직 미구현.
+- `app/(app)/quotes/page.tsx`: 견적 목록 placeholder UI. 실제 목록/검색/저장은 아직 미구현.
+
+### 아직 미구현
+
+- 실제 로그인/로그아웃 Server Action 또는 client submit 처리.
+- `/quotes/new`, quote form 컴포넌트, 페인트 검색, 공식 결과 UI, 최종가 summary.
+- `lib/actions/quotes.ts`, `products.ts`, `settings.ts` Server Actions.
+- CSV import 로직과 제품 목록/관리 화면.
+- 견적 저장/검색/상세/수정 플로우.
+- Settings UI와 pricing settings update flow.
+- RLS 자동 테스트, Server Action 테스트, UI/QA 테스트.
+- 실제 PBC 과거 견적 3건 fixture 입력.
 
 ## Claude Code의 역할
 
@@ -35,9 +76,6 @@
 5. ✅ **테스트 설계 & 작성** — test plan, fixture, 단위/E2E 테스트
 6. ✅ **코드 리뷰** — Codex가 만든 코드를 `/gstack-review`로 검증
 7. ✅ **보안 검토** — RLS·OAuth·환경 변수
-8. ✅ **QA 테스트** — `/gstack-qa`로 실제 동작 검증
-9. ✅ **배포** — `/gstack-ship`, `/gstack-land-and-deploy`
-10. ✅ **복잡한 버그 디버깅** — `/gstack-investigate`, `superpowers:systematic-debugging`
 
 ### Codex가 담당하는 영역 (Claude는 직접 안 함)
 
@@ -48,6 +86,9 @@
 - ❌ 페이지 라우트 구현
 - ❌ 단순 버그 수정 (1차 시도)
 - ❌ 리팩토링 (명확한 목표 주어진 경우)
+- ❌ **QA 테스트** — `/gstack-qa`로 실제 동작 검증
+- ❌ **배포** — `/gstack-ship`, `/gstack-land-and-deploy`
+- ❌ **복잡한 버그 디버깅** — `/gstack-investigate`, `superpowers:systematic-debugging`
 
 **예외:** 사용자가 직접 "이 코드 짜줘"라고 요청하면 Claude Code가 작성. 다만 가능하면 "이건 Codex 작업이 맞아 보임" 알려주고 사용자 확인.
 
@@ -200,13 +241,17 @@ export async function createQuote(input: unknown) {
 
 이 프로젝트는 **AI 도구의 모든 강점을 끌어내** 완성도를 높이는 게 목표다. 다음 스킬들은 "필요하면 쓰는" 게 아니라 **표준 워크플로우의 일부**다:
 
+**Claude Code 워크플로우:**
 - 새 기능 추가 → `gstack-office-hours` (스킵 금지)
 - 구현 전 → `gstack-plan-eng-review` (필수)
 - UI 변경 → `gstack-plan-design-review` (UI 있으면 무조건)
 - 코드 작성 → `superpowers:test-driven-development` (계산 로직)
 - PR 직전 → `gstack-review` (필수)
+
+**Codex 워크플로우:**
 - 배포 직전 → `gstack-qa` (필수)
 - 배포 → `gstack-ship` → `gstack-land-and-deploy` → `gstack-canary`
+- 복잡한 버그 → `gstack-investigate` → `superpowers:systematic-debugging`
 
 **원칙:** 스킬을 우회하는 게 더 빨라 보여도 항상 스킬 사용. 1주짜리 v1.0이 6주가 되는 가장 흔한 원인이 "스킬 우회 후 재작업".
 
@@ -290,3 +335,5 @@ npm run lint
 |---|---|
 | 2026-05-12 | 초안. Claude(결정자)/Codex(실행자) 역할 정의, 핵심 결정 박제, 스킬 라우팅 |
 | 2026-05-12 | Next.js 16 앱 스캐폴드, Supabase DB 마이그레이션, Vercel 배포 완료 |
+| 2026-05-13 | 현재 앱 셋업 및 구현 상태 업데이트: Next.js 16/React 19/Tailwind 4 스택, 마이그레이션, 계산기 로직·테스트, Supabase 클라이언트, Proxy Runtime 라우팅 게이트, placeholder 페이지, 남은 미구현 범위 정리 |
+| 2026-05-13 | 역할 분담 조정: QA 테스트·배포·복잡한 버그 디버깅을 Claude 영역에서 Codex 영역으로 이동. superpowers+gstack 워크플로우 섹션도 Claude/Codex로 분리 |
