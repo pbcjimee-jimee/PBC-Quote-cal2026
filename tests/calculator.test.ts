@@ -15,6 +15,7 @@ const s = DEFAULT_PRICING_SETTINGS
 describe('calculateAllFormulas', () => {
   const base: CalculatorInput = {
     workingDays: 5,
+    labourPerDay: 1,
     materialMarket: 342.50,
     materialActual: 245.00,
   }
@@ -63,6 +64,7 @@ describe('calculateAllFormulas', () => {
   it('accepts Decimal inputs', () => {
     const results = calculateAllFormulas({
       workingDays: new Decimal(5),
+      labourPerDay: new Decimal(1),
       materialMarket: new Decimal('342.50'),
       materialActual: new Decimal('245.00'),
     }, s)
@@ -75,14 +77,24 @@ describe('calculateAllFormulas', () => {
     expect(results[0].total.toFixed(2)).toBe('592.50')
   })
 
+  it('multiplies working days by labour per day before applying formula rates', () => {
+    const results = calculateAllFormulas({ ...base, labourPerDay: 2 }, s)
+    expect(results[0].total.toFixed(2)).toBe('5342.50')
+    expect(results[3].total.toFixed(2)).toBe('5056.25')
+  })
+
   it('works with zero material', () => {
-    const results = calculateAllFormulas({ workingDays: 3, materialMarket: 0, materialActual: 0 }, s)
+    const results = calculateAllFormulas({ workingDays: 3, labourPerDay: 1, materialMarket: 0, materialActual: 0 }, s)
     // 500 × 3 + 0 = 1500
     expect(results[0].total.toFixed(2)).toBe('1500.00')
   })
 
   it('throws ValidationError for negative workingDays', () => {
     expect(() => calculateAllFormulas({ ...base, workingDays: -1 }, s)).toThrow(ValidationError)
+  })
+
+  it('throws ValidationError for negative labourPerDay', () => {
+    expect(() => calculateAllFormulas({ ...base, labourPerDay: -1 }, s)).toThrow(ValidationError)
   })
 
   it('throws ValidationError for negative materialMarket', () => {
@@ -93,18 +105,12 @@ describe('calculateAllFormulas', () => {
     expect(() => calculateAllFormulas({ ...base, materialActual: -1 }, s)).toThrow(ValidationError)
   })
 
-  it('throws ValidationError for negative travelFee', () => {
-    expect(() => calculateAllFormulas({ ...base, travelFee: -1 }, s)).toThrow(ValidationError)
-  })
-
-  it('throws ValidationError for negative miscFee', () => {
-    expect(() => calculateAllFormulas({ ...base, miscFee: -1 }, s)).toThrow(ValidationError)
-  })
 })
 
 describe('calculateSubtotal', () => {
   const results = calculateAllFormulas({
     workingDays: 5,
+    labourPerDay: 1,
     materialMarket: 342.50,
     materialActual: 245.00,
   }, s)
@@ -126,24 +132,10 @@ describe('calculateSubtotal', () => {
 })
 
 describe('calculateFinal', () => {
-  it('adds travel and misc fees to subtotal', () => {
+  it('returns subtotal as final total', () => {
     const subtotal = new Decimal('2761.88')
-    const final = calculateFinal(subtotal, 80, 50)
-    expect(final.toFixed(2)).toBe('2891.88')
-  })
-
-  it('works with zero fees', () => {
-    const subtotal = new Decimal('2761.88')
-    const final = calculateFinal(subtotal, 0, 0)
+    const final = calculateFinal(subtotal)
     expect(final.toFixed(2)).toBe('2761.88')
-  })
-
-  it('throws ValidationError for negative travelFee', () => {
-    expect(() => calculateFinal(new Decimal(1000), -1, 0)).toThrow(ValidationError)
-  })
-
-  it('throws ValidationError for negative miscFee', () => {
-    expect(() => calculateFinal(new Decimal(1000), 0, -1)).toThrow(ValidationError)
   })
 })
 

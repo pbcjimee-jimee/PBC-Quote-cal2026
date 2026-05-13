@@ -9,10 +9,9 @@ export class ValidationError extends Error {
 
 export interface CalculatorInput {
   workingDays: Decimal | number
+  labourPerDay: Decimal | number
   materialMarket: Decimal | number
   materialActual: Decimal | number
-  travelFee?: Decimal | number
-  miscFee?: Decimal | number
 }
 
 export interface PricingSettings {
@@ -39,16 +38,14 @@ function toDecimal(value: Decimal | number): Decimal {
 
 function validateInput(input: CalculatorInput): void {
   const D = toDecimal(input.workingDays)
+  const labourPerDay = toDecimal(input.labourPerDay)
   const mm = toDecimal(input.materialMarket)
   const ma = toDecimal(input.materialActual)
-  const tf = toDecimal(input.travelFee ?? 0)
-  const mf = toDecimal(input.miscFee ?? 0)
 
   if (D.lt(0)) throw new ValidationError('Working days cannot be negative')
+  if (labourPerDay.lt(0)) throw new ValidationError('Labour per day cannot be negative')
   if (mm.lt(0)) throw new ValidationError('Material market price cannot be negative')
   if (ma.lt(0)) throw new ValidationError('Material actual price cannot be negative')
-  if (tf.lt(0)) throw new ValidationError('Travel fee cannot be negative')
-  if (mf.lt(0)) throw new ValidationError('Misc fee cannot be negative')
 }
 
 // formula_1 = f1_labour_rate × D + material_market
@@ -83,7 +80,7 @@ export function calculateAllFormulas(
 ): FormulaResult[] {
   validateInput(input)
 
-  const D = toDecimal(input.workingDays)
+  const D = toDecimal(input.workingDays).mul(toDecimal(input.labourPerDay))
   const mm = toDecimal(input.materialMarket)
   const ma = toDecimal(input.materialActual)
 
@@ -112,18 +109,8 @@ export function calculateSubtotal(
   return minResult.total.add(maxResult.total).div(2)
 }
 
-export function calculateFinal(
-  subtotal: Decimal,
-  travelFee: Decimal | number,
-  miscFee: Decimal | number
-): Decimal {
-  const tf = toDecimal(travelFee)
-  const mf = toDecimal(miscFee)
-
-  if (tf.lt(0)) throw new ValidationError('Travel fee cannot be negative')
-  if (mf.lt(0)) throw new ValidationError('Misc fee cannot be negative')
-
-  return subtotal.add(tf).add(mf)
+export function calculateFinal(subtotal: Decimal): Decimal {
+  return subtotal
 }
 
 export const DEFAULT_PRICING_SETTINGS: PricingSettings = {

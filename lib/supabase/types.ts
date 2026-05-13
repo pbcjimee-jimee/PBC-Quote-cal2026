@@ -23,6 +23,15 @@ export interface Database {
           actual_price: string
           color_code: string | null
           active: boolean
+          category: string | null
+          product_line: string | null
+          base: string | null
+          sheen: string | null
+          volume_litres: string | null
+          price: string | null
+          rrp_price: string | null
+          product_code: string | null
+          source_url: string | null
           created_at: string
           updated_at: string
         }
@@ -32,6 +41,7 @@ export interface Database {
           updated_at?: string
         }
         Update: Partial<Database['public']['Tables']['products']['Insert']>
+        Relationships: []
       }
       pricing_settings: {
         Row: {
@@ -50,6 +60,7 @@ export interface Database {
         }
         Insert: Partial<Database['public']['Tables']['pricing_settings']['Row']>
         Update: Partial<Database['public']['Tables']['pricing_settings']['Row']>
+        Relationships: []
       }
       quotes: {
         Row: {
@@ -60,8 +71,7 @@ export interface Database {
           area_sqft: number | null
           work_type: string | null
           working_days: string
-          travel_fee: string
-          misc_fee: string
+          labour_per_day: string
           formula1_total: string
           formula2_total: string
           formula3_total: string
@@ -83,6 +93,7 @@ export interface Database {
           updated_at?: string
         }
         Update: Partial<Database['public']['Tables']['quotes']['Insert']>
+        Relationships: []
       }
       quote_items: {
         Row: {
@@ -100,7 +111,12 @@ export interface Database {
           id?: string
         }
         Update: Partial<Database['public']['Tables']['quote_items']['Insert']>
+        Relationships: []
       }
     }
+    Views: Record<string, never>
+    Functions: Record<string, never>
+    Enums: Record<string, never>
+    CompositeTypes: Record<string, never>
   }
 }

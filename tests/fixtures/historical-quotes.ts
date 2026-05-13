@@ -19,10 +19,9 @@ export const HISTORICAL_FIXTURES: Array<{
     name: 'Sample Quote A — replace with real data',
     input: {
       workingDays: 5,
+      labourPerDay: 1,
       materialMarket: 342.50,
       materialActual: 245.00,
-      travelFee: 80,
-      miscFee: 0,
     },
     settings: {
       f1LabourRate: 500,

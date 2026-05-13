@@ -7,8 +7,7 @@ export const quoteSchema = z.object({
   areaSqft: z.number().int().nonnegative().optional(),
   workType: z.string().optional(),
   workingDays: z.number().nonnegative(),
-  travelFee: z.number().nonnegative().default(0),
-  miscFee: z.number().nonnegative().default(0),
+  labourPerDay: z.number().nonnegative(),
   materialMarket: z.number().nonnegative(),
   materialActual: z.number().nonnegative(),
   selectedMin: z.number().int().min(1).max(5) as z.ZodType<1 | 2 | 3 | 4 | 5>,
@@ -42,5 +41,5 @@ export type PricingSettingsInput = z.infer<typeof pricingSettingsSchema>
 
 export const productSearchSchema = z.object({
   query: z.string().min(1).max(100),
-  limit: z.number().int().positive().max(50).default(20),
+  limit: z.number().int().positive().max(200).default(20),
 })
