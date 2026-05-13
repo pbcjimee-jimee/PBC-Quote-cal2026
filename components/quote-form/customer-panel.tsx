@@ -7,8 +7,11 @@ interface CustomerPanelProps {
   onCustomerNameChange: (value: string) => void
   onCustomerAddressChange: (value: string) => void
   onJobberQuoteIdChange: (value: string) => void
+  onFetchJobberQuote: () => void
   onWorkTypeChange: (value: string) => void
   onAreaSqftChange: (value: string) => void
+  isFetchingJobberQuote: boolean
+  jobberFetchError: string | null
 }
 
 export function CustomerPanel(props: CustomerPanelProps) {
@@ -24,7 +27,13 @@ export function CustomerPanel(props: CustomerPanelProps) {
         </label>
         <label className="space-y-1 text-sm font-medium text-gray-700">
           Jobber Quote ID
-          <input value={props.jobberQuoteId} onChange={(event) => props.onJobberQuoteIdChange(event.target.value)} className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm" />
+          <div className="flex gap-2">
+            <input value={props.jobberQuoteId} onChange={(event) => props.onJobberQuoteIdChange(event.target.value)} className="min-w-0 flex-1 rounded-md border border-gray-300 px-3 py-2 text-sm" />
+            <button type="button" onClick={props.onFetchJobberQuote} disabled={props.isFetchingJobberQuote} className="shrink-0 rounded-md border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50">
+              {props.isFetchingJobberQuote ? 'Loading' : 'Fetch'}
+            </button>
+          </div>
+          {props.jobberFetchError ? <span className="block text-xs font-normal text-red-600">{props.jobberFetchError}</span> : null}
         </label>
       </div>
       <label className="block space-y-1 text-sm font-medium text-gray-700">

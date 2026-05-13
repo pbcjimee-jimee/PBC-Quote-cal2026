@@ -136,6 +136,24 @@ export interface Database {
         Update: Partial<Database['public']['Tables']['quote_items']['Insert']>
         Relationships: []
       }
+      jobber_tokens: {
+        Row: {
+          user_id: string
+          access_token: string
+          refresh_token: string
+          token_type: string | null
+          scope: string | null
+          expires_at: string | null
+          connected_at: string
+          updated_at: string
+        }
+        Insert: Omit<Database['public']['Tables']['jobber_tokens']['Row'], 'connected_at' | 'updated_at'> & {
+          connected_at?: string
+          updated_at?: string
+        }
+        Update: Partial<Database['public']['Tables']['jobber_tokens']['Insert']>
+        Relationships: []
+      }
     }
     Views: Record<string, never>
     Functions: Record<string, never>

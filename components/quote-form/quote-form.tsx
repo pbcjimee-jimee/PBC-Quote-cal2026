@@ -24,10 +24,37 @@ interface QuoteFormProps {
   areas: AreaRecord[]
 }
 
+interface JobberQuoteDraft {
+  jobberQuoteId: string
+  customerName: string
+  customerAddress: string
+  workType: string
+  sourceUrl: string
+}
+
+type JobberQuoteResponse =
+  | { ok: true; data: JobberQuoteDraft }
+  | { ok: false; error: string }
+
 function optionalNumber(value: string): number | undefined {
   const trimmed = value.trim()
   if (!trimmed) return undefined
   return Number(trimmed)
+}
+
+function isJobberQuoteResponse(value: unknown): value is JobberQuoteResponse {
+  if (typeof value !== 'object' || value === null) return false
+  const record = value as Record<string, unknown>
+  if (record.ok === false) return typeof record.error === 'string'
+  if (record.ok !== true || typeof record.data !== 'object' || record.data === null) return false
+  const data = record.data as Record<string, unknown>
+  return (
+    typeof data.jobberQuoteId === 'string' &&
+    typeof data.customerName === 'string' &&
+    typeof data.customerAddress === 'string' &&
+    typeof data.workType === 'string' &&
+    typeof data.sourceUrl === 'string'
+  )
 }
 
 export function QuoteForm({ settings, areas }: QuoteFormProps) {
@@ -42,6 +69,8 @@ export function QuoteForm({ settings, areas }: QuoteFormProps) {
   const [selectedMin, setSelectedMin] = useState<FormulaNumber>(4)
   const [selectedMax, setSelectedMax] = useState<FormulaNumber>(1)
   const [saveError, setSaveError] = useState<string | null>(null)
+  const [jobberFetchError, setJobberFetchError] = useState<string | null>(null)
+  const [isFetchingJobberQuote, setIsFetchingJobberQuote] = useState(false)
 
   const totals = useMemo(() => {
     const materialMarket = materials.reduce(
@@ -76,6 +105,38 @@ export function QuoteForm({ settings, areas }: QuoteFormProps) {
 
   function removeMaterial(id: string) {
     setMaterials((current) => current.filter((item) => item.id !== id))
+  }
+
+  async function fetchJobberQuote() {
+    const quoteId = jobberQuoteId.trim()
+    setJobberFetchError(null)
+    if (!quoteId) {
+      setJobberFetchError('Enter a Jobber Quote ID first.')
+      return
+    }
+
+    setIsFetchingJobberQuote(true)
+    try {
+      const response = await fetch(`/api/jobber/quote/${encodeURIComponent(quoteId)}`)
+      const payload: unknown = await response.json()
+      if (!isJobberQuoteResponse(payload)) {
+        setJobberFetchError('Jobber returned an unexpected response.')
+        return
+      }
+      if (!payload.ok) {
+        setJobberFetchError(payload.error)
+        return
+      }
+
+      setJobberQuoteId(payload.data.jobberQuoteId)
+      setCustomerName(payload.data.customerName)
+      setCustomerAddress(payload.data.customerAddress)
+      setWorkType(payload.data.workType)
+    } catch {
+      setJobberFetchError('Unable to fetch Jobber quote.')
+    } finally {
+      setIsFetchingJobberQuote(false)
+    }
   }
 
   function saveQuote() {
@@ -142,8 +203,11 @@ export function QuoteForm({ settings, areas }: QuoteFormProps) {
             onCustomerNameChange={setCustomerName}
             onCustomerAddressChange={setCustomerAddress}
             onJobberQuoteIdChange={setJobberQuoteId}
+            onFetchJobberQuote={fetchJobberQuote}
             onWorkTypeChange={setWorkType}
             onAreaSqftChange={setAreaSqft}
+            isFetchingJobberQuote={isFetchingJobberQuote}
+            jobberFetchError={jobberFetchError}
           />
           <MaterialsPanel materials={materials} areas={areas} onAdd={addMaterial} onChange={changeMaterial} onRemove={removeMaterial} />
         </div>
