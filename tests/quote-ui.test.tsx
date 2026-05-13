@@ -34,6 +34,8 @@ describe('quote form pricing UI', () => {
           marketPrice: '255.74',
           actualPrice: '255.74',
           quantity: '1',
+          workingDays: '2',
+          labourPerDay: '1',
           areaId: 'area-eaves',
           areaName: 'Eaves',
           areaScope: 'exterior',
@@ -50,6 +52,8 @@ describe('quote form pricing UI', () => {
 
     expect(markup).toContain('RRP')
     expect(markup).toContain('Area')
+    expect(markup).toContain('Working Days')
+    expect(markup).toContain('Labour / Day')
     expect(markup).toContain('Eaves')
     expect(markup).toContain('Fascia')
     expect(markup).not.toContain('Market')

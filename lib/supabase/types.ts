@@ -122,6 +122,8 @@ export interface Database {
           market_price_snapshot: string
           actual_price_snapshot: string
           quantity: string
+          working_days: string | null
+          labour_per_day: string | null
           area_id: string | null
           area_name_snapshot: string | null
           area_scope_snapshot: 'interior' | 'exterior' | null

@@ -6,11 +6,25 @@ import {
   calculateFinal,
   ValidationError,
   DEFAULT_PRICING_SETTINGS,
+  getFormulaDescriptions,
+  type PricingSettings,
   type CalculatorInput,
 } from '@/lib/calculator'
 import { HISTORICAL_FIXTURES } from './fixtures/historical-quotes'
 
 const s = DEFAULT_PRICING_SETTINGS
+const customSettings: PricingSettings = {
+  ...s,
+  f1LabourRate: 520,
+  f2LabourRate: 470,
+  f3LabourRate: 470,
+  f4LabourRate: 390,
+  f5LabourRate: 390,
+  f2Margin: 0.42,
+  f3Margin: 0.16,
+  f4Margin: 0.22,
+  f5Margin: 0.18,
+}
 
 describe('calculateAllFormulas', () => {
   const base: CalculatorInput = {
@@ -69,6 +83,19 @@ describe('calculateAllFormulas', () => {
       materialActual: new Decimal('245.00'),
     }, s)
     expect(results[0].total.toFixed(2)).toBe('2842.50')
+  })
+
+  it('updates formula descriptions when settings change', () => {
+    const labels = getFormulaDescriptions(customSettings)
+    const results = calculateAllFormulas(base, customSettings)
+
+    expect(results.map((item) => item.name)).toEqual([
+      labels.formula1Name,
+      labels.formula2Name,
+      labels.formula3Name,
+      labels.formula4Name,
+      labels.formula5Name,
+    ])
   })
 
   it('works with 0.5 day increments', () => {

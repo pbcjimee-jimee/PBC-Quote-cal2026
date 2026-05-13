@@ -10,6 +10,7 @@ import {
   calculateSubtotal,
   type PricingSettings,
 } from '@/lib/calculator'
+import { calculateLabourTotals, decimalFromInput } from '@/lib/quote-labour'
 import { createQuote } from '@/lib/actions/quotes'
 import { CustomerPanel } from './customer-panel'
 import { MaterialsPanel } from './materials-panel'
@@ -21,11 +22,6 @@ import type { AreaRecord } from '@/lib/areas/types'
 interface QuoteFormProps {
   settings: PricingSettings
   areas: AreaRecord[]
-}
-
-function decimalFromInput(value: string): Decimal {
-  const trimmed = value.trim()
-  return new Decimal(trimmed === '' ? 0 : trimmed)
 }
 
 function optionalNumber(value: string): number | undefined {
@@ -43,8 +39,6 @@ export function QuoteForm({ settings, areas }: QuoteFormProps) {
   const [workType, setWorkType] = useState('')
   const [areaSqft, setAreaSqft] = useState('')
   const [materials, setMaterials] = useState<MaterialItem[]>([])
-  const [workingDays, setWorkingDays] = useState('1')
-  const [labourPerDay, setLabourPerDay] = useState('1')
   const [selectedMin, setSelectedMin] = useState<FormulaNumber>(4)
   const [selectedMax, setSelectedMax] = useState<FormulaNumber>(1)
   const [saveError, setSaveError] = useState<string | null>(null)
@@ -55,11 +49,11 @@ export function QuoteForm({ settings, areas }: QuoteFormProps) {
       new Decimal(0)
     )
     const materialActual = materialMarket
-    const labour = decimalFromInput(labourPerDay)
+    const labour = calculateLabourTotals(materials)
     const results = calculateAllFormulas(
       {
-        workingDays: decimalFromInput(workingDays),
-        labourPerDay: labour,
+        workingDays: labour.labourDays,
+        labourPerDay: 1,
         materialMarket,
         materialActual,
       },
@@ -70,7 +64,7 @@ export function QuoteForm({ settings, areas }: QuoteFormProps) {
     const subtotalLabour = Decimal.max(subtotal.sub(materialMarket), 0)
 
     return { materialMarket, materialActual, labour, results, subtotal, subtotalLabour, finalTotal }
-  }, [labourPerDay, materials, selectedMax, selectedMin, settings, workingDays])
+  }, [materials, selectedMax, selectedMin, settings])
 
   function addMaterial(item: MaterialItem) {
     setMaterials((current) => [...current, item])
@@ -92,9 +86,9 @@ export function QuoteForm({ settings, areas }: QuoteFormProps) {
         customerAddress,
         jobberQuoteId,
         workType,
-          areaSqft: optionalNumber(areaSqft),
-        workingDays: Number(decimalFromInput(workingDays).toString()),
-        labourPerDay: Number(totals.labour.toString()),
+        areaSqft: optionalNumber(areaSqft),
+        workingDays: Number(totals.labour.workingDays.toString()),
+        labourPerDay: Number(totals.labour.labourPerDay.toString()),
         materialMarket: Number(totals.materialMarket.toString()),
         materialActual: Number(totals.materialActual.toString()),
         selectedMin,
@@ -105,6 +99,8 @@ export function QuoteForm({ settings, areas }: QuoteFormProps) {
           marketPriceSnapshot: Number(decimalFromInput(item.marketPrice).toString()),
           actualPriceSnapshot: Number(decimalFromInput(item.marketPrice).toString()),
           quantity: Number(decimalFromInput(item.quantity).toString()),
+          workingDays: Number(decimalFromInput(item.workingDays).toString()),
+          labourPerDay: Number(decimalFromInput(item.labourPerDay).toString()),
           areaId: item.areaId,
           areaNameSnapshot: item.areaName,
           areaScopeSnapshot: item.areaScope,
@@ -158,15 +154,15 @@ export function QuoteForm({ settings, areas }: QuoteFormProps) {
             <div className="grid gap-4 sm:grid-cols-2">
               <label className="space-y-1 text-sm font-medium text-gray-700">
                 Working Days
-                <input value={workingDays} onChange={(event) => setWorkingDays(event.target.value)} inputMode="decimal" className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm" />
+                <input value={totals.labour.workingDays.toFixed(2)} readOnly className="w-full rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-700" />
               </label>
               <label className="space-y-1 text-sm font-medium text-gray-700">
                 Labour Per Day
-                <input value={labourPerDay} onChange={(event) => setLabourPerDay(event.target.value)} inputMode="decimal" className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm" />
+                <input value={totals.labour.labourPerDay.toFixed(2)} readOnly className="w-full rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-700" />
               </label>
             </div>
-            <p className="text-sm text-gray-500">Labour days: {decimalFromInput(workingDays).mul(decimalFromInput(labourPerDay)).toFixed(2)}</p>
-            {decimalFromInput(workingDays).gt(365) ? <p className="text-sm text-amber-600">Over 365 days - double check.</p> : null}
+            <p className="text-sm text-gray-500">Labour days: {totals.labour.labourDays.toFixed(2)}</p>
+            {totals.labour.workingDays.gt(365) ? <p className="text-sm text-amber-600">Over 365 days - double check.</p> : null}
           </section>
 
           <FormulaResults results={totals.results} selectedMin={selectedMin} selectedMax={selectedMax} onSelectedMinChange={setSelectedMin} onSelectedMaxChange={setSelectedMax} />

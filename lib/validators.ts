@@ -18,6 +18,8 @@ export const quoteSchema = z.object({
     marketPriceSnapshot: z.number().nonnegative(),
     actualPriceSnapshot: z.number().nonnegative(),
     quantity: z.number().positive(),
+    workingDays: z.number().nonnegative().optional(),
+    labourPerDay: z.number().nonnegative().optional(),
     areaId: z.string().min(1).optional(),
     areaNameSnapshot: z.string().min(1).optional(),
     areaScopeSnapshot: z.enum(['interior', 'exterior']).optional(),
@@ -45,6 +47,27 @@ export type PricingSettingsInput = z.infer<typeof pricingSettingsSchema>
 export const productSearchSchema = z.object({
   query: z.string().min(1).max(100),
   limit: z.number().int().positive().max(200).default(20),
+})
+
+export const productUpdateSchema = z.object({
+  id: z.string().uuid(),
+  name: z.string().trim().min(1).max(200).optional(),
+  manufacturer: z.string().trim().min(1).max(120).nullable().optional(),
+  type: z.string().trim().min(1).max(200).nullable().optional(),
+  productLine: z.string().trim().min(1).max(200).nullable().optional(),
+  base: z.string().trim().min(1).max(120).nullable().optional(),
+  sheen: z.string().trim().min(1).max(120).nullable().optional(),
+  unit: z.string().trim().min(1).max(40).optional(),
+  volumeLitres: z.coerce.number().nonnegative().optional(),
+  rrpPrice: z.coerce.number().nonnegative().optional(),
+})
+
+export const productDeleteSchema = z.object({
+  id: z.string().uuid(),
+})
+
+export const productImportSchema = z.object({
+  csvText: z.string().trim().min(1),
 })
 
 export const areaSchema = z.object({

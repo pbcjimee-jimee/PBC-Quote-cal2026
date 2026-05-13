@@ -62,6 +62,9 @@ export default async function QuoteDetailPage({ params }: QuoteDetailPageProps) 
                 <span className="text-gray-900">
                   {item.productNameSnapshot}
                   {item.areaNameSnapshot ? <span className="ml-2 text-xs text-gray-500">{item.areaNameSnapshot}</span> : null}
+                  {item.workingDays && item.labourPerDay ? (
+                    <span className="ml-2 text-xs text-gray-500">{item.workingDays} days x {item.labourPerDay} labour</span>
+                  ) : null}
                 </span>
                 <span className="font-mono text-gray-500">{item.quantity} x ${item.marketPriceSnapshot}</span>
               </div>

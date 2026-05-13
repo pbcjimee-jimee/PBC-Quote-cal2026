@@ -16,6 +16,8 @@ export interface MaterialItem {
   marketPrice: string
   actualPrice: string
   quantity: string
+  workingDays: string
+  labourPerDay: string
   areaId?: string
   areaName?: string
   areaScope?: 'interior' | 'exterior'

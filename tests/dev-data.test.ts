@@ -70,6 +70,8 @@ describe('dev data store', () => {
           marketPriceSnapshot: 171.25,
           actualPriceSnapshot: 122.5,
           quantity: 2,
+          workingDays: 5,
+          labourPerDay: 2,
           areaId: 'area-eaves',
           areaNameSnapshot: 'Eaves',
           areaScopeSnapshot: 'exterior',
@@ -87,6 +89,45 @@ describe('dev data store', () => {
     expect(quote.pricingSettingsSnapshot).toEqual(DEFAULT_PRICING_SETTINGS)
     expect(getDevQuote(quote.id)?.items[0].productNameSnapshot).toBe('Dulux Exterior')
     expect(getDevQuote(quote.id)?.items[0].areaNameSnapshot).toBe('Eaves')
+    expect(getDevQuote(quote.id)?.items[0].workingDays).toBe('5.00')
+    expect(getDevQuote(quote.id)?.items[0].labourPerDay).toBe('2.00')
+  })
+
+  it('uses summed item labour days for formula totals while saving visible field totals', () => {
+    const quote = createDevQuote({
+      workingDays: 3,
+      labourPerDay: 3,
+      materialMarket: 0,
+      materialActual: 0,
+      selectedMin: 1,
+      selectedMax: 1,
+      items: [
+        {
+          productNameSnapshot: 'Eaves labour',
+          marketPriceSnapshot: 0,
+          actualPriceSnapshot: 0,
+          quantity: 1,
+          workingDays: 2,
+          labourPerDay: 1,
+          isCustom: true,
+          position: 0,
+        },
+        {
+          productNameSnapshot: 'Fascia labour',
+          marketPriceSnapshot: 0,
+          actualPriceSnapshot: 0,
+          quantity: 1,
+          workingDays: 1,
+          labourPerDay: 2,
+          isCustom: true,
+          position: 1,
+        },
+      ],
+    })
+
+    expect(quote.workingDays).toBe('3.00')
+    expect(quote.labourPerDay).toBe('3.00')
+    expect(quote.formula1Total).toBe('2000.00')
   })
 
   it('lists newest quotes first and filters by customer or address', () => {

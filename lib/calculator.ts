@@ -36,6 +36,31 @@ function toDecimal(value: Decimal | number): Decimal {
   return value instanceof Decimal ? value : new Decimal(value)
 }
 
+function toCompactDecimal(value: Decimal | number): string {
+  const text = toDecimal(value).toFixed(2)
+  const [integerPart, fractionPart] = text.split('.')
+  if (!fractionPart || Number(fractionPart) === 0) return integerPart
+  return `${integerPart}.${fractionPart.replace(/0+$/, '')}`
+}
+
+export function formatFormulaRate(value: Decimal | number): string {
+  return `L${toCompactDecimal(value)}`
+}
+
+function formatPercent(value: Decimal | number): string {
+  return `${toCompactDecimal(toDecimal(value).mul(100))}%`
+}
+
+export function getFormulaDescriptions(settings: PricingSettings) {
+  return {
+    formula1Name: `${formatFormulaRate(settings.f1LabourRate)} / Market / No Margin`,
+    formula2Name: `${formatFormulaRate(settings.f2LabourRate)} / Labour ${formatPercent(settings.f2Margin)} / Market`,
+    formula3Name: `${formatFormulaRate(settings.f3LabourRate)} / Market / Total ${formatPercent(settings.f3Margin)}`,
+    formula4Name: `${formatFormulaRate(settings.f4LabourRate)} / Actual / Total ${formatPercent(settings.f4Margin)}`,
+    formula5Name: `${formatFormulaRate(settings.f5LabourRate)} / Actual / Total ${formatPercent(settings.f5Margin)}`,
+  }
+}
+
 function validateInput(input: CalculatorInput): void {
   const D = toDecimal(input.workingDays)
   const labourPerDay = toDecimal(input.labourPerDay)
@@ -83,13 +108,14 @@ export function calculateAllFormulas(
   const D = toDecimal(input.workingDays).mul(toDecimal(input.labourPerDay))
   const mm = toDecimal(input.materialMarket)
   const ma = toDecimal(input.materialActual)
+  const names = getFormulaDescriptions(settings)
 
   return [
-    { formulaNum: 1, name: 'L500 / Market / No Margin', total: formula1(D, mm, settings) },
-    { formulaNum: 2, name: 'L460 / Labour 30% / Market', total: formula2(D, mm, settings) },
-    { formulaNum: 3, name: 'L460 / Market / Total 30%', total: formula3(D, mm, settings) },
-    { formulaNum: 4, name: 'L380 / Actual / Total 25%', total: formula4(D, ma, settings) },
-    { formulaNum: 5, name: 'L380 / Actual / Total 30%', total: formula5(D, ma, settings) },
+    { formulaNum: 1, name: names.formula1Name, total: formula1(D, mm, settings) },
+    { formulaNum: 2, name: names.formula2Name, total: formula2(D, mm, settings) },
+    { formulaNum: 3, name: names.formula3Name, total: formula3(D, mm, settings) },
+    { formulaNum: 4, name: names.formula4Name, total: formula4(D, ma, settings) },
+    { formulaNum: 5, name: names.formula5Name, total: formula5(D, ma, settings) },
   ]
 }
 

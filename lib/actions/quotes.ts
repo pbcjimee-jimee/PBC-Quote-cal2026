@@ -8,6 +8,7 @@ import {
   calculateFinal,
   calculateSubtotal,
 } from '@/lib/calculator'
+import { calculateFormulaLabourDays } from '@/lib/quote-labour'
 import { createClient } from '@/lib/supabase/server'
 import type { Database, Json } from '@/lib/supabase/types'
 import { quoteSchema } from '@/lib/validators'
@@ -23,6 +24,11 @@ type QuoteWithItemsRow = QuoteRow & {
 
 function money(value: { toFixed(decimalPlaces: number): string } | number): string {
   return typeof value === 'number' ? value.toFixed(2) : value.toFixed(2)
+}
+
+function optionalMoney(value: { toFixed(decimalPlaces: number): string } | number | undefined): string | null {
+  if (value === undefined) return null
+  return money(value)
 }
 
 export async function createQuote(input: unknown): Promise<ActionResult<{ id: string }>> {
@@ -48,8 +54,8 @@ export async function createQuote(input: unknown): Promise<ActionResult<{ id: st
 
   const formulas = calculateAllFormulas(
     {
-      workingDays: parsed.data.workingDays,
-      labourPerDay: parsed.data.labourPerDay,
+      workingDays: calculateFormulaLabourDays(parsed.data.workingDays, parsed.data.labourPerDay, parsed.data.items),
+      labourPerDay: 1,
       materialMarket: parsed.data.materialMarket,
       materialActual: parsed.data.materialActual,
     },
@@ -93,6 +99,8 @@ export async function createQuote(input: unknown): Promise<ActionResult<{ id: st
     market_price_snapshot: item.marketPriceSnapshot.toFixed(2),
     actual_price_snapshot: item.actualPriceSnapshot.toFixed(2),
     quantity: item.quantity.toFixed(2),
+    working_days: optionalMoney(item.workingDays),
+    labour_per_day: optionalMoney(item.labourPerDay),
     area_id: item.areaId ?? null,
     area_name_snapshot: item.areaNameSnapshot ?? null,
     area_scope_snapshot: item.areaScopeSnapshot ?? null,
@@ -159,6 +167,8 @@ export async function searchQuotes(query = ''): Promise<ActionResult<QuoteRecord
         marketPriceSnapshot: item.market_price_snapshot,
         actualPriceSnapshot: item.actual_price_snapshot,
         quantity: item.quantity,
+        workingDays: item.working_days,
+        labourPerDay: item.labour_per_day,
         areaId: item.area_id,
         areaNameSnapshot: item.area_name_snapshot,
         areaScopeSnapshot: item.area_scope_snapshot,
@@ -214,6 +224,8 @@ export async function getQuote(id: string): Promise<ActionResult<QuoteRecord | n
         marketPriceSnapshot: item.market_price_snapshot,
         actualPriceSnapshot: item.actual_price_snapshot,
         quantity: item.quantity,
+        workingDays: item.working_days,
+        labourPerDay: item.labour_per_day,
         areaId: item.area_id,
         areaNameSnapshot: item.area_name_snapshot,
         areaScopeSnapshot: item.area_scope_snapshot,

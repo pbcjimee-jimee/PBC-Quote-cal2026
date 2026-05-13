@@ -52,6 +52,8 @@ export function PaintSearch({ onAdd }: PaintSearchProps) {
       marketPrice: product.marketPrice,
       actualPrice: product.marketPrice,
       quantity: '1',
+      workingDays: '1',
+      labourPerDay: '1',
       isCustom: false,
     })
     setQuery('')
@@ -67,6 +69,8 @@ export function PaintSearch({ onAdd }: PaintSearchProps) {
       marketPrice: '0',
       actualPrice: '0',
       quantity: '1',
+      workingDays: '1',
+      labourPerDay: '1',
       isCustom: true,
     })
     setQuery('')
@@ -82,9 +86,6 @@ export function PaintSearch({ onAdd }: PaintSearchProps) {
           {results.map((product) => (
             <button key={product.id} type="button" onClick={() => addProduct(product)} className="block w-full px-3 py-2 text-left hover:bg-gray-50">
               <span className="block text-sm font-medium text-gray-900">{product.name}</span>
-              <span className="block text-xs text-gray-500">
-                {product.manufacturer ?? 'Unknown'} - {product.type ?? 'Paint'} - {product.base ?? '-'} - {product.sheen ?? '-'} - {product.unit}
-              </span>
               <span className="block text-xs font-medium text-gray-700">RRP ${product.marketPrice}</span>
             </button>
           ))}

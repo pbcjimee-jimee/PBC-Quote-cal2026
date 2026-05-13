@@ -6,11 +6,13 @@ import {
   calculateSubtotal,
   type PricingSettings,
 } from './calculator'
+import { calculateFormulaLabourDays } from './quote-labour'
 import { DULUX_PAINT_PRODUCTS } from './products/dulux-paints'
 import { normalizeRrpProduct, type ProductRecord } from './products/types'
 import type { AreaInput } from './validators'
 import type { QuoteInput } from './validators'
 import type { AreaRecord } from './areas/types'
+import type { Database } from './supabase/types'
 
 export type { ProductRecord }
 
@@ -45,6 +47,8 @@ export interface QuoteItemRecord {
   marketPriceSnapshot: string
   actualPriceSnapshot: string
   quantity: string
+  workingDays: string | null
+  labourPerDay: string | null
   areaId: string | null
   areaNameSnapshot: string | null
   areaScopeSnapshot: 'interior' | 'exterior' | null
@@ -52,7 +56,7 @@ export interface QuoteItemRecord {
   position: number
 }
 
-const products: ProductRecord[] = DULUX_PAINT_PRODUCTS.map(normalizeRrpProduct)
+let products: ProductRecord[] = DULUX_PAINT_PRODUCTS.map(normalizeRrpProduct)
 
 interface DevDataStore {
   pricingSettings: PricingSettings
@@ -151,6 +155,94 @@ export function listDevProducts(query = '', limit = 200): ProductRecord[] {
   return searchDevProducts(query, limit)
 }
 
+export function createDevProductsFromImport(
+  rows: Array<{
+    manufacturer: string
+    productLine: string
+    base: string
+    sheen: string
+    volumeLitres: string
+    rrpPrice: string
+  }>
+): ProductRecord[] {
+  const created = rows.map((row) => {
+    const manufacturer = row.manufacturer.trim()
+    const productLine = row.productLine.trim()
+    const base = row.base.trim()
+    const sheen = row.sheen.trim()
+    const volumeLitres = row.volumeLitres.trim()
+    const rrpPrice = row.rrpPrice.trim()
+    const volumeText = volumeLitres ? `${volumeLitres}L` : 'L'
+    const nameParts = [manufacturer, productLine, sheen, base, volumeText].filter(Boolean)
+    const name = nameParts.join(' ')
+    const product: ProductRecord = {
+      id: nextId('product-import'),
+      name,
+      manufacturer,
+      type: productLine,
+      unit: volumeText,
+      marketPrice: rrpPrice,
+      actualPrice: rrpPrice,
+      colorCode: base || null,
+      active: true,
+      category: productLine,
+      productLine,
+      base: base || null,
+      sheen: sheen || null,
+      volumeLitres: volumeLitres || null,
+      price: rrpPrice,
+      rrpPrice,
+    }
+
+    return normalizeRrpProduct(product)
+  })
+
+  products = [...products, ...created]
+  return created
+}
+
+export function updateDevProduct(
+  id: string,
+  updates: Partial<Omit<Database['public']['Tables']['products']['Insert'], 'updated_at' | 'created_at' | 'id'>>
+): ProductRecord | null {
+  const index = products.findIndex((product) => product.id === id)
+  if (index === -1) return null
+
+  const current = products[index]
+  const updated: ProductRecord = {
+    ...current,
+    ...updates,
+    name: updates.name ?? current.name,
+    manufacturer: updates.manufacturer ?? current.manufacturer,
+    type: updates.type ?? current.type,
+    productLine: updates.product_line ?? current.productLine,
+    base: updates.base ?? current.base,
+    sheen: updates.sheen ?? current.sheen,
+    unit: updates.unit ?? current.unit,
+    volumeLitres: updates.volume_litres ?? current.volumeLitres,
+    marketPrice: updates.market_price ?? current.marketPrice,
+    actualPrice: updates.actual_price ?? current.actualPrice,
+    rrpPrice: updates.rrp_price ?? current.rrpPrice,
+  }
+
+  products = [...products]
+  products[index] = normalizeRrpProduct(updated)
+  return products[index]
+}
+
+export function deleteDevProduct(id: string): ProductRecord | null {
+  const index = products.findIndex((product) => product.id === id)
+  if (index === -1) return null
+
+  const deleted = {
+    ...products[index],
+    active: false,
+  }
+  products = [...products]
+  products[index] = deleted
+  return deleted
+}
+
 export function listDevQuotes(query = ''): QuoteRecord[] {
   const needle = query.trim().toLowerCase()
   const filtered = needle
@@ -174,8 +266,8 @@ export function createDevQuote(input: QuoteInput): QuoteRecord {
   const settings = getDevPricingSettings()
   const formulaResults = calculateAllFormulas(
     {
-      workingDays: input.workingDays,
-      labourPerDay: input.labourPerDay,
+      workingDays: calculateFormulaLabourDays(input.workingDays, input.labourPerDay, input.items),
+      labourPerDay: 1,
       materialMarket: input.materialMarket,
       materialActual: input.materialActual,
     },
@@ -213,6 +305,8 @@ export function createDevQuote(input: QuoteInput): QuoteRecord {
       marketPriceSnapshot: money(item.marketPriceSnapshot),
       actualPriceSnapshot: money(item.actualPriceSnapshot),
       quantity: money(item.quantity),
+      workingDays: item.workingDays === undefined ? null : money(item.workingDays),
+      labourPerDay: item.labourPerDay === undefined ? null : money(item.labourPerDay),
       areaId: item.areaId ?? null,
       areaNameSnapshot: item.areaNameSnapshot ?? null,
       areaScopeSnapshot: item.areaScopeSnapshot ?? null,
