@@ -261,7 +261,7 @@ async function refreshToken(
   config: ReturnType<typeof getJobberConfig>
 ): Promise<StoredJobberToken> {
   if (userId) {
-    return refreshStoredJobberToken(userId, token.refreshToken, config)
+    return refreshStoredJobberToken(userId, token.refreshToken, config, token.ownerUserId ?? userId)
   }
 
   return refreshDevJobberToken(token.refreshToken, config)

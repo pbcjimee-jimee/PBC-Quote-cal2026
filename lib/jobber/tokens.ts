@@ -3,6 +3,7 @@ import type { JobberConfig } from './config'
 import { getTokenExpiresAt, refreshAccessToken } from './oauth'
 
 export interface StoredJobberToken {
+  ownerUserId?: string
   accessToken: string
   refreshToken: string
   expiresAt: string | null
@@ -15,12 +16,18 @@ function shouldRefresh(expiresAt: string | null, now = new Date()): boolean {
   return new Date(expiresAt).getTime() <= now.getTime() + REFRESH_SKEW_MS
 }
 
+function isRefreshUnauthorizedError(error: unknown): boolean {
+  return error instanceof Error && error.message.includes('status 401')
+}
+
 export async function getStoredJobberToken(userId: string): Promise<StoredJobberToken | null> {
+  void userId
   const service = await createServiceClient()
   const { data, error } = await service
     .from('jobber_tokens')
-    .select('access_token, refresh_token, expires_at')
-    .eq('user_id', userId)
+    .select('user_id, access_token, refresh_token, expires_at')
+    .order('updated_at', { ascending: false })
+    .limit(1)
     .maybeSingle()
 
   if (error) {
@@ -30,6 +37,7 @@ export async function getStoredJobberToken(userId: string): Promise<StoredJobber
   if (!data) return null
 
   return {
+    ownerUserId: data.user_id,
     accessToken: data.access_token,
     refreshToken: data.refresh_token,
     expiresAt: data.expires_at,
@@ -39,9 +47,21 @@ export async function getStoredJobberToken(userId: string): Promise<StoredJobber
 export async function refreshStoredJobberToken(
   userId: string,
   currentRefreshToken: string,
-  config: JobberConfig
+  config: JobberConfig,
+  tokenOwnerUserId = userId
 ): Promise<StoredJobberToken> {
-  const token = await refreshAccessToken(currentRefreshToken, config)
+  let token
+  try {
+    token = await refreshAccessToken(currentRefreshToken, config)
+  } catch (error) {
+    if (isRefreshUnauthorizedError(error)) {
+      const latestToken = await getStoredJobberToken(userId)
+      if (latestToken && latestToken.refreshToken !== currentRefreshToken && !shouldRefresh(latestToken.expiresAt)) {
+        return latestToken
+      }
+    }
+    throw error
+  }
   const expiresAt = getTokenExpiresAt(token)
   const service = await createServiceClient()
   const { error } = await service
@@ -54,13 +74,14 @@ export async function refreshStoredJobberToken(
       expires_at: expiresAt,
       updated_at: new Date().toISOString(),
     })
-    .eq('user_id', userId)
+    .eq('user_id', tokenOwnerUserId)
 
   if (error) {
     throw new Error('Unable to save refreshed Jobber token')
   }
 
   return {
+    ownerUserId: tokenOwnerUserId,
     accessToken: token.accessToken,
     refreshToken: token.refreshToken,
     expiresAt,
@@ -76,5 +97,5 @@ export async function getUsableJobberToken(
 
   if (!shouldRefresh(token.expiresAt)) return token
 
-  return refreshStoredJobberToken(userId, token.refreshToken, config)
+  return refreshStoredJobberToken(userId, token.refreshToken, config, token.ownerUserId ?? userId)
 }

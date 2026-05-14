@@ -59,7 +59,7 @@ describe('quote form pricing UI', () => {
         labourTotal: new Decimal('1200'),
         materialTotal: new Decimal('255.74'),
         subtotal: new Decimal('1455.74'),
-        finalTotal: new Decimal('1455.74'),
+        finalTotal: new Decimal('1601.31'),
         jobberFinancialSummary: null,
       })
     )
@@ -69,6 +69,10 @@ describe('quote form pricing UI', () => {
     expect(markup).toContain('Material total')
     expect(markup).toContain('$255.74')
     expect(markup).toContain('Subtotal')
+    expect(markup).toContain('GST 10%')
+    expect(markup).toContain('$145.57')
+    expect(markup).toContain('Final total')
+    expect(markup).toContain('$1601.31')
   })
 
   it('shows Jobber quote total, expenses total, and profit margin in the right summary', () => {

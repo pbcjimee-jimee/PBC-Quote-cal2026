@@ -159,10 +159,10 @@ describe('calculateSubtotal', () => {
 })
 
 describe('calculateFinal', () => {
-  it('returns subtotal as final total', () => {
+  it('adds 10% GST to subtotal for the final total', () => {
     const subtotal = new Decimal('2761.88')
     const final = calculateFinal(subtotal)
-    expect(final.toFixed(2)).toBe('2761.88')
+    expect(final.toFixed(2)).toBe('3038.07')
   })
 })
 
