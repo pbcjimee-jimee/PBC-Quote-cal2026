@@ -17,6 +17,7 @@
 *.cer
 secrets/
 credentials/
+.jobber.local.json
 
 # ===== Next.js =====
 .next/

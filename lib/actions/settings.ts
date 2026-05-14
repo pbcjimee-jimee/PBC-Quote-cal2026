@@ -1,5 +1,6 @@
 'use server'
 
+import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
 import { pricingSettingsSchema, type PricingSettingsInput } from '@/lib/validators'
 import type { PricingSettings } from '@/lib/calculator'
@@ -45,6 +46,11 @@ function settingsToRow(settings: PricingSettingsInput) {
   }
 }
 
+function revalidateSettingsConsumers(): void {
+  revalidatePath('/settings')
+  revalidatePath('/quotes/new')
+}
+
 export async function getPricingSettings(): Promise<ActionResult<PricingSettings>> {
   if (isDevNoAuthMode()) {
     const { getDevPricingSettings } = await import('@/lib/dev-data')
@@ -70,7 +76,9 @@ export async function updatePricingSettings(input: unknown): Promise<ActionResul
 
   if (isDevNoAuthMode()) {
     const { updateDevPricingSettings } = await import('@/lib/dev-data')
-    return { ok: true, data: updateDevPricingSettings(parsed.data) }
+    const settings = updateDevPricingSettings(parsed.data)
+    revalidateSettingsConsumers()
+    return { ok: true, data: settings }
   }
 
   const supabase = await createClient()
@@ -87,5 +95,6 @@ export async function updatePricingSettings(input: unknown): Promise<ActionResul
     .single()
 
   if (error) return { ok: false, error: error.message }
+  revalidateSettingsConsumers()
   return { ok: true, data: rowToSettings(data) }
 }

@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getJobberConfig, getMissingOAuthConfigKeys } from '@/lib/jobber/config'
-import { exchangeAuthorizationCode } from '@/lib/jobber/oauth'
+import { saveDevJobberToken } from '@/lib/jobber/dev-tokens'
+import { exchangeAuthorizationCode, getTokenExpiresAt } from '@/lib/jobber/oauth'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
+import { isDevNoAuthMode } from '@/lib/actions/types'
 
 export async function GET(request: NextRequest) {
   const config = getJobberConfig()
@@ -25,17 +27,22 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ ok: false, error: 'Invalid Jobber OAuth state' }, { status: 400 })
   }
 
-  const supabase = await createClient()
-  const { data: { user }, error: userError } = await supabase.auth.getUser()
-  if (userError || !user) {
-    return NextResponse.redirect(new URL('/login', request.url))
-  }
-
   try {
     const token = await exchangeAuthorizationCode(code, config)
-    const expiresAt = token.expiresIn === null
-      ? null
-      : new Date(Date.now() + token.expiresIn * 1000).toISOString()
+    const expiresAt = getTokenExpiresAt(token)
+
+    if (isDevNoAuthMode()) {
+      await saveDevJobberToken(token)
+      const response = NextResponse.redirect(new URL('/settings?jobber=connected', request.url))
+      response.cookies.delete('jobber_oauth_state')
+      return response
+    }
+
+    const supabase = await createClient()
+    const { data: { user }, error: userError } = await supabase.auth.getUser()
+    if (userError || !user) {
+      return NextResponse.redirect(new URL('/login', request.url))
+    }
 
     const service = await createServiceClient()
     const { error } = await service

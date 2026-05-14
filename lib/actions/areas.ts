@@ -1,5 +1,6 @@
 'use server'
 
+import { revalidatePath } from 'next/cache'
 import { areaSchema } from '@/lib/validators'
 import { createClient } from '@/lib/supabase/server'
 import type { Database } from '@/lib/supabase/types'
@@ -19,6 +20,11 @@ function rowToArea(row: AreaRow): AreaRecord {
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   }
+}
+
+function revalidateAreaConsumers(): void {
+  revalidatePath('/settings')
+  revalidatePath('/quotes/new')
 }
 
 export async function listAreas(): Promise<ActionResult<AreaRecord[]>> {
@@ -48,7 +54,9 @@ export async function createArea(input: unknown): Promise<ActionResult<AreaRecor
 
   if (isDevNoAuthMode()) {
     const { createDevArea } = await import('@/lib/dev-data')
-    return { ok: true, data: createDevArea(parsed.data) }
+    const area = createDevArea(parsed.data)
+    revalidateAreaConsumers()
+    return { ok: true, data: area }
   }
 
   const supabase = await createClient()
@@ -64,5 +72,6 @@ export async function createArea(input: unknown): Promise<ActionResult<AreaRecor
     .single()
 
   if (error) return { ok: false, error: error.message }
+  revalidateAreaConsumers()
   return { ok: true, data: rowToArea(data) }
 }

@@ -37,8 +37,8 @@ D = working_days
 formula_1 = 500 × D + material_market               (마진 0)
 formula_2 = 460 × D × 1.30 + material_market        (인건비에만 30%)
 formula_3 = (460 × D + material_market) × 1.30      (총액 30%)
-formula_4 = (380 × D + material_actual) × 1.25      (실 원가 25%)
-formula_5 = (380 × D + material_actual) × 1.30      (실 원가 30%)
+formula_4 = 380 × D × 1.25 + material_market        (인건비에만 25%)
+formula_5 = (380 × D + material_market) × 1.30      (총액 30%)
 ```
 
 - 숫자(500/460/380, 0.30/0.25)는 `pricing_settings` 테이블에서 가져옴

@@ -36,7 +36,6 @@ export function getMissingOAuthConfigKeys(config: JobberConfig): string[] {
 
 export function getMissingGraphqlConfigKeys(config: JobberConfig): string[] {
   const missing: string[] = []
-  if (!config.accessToken) missing.push('JOBBER_ACCESS_TOKEN')
   if (!config.graphqlVersion) missing.push('JOBBER_GRAPHQL_VERSION')
   return missing
 }

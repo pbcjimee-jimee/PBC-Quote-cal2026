@@ -56,8 +56,8 @@ export function getFormulaDescriptions(settings: PricingSettings) {
     formula1Name: `${formatFormulaRate(settings.f1LabourRate)} / Market / No Margin`,
     formula2Name: `${formatFormulaRate(settings.f2LabourRate)} / Labour ${formatPercent(settings.f2Margin)} / Market`,
     formula3Name: `${formatFormulaRate(settings.f3LabourRate)} / Market / Total ${formatPercent(settings.f3Margin)}`,
-    formula4Name: `${formatFormulaRate(settings.f4LabourRate)} / Actual / Total ${formatPercent(settings.f4Margin)}`,
-    formula5Name: `${formatFormulaRate(settings.f5LabourRate)} / Actual / Total ${formatPercent(settings.f5Margin)}`,
+    formula4Name: `${formatFormulaRate(settings.f4LabourRate)} / Labour ${formatPercent(settings.f4Margin)} / Market`,
+    formula5Name: `${formatFormulaRate(settings.f5LabourRate)} / Market / Total ${formatPercent(settings.f5Margin)}`,
   }
 }
 
@@ -89,14 +89,15 @@ function formula3(D: Decimal, mm: Decimal, s: PricingSettings): Decimal {
   return toDecimal(s.f3LabourRate).mul(D).add(mm).mul(toDecimal(s.f3Margin).add(1))
 }
 
-// formula_4 = (f4_labour_rate × D + material_actual) × (1 + f4_margin)
-function formula4(D: Decimal, ma: Decimal, s: PricingSettings): Decimal {
-  return toDecimal(s.f4LabourRate).mul(D).add(ma).mul(toDecimal(s.f4Margin).add(1))
+// formula_4 = (f4_labour_rate × D × (1 + f4_margin)) + material_market
+function formula4(D: Decimal, mm: Decimal, s: PricingSettings): Decimal {
+  const labour = toDecimal(s.f4LabourRate).mul(D).mul(toDecimal(s.f4Margin).add(1))
+  return labour.add(mm)
 }
 
-// formula_5 = (f5_labour_rate × D + material_actual) × (1 + f5_margin)
-function formula5(D: Decimal, ma: Decimal, s: PricingSettings): Decimal {
-  return toDecimal(s.f5LabourRate).mul(D).add(ma).mul(toDecimal(s.f5Margin).add(1))
+// formula_5 = (f5_labour_rate × D + material_market) × (1 + f5_margin)
+function formula5(D: Decimal, mm: Decimal, s: PricingSettings): Decimal {
+  return toDecimal(s.f5LabourRate).mul(D).add(mm).mul(toDecimal(s.f5Margin).add(1))
 }
 
 export function calculateAllFormulas(
@@ -107,15 +108,14 @@ export function calculateAllFormulas(
 
   const D = toDecimal(input.workingDays).mul(toDecimal(input.labourPerDay))
   const mm = toDecimal(input.materialMarket)
-  const ma = toDecimal(input.materialActual)
   const names = getFormulaDescriptions(settings)
 
   return [
     { formulaNum: 1, name: names.formula1Name, total: formula1(D, mm, settings) },
     { formulaNum: 2, name: names.formula2Name, total: formula2(D, mm, settings) },
     { formulaNum: 3, name: names.formula3Name, total: formula3(D, mm, settings) },
-    { formulaNum: 4, name: names.formula4Name, total: formula4(D, ma, settings) },
-    { formulaNum: 5, name: names.formula5Name, total: formula5(D, ma, settings) },
+    { formulaNum: 4, name: names.formula4Name, total: formula4(D, mm, settings) },
+    { formulaNum: 5, name: names.formula5Name, total: formula5(D, mm, settings) },
   ]
 }
 

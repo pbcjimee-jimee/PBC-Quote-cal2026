@@ -61,18 +61,18 @@ describe('calculateAllFormulas', () => {
     expect(f3.total.toFixed(2)).toBe('3435.25')
   })
 
-  it('formula4: (f4_rate × D + material_actual) × 1.25', () => {
+  it('formula4: (f4_rate × D × 1.25) + material_market', () => {
     const results = calculateAllFormulas(base, s)
     const f4 = results[3]
-    // (380 × 5 + 245.00) × 1.25 = (1900 + 245) × 1.25 = 2145 × 1.25 = 2681.25
-    expect(f4.total.toFixed(2)).toBe('2681.25')
+    // (380 × 5 × 1.25) + 342.50 = 2375 + 342.50 = 2717.50
+    expect(f4.total.toFixed(2)).toBe('2717.50')
   })
 
-  it('formula5: (f5_rate × D + material_actual) × 1.30', () => {
+  it('formula5: (f5_rate × D + material_market) × 1.30', () => {
     const results = calculateAllFormulas(base, s)
     const f5 = results[4]
-    // (380 × 5 + 245.00) × 1.30 = 2145 × 1.30 = 2788.50
-    expect(f5.total.toFixed(2)).toBe('2788.50')
+    // (380 × 5 + 342.50) × 1.30 = 2242.50 × 1.30 = 2915.25
+    expect(f5.total.toFixed(2)).toBe('2915.25')
   })
 
   it('accepts Decimal inputs', () => {
@@ -107,7 +107,7 @@ describe('calculateAllFormulas', () => {
   it('multiplies working days by labour per day before applying formula rates', () => {
     const results = calculateAllFormulas({ ...base, labourPerDay: 2 }, s)
     expect(results[0].total.toFixed(2)).toBe('5342.50')
-    expect(results[3].total.toFixed(2)).toBe('5056.25')
+    expect(results[3].total.toFixed(2)).toBe('5092.50')
   })
 
   it('works with zero material', () => {
@@ -144,8 +144,8 @@ describe('calculateSubtotal', () => {
 
   it('averages min and max formula', () => {
     const subtotal = calculateSubtotal(results, 4, 1)
-    // (2681.25 + 2842.50) / 2 = 2761.875
-    expect(subtotal.toFixed(2)).toBe('2761.88')
+    // (2717.50 + 2842.50) / 2 = 2780.00
+    expect(subtotal.toFixed(2)).toBe('2780.00')
   })
 
   it('returns single value when min === max', () => {

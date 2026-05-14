@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { importProductsCSV, listProducts } from '@/lib/actions/products'
+import { createProduct, importProductsCSV, listProducts, searchProducts } from '@/lib/actions/products'
 import { resetDevData } from '@/lib/dev-data'
 import { beforeEach } from 'vitest'
 
@@ -45,6 +45,55 @@ describe('product actions', () => {
       expect(result.data.products[0].productLine).toBe('Test Paint')
       expect(result.data.products[1].volumeLitres).toBe('10')
       expect(result.data.products[1].rrpPrice).toBe('250.00')
+    }
+  })
+
+  it('creates a single custom material or service in dev mode', async () => {
+    const result = await createProduct({
+      manufacturer: 'PBC',
+      productLine: 'Minor drywall repair',
+      base: null,
+      sheen: null,
+      unit: 'service',
+      rrpPrice: 125,
+    })
+
+    if (!result.ok) throw new Error(result.error)
+    expect(result.data.manufacturer).toBe('PBC')
+    expect(result.data.productLine).toBe('Minor drywall repair')
+    expect(result.data.unit).toBe('service')
+    expect(result.data.rrpPrice).toBe('125.00')
+
+    const listResult = await listProducts({ query: 'drywall repair', limit: 200 })
+    expect(listResult.ok).toBe(true)
+    if (listResult.ok) {
+      expect(listResult.data.some((product) => product.productLine === 'Minor drywall repair')).toBe(true)
+    }
+
+    const searchResult = await searchProducts({ query: 'drywall repair', limit: 8 })
+    expect(searchResult.ok).toBe(true)
+    if (searchResult.ok) {
+      expect(searchResult.data.some((product) => product.productLine === 'Minor drywall repair')).toBe(true)
+    }
+  })
+
+  it('lists a newly created material first for the quote material dropdown', async () => {
+    const result = await createProduct({
+      manufacturer: 'PBC',
+      productLine: 'Custom cabinet touch-up',
+      base: null,
+      sheen: null,
+      unit: 'each',
+      rrpPrice: 88,
+    })
+
+    if (!result.ok) throw new Error(result.error)
+
+    const listResult = await listProducts({ limit: 1 })
+    expect(listResult.ok).toBe(true)
+    if (listResult.ok) {
+      expect(listResult.data[0].id).toBe(result.data.id)
+      expect(listResult.data[0].productLine).toBe('Custom cabinet touch-up')
     }
   })
 

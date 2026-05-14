@@ -1,7 +1,12 @@
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
-import { MaterialCsvTemplate, MaterialProductsTable } from '@/components/settings/settings-form'
+import {
+  buildMaterialUpdateInput,
+  MaterialAddItemForm,
+  MaterialCsvTemplate,
+  MaterialProductsTable,
+} from '@/components/settings/settings-form'
 import type { ProductRecord } from '@/lib/products/types'
 
 describe('settings material UI', () => {
@@ -55,5 +60,37 @@ describe('settings material UI', () => {
     expect(template).toContain('Brand,Kind,Base,Sheen/Finish,Volume (L),Price (RRP)')
     expect(template).toContain('Dulux,Acratex,Monument,Low Sheen,15,199.99')
     expect(template).toContain('Bunnings,Wall Paint,White,Matte,4,89.90')
+  })
+
+  it('renders an add item form for custom materials or services', () => {
+    const markup = renderToStaticMarkup(createElement(MaterialAddItemForm))
+
+    expect(markup).toContain('Add Item')
+    expect(markup).toContain('Material or service name')
+    expect(markup).toContain('Price')
+    expect(markup).toContain('Unit')
+  })
+
+  it('normalizes numeric edit form values before saving', () => {
+    const input = buildMaterialUpdateInput('550e8400-e29b-41d4-a716-446655440000', {
+      manufacturer: ' Dulux ',
+      productLine: ' Wash & Wear ',
+      base: null,
+      sheen: undefined,
+      volumeLitres: 15,
+      unit: ' 15L ',
+      rrpPrice: 199.99,
+    })
+
+    expect(input).toEqual({
+      id: '550e8400-e29b-41d4-a716-446655440000',
+      manufacturer: 'Dulux',
+      productLine: 'Wash & Wear',
+      base: null,
+      sheen: null,
+      volumeLitres: 15,
+      unit: '15L',
+      rrpPrice: 199.99,
+    })
   })
 })

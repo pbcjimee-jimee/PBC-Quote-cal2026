@@ -79,7 +79,18 @@ export function PaintSearch({ onAdd }: PaintSearchProps) {
 
   return (
     <div className="relative">
-      <input value={query} onChange={(event) => setQuery(event.target.value)} className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm" placeholder="Search paint or material..." />
+      <input
+        value={query}
+        onChange={(event) => setQuery(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter') {
+            event.preventDefault()
+            addCustom()
+          }
+        }}
+        className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+        placeholder="Search paint or material..."
+      />
       {error ? <p className="mt-2 text-sm text-red-600">{error}</p> : null}
       {query.trim() ? (
         <div className="absolute z-10 mt-1 w-full overflow-hidden rounded-md border border-gray-200 bg-white shadow-lg">

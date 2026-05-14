@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import { signOut } from '@/lib/actions/auth'
 
 export function AppHeader() {
   return (
@@ -14,9 +15,11 @@ export function AppHeader() {
           <Link href="/settings" className="text-gray-600 hover:text-gray-900">
             Settings
           </Link>
-          <Link href="/login" className="text-gray-400 hover:text-gray-700">
-            Sign in
-          </Link>
+          <form action={signOut}>
+            <button type="submit" className="text-gray-400 hover:text-gray-700">
+              Sign out
+            </button>
+          </form>
         </nav>
       </div>
     </header>

@@ -49,6 +49,18 @@ export const productSearchSchema = z.object({
   limit: z.number().int().positive().max(200).default(20),
 })
 
+export const productCreateSchema = z.object({
+  name: z.string().trim().min(1).max(200).optional(),
+  manufacturer: z.string().trim().min(1).max(120).nullable().optional(),
+  type: z.string().trim().min(1).max(200).nullable().optional(),
+  productLine: z.string().trim().min(1).max(200),
+  base: z.string().trim().min(1).max(120).nullable().optional(),
+  sheen: z.string().trim().min(1).max(120).nullable().optional(),
+  unit: z.string().trim().min(1).max(40).optional(),
+  volumeLitres: z.coerce.number().nonnegative().optional(),
+  rrpPrice: z.coerce.number().nonnegative(),
+})
+
 export const productUpdateSchema = z.object({
   id: z.string().uuid(),
   name: z.string().trim().min(1).max(200).optional(),

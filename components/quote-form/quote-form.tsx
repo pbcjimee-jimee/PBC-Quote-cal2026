@@ -18,29 +18,25 @@ import { FormulaResults } from './formula-results'
 import { FinalSummary } from './final-summary'
 import type { FormulaNumber, MaterialItem } from './types'
 import type { AreaRecord } from '@/lib/areas/types'
+import type {
+  JobberQuoteDraft,
+  JobberQuoteDraftExpense,
+  JobberQuoteFinancialSummary,
+  JobberQuoteDraftJobExpenses,
+  JobberQuoteDraftLineItem,
+} from '@/lib/jobber/mapper'
+import { getVisibleJobberQuoteLookupAfterFetch } from '@/lib/jobber/quote-lookup'
 
 interface QuoteFormProps {
   settings: PricingSettings
   areas: AreaRecord[]
 }
 
-interface JobberQuoteDraft {
-  jobberQuoteId: string
-  customerName: string
-  customerAddress: string
-  workType: string
-  sourceUrl: string
-}
-
 type JobberQuoteResponse =
   | { ok: true; data: JobberQuoteDraft }
   | { ok: false; error: string }
 
-function optionalNumber(value: string): number | undefined {
-  const trimmed = value.trim()
-  if (!trimmed) return undefined
-  return Number(trimmed)
-}
+type JobberLookupType = 'quote' | 'job'
 
 function isJobberQuoteResponse(value: unknown): value is JobberQuoteResponse {
   if (typeof value !== 'object' || value === null) return false
@@ -50,10 +46,76 @@ function isJobberQuoteResponse(value: unknown): value is JobberQuoteResponse {
   const data = record.data as Record<string, unknown>
   return (
     typeof data.jobberQuoteId === 'string' &&
+    (data.sourceType === 'quote' || data.sourceType === 'job') &&
+    typeof data.quoteNumber === 'string' &&
+    typeof data.createdAt === 'string' &&
     typeof data.customerName === 'string' &&
     typeof data.customerAddress === 'string' &&
     typeof data.workType === 'string' &&
-    typeof data.sourceUrl === 'string'
+    (data.areaSqft === null || typeof data.areaSqft === 'number') &&
+    typeof data.customerType === 'string' &&
+    typeof data.sourceUrl === 'string' &&
+    Array.isArray(data.productsAndServices) &&
+    data.productsAndServices.every(isJobberQuoteDraftLineItem) &&
+    Array.isArray(data.jobExpenses) &&
+    data.jobExpenses.every(isJobberQuoteDraftJobExpenses) &&
+    (data.jobExpensesError === null || typeof data.jobExpensesError === 'string') &&
+    isJobberQuoteFinancialSummary(data.financialSummary)
+  )
+}
+
+function isJobberQuoteDraftLineItem(value: unknown): value is JobberQuoteDraftLineItem {
+  if (typeof value !== 'object' || value === null) return false
+  const record = value as Record<string, unknown>
+  return (
+    typeof record.id === 'string' &&
+    typeof record.name === 'string' &&
+    typeof record.category === 'string' &&
+    typeof record.description === 'string' &&
+    typeof record.quantity === 'number' &&
+    typeof record.unitPrice === 'number' &&
+    typeof record.totalPrice === 'number' &&
+    (record.linkedName === null || typeof record.linkedName === 'string')
+  )
+}
+
+function isJobberQuoteDraftJobExpenses(value: unknown): value is JobberQuoteDraftJobExpenses {
+  if (typeof value !== 'object' || value === null) return false
+  const record = value as Record<string, unknown>
+  return (
+    typeof record.jobId === 'string' &&
+    typeof record.jobNumber === 'number' &&
+    typeof record.jobTitle === 'string' &&
+    typeof record.jobStatus === 'string' &&
+    typeof record.jobUrl === 'string' &&
+    Array.isArray(record.expenses) &&
+    record.expenses.every(isJobberQuoteDraftExpense)
+  )
+}
+
+function isJobberQuoteDraftExpense(value: unknown): value is JobberQuoteDraftExpense {
+  if (typeof value !== 'object' || value === null) return false
+  const record = value as Record<string, unknown>
+  return (
+    typeof record.id === 'string' &&
+    typeof record.title === 'string' &&
+    typeof record.description === 'string' &&
+    typeof record.date === 'string' &&
+    (record.total === null || typeof record.total === 'number') &&
+    (record.enteredBy === null || typeof record.enteredBy === 'string') &&
+    (record.paidBy === null || typeof record.paidBy === 'string') &&
+    (record.reimbursableTo === null || typeof record.reimbursableTo === 'string')
+  )
+}
+
+function isJobberQuoteFinancialSummary(value: unknown): value is JobberQuoteFinancialSummary {
+  if (typeof value !== 'object' || value === null) return false
+  const record = value as Record<string, unknown>
+  return (
+    typeof record.quoteTotal === 'number' &&
+    typeof record.expensesTotal === 'number' &&
+    typeof record.profit === 'number' &&
+    (record.profitMarginPercent === null || typeof record.profitMarginPercent === 'number')
   )
 }
 
@@ -62,15 +124,18 @@ export function QuoteForm({ settings, areas }: QuoteFormProps) {
   const [isPending, startTransition] = useTransition()
   const [customerName, setCustomerName] = useState('')
   const [customerAddress, setCustomerAddress] = useState('')
+  const [jobberLookupType, setJobberLookupType] = useState<JobberLookupType>('quote')
+  const [jobberQuoteLookup, setJobberQuoteLookup] = useState('')
   const [jobberQuoteId, setJobberQuoteId] = useState('')
   const [workType, setWorkType] = useState('')
-  const [areaSqft, setAreaSqft] = useState('')
+  const [customerType, setCustomerType] = useState('')
   const [materials, setMaterials] = useState<MaterialItem[]>([])
   const [selectedMin, setSelectedMin] = useState<FormulaNumber>(4)
   const [selectedMax, setSelectedMax] = useState<FormulaNumber>(1)
   const [saveError, setSaveError] = useState<string | null>(null)
   const [jobberFetchError, setJobberFetchError] = useState<string | null>(null)
   const [isFetchingJobberQuote, setIsFetchingJobberQuote] = useState(false)
+  const [jobberQuoteDraft, setJobberQuoteDraft] = useState<JobberQuoteDraft | null>(null)
 
   const totals = useMemo(() => {
     const materialMarket = materials.reduce(
@@ -108,16 +173,16 @@ export function QuoteForm({ settings, areas }: QuoteFormProps) {
   }
 
   async function fetchJobberQuote() {
-    const quoteId = jobberQuoteId.trim()
+    const lookup = jobberQuoteLookup.trim()
     setJobberFetchError(null)
-    if (!quoteId) {
-      setJobberFetchError('Enter a Jobber Quote ID first.')
+    if (!lookup) {
+      setJobberFetchError(`Enter a Jobber ${jobberLookupType === 'job' ? 'Job' : 'Quote'} number first.`)
       return
     }
 
     setIsFetchingJobberQuote(true)
     try {
-      const response = await fetch(`/api/jobber/quote/${encodeURIComponent(quoteId)}`)
+      const response = await fetch(`/api/jobber/quote/${encodeURIComponent(lookup)}?type=${jobberLookupType}`)
       const payload: unknown = await response.json()
       if (!isJobberQuoteResponse(payload)) {
         setJobberFetchError('Jobber returned an unexpected response.')
@@ -129,9 +194,15 @@ export function QuoteForm({ settings, areas }: QuoteFormProps) {
       }
 
       setJobberQuoteId(payload.data.jobberQuoteId)
+      setJobberQuoteLookup(jobberLookupType === 'job'
+        ? payload.data.quoteNumber.replace(/^Job #/, '')
+        : getVisibleJobberQuoteLookupAfterFetch(lookup, payload.data.quoteNumber)
+      )
       setCustomerName(payload.data.customerName)
       setCustomerAddress(payload.data.customerAddress)
       setWorkType(payload.data.workType)
+      setCustomerType(payload.data.customerType)
+      setJobberQuoteDraft(payload.data)
     } catch {
       setJobberFetchError('Unable to fetch Jobber quote.')
     } finally {
@@ -145,9 +216,8 @@ export function QuoteForm({ settings, areas }: QuoteFormProps) {
       const result = await createQuote({
         customerName,
         customerAddress,
-        jobberQuoteId,
+        jobberQuoteId: jobberQuoteId || jobberQuoteLookup,
         workType,
-        areaSqft: optionalNumber(areaSqft),
         workingDays: Number(totals.labour.workingDays.toString()),
         labourPerDay: Number(totals.labour.labourPerDay.toString()),
         materialMarket: Number(totals.materialMarket.toString()),
@@ -197,17 +267,19 @@ export function QuoteForm({ settings, areas }: QuoteFormProps) {
           <CustomerPanel
             customerName={customerName}
             customerAddress={customerAddress}
-            jobberQuoteId={jobberQuoteId}
+            jobberLookupType={jobberLookupType}
+            jobberQuoteId={jobberQuoteLookup}
             workType={workType}
-            areaSqft={areaSqft}
+            customerType={customerType}
             onCustomerNameChange={setCustomerName}
             onCustomerAddressChange={setCustomerAddress}
-            onJobberQuoteIdChange={setJobberQuoteId}
+            onJobberLookupTypeChange={setJobberLookupType}
+            onJobberQuoteIdChange={setJobberQuoteLookup}
             onFetchJobberQuote={fetchJobberQuote}
             onWorkTypeChange={setWorkType}
-            onAreaSqftChange={setAreaSqft}
             isFetchingJobberQuote={isFetchingJobberQuote}
             jobberFetchError={jobberFetchError}
+            jobberQuoteDraft={jobberQuoteDraft}
           />
           <MaterialsPanel materials={materials} areas={areas} onAdd={addMaterial} onChange={changeMaterial} onRemove={removeMaterial} />
         </div>
@@ -235,6 +307,7 @@ export function QuoteForm({ settings, areas }: QuoteFormProps) {
             materialTotal={totals.materialMarket}
             subtotal={totals.subtotal}
             finalTotal={totals.finalTotal}
+            jobberFinancialSummary={jobberQuoteDraft && !jobberQuoteDraft.jobExpensesError ? jobberQuoteDraft.financialSummary : null}
           />
         </div>
       </div>

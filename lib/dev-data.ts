@@ -197,8 +197,43 @@ export function createDevProductsFromImport(
     return normalizeRrpProduct(product)
   })
 
-  products = [...products, ...created]
+  products = [...created, ...products]
   return created
+}
+
+export function createDevProduct(input: {
+  name: string
+  manufacturer: string | null
+  type: string | null
+  productLine: string
+  base: string | null
+  sheen: string | null
+  unit: string
+  volumeLitres: string | null
+  rrpPrice: string
+}): ProductRecord {
+  const product: ProductRecord = {
+    id: crypto.randomUUID(),
+    name: input.name,
+    manufacturer: input.manufacturer,
+    type: input.type,
+    unit: input.unit,
+    marketPrice: input.rrpPrice,
+    actualPrice: input.rrpPrice,
+    colorCode: input.base,
+    active: true,
+    category: input.type,
+    productLine: input.productLine,
+    base: input.base,
+    sheen: input.sheen,
+    volumeLitres: input.volumeLitres,
+    price: input.rrpPrice,
+    rrpPrice: input.rrpPrice,
+  }
+
+  const normalized = normalizeRrpProduct(product)
+  products = [normalized, ...products]
+  return normalized
 }
 
 export function updateDevProduct(
@@ -323,4 +358,5 @@ export function resetDevData(): void {
   store.pricingSettings = { ...DEFAULT_PRICING_SETTINGS }
   store.quotes = []
   store.areas = []
+  products = DULUX_PAINT_PRODUCTS.map(normalizeRrpProduct)
 }

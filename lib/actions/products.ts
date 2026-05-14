@@ -3,6 +3,7 @@
 import { normalizeRrpProduct, type ProductRecord } from '@/lib/products/types'
 import { createClient } from '@/lib/supabase/server'
 import {
+  productCreateSchema,
   productDeleteSchema,
   productImportSchema,
   productSearchSchema,
@@ -13,6 +14,17 @@ import { isDevNoAuthMode } from './types'
 import type { Database } from '@/lib/supabase/types'
 
 type ProductRow = Database['public']['Tables']['products']['Row']
+type ProductCreateInput = {
+  name?: string
+  manufacturer?: string | null
+  type?: string | null
+  productLine: string
+  base?: string | null
+  sheen?: string | null
+  unit?: string
+  volumeLitres?: number
+  rrpPrice: number
+}
 type ProductUpdateInput = {
   id: string
   name?: string
@@ -280,6 +292,75 @@ function toProductInsertPayload(rows: ProductImportRow[]): Array<
   })
 }
 
+function normalizeCreatePayload(input: ProductCreateInput) {
+  const price = input.rrpPrice.toFixed(2)
+  const volumeLitres = input.volumeLitres === undefined ? null : String(input.volumeLitres)
+  const unit = input.unit?.trim() || (volumeLitres ? `${volumeLitres}L` : 'each')
+  const manufacturer = input.manufacturer?.trim() || null
+  const productLine = input.productLine.trim()
+  const base = input.base?.trim() || null
+  const sheen = input.sheen?.trim() || null
+  const type = input.type?.trim() || productLine
+  const name = input.name?.trim() || [manufacturer, productLine, sheen, base, unit].filter(Boolean).join(' ')
+
+  return {
+    devRecord: {
+      name,
+      manufacturer,
+      type,
+      productLine,
+      base,
+      sheen,
+      unit,
+      volumeLitres,
+      rrpPrice: price,
+    },
+    row: {
+      name,
+      manufacturer,
+      type,
+      unit,
+      market_price: price,
+      actual_price: price,
+      color_code: base,
+      active: true,
+      category: type,
+      product_line: productLine,
+      base,
+      sheen,
+      volume_litres: volumeLitres,
+      price,
+      rrp_price: price,
+      product_code: null,
+      source_url: null,
+    } satisfies Omit<Database['public']['Tables']['products']['Insert'], 'id' | 'created_at' | 'updated_at'>,
+  }
+}
+
+export async function createProduct(input: unknown): Promise<ActionResult<ProductRecord>> {
+  const parsed = productCreateSchema.safeParse(input)
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.message }
+  }
+
+  const payload = normalizeCreatePayload(parsed.data)
+
+  if (isDevNoAuthMode()) {
+    const { createDevProduct } = await import('@/lib/dev-data')
+    return { ok: true, data: createDevProduct(payload.devRecord) }
+  }
+
+  const supabase = await createClient()
+  const { data, error } = await supabase
+    .from('products')
+    .insert(payload.row)
+    .select('*')
+    .single()
+
+  if (error) return { ok: false, error: error.message }
+  return { ok: true, data: rowToProduct(data) }
+}
+
 export async function searchProducts(input: unknown): Promise<ActionResult<ProductRecord[]>> {
   const parsed = productSearchSchema.safeParse(input)
   if (!parsed.success) {
@@ -299,6 +380,7 @@ export async function searchProducts(input: unknown): Promise<ActionResult<Produ
     .from('products')
     .select('*')
     .eq('active', true)
+    .order('created_at', { ascending: false })
     .limit(parsed.data.limit)
 
   for (const token of searchTokens(parsed.data.query)) {
@@ -329,8 +411,7 @@ export async function listProducts(input: unknown = {}): Promise<ActionResult<Pr
     .from('products')
     .select('*')
     .eq('active', true)
-    .order('manufacturer', { ascending: true })
-    .order('name', { ascending: true })
+    .order('created_at', { ascending: false })
     .limit(limit)
 
   if (query.trim()) {

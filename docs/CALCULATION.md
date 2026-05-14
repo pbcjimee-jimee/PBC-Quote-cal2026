@@ -25,8 +25,8 @@
 | `f1_labour_rate` | 500 | 공식 1 일당 ($/day) |
 | `f2_labour_rate` | 460 | 공식 2 일당 |
 | `f3_labour_rate` | 460 | 공식 3 일당 |
-| `f4_labour_rate` | 380 | 공식 4 일당 (actual labour) |
-| `f5_labour_rate` | 380 | 공식 5 일당 (actual labour) |
+| `f4_labour_rate` | 380 | 공식 4 일당 |
+| `f5_labour_rate` | 380 | 공식 5 일당 |
 | `f2_margin` | 0.30 | 공식 2 마진율 (30%) |
 | `f3_margin` | 0.30 | 공식 3 마진율 (30%) |
 | `f4_margin` | 0.25 | 공식 4 마진율 (25%) |
@@ -66,23 +66,23 @@ formula_3 = (f3_labour_rate × D + material_market) × (1 + f3_margin)
 
 **의도:** 총액 기반 마진. 공식 2와 일당 같지만 적용 방식이 다름 (인건비만 vs 총액).
 
-### 공식 4: Actual L380 & Actual Material / 총액 25% Margin
+### 공식 4: L380 / 인건비 25% Margin / Market
 
 ```
-formula_4 = (f4_labour_rate × D + material_actual) × (1 + f4_margin)
-         = (380 × D + material_actual) × 1.25
+formula_4 = (f4_labour_rate × D × (1 + f4_margin)) + material_market
+         = (380 × D × 1.25) + material_market
 ```
 
-**의도:** 원가 기반 견적. 실 직원 임금·도매가에 25% 마진만. 가장 공격적인 협상가.
+**의도:** 공식 2와 같은 인건비 마진 방식. 공식 2와 별도 일당·마진율을 설정할 수 있음.
 
-### 공식 5: Actual L380 & Actual Material / 총액 30% Margin
+### 공식 5: L380 & Market / 총액 30% Margin
 
 ```
-formula_5 = (f5_labour_rate × D + material_actual) × (1 + f5_margin)
-         = (380 × D + material_actual) × 1.30
+formula_5 = (f5_labour_rate × D + material_market) × (1 + f5_margin)
+         = (380 × D + material_market) × 1.30
 ```
 
-**의도:** 원가 기반이지만 공식 4보다 마진 약간 높음. 시장이 허용할 때.
+**의도:** 공식 3과 같은 총액 마진 방식. 공식 3과 별도 일당·마진율을 설정할 수 있음.
 
 ---
 

@@ -2,11 +2,35 @@
 
 import { useRef, useState, useTransition } from 'react'
 import { createArea } from '@/lib/actions/areas'
-import { deleteProduct, importProductsCSV, updateProduct } from '@/lib/actions/products'
+import { createProduct, deleteProduct, importProductsCSV, updateProduct } from '@/lib/actions/products'
 import { updatePricingSettings } from '@/lib/actions/settings'
 import type { AreaRecord, AreaScope } from '@/lib/areas/types'
 import type { PricingSettings } from '@/lib/calculator'
 import type { ProductRecord } from '@/lib/products/types'
+
+type MaterialFormState = {
+  manufacturer: string
+  productLine: string
+  base: string
+  sheen: string
+  unit: string
+  rrpPrice: string
+}
+
+type MaterialEditFormState = MaterialFormState & {
+  volumeLitres: string
+}
+
+type MaterialUpdateInput = {
+  id: string
+  manufacturer: string | null
+  productLine: string | null
+  base: string | null
+  sheen: string | null
+  volumeLitres?: number
+  unit?: string
+  rrpPrice?: number
+}
 
 interface SettingsFormProps {
   initialAreas: AreaRecord[]
@@ -17,21 +41,50 @@ interface SettingsFormProps {
 interface MaterialProductsTableProps {
   products: ProductRecord[]
   editingProductId?: string | null
-  editForm?: {
-    manufacturer: string
-    productLine: string
-    base: string
-    sheen: string
-    volumeLitres: string
-    unit: string
-    rrpPrice: string
-  }
+  editForm?: MaterialEditFormState
   onEdit?: (product: ProductRecord) => void
   onCancel?: () => void
   onSave?: () => void
   onDelete?: (id: string) => void
   onFieldChange?: (field: keyof Required<MaterialProductsTableProps>['editForm'], value: string) => void
   disabled?: boolean
+}
+
+interface MaterialAddItemFormProps {
+  form?: MaterialFormState
+  onFieldChange?: (field: keyof Required<MaterialAddItemFormProps>['form'], value: string) => void
+  onAdd?: () => void
+  disabled?: boolean
+}
+
+function toFormString(value: unknown): string {
+  if (value === null || value === undefined) return ''
+  return String(value)
+}
+
+function trimFormValue(value: unknown): string {
+  return toFormString(value).trim()
+}
+
+function optionalNumber(value: unknown): number | undefined {
+  const trimmed = trimFormValue(value)
+  return trimmed ? Number(trimmed) : undefined
+}
+
+export function buildMaterialUpdateInput(
+  id: string,
+  form: Partial<Record<keyof MaterialEditFormState, unknown>>
+): MaterialUpdateInput {
+  return {
+    id,
+    manufacturer: trimFormValue(form.manufacturer) || null,
+    productLine: trimFormValue(form.productLine) || null,
+    base: trimFormValue(form.base) || null,
+    sheen: trimFormValue(form.sheen) || null,
+    volumeLitres: optionalNumber(form.volumeLitres),
+    unit: trimFormValue(form.unit) || undefined,
+    rrpPrice: optionalNumber(form.rrpPrice),
+  }
 }
 
 function toPercent(value: number | { toString(): string }): string {
@@ -55,11 +108,12 @@ function toRate(value: string): number {
   return Number((value || '').trim().replace(/,/g, ''))
 }
 
-function toCsvSafe(value: string): string {
-  if (value.includes(',') || value.includes('\n') || value.includes('"')) {
-    return `"${value.replace(/"/g, '""')}"`
+function toCsvSafe(value: unknown): string {
+  const text = toFormString(value)
+  if (text.includes(',') || text.includes('\n') || text.includes('"')) {
+    return `"${text.replace(/"/g, '""')}"`
   }
-  return value
+  return text
 }
 
 const MATERIAL_CSV_HEADER = ['Brand', 'Kind', 'Base', 'Sheen/Finish', 'Volume (L)', 'Price (RRP)']
@@ -109,6 +163,98 @@ function downloadTextFile(filename: string, text: string): void {
 
 export function MaterialCsvTemplate(): string {
   return buildMaterialCsvTemplate()
+}
+
+export function MaterialAddItemForm({
+  form = {
+    manufacturer: '',
+    productLine: '',
+    base: '',
+    sheen: '',
+    unit: '',
+    rrpPrice: '',
+  },
+  onFieldChange = () => undefined,
+  onAdd = () => undefined,
+  disabled = false,
+}: MaterialAddItemFormProps) {
+  const canAdd = !disabled && trimFormValue(form.productLine) && trimFormValue(form.rrpPrice)
+
+  return (
+    <form
+      onSubmit={(event) => {
+        event.preventDefault()
+        if (canAdd) onAdd()
+      }}
+      className="mb-5 border-b border-gray-200 pb-5"
+    >
+      <h3 className="text-sm font-semibold text-gray-900">Add Item</h3>
+      <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-6">
+        <label className="space-y-1 text-xs font-medium text-gray-600">
+          Brand
+          <input
+            value={form.manufacturer}
+            onChange={(event) => onFieldChange('manufacturer', event.target.value)}
+            className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+            placeholder="e.g. Dulux"
+          />
+        </label>
+        <label className="space-y-1 text-xs font-medium text-gray-600 sm:col-span-2">
+          Material or service name
+          <input
+            value={form.productLine}
+            onChange={(event) => onFieldChange('productLine', event.target.value)}
+            className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+            placeholder="e.g. Minor drywall repair"
+          />
+        </label>
+        <label className="space-y-1 text-xs font-medium text-gray-600">
+          Base
+          <input
+            value={form.base}
+            onChange={(event) => onFieldChange('base', event.target.value)}
+            className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+            placeholder="Optional"
+          />
+        </label>
+        <label className="space-y-1 text-xs font-medium text-gray-600">
+          Sheen/Finish
+          <input
+            value={form.sheen}
+            onChange={(event) => onFieldChange('sheen', event.target.value)}
+            className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+            placeholder="Optional"
+          />
+        </label>
+        <label className="space-y-1 text-xs font-medium text-gray-600">
+          Unit
+          <input
+            value={form.unit}
+            onChange={(event) => onFieldChange('unit', event.target.value)}
+            className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+            placeholder="each / 4L"
+          />
+        </label>
+        <label className="space-y-1 text-xs font-medium text-gray-600">
+          Price
+          <input
+            value={form.rrpPrice}
+            onChange={(event) => onFieldChange('rrpPrice', event.target.value)}
+            inputMode="decimal"
+            className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+            placeholder="0.00"
+          />
+        </label>
+      </div>
+      <button
+        type="submit"
+        disabled={!canAdd}
+        className="mt-3 rounded-md bg-slate-700 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-50"
+      >
+        Add Item
+      </button>
+    </form>
+  )
 }
 
 export function MaterialProductsTable({
@@ -265,6 +411,14 @@ export function SettingsForm({ initialAreas, initialProducts, initialSettings }:
   const [materialProducts, setMaterialProducts] = useState(initialProducts)
   const [editingProductId, setEditingProductId] = useState<string | null>(null)
   const [materialMessage, setMaterialMessage] = useState<string | null>(null)
+  const [newMaterialForm, setNewMaterialForm] = useState({
+    manufacturer: '',
+    productLine: '',
+    base: '',
+    sheen: '',
+    unit: '',
+    rrpPrice: '',
+  })
   const [editForm, setEditForm] = useState({
     manufacturer: '',
     productLine: '',
@@ -320,13 +474,13 @@ export function SettingsForm({ initialAreas, initialProducts, initialSettings }:
     setMaterialMessage(null)
     setEditingProductId(product.id)
     setEditForm({
-      manufacturer: product.manufacturer ?? '',
-      productLine: product.productLine ?? product.type ?? '',
-      base: product.base ?? '',
-      sheen: product.sheen ?? '',
-      volumeLitres: product.volumeLitres ?? '',
-      unit: product.unit ?? '',
-      rrpPrice: product.rrpPrice ?? product.marketPrice,
+      manufacturer: toFormString(product.manufacturer),
+      productLine: toFormString(product.productLine ?? product.type),
+      base: toFormString(product.base),
+      sheen: toFormString(product.sheen),
+      volumeLitres: toFormString(product.volumeLitres),
+      unit: toFormString(product.unit),
+      rrpPrice: toFormString(product.rrpPrice ?? product.marketPrice),
     })
   }
 
@@ -343,26 +497,66 @@ export function SettingsForm({ initialAreas, initialProducts, initialSettings }:
     })
   }
 
+  function resetNewMaterialForm() {
+    setNewMaterialForm({
+      manufacturer: '',
+      productLine: '',
+      base: '',
+      sheen: '',
+      unit: '',
+      rrpPrice: '',
+    })
+  }
+
+  function setNewMaterialField(field: keyof typeof newMaterialForm, value: string) {
+    setNewMaterialForm((current) => ({ ...current, [field]: value }))
+  }
+
   function setEditField(field: keyof typeof editForm, value: string) {
     setEditForm((current) => ({ ...current, [field]: value }))
+  }
+
+  function addMaterialProduct() {
+    setMaterialMessage(null)
+    setMaterialImportError(null)
+    startTransition(async () => {
+      const result = await createProduct({
+        manufacturer: trimFormValue(newMaterialForm.manufacturer) || null,
+        productLine: trimFormValue(newMaterialForm.productLine),
+        base: trimFormValue(newMaterialForm.base) || null,
+        sheen: trimFormValue(newMaterialForm.sheen) || null,
+        unit: trimFormValue(newMaterialForm.unit) || undefined,
+        rrpPrice: optionalNumber(newMaterialForm.rrpPrice),
+      })
+
+      if (result.ok) {
+        if (!result.data) {
+          setMaterialMessage('Failed to add material.')
+          return
+        }
+
+        setMaterialProducts((current) => [result.data, ...current])
+        setMaterialQuery('')
+        resetNewMaterialForm()
+        setMaterialMessage('Material item added.')
+      } else {
+        setMaterialMessage(result.error)
+      }
+    })
   }
 
   function saveMaterial() {
     if (!editingProductId) return
     setMaterialMessage(null)
     startTransition(async () => {
-      const result = await updateProduct({
-        id: editingProductId,
-        manufacturer: editForm.manufacturer.trim() || null,
-        productLine: editForm.productLine.trim() || null,
-        base: editForm.base.trim() || null,
-        sheen: editForm.sheen.trim() || null,
-        volumeLitres: editForm.volumeLitres.trim() ? Number(editForm.volumeLitres) : undefined,
-        unit: editForm.unit.trim() || undefined,
-        rrpPrice: editForm.rrpPrice.trim() ? Number(editForm.rrpPrice) : undefined,
-      })
+      const result = await updateProduct(buildMaterialUpdateInput(editingProductId, editForm))
 
       if (result.ok) {
+        if (!result.data) {
+          setMaterialMessage('Failed to update material.')
+          return
+        }
+
         setMaterialProducts((current) =>
           current.map((item) => (item.id === result.data.id ? result.data : item))
         )
@@ -431,6 +625,11 @@ export function SettingsForm({ initialAreas, initialProducts, initialSettings }:
     startTransition(async () => {
       const result = await createArea({ scope: areaScope, name: areaName })
       if (result.ok) {
+        if (!result.data) {
+          setMaterialMessage('Failed to add area.')
+          return
+        }
+
         setAreas((current) => {
           if (current.some((area) => area.id === result.data.id)) return current
           return [...current, result.data]
@@ -576,6 +775,12 @@ export function SettingsForm({ initialAreas, initialProducts, initialSettings }:
               </div>
             </div>
           </div>
+          <MaterialAddItemForm
+            form={newMaterialForm}
+            onFieldChange={setNewMaterialField}
+            onAdd={addMaterialProduct}
+            disabled={isPending}
+          />
           <MaterialProductsTable
             products={filteredProducts}
             editingProductId={editingProductId}
@@ -596,16 +801,22 @@ export function SettingsForm({ initialAreas, initialProducts, initialSettings }:
           <div className="mb-5">
             <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-500">Areas</h2>
           </div>
-          <div className="grid gap-3 sm:grid-cols-[160px_1fr_auto]">
+          <form
+            onSubmit={(event) => {
+              event.preventDefault()
+              if (!isPending && areaName.trim()) addArea()
+            }}
+            className="grid gap-3 sm:grid-cols-[160px_1fr_auto]"
+          >
             <select value={areaScope} onChange={(event) => setAreaScope(event.target.value as AreaScope)} className="rounded-md border border-gray-300 px-3 py-2 text-sm">
               <option value="interior">Interior</option>
               <option value="exterior">Exterior</option>
             </select>
             <input value={areaName} onChange={(event) => setAreaName(event.target.value)} className="rounded-md border border-gray-300 px-3 py-2 text-sm" placeholder="e.g. eaves, fascia" />
-            <button type="button" onClick={addArea} disabled={isPending || !areaName.trim()} className="rounded-md bg-slate-700 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-50">
+            <button type="submit" disabled={isPending || !areaName.trim()} className="rounded-md bg-slate-700 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-50">
               Add Area
             </button>
-          </div>
+          </form>
           {areaMessage ? <p className="mt-3 text-sm text-gray-600">{areaMessage}</p> : null}
 
           <div className="mt-6 grid gap-6 sm:grid-cols-2">
