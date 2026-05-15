@@ -11,12 +11,14 @@
 | 변수 | 타입 | 출처 | 설명 |
 |---|---|---|---|
 | `D` | Decimal(5,2) | 사용자 입력 | 작업일수. 0.5일 단위 가능 (반일 작업) |
+| `labour_per_day` | Decimal(5,2) | 사용자 입력 | 하루 투입 인부 수. 기본 1 |
 | `material_market` | Decimal(10,2) | 자동 계산 | 페인트 DB의 `market_price × quantity` 합계 + 사용자 직접 입력 자재 시장가 합계 |
 | `material_actual` | Decimal(10,2) | 자동 계산 | 페인트 DB의 `actual_price × quantity` 합계 + 사용자 직접 입력 자재 실구매가 합계 |
-| `travel_fee` | Decimal(10,2) | 사용자 입력 | 출장비. 기본 0 |
-| `misc_fee` | Decimal(10,2) | 사용자 입력 | 기타 비용. 기본 0 |
 | `selected_min` | int (1..5) | 사용자 선택 | min으로 선택한 공식 번호 |
 | `selected_max` | int (1..5) | 사용자 선택 | max로 선택한 공식 번호 |
+
+> 마이그레이션 `0003`에서 기존 `travel_fee`·`misc_fee` 입력은 제거되고 `labour_per_day` 모델로 대체됨.
+> 공식 계산에서 사용되는 일수는 항상 `D × labour_per_day` (인일 = man-day) 단위다.
 
 ### 가격 설정 변수 (DB `pricing_settings` 테이블, singleton)
 
@@ -91,16 +93,17 @@ formula_5 = (f5_labour_rate × D + material_market) × (1 + f5_margin)
 5가지 공식이 모두 계산된 후, **사용자가 min·max 두 공식을 수동 선택** (가격 크기 자동 정렬 아님).
 
 ```
-min_amount = formula_results[selected_min]
-max_amount = formula_results[selected_max]
-subtotal   = (min_amount + max_amount) / 2
-final_total = subtotal + travel_fee + misc_fee
+min_amount  = formula_results[selected_min]
+max_amount  = formula_results[selected_max]
+subtotal    = (min_amount + max_amount) / 2
+final_total = subtotal × 1.10   -- GST 10% 가산
 ```
 
 **중요한 동작:**
 - `selected_min == selected_max` (같은 공식 선택): `subtotal = formula_results[selected_min]` 그대로
 - 자동 정렬 없음. 사용자가 "하한·상한" 의도로 직접 선택
-- `travel_fee`, `misc_fee`는 음수 불가 (UI에서 차단)
+- `final_total`은 호주 GST 10%를 곱한 최종 견적가 (`lib/calculator.ts#calculateFinal`)
+- 옵션 견적(`quote_options`)은 동일 공식으로 자체 `subtotal`·`final_total`을 계산하지만 메인 `quotes.final_total`에는 합산되지 않음
 
 ---
 
@@ -110,10 +113,10 @@ final_total = subtotal + travel_fee + misc_fee
 |---|---|
 | `D < 0` | 거부, UI에서 입력 불가 |
 | `D > 365` | 경고만, 저장은 허용 (수년짜리 가능성) |
+| `labour_per_day < 0` | 거부 |
 | `material_market < 0` | 거부 |
 | `material_actual < 0` | 거부 |
 | `material_actual > material_market` | 경고 (보통 실구매가가 시장가보다 낮아야 정상) |
-| `travel_fee < 0` 또는 `misc_fee < 0` | 거부 |
 | `selected_min`, `selected_max` ∉ {1,2,3,4,5} | 거부 |
 | `f*_labour_rate < 0` | 거부 |
 | `f*_margin < 0` | 거부 |

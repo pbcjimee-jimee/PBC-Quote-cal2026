@@ -4,29 +4,20 @@ v1.0 출시 이후 작업할 항목들. 각 항목은 office-hours 세션에서 
 
 ---
 
-## 1. Jobber API 자동 연동 (v1.1)
+## 1. Jobber API 자동 연동 (✅ v1.0에 포함 완료, 2026-05-14)
 
-**What:** Jobber GraphQL API OAuth + 견적 자동 fetch (webhook 또는 polling)
+**상태:** OAuth + 견적 GraphQL 조회 + 토큰 자동 refresh + `jobber_snapshot` 캐시까지 완성. 자세한 항목은 `PROGRESS.md`의 "Jobber 읽기 전용 연동" 섹션 참조.
 
-**Why:** 설계 의도의 "한 페이지에서 다 보기" 핵심 가치 완성. v1.0은 수동 입력으로 시작하지만, Jobber 견적 정보를 자동으로 끌어오면 워크플로우가 진짜로 한 화면에서 완결됨.
+**남은 후속 작업 (v1.1):**
+- Jobber 옵션 line item을 PBC 옵션(`quote_options`)으로 자동 매핑 (현재는 raw snapshot만 캐시, API shape 확정 후 진행)
+- webhook 도입 시 즉시 캐시 갱신 (현재는 사용자가 "불러오기"를 클릭할 때만 fetch)
+- 견적 변경 감지 시 사용자에게 알림
 
-**Pros:**
-- 견적 정보 재입력 노동 제거 (가장 큰 UX 개선)
-- 실수 방지 (Jobber와 우리 앱 데이터 불일치 차단)
-- "한 페이지에서 다 본다"가 진정한 의미를 가짐
-
-**Cons:**
-- Jobber 개발자 계정 승인 필요 (시간 소요 가능, 수일~수주)
-- OAuth 2.0 토큰 관리 구현 1-2일
-- API rate limit·토큰 만료·webhook 우선순위 처리
-
-**Context (3개월 후 보는 사람을 위해):**
-- v1.0은 사용자가 Jobber 견적 번호·주소·면적 등을 우리 앱에 수동 입력. 이게 작동하는지 1주 검증 후 자동 연동 추가.
-- 구현 시 단계: (1) Jobber Developer Center에 OAuth 앱 등록 → client_id/secret 획득, (2) `/api/jobber/callback`에서 OAuth code → access token 교환, (3) `lib/jobber/client.ts`에서 GraphQL 견적 조회, (4) `quotes.jobber_quote_id` 컬럼 활용해 캐시, (5) 견적 화면에서 "Jobber에서 불러오기" 버튼.
-- 읽기 전용 scope만 사용. Jobber에 쓰지 않음.
-- 토큰은 Supabase의 user metadata 또는 별도 `jobber_tokens` 테이블에 저장. refresh token 자동 갱신.
-
-**Depends on:** Jobber 개발자 계정 승인. v1.0 진행 중 미리 신청.
+**구현 위치:**
+- `lib/jobber/config.ts`, `tokens.ts`, `token-encryption.ts`
+- `app/api/jobber/callback/route.ts`, `app/api/jobber/quote/[quoteId]/route.ts`
+- 마이그레이션 `0007_add_jobber_tokens.sql`, `0008_add_quote_jobber_snapshot.sql`
+- 테스트: `tests/jobber*.test.ts`
 
 ---
 

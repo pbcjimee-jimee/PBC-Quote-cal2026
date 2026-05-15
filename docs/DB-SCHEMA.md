@@ -8,60 +8,91 @@
 ## 테이블 관계도
 
 ```
-┌──────────────────┐         ┌─────────────────┐
-│   auth.users     │         │ pricing_settings│
-│  (Supabase Auth) │         │  (singleton)    │
-└────────┬─────────┘         └────────┬────────┘
-         │ created_by                  │ snapshot
-         │ updated_by                  │ (JSONB copy)
-         ▼                             ▼
-┌──────────────────────────────────────────┐
-│              quotes                       │
-│  - id (uuid)                              │
-│  - customer_name, address, sqft, type     │
-│  - jobber_quote_id (v1.1)                 │
-│  - working_days, travel_fee, misc_fee     │
-│  - formula1_total .. formula5_total       │
-│  - selected_min, selected_max             │
-│  - subtotal, final_total                  │
-│  - pricing_settings_snapshot (JSONB)      │
-│  - created_by, created_at                 │
-│  - updated_by, updated_at                 │
-└──────────────────┬───────────────────────┘
-                   │ 1:N
-                   ▼
-       ┌────────────────────────┐
-       │     quote_items        │
-       │  - id (uuid)           │
-       │  - quote_id (FK)       │
-       │  - product_id (FK, null│
-       │     if custom)         │
-       │  - product_name_snapshot │
-       │  - market_price_snapshot │
-       │  - actual_price_snapshot │
-       │  - quantity            │
-       │  - is_custom (bool)    │
-       │  - position (sort)     │
-       └────────────────────────┘
-                    ▲
-                    │ N:1 (nullable)
-                    │
-         ┌──────────────────────┐
-         │     products         │
-         │  (페인트 마스터 DB)  │
-         │  - id (uuid)         │
-         │  - name              │
-         │  - manufacturer      │
-         │  - type              │
-         │  - unit              │
-         │  - market_price      │
-         │  - actual_price      │
-         │  - color_code        │
-         │  - active            │
-         └──────────────────────┘
+┌──────────────────┐    ┌─────────────────┐    ┌──────────────────┐
+│   auth.users     │    │ pricing_settings│    │  jobber_tokens   │
+│  (Supabase Auth) │    │  (singleton)    │    │  (user-scoped)   │
+└────────┬─────────┘    └────────┬────────┘    └──────────────────┘
+         │ created_by             │ snapshot
+         │ updated_by             │ (JSONB copy)
+         ▼                        ▼
+┌──────────────────────────────────────────────┐
+│                  quotes                       │
+│  - id (uuid)                                  │
+│  - customer_name, customer_address            │
+│  - area_sqft, work_type                       │
+│  - jobber_quote_id, jobber_snapshot (JSONB)   │
+│  - working_days, labour_per_day               │
+│  - formula1_total .. formula5_total           │
+│  - selected_min, selected_max                 │
+│  - subtotal, final_total (GST 10% 포함)       │
+│  - pricing_settings_snapshot (JSONB)          │
+│  - created_by/at, updated_by/at               │
+└──┬─────────────────────────┬──────────────────┘
+   │ 1:N                     │ 1:N
+   ▼                         ▼
+┌──────────────────────┐   ┌──────────────────────────┐
+│    quote_items       │   │    quote_options         │
+│  - quote_id (FK)     │   │  - quote_id (FK)         │
+│  - product_id (FK)   │   │  - title, position       │
+│  - product/price     │   │  - working_days,         │
+│    snapshot          │   │    labour_per_day        │
+│  - quantity          │   │  - material_market/actual│
+│  - working_days,     │   │  - formula1..5_total     │
+│    labour_per_day    │   │  - selected_min/max      │
+│  - area_id (FK)      │   │  - subtotal, final_total │
+│  - area_*_snapshot   │   │    (옵션 자체 합계,      │
+│  - is_custom         │   │     main에 합산 안 함)   │
+│  - position          │   └──────────┬───────────────┘
+└─────────┬────────────┘              │ 1:N
+          │ N:1 (nullable)            ▼
+          │                ┌──────────────────────┐
+          ▼                │  quote_option_items  │
+┌──────────────────────┐   │  - option_id (FK)    │
+│   quote_areas        │◄──┤  - 동일 스냅샷 구조   │
+│  - id, scope         │   │    (quote_items와    │
+│    (interior/exterior)│  │    동일 컬럼셋)      │
+│  - name, position    │   └──────────────────────┘
+│  - active            │
+└──────────────────────┘
+          ▲
+          │ (quote_items.area_id, quote_option_items.area_id)
+          │
+┌──────────────────────┐
+│     products         │
+│  (페인트 마스터 DB)  │
+│  - id, name          │
+│  - manufacturer,     │
+│    type, unit        │
+│  - market_price,     │
+│    actual_price      │
+│  - color_code, active│
+│  - category,         │
+│    product_line,     │
+│    base, sheen,      │
+│    volume_litres,    │
+│    price, rrp_price, │
+│    product_code,     │
+│    source_url        │
+└──────────────────────┘
 ```
 
 ---
+
+## 마이그레이션 순서
+
+| 파일 | 내용 |
+|---|---|
+| `0001_initial_schema.sql` | `products`, `pricing_settings`, `quotes`, `quote_items` 초기 스키마 |
+| `0002_rls_policies.sql` | 4개 기본 테이블 RLS + `authenticated` 공통 권한 |
+| `0003_replace_quote_fees_with_labour_per_day.sql` | `quotes.travel_fee`·`misc_fee` 삭제, `labour_per_day` 추가 |
+| `0004_seed_dulux_paint_products.sql` | `products` 확장 컬럼(category/product_line/base/sheen/volume_litres/price/rrp_price/product_code/source_url) + Dulux 시드 + 통합 검색 인덱스 |
+| `0005_add_quote_areas.sql` | `quote_areas` 마스터 + `quote_items` area FK/스냅샷 컬럼 |
+| `0006_add_quote_item_labour.sql` | `quote_items.working_days`·`labour_per_day` (라인별 인건비 분해) |
+| `0007_add_jobber_tokens.sql` | `jobber_tokens`(사용자별 access/refresh 토큰, 암호화 저장) + RLS |
+| `0008_add_quote_jobber_snapshot.sql` | `quotes.jobber_snapshot JSONB` (Jobber 원본 응답 캐시) |
+| `0009_add_quote_options.sql` | `quote_options` + `quote_option_items` + RLS |
+
+> 아래 DDL은 변경 후 최종 형태 요약. 정확한 SQL은 마이그레이션 파일 자체를 source of truth로 본다.
 
 ## DDL (`supabase/migrations/0001_initial_schema.sql`)
 
@@ -101,17 +132,18 @@ CREATE TABLE pricing_settings (
 );
 INSERT INTO pricing_settings (id) VALUES (1); -- 초기 row
 
--- 견적 메인
+-- 견적 메인 (마이그레이션 0003 이후 최종 형태)
 CREATE TABLE quotes (
   id                        UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   customer_name             TEXT,
   customer_address          TEXT,
   jobber_quote_id           TEXT,
+  jobber_snapshot           JSONB,  -- 마이그레이션 0008
   area_sqft                 INT CHECK (area_sqft >= 0),
   work_type                 TEXT,
   working_days              NUMERIC(5,2) NOT NULL CHECK (working_days >= 0),
-  travel_fee                NUMERIC(10,2) NOT NULL DEFAULT 0 CHECK (travel_fee >= 0),
-  misc_fee                  NUMERIC(10,2) NOT NULL DEFAULT 0 CHECK (misc_fee >= 0),
+  labour_per_day            NUMERIC(5,2) NOT NULL DEFAULT 1 CHECK (labour_per_day >= 0), -- 마이그레이션 0003
+  -- travel_fee, misc_fee 는 0003에서 제거됨
   formula1_total            NUMERIC(10,2) NOT NULL,
   formula2_total            NUMERIC(10,2) NOT NULL,
   formula3_total            NUMERIC(10,2) NOT NULL,
@@ -132,7 +164,7 @@ CREATE INDEX idx_quotes_customer_search
   ON quotes USING gin(to_tsvector('english', coalesce(customer_name, '')));
 CREATE INDEX idx_quotes_jobber_id ON quotes(jobber_quote_id) WHERE jobber_quote_id IS NOT NULL;
 
--- 견적 항목 (자재 라인)
+-- 견적 항목 (자재 라인) — 마이그레이션 0005·0006 이후 최종 형태
 CREATE TABLE quote_items (
   id                      UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   quote_id                UUID NOT NULL REFERENCES quotes(id) ON DELETE CASCADE,
@@ -141,11 +173,95 @@ CREATE TABLE quote_items (
   market_price_snapshot   NUMERIC(10,2) NOT NULL CHECK (market_price_snapshot >= 0),
   actual_price_snapshot   NUMERIC(10,2) NOT NULL CHECK (actual_price_snapshot >= 0),
   quantity                NUMERIC(10,2) NOT NULL CHECK (quantity > 0),
+  working_days            NUMERIC(5,2) CHECK (working_days >= 0),     -- 0006
+  labour_per_day          NUMERIC(5,2) CHECK (labour_per_day >= 0),   -- 0006
+  area_id                 UUID REFERENCES quote_areas(id),            -- 0005
+  area_name_snapshot      TEXT,                                       -- 0005
+  area_scope_snapshot     TEXT CHECK (
+    area_scope_snapshot IS NULL OR area_scope_snapshot IN ('interior','exterior')
+  ),                                                                  -- 0005
   is_custom               BOOLEAN NOT NULL DEFAULT false,
   position                INT NOT NULL DEFAULT 0
 );
 CREATE INDEX idx_quote_items_quote ON quote_items(quote_id);
+CREATE INDEX idx_quote_items_area ON quote_items(area_id) WHERE area_id IS NOT NULL;
 ```
+
+---
+
+## 추가 테이블 (마이그레이션 0005·0007·0009)
+
+```sql
+-- 작업 영역 마스터 (interior/exterior 묶음 라벨)
+CREATE TABLE quote_areas (
+  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  scope       TEXT NOT NULL CHECK (scope IN ('interior','exterior')),
+  name        TEXT NOT NULL CHECK (length(btrim(name)) > 0),
+  active      BOOLEAN NOT NULL DEFAULT true,
+  position    INT NOT NULL DEFAULT 0,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (scope, name)
+);
+
+-- Jobber OAuth 토큰 (사용자별, 본문은 암호화 저장)
+CREATE TABLE jobber_tokens (
+  user_id        UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+  access_token   TEXT NOT NULL,
+  refresh_token  TEXT NOT NULL,
+  token_type     TEXT,
+  scope          TEXT,
+  expires_at     TIMESTAMPTZ,
+  connected_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at     TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+ALTER TABLE jobber_tokens ENABLE ROW LEVEL SECURITY;
+-- 정책은 본인 행만 접근 (lib/jobber/tokens.ts 참조)
+
+-- 옵션 견적 (add-on)
+CREATE TABLE quote_options (
+  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  quote_id        UUID NOT NULL REFERENCES quotes(id) ON DELETE CASCADE,
+  title           TEXT NOT NULL CHECK (length(btrim(title)) > 0),
+  working_days    NUMERIC(5,2) NOT NULL CHECK (working_days >= 0),
+  labour_per_day  NUMERIC(5,2) NOT NULL CHECK (labour_per_day >= 0),
+  material_market NUMERIC(10,2) NOT NULL CHECK (material_market >= 0),
+  material_actual NUMERIC(10,2) NOT NULL CHECK (material_actual >= 0),
+  formula1_total  NUMERIC(10,2) NOT NULL,
+  formula2_total  NUMERIC(10,2) NOT NULL,
+  formula3_total  NUMERIC(10,2) NOT NULL,
+  formula4_total  NUMERIC(10,2) NOT NULL,
+  formula5_total  NUMERIC(10,2) NOT NULL,
+  selected_min    INT NOT NULL CHECK (selected_min BETWEEN 1 AND 5),
+  selected_max    INT NOT NULL CHECK (selected_max BETWEEN 1 AND 5),
+  subtotal        NUMERIC(10,2) NOT NULL,
+  final_total     NUMERIC(10,2) NOT NULL,
+  position        INT NOT NULL DEFAULT 0
+);
+
+-- 옵션 자재 라인 (quote_items와 같은 스냅샷 모양)
+CREATE TABLE quote_option_items (
+  id                     UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  option_id              UUID NOT NULL REFERENCES quote_options(id) ON DELETE CASCADE,
+  product_id             UUID REFERENCES products(id),
+  product_name_snapshot  TEXT NOT NULL,
+  market_price_snapshot  NUMERIC(10,2) NOT NULL CHECK (market_price_snapshot >= 0),
+  actual_price_snapshot  NUMERIC(10,2) NOT NULL CHECK (actual_price_snapshot >= 0),
+  quantity               NUMERIC(10,2) NOT NULL CHECK (quantity > 0),
+  working_days           NUMERIC(5,2) CHECK (working_days >= 0),
+  labour_per_day         NUMERIC(5,2) CHECK (labour_per_day >= 0),
+  area_id                UUID REFERENCES quote_areas(id),
+  area_name_snapshot     TEXT,
+  area_scope_snapshot    TEXT CHECK (
+    area_scope_snapshot IS NULL OR area_scope_snapshot IN ('interior','exterior')
+  ),
+  is_custom              BOOLEAN NOT NULL DEFAULT false,
+  position               INT NOT NULL DEFAULT 0
+);
+```
+
+> 옵션 견적은 메인 견적과 독립 계산되며 `quotes.final_total`에 합산되지 않는다.
+> 자세한 규칙: `docs/superpowers/specs/2026-05-15-quote-options-design.md`.
 
 ---
 
@@ -153,24 +269,25 @@ CREATE INDEX idx_quote_items_quote ON quote_items(quote_id);
 
 ```sql
 -- 모든 테이블 RLS 켜기
-ALTER TABLE products          ENABLE ROW LEVEL SECURITY;
-ALTER TABLE pricing_settings  ENABLE ROW LEVEL SECURITY;
-ALTER TABLE quotes            ENABLE ROW LEVEL SECURITY;
-ALTER TABLE quote_items       ENABLE ROW LEVEL SECURITY;
+ALTER TABLE products            ENABLE ROW LEVEL SECURITY;
+ALTER TABLE pricing_settings    ENABLE ROW LEVEL SECURITY;
+ALTER TABLE quotes              ENABLE ROW LEVEL SECURITY;
+ALTER TABLE quote_items         ENABLE ROW LEVEL SECURITY;
+ALTER TABLE quote_areas         ENABLE ROW LEVEL SECURITY;   -- 0005
+ALTER TABLE jobber_tokens       ENABLE ROW LEVEL SECURITY;   -- 0007 (본인 행만)
+ALTER TABLE quote_options       ENABLE ROW LEVEL SECURITY;   -- 0009
+ALTER TABLE quote_option_items  ENABLE ROW LEVEL SECURITY;   -- 0009
 
--- v1.0 정책: 인증 사용자 = read/write 전부, 미인증 = 거부
-CREATE POLICY "authenticated_all" ON products
-  FOR ALL TO authenticated USING (true) WITH CHECK (true);
+-- v1.0 공통 정책: 인증 사용자 = read/write 전부, 미인증 = 거부
+CREATE POLICY "authenticated_all" ON products            FOR ALL TO authenticated USING (true) WITH CHECK (true);
+CREATE POLICY "authenticated_all" ON pricing_settings    FOR ALL TO authenticated USING (true) WITH CHECK (true);
+CREATE POLICY "authenticated_all" ON quotes              FOR ALL TO authenticated USING (true) WITH CHECK (true);
+CREATE POLICY "authenticated_all" ON quote_items         FOR ALL TO authenticated USING (true) WITH CHECK (true);
+CREATE POLICY "authenticated_all" ON quote_areas         FOR ALL TO authenticated USING (true) WITH CHECK (true);
+CREATE POLICY "authenticated_all" ON quote_options       FOR ALL TO authenticated USING (true) WITH CHECK (true);
+CREATE POLICY "authenticated_all" ON quote_option_items  FOR ALL TO authenticated USING (true) WITH CHECK (true);
 
-CREATE POLICY "authenticated_all" ON pricing_settings
-  FOR ALL TO authenticated USING (true) WITH CHECK (true);
-
-CREATE POLICY "authenticated_all" ON quotes
-  FOR ALL TO authenticated USING (true) WITH CHECK (true);
-
-CREATE POLICY "authenticated_all" ON quote_items
-  FOR ALL TO authenticated USING (true) WITH CHECK (true);
-
+-- jobber_tokens 만 본인 행 정책 (자세한 SQL은 0007 참조)
 -- 미인증 사용자는 모든 테이블 접근 불가 (정책 없음 = 거부)
 ```
 

@@ -14,10 +14,9 @@ import Decimal from 'decimal.js';
 
 export interface CalculatorInput {
   workingDays: Decimal | number;
+  labourPerDay: Decimal | number;   // 마이그레이션 0003 이후 신설
   materialMarket: Decimal | number;
   materialActual: Decimal | number;
-  travelFee?: Decimal | number;
-  miscFee?: Decimal | number;
 }
 
 export interface PricingSettings {
@@ -49,10 +48,9 @@ export function calculateSubtotal(
   maxFormula: 1 | 2 | 3 | 4 | 5
 ): Decimal;
 
+// final_total = subtotal × 1.10 (GST 10%)
 export function calculateFinal(
-  subtotal: Decimal,
-  travelFee: Decimal | number,
-  miscFee: Decimal | number
+  subtotal: Decimal
 ): Decimal;
 ```
 
@@ -77,18 +75,18 @@ export const HISTORICAL_FIXTURES = [
     name: 'Smith Family Exterior — 2025-08',
     input: {
       D: 5,
+      labour_per_day: 2,
       material_market: 342.50,
       material_actual: 245.00,
-      travel_fee: 80,
-      misc_fee: 0,
     },
     settings: { /* 그 시점의 일당·마진율 */ },
     expected: {
-      formula_1: 2842.50,
+      formula_1: /* Excel 값 */,
       formula_2: /* Excel 값 */,
       formula_3: /* Excel 값 */,
       formula_4: /* Excel 값 */,
       formula_5: /* Excel 값 */,
+      // final_total은 subtotal × 1.10 (GST) 로 계산
     },
   },
   // ... 2건 더

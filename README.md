@@ -4,7 +4,7 @@
 
 Excel 2개 + Jobber를 오가던 견적 작업을 **한 페이지**에서 끝낸다. 페인트 자재 검색, 5가지 견적 공식 동시 계산, min/max 선택, 견적 저장·검색까지.
 
-**상태:** v1.0 빌드 직전 (설계 완료, 구현 시작)
+**상태:** v1.0 핵심 플로우 완성 (Auth · 견적 생성·수정·삭제 · 옵션 견적 · Jobber 읽기 연동 완료 / QA·테스트 보강 잔여)
 
 ---
 
@@ -53,12 +53,12 @@ npm test
 
 ## 기술 스택
 
-- **Frontend:** Next.js 15 (App Router) + TypeScript + Tailwind + shadcn/ui
+- **Frontend:** Next.js 16 (App Router) + React 19 + TypeScript + Tailwind CSS 4
 - **Backend:** Next.js Server Actions + Supabase (Postgres + Auth)
-- **외부 연동 (v1.1):** Jobber GraphQL API (읽기 전용, OAuth 2.0)
-- **금액 계산:** decimal.js (부동소수점 오차 회피)
+- **외부 연동:** Jobber GraphQL API (읽기 전용, OAuth 2.0) — v1.0에 포함
+- **금액 계산:** decimal.js (부동소수점 오차 회피), 최종가는 GST 10% 가산
 - **검증:** Zod
-- **테스트:** Vitest (단위), Playwright (E2E, v1.1)
+- **테스트:** Vitest (단위), Playwright (E2E, 추후)
 - **배포:** Vercel
 
 자세한 내용은 [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md).
@@ -69,9 +69,9 @@ npm test
 
 | 버전 | 범위 | 상태 |
 |---|---|---|
-| v1.0 | Auth, 페인트 DB, 5가지 공식 계산기, 견적 저장·검색, Settings. Jobber 수동 입력. | 빌드 직전 |
-| v1.1 | Jobber API 읽기 전용 연동, 과거 견적 복제 기능 | TODOS #1, #4 |
-| v1.5 | 페인트 DB 관리 UI, 자동 백업 강화 | TODOS #3 |
+| v1.0 | Auth, 페인트 DB(Dulux 시드), 5가지 공식 계산기(GST 포함), 견적 CRUD, 작업 영역(area), 옵션 견적, Settings, Jobber 읽기 전용 연동 | 핵심 플로우 완료, QA·RLS 테스트 잔여 |
+| v1.1 | 과거 견적 복제 기능, Jobber 옵션 line item 매핑 | TODOS #4 |
+| v1.5 | 페인트 DB 관리 정식 UI, 자동 백업 강화 | TODOS #2, #3 |
 | v2 | 자동 견적가 추산 (ML), 분석 대시보드 | 데이터 쌓인 후 |
 
 ---
