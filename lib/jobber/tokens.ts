@@ -1,6 +1,7 @@
 import { createServiceClient } from '@/lib/supabase/server'
 import type { JobberConfig } from './config'
 import { getTokenExpiresAt, refreshAccessToken } from './oauth'
+import { decryptTokenValue, encryptTokenValue } from './token-encryption'
 
 export interface StoredJobberToken {
   accessToken: string
@@ -30,8 +31,8 @@ export async function getStoredJobberToken(userId: string): Promise<StoredJobber
   if (!data) return null
 
   return {
-    accessToken: data.access_token,
-    refreshToken: data.refresh_token,
+    accessToken: decryptTokenValue(data.access_token),
+    refreshToken: decryptTokenValue(data.refresh_token),
     expiresAt: data.expires_at,
   }
 }
@@ -47,8 +48,8 @@ export async function refreshStoredJobberToken(
   const { error } = await service
     .from('jobber_tokens')
     .update({
-      access_token: token.accessToken,
-      refresh_token: token.refreshToken,
+      access_token: encryptTokenValue(token.accessToken),
+      refresh_token: encryptTokenValue(token.refreshToken),
       token_type: token.tokenType,
       scope: token.scope,
       expires_at: expiresAt,

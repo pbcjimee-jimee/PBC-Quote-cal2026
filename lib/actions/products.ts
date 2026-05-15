@@ -52,26 +52,50 @@ type ProductImportResult = {
   products: ProductRecord[]
 }
 
-function rowToProduct(row: {
-  id: string
-  name: string
-  manufacturer: string | null
-  type: string | null
-  unit: string
-  market_price: string
-  actual_price: string
-  color_code: string | null
-  active: boolean
-  category: string | null
-  product_line: string | null
-  base: string | null
-  sheen: string | null
-  volume_litres: string | null
-  price: string | null
-  rrp_price: string | null
-  product_code: string | null
-  source_url: string | null
-}): ProductRecord {
+type PublicProductRow = Pick<
+  ProductRow,
+  | 'id'
+  | 'name'
+  | 'manufacturer'
+  | 'type'
+  | 'unit'
+  | 'market_price'
+  | 'color_code'
+  | 'active'
+  | 'category'
+  | 'product_line'
+  | 'base'
+  | 'sheen'
+  | 'volume_litres'
+  | 'price'
+  | 'rrp_price'
+  | 'product_code'
+  | 'source_url'
+> & {
+  actual_price?: string
+}
+
+const PUBLIC_PRODUCT_COLUMNS = [
+  'id',
+  'name',
+  'manufacturer',
+  'type',
+  'unit',
+  'market_price',
+  'color_code',
+  'active',
+  'category',
+  'product_line',
+  'base',
+  'sheen',
+  'volume_litres',
+  'price',
+  'rrp_price',
+  'product_code',
+  'source_url',
+].join(', ')
+
+function rowToProduct(row: PublicProductRow): ProductRecord {
   return normalizeRrpProduct({
     id: row.id,
     name: row.name,
@@ -79,7 +103,7 @@ function rowToProduct(row: {
     type: row.type,
     unit: row.unit,
     marketPrice: row.market_price,
-    actualPrice: row.actual_price,
+    actualPrice: row.actual_price ?? row.market_price,
     colorCode: row.color_code,
     active: row.active,
     category: row.category,
@@ -354,11 +378,11 @@ export async function createProduct(input: unknown): Promise<ActionResult<Produc
   const { data, error } = await supabase
     .from('products')
     .insert(payload.row)
-    .select('*')
+    .select(PUBLIC_PRODUCT_COLUMNS)
     .single()
 
   if (error) return { ok: false, error: error.message }
-  return { ok: true, data: rowToProduct(data) }
+  return { ok: true, data: rowToProduct(data as unknown as PublicProductRow) }
 }
 
 export async function searchProducts(input: unknown): Promise<ActionResult<ProductRecord[]>> {
@@ -378,7 +402,7 @@ export async function searchProducts(input: unknown): Promise<ActionResult<Produ
   const supabase = await createClient()
   let request = supabase
     .from('products')
-    .select('*')
+    .select(PUBLIC_PRODUCT_COLUMNS)
     .eq('active', true)
     .order('created_at', { ascending: false })
     .limit(parsed.data.limit)
@@ -389,7 +413,7 @@ export async function searchProducts(input: unknown): Promise<ActionResult<Produ
 
   const { data, error } = await request
   if (error) return { ok: false, error: error.message }
-  return { ok: true, data: data.map(rowToProduct) }
+  return { ok: true, data: (data as unknown as PublicProductRow[]).map(rowToProduct) }
 }
 
 export async function listProducts(input: unknown = {}): Promise<ActionResult<ProductRecord[]>> {
@@ -409,7 +433,7 @@ export async function listProducts(input: unknown = {}): Promise<ActionResult<Pr
   const supabase = await createClient()
   let request = supabase
     .from('products')
-    .select('*')
+    .select(PUBLIC_PRODUCT_COLUMNS)
     .eq('active', true)
     .order('created_at', { ascending: false })
     .limit(limit)
@@ -422,7 +446,7 @@ export async function listProducts(input: unknown = {}): Promise<ActionResult<Pr
 
   const { data, error } = await request
   if (error) return { ok: false, error: error.message }
-  return { ok: true, data: data.map(rowToProduct) }
+  return { ok: true, data: (data as unknown as PublicProductRow[]).map(rowToProduct) }
 }
 
 export async function importProductsCSV(input: unknown): Promise<ActionResult<ProductImportResult>> {
@@ -461,12 +485,13 @@ export async function importProductsCSV(input: unknown): Promise<ActionResult<Pr
   }
 
   const supabase = await createClient()
-  const { data, error } = await supabase.from('products').insert(insertRows).select('*')
+  const { data, error } = await supabase.from('products').insert(insertRows).select(PUBLIC_PRODUCT_COLUMNS)
   if (error) {
     return { ok: false, error: error.message }
   }
 
-  return { ok: true, data: { imported: data.length, products: data.map(rowToProduct) } }
+  const productRows = data as unknown as PublicProductRow[]
+  return { ok: true, data: { imported: productRows.length, products: productRows.map(rowToProduct) } }
 }
 
 function normalizeUpdatePayload(input: ProductUpdateInput) {
@@ -520,11 +545,11 @@ export async function updateProduct(input: unknown): Promise<ActionResult<Produc
     .from('products')
     .update(payload)
     .eq('id', id)
-    .select('*')
+    .select(PUBLIC_PRODUCT_COLUMNS)
     .single()
 
   if (error) return { ok: false, error: error.message }
-  return { ok: true, data: rowToProduct(data) }
+  return { ok: true, data: rowToProduct(data as unknown as PublicProductRow) }
 }
 
 export async function deleteProduct(input: unknown): Promise<ActionResult<ProductRecord>> {
@@ -545,9 +570,9 @@ export async function deleteProduct(input: unknown): Promise<ActionResult<Produc
     .from('products')
     .update({ active: false, updated_at: new Date().toISOString() })
     .eq('id', parsed.data.id)
-    .select('*')
+    .select(PUBLIC_PRODUCT_COLUMNS)
     .single()
 
   if (error) return { ok: false, error: error.message }
-  return { ok: true, data: rowToProduct(data) }
+  return { ok: true, data: rowToProduct(data as unknown as PublicProductRow) }
 }

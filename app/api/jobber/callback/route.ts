@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getJobberConfig, getMissingOAuthConfigKeys } from '@/lib/jobber/config'
 import { saveDevJobberToken } from '@/lib/jobber/dev-tokens'
 import { exchangeAuthorizationCode, getTokenExpiresAt } from '@/lib/jobber/oauth'
+import { encryptTokenValue } from '@/lib/jobber/token-encryption'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { isDevNoAuthMode } from '@/lib/actions/types'
 
@@ -23,7 +24,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ ok: false, error: 'Jobber authorization code is missing' }, { status: 400 })
   }
 
-  if (expectedState && state !== expectedState) {
+  if (!expectedState || !state || state !== expectedState) {
     return NextResponse.json({ ok: false, error: 'Invalid Jobber OAuth state' }, { status: 400 })
   }
 
@@ -49,8 +50,8 @@ export async function GET(request: NextRequest) {
       .from('jobber_tokens')
       .upsert({
         user_id: user.id,
-        access_token: token.accessToken,
-        refresh_token: token.refreshToken,
+        access_token: encryptTokenValue(token.accessToken),
+        refresh_token: encryptTokenValue(token.refreshToken),
         token_type: token.tokenType,
         scope: token.scope,
         expires_at: expiresAt,

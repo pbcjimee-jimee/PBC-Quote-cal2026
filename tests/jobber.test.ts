@@ -64,6 +64,16 @@ describe('jobber config', () => {
     expect(getMissingGraphqlConfigKeys(config)).toEqual([])
   })
 
+  it('ignores static Jobber access tokens in production', () => {
+    const config = getJobberConfig({
+      NODE_ENV: 'production',
+      JOBBER_GRAPHQL_VERSION: '2025-04-16',
+      JOBBER_ACCESS_TOKEN: 'static-production-token',
+    })
+
+    expect(config.accessToken).toBe('')
+  })
+
   it('uses the default Jobber GraphQL version when the env key is not configured', () => {
     const config = getJobberConfig({})
 

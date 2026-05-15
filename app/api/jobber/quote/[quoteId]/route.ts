@@ -41,7 +41,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
   const { quoteId } = await context.params
   try {
     const userId = await getJobberTokenUserId()
-    const token = userId
+    let token = userId
       ? await getUsableJobberToken(userId, config)
       : await getUsableDevJobberToken(config)
     if (!token && !config.accessToken) {
@@ -49,17 +49,19 @@ export async function GET(request: NextRequest, context: RouteContext) {
     }
 
     const sourceType = request.nextUrl.searchParams.get('type') === 'job' ? 'job' : 'quote'
-    const accessToken = token?.accessToken ?? config.accessToken
+    let accessToken = token?.accessToken ?? config.accessToken
+    const refreshCurrentToken = async () => {
+      if (!token) return null
+      token = await refreshToken(userId, token, config)
+      accessToken = token.accessToken
+      return token.accessToken
+    }
     const lookup = normalizeJobberLookup(decodeURIComponent(quoteId), sourceType)
     if (sourceType === 'job') {
       const job = await fetchJobWithRetry(lookup, {
         accessToken,
         graphqlVersion: config.graphqlVersion,
-      }, async () => {
-        if (!token) return null
-        const refreshedToken = await refreshToken(userId, token, config)
-        return refreshedToken.accessToken
-      })
+      }, refreshCurrentToken)
       return NextResponse.json({
         ok: true,
         data: mapJobberJobToDraft(job),
@@ -69,19 +71,11 @@ export async function GET(request: NextRequest, context: RouteContext) {
     const quote = await fetchQuoteWithRetry(lookup, {
       accessToken,
       graphqlVersion: config.graphqlVersion,
-    }, async () => {
-      if (!token) return null
-      const refreshedToken = await refreshToken(userId, token, config)
-      return refreshedToken.accessToken
-    })
+    }, refreshCurrentToken)
     const { jobs, error: jobExpensesError } = await fetchQuoteJobsWithoutBlockingQuote(quote.id, {
       accessToken,
       graphqlVersion: config.graphqlVersion,
-    }, async () => {
-      if (!token) return null
-      const refreshedToken = await refreshToken(userId, token, config)
-      return refreshedToken.accessToken
-    })
+    }, refreshCurrentToken)
     const draft = mapJobberQuoteToDraft({
       ...quote,
       jobs: { nodes: jobs },

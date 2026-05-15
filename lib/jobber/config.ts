@@ -18,12 +18,14 @@ function envValue(env: Env, key: string): string {
 }
 
 export function getJobberConfig(env: Env = process.env): JobberConfig {
+  const isProduction = envValue(env, 'NODE_ENV') === 'production'
+
   return {
     clientId: envValue(env, 'JOBBER_CLIENT_ID'),
     clientSecret: envValue(env, 'JOBBER_CLIENT_SECRET'),
     redirectUri: envValue(env, 'JOBBER_REDIRECT_URI') || envValue(env, 'JOBBER_CALLBACK_URL'),
     graphqlVersion: envValue(env, 'JOBBER_GRAPHQL_VERSION') || DEFAULT_JOBBER_GRAPHQL_VERSION,
-    accessToken: envValue(env, 'JOBBER_ACCESS_TOKEN'),
+    accessToken: isProduction ? '' : envValue(env, 'JOBBER_ACCESS_TOKEN'),
   }
 }
 

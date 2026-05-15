@@ -2,25 +2,22 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
+import { getNextQuotesSearchHref } from './search-input-url'
 
 export function SearchInput() {
   const router = useRouter()
   const searchParams = useSearchParams()
+  const currentSearch = searchParams.toString()
   const [value, setValue] = useState(searchParams.get('q') ?? '')
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
-      const params = new URLSearchParams(searchParams.toString())
-      if (value.trim()) {
-        params.set('q', value.trim())
-      } else {
-        params.delete('q')
-      }
-      router.push(`/quotes${params.toString() ? `?${params.toString()}` : ''}`)
+      const href = getNextQuotesSearchHref(value, currentSearch)
+      if (href) router.push(href)
     }, 300)
 
     return () => window.clearTimeout(timer)
-  }, [router, searchParams, value])
+  }, [router, currentSearch, value])
 
   return (
     <input
