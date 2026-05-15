@@ -10,9 +10,14 @@ import {
   calculateSubtotal,
   type PricingSettings,
 } from '@/lib/calculator'
+<<<<<<< HEAD
+=======
+import Decimal from 'decimal.js'
+import { calculateFormulaLabourDays, calculateLabourTotals } from '@/lib/quote-labour'
+>>>>>>> option
 import { createClient } from '@/lib/supabase/server'
 import type { Database, Json } from '@/lib/supabase/types'
-import { jobberQuoteSnapshotSchema, pricingSettingsSchema, quoteSchema } from '@/lib/validators'
+import { jobberQuoteSnapshotSchema, pricingSettingsSchema, quoteSchema, type QuoteInput } from '@/lib/validators'
 import type { JobberQuoteDraft } from '@/lib/jobber/mapper'
 import { getPricingSettings } from './settings'
 import type { ActionResult } from './types'
@@ -20,8 +25,14 @@ import { isDevNoAuthMode } from './types'
 
 type QuoteRow = Database['public']['Tables']['quotes']['Row']
 type QuoteItemRow = Database['public']['Tables']['quote_items']['Row']
+type QuoteOptionRow = Database['public']['Tables']['quote_options']['Row']
+type QuoteOptionItemRow = Database['public']['Tables']['quote_option_items']['Row']
+type QuoteOptionWithItemsRow = QuoteOptionRow & {
+  quote_option_items?: QuoteOptionItemRow[]
+}
 type QuoteWithItemsRow = QuoteRow & {
   quote_items?: QuoteItemRow[]
+  quote_options?: QuoteOptionWithItemsRow[]
 }
 
 function money(value: { toFixed(decimalPlaces: number): string } | number): string {
@@ -44,6 +55,9 @@ function parsePricingSettingsSnapshot(value: unknown): PricingSettings | null {
 }
 
 function toQuoteRecord(row: QuoteWithItemsRow): QuoteRecord {
+  const quoteItems = [...(row.quote_items ?? [])].sort((a, b) => a.position - b.position)
+  const quoteOptions = [...(row.quote_options ?? [])].sort((a, b) => a.position - b.position)
+
   return {
     id: row.id,
     customerName: row.customer_name,
@@ -65,7 +79,7 @@ function toQuoteRecord(row: QuoteWithItemsRow): QuoteRecord {
     finalTotal: row.final_total,
     pricingSettingsSnapshot: row.pricing_settings_snapshot as never,
     createdAt: row.created_at,
-    items: row.quote_items?.map((item) => ({
+    items: quoteItems.map((item) => ({
       id: item.id,
       quoteId: item.quote_id,
       productId: item.product_id,
@@ -80,8 +94,133 @@ function toQuoteRecord(row: QuoteWithItemsRow): QuoteRecord {
       areaScopeSnapshot: item.area_scope_snapshot,
       isCustom: item.is_custom,
       position: item.position,
-    })) ?? [],
+    })),
+    options: quoteOptions.map((option) => ({
+      id: option.id,
+      quoteId: option.quote_id,
+      title: option.title,
+      workingDays: option.working_days,
+      labourPerDay: option.labour_per_day,
+      materialMarket: option.material_market,
+      materialActual: option.material_actual,
+      formula1Total: option.formula1_total,
+      formula2Total: option.formula2_total,
+      formula3Total: option.formula3_total,
+      formula4Total: option.formula4_total,
+      formula5Total: option.formula5_total,
+      selectedMin: option.selected_min as 1 | 2 | 3 | 4 | 5,
+      selectedMax: option.selected_max as 1 | 2 | 3 | 4 | 5,
+      subtotal: option.subtotal,
+      finalTotal: option.final_total,
+      position: option.position,
+      items: [...(option.quote_option_items ?? [])].sort((a, b) => a.position - b.position).map((item) => ({
+        id: item.id,
+        optionId: item.option_id,
+        productId: item.product_id,
+        productNameSnapshot: item.product_name_snapshot,
+        marketPriceSnapshot: item.market_price_snapshot,
+        actualPriceSnapshot: item.actual_price_snapshot,
+        quantity: item.quantity,
+        workingDays: item.working_days,
+        labourPerDay: item.labour_per_day,
+        areaId: item.area_id,
+        areaNameSnapshot: item.area_name_snapshot,
+        areaScopeSnapshot: item.area_scope_snapshot,
+        isCustom: item.is_custom,
+        position: item.position,
+      })),
+    })),
   }
+}
+
+function calculateOption(option: QuoteInput['options'][number], settings: PricingSettings) {
+  const labour = calculateLabourTotals(option.items)
+  const materialMarket = option.items.reduce(
+    (total, item) => total.add(new Decimal(item.marketPriceSnapshot).mul(item.quantity)),
+    new Decimal(0)
+  )
+  const materialActual = option.items.reduce(
+    (total, item) => total.add(new Decimal(item.actualPriceSnapshot).mul(item.quantity)),
+    new Decimal(0)
+  )
+  const formulas = calculateAllFormulas(
+    {
+      workingDays: labour.labourDays,
+      labourPerDay: 1,
+      materialMarket,
+      materialActual,
+    },
+    settings
+  )
+  const subtotal = calculateSubtotal(formulas, option.selectedMin, option.selectedMax)
+  const finalTotal = calculateFinal(subtotal)
+
+  return {
+    labour,
+    materialMarket,
+    materialActual,
+    formulas,
+    subtotal,
+    finalTotal,
+  }
+}
+
+async function insertQuoteOptions(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  quoteId: string,
+  options: QuoteInput['options'],
+  settings: PricingSettings
+): Promise<string | null> {
+  for (const [optionIndex, option] of options.entries()) {
+    const calculated = calculateOption(option, settings)
+    const { data: optionRow, error: optionError } = await supabase
+      .from('quote_options')
+      .insert({
+        quote_id: quoteId,
+        title: option.title.trim(),
+        working_days: money(calculated.labour.workingDays),
+        labour_per_day: money(calculated.labour.labourPerDay),
+        material_market: money(calculated.materialMarket),
+        material_actual: money(calculated.materialActual),
+        formula1_total: money(calculated.formulas[0].total),
+        formula2_total: money(calculated.formulas[1].total),
+        formula3_total: money(calculated.formulas[2].total),
+        formula4_total: money(calculated.formulas[3].total),
+        formula5_total: money(calculated.formulas[4].total),
+        selected_min: option.selectedMin,
+        selected_max: option.selectedMax,
+        subtotal: money(calculated.subtotal),
+        final_total: money(calculated.finalTotal),
+        position: option.position ?? optionIndex,
+      })
+      .select('id')
+      .single()
+
+    if (optionError) return optionError.message
+
+    const items = option.items.map((item, itemIndex) => ({
+      option_id: optionRow.id,
+      product_id: item.productId ?? null,
+      product_name_snapshot: item.productNameSnapshot,
+      market_price_snapshot: item.marketPriceSnapshot.toFixed(2),
+      actual_price_snapshot: item.actualPriceSnapshot.toFixed(2),
+      quantity: item.quantity.toFixed(2),
+      working_days: optionalMoney(item.workingDays),
+      labour_per_day: optionalMoney(item.labourPerDay),
+      area_id: item.areaId ?? null,
+      area_name_snapshot: item.areaNameSnapshot ?? null,
+      area_scope_snapshot: item.areaScopeSnapshot ?? null,
+      is_custom: item.isCustom,
+      position: item.position ?? itemIndex,
+    }))
+
+    if (items.length > 0) {
+      const { error: itemsError } = await supabase.from('quote_option_items').insert(items)
+      if (itemsError) return itemsError.message
+    }
+  }
+
+  return null
 }
 
 export async function createQuote(input: unknown): Promise<ActionResult<{ id: string }>> {
@@ -167,6 +306,9 @@ export async function createQuote(input: unknown): Promise<ActionResult<{ id: st
     if (itemsError) return { ok: false, error: itemsError.message }
   }
 
+  const optionsError = await insertQuoteOptions(supabase, quote.id, parsed.data.options, settingsResult.data)
+  if (optionsError) return { ok: false, error: optionsError }
+
   revalidatePath('/quotes')
   return { ok: true, data: { id: quote.id } }
 }
@@ -249,6 +391,9 @@ export async function updateQuote(input: unknown): Promise<ActionResult<{ id: st
   const { error: deleteItemsError } = await supabase.from('quote_items').delete().eq('quote_id', id)
   if (deleteItemsError) return { ok: false, error: deleteItemsError.message }
 
+  const { error: deleteOptionsError } = await supabase.from('quote_options').delete().eq('quote_id', id)
+  if (deleteOptionsError) return { ok: false, error: deleteOptionsError.message }
+
   const items = parsed.data.items.map((item, index) => ({
     quote_id: id,
     product_id: item.productId ?? null,
@@ -269,6 +414,9 @@ export async function updateQuote(input: unknown): Promise<ActionResult<{ id: st
     const { error: itemsError } = await supabase.from('quote_items').insert(items)
     if (itemsError) return { ok: false, error: itemsError.message }
   }
+
+  const optionsError = await insertQuoteOptions(supabase, id, parsed.data.options, settings)
+  if (optionsError) return { ok: false, error: optionsError }
 
   revalidatePath('/quotes')
   revalidatePath(`/quotes/${id}`)
@@ -308,7 +456,7 @@ export async function searchQuotes(query = ''): Promise<ActionResult<QuoteRecord
   const supabase = await createClient()
   let request = supabase
     .from('quotes')
-    .select('*, quote_items(*)')
+    .select('*, quote_items(*), quote_options(*, quote_option_items(*))')
     .order('created_at', { ascending: false })
     .limit(20)
 
@@ -335,7 +483,7 @@ export async function getQuote(id: string): Promise<ActionResult<QuoteRecord | n
   const supabase = await createClient()
   const { data, error } = await supabase
     .from('quotes')
-    .select('*, quote_items(*)')
+    .select('*, quote_items(*), quote_options(*, quote_option_items(*))')
     .eq('id', id)
     .single()
 

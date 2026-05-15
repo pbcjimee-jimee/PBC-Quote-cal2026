@@ -7,6 +7,7 @@ interface FormulaResultsProps {
   selectedMax: FormulaNumber
   onSelectedMinChange: (value: FormulaNumber) => void
   onSelectedMaxChange: (value: FormulaNumber) => void
+  namePrefix?: string
 }
 
 export function FormulaResults({
@@ -15,6 +16,7 @@ export function FormulaResults({
   selectedMax,
   onSelectedMinChange,
   onSelectedMaxChange,
+  namePrefix = 'main',
 }: FormulaResultsProps) {
   return (
     <section className="space-y-3">
@@ -44,11 +46,11 @@ export function FormulaResults({
               </div>
               <div className="mt-3 flex gap-4 text-xs text-gray-600">
                 <label className="inline-flex items-center gap-1">
-                  <input type="radio" name="selectedMin" checked={selectedMin === formulaNum} onChange={() => onSelectedMinChange(formulaNum)} />
+                  <input type="radio" name={`${namePrefix}-selectedMin`} checked={selectedMin === formulaNum} onChange={() => onSelectedMinChange(formulaNum)} />
                   min
                 </label>
                 <label className="inline-flex items-center gap-1">
-                  <input type="radio" name="selectedMax" checked={selectedMax === formulaNum} onChange={() => onSelectedMaxChange(formulaNum)} />
+                  <input type="radio" name={`${namePrefix}-selectedMax`} checked={selectedMax === formulaNum} onChange={() => onSelectedMaxChange(formulaNum)} />
                   max
                 </label>
               </div>

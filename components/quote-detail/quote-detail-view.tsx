@@ -3,6 +3,7 @@ import Link from 'next/link'
 import type { QuoteRecord } from '@/lib/dev-data'
 import { JobberQuoteSummary } from '@/components/quote-form/customer-panel'
 import { FinalSummary } from '@/components/quote-form/final-summary'
+import { OptionTotalsSummary } from '@/components/quote-form/option-totals-summary'
 import { QuoteDeleteButton } from '@/components/quote-list/quote-delete-button'
 
 interface QuoteDetailViewProps {
@@ -21,6 +22,11 @@ export function QuoteDetailView({ quote }: QuoteDetailViewProps) {
   const subtotal = new Decimal(quote.subtotal)
   const finalTotal = new Decimal(quote.finalTotal)
   const labourTotal = Decimal.max(subtotal.sub(materialTotal), 0)
+  const optionSummaries = quote.options.map((option) => ({
+    id: option.id,
+    title: option.title,
+    finalTotal: new Decimal(option.finalTotal),
+  }))
 
   return (
     <main className="mx-auto max-w-6xl px-6 py-8">
@@ -113,6 +119,7 @@ export function QuoteDetailView({ quote }: QuoteDetailViewProps) {
             finalTotal={finalTotal}
             jobberFinancialSummary={quote.jobberSnapshot?.financialSummary ?? null}
           />
+          <OptionTotalsSummary options={optionSummaries} />
         </section>
       </div>
     </main>

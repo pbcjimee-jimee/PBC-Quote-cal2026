@@ -137,6 +137,55 @@ export interface Database {
         Update: Partial<Database['public']['Tables']['quote_items']['Insert']>
         Relationships: []
       }
+      quote_options: {
+        Row: {
+          id: string
+          quote_id: string
+          title: string
+          working_days: string
+          labour_per_day: string
+          material_market: string
+          material_actual: string
+          formula1_total: string
+          formula2_total: string
+          formula3_total: string
+          formula4_total: string
+          formula5_total: string
+          selected_min: number
+          selected_max: number
+          subtotal: string
+          final_total: string
+          position: number
+        }
+        Insert: Omit<Database['public']['Tables']['quote_options']['Row'], 'id'> & {
+          id?: string
+        }
+        Update: Partial<Database['public']['Tables']['quote_options']['Insert']>
+        Relationships: []
+      }
+      quote_option_items: {
+        Row: {
+          id: string
+          option_id: string
+          product_id: string | null
+          product_name_snapshot: string
+          market_price_snapshot: string
+          actual_price_snapshot: string
+          quantity: string
+          working_days: string | null
+          labour_per_day: string | null
+          area_id: string | null
+          area_name_snapshot: string | null
+          area_scope_snapshot: 'interior' | 'exterior' | null
+          is_custom: boolean
+          position: number
+        }
+        Insert: Omit<Database['public']['Tables']['quote_option_items']['Row'], 'id'> & {
+          id?: string
+        }
+        Update: Partial<Database['public']['Tables']['quote_option_items']['Insert']>
+        Relationships: []
+      }
       jobber_tokens: {
         Row: {
           user_id: string

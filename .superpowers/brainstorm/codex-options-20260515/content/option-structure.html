@@ -1,0 +1,73 @@
+<h2>Jobber Quote Options: calculation structure</h2>
+<p class="subtitle">Pick the structure that matches how you want to prepare optional add-ons. Main quote total stays unchanged in every option.</p>
+
+<div class="cards">
+  <div class="card" data-choice="recommended" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="mockup">
+        <div class="mockup-header">Recommended: Separate Option Groups</div>
+        <div class="mockup-body">
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+            <div>
+              <div class="label">Main quote</div>
+              <div class="placeholder">Materials + labour</div>
+              <div class="placeholder">$4,850.00 final total</div>
+            </div>
+            <div>
+              <div class="label">Options</div>
+              <div class="placeholder">Option 1: Garage door repaint</div>
+              <div class="placeholder">$620.00 option total</div>
+              <div class="placeholder">Option 2: Fence staining</div>
+              <div class="placeholder">$1,240.00 option total</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>A. Separate Option Groups</h3>
+      <p>Each option has its own materials, labour inputs, formula results, min/max selection, and option total. The main final total never includes option totals.</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="inline" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="mockup">
+        <div class="mockup-header">Inline: Mark Rows As Optional</div>
+        <div class="mockup-body">
+          <div class="placeholder">Main item: Interior walls</div>
+          <div class="placeholder">Main item: Ceilings</div>
+          <div class="placeholder">Optional item: Feature wall</div>
+          <div class="placeholder">Optional item: Extra trim</div>
+          <div class="placeholder">Main total $4,850 / Optional total $980</div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>B. Optional Rows In Same List</h3>
+      <p>Add a flag to each material/labour row. Easier UI, but weaker when Option 1 and Option 2 need different scopes or separate formula choices.</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="snapshot" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="mockup">
+        <div class="mockup-header">Lightweight: Quote Snapshot Only</div>
+        <div class="mockup-body">
+          <div class="placeholder">Option title</div>
+          <div class="placeholder">Manual option amount</div>
+          <div class="placeholder">Stored inside quote JSON snapshot</div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>C. Manual Option Totals</h3>
+      <p>Fastest to build: type option name and amount manually. It does not reuse the calculator, so it is less useful for pricing paint/labour accurately.</p>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>My recommendation</h3>
+  <p>Use A. It keeps options separate from the accepted quote price, supports Option 1 / Option 2 / Option 3 naturally, and lets each option be calculated with the same pricing rules as the main quote.</p>
+</div>

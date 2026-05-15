@@ -59,6 +59,51 @@ describe('quote actions', () => {
     expect(revalidatePath).toHaveBeenCalledWith(`/quotes/${created.data.id}`)
   })
 
+  it('stores optional quote add-ons separately from the main quote total', async () => {
+    const created = await createQuote({
+      customerName: 'Options Customer',
+      workingDays: 1,
+      labourPerDay: 1,
+      materialMarket: 100,
+      materialActual: 100,
+      selectedMin: 1,
+      selectedMax: 1,
+      items: [],
+      options: [
+        {
+          title: 'Option 1 - Garage door repaint',
+          selectedMin: 1,
+          selectedMax: 1,
+          items: [
+            {
+              productNameSnapshot: 'Garage paint',
+              marketPriceSnapshot: 50,
+              actualPriceSnapshot: 50,
+              quantity: 1,
+              workingDays: 1,
+              labourPerDay: 1,
+              isCustom: true,
+              position: 0,
+            },
+          ],
+          position: 0,
+        },
+      ],
+    })
+    if (!created.ok) throw new Error(created.error)
+
+    const fetched = await getQuote(created.data.id)
+
+    expect(fetched.ok).toBe(true)
+    if (fetched.ok && fetched.data) {
+      expect(fetched.data.finalTotal).toBe('600.00')
+      expect(fetched.data.options).toHaveLength(1)
+      expect(fetched.data.options[0].title).toBe('Option 1 - Garage door repaint')
+      expect(fetched.data.options[0].finalTotal).toBe('550.00')
+      expect(fetched.data.options[0].items[0].productNameSnapshot).toBe('Garage paint')
+    }
+  })
+
   it('deletes a saved quote through the action layer', async () => {
     const created = await createQuote({
       customerName: 'Delete Customer',

@@ -1,0 +1,84 @@
+<h2>How options can appear in the PBC quote form</h2>
+<p class="subtitle">All layouts keep Main Final Total separate from Option 1 / Option 2 totals.</p>
+
+<div class="cards">
+  <div class="card" data-choice="below-materials" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="mockup">
+        <div class="mockup-header">A. Options below Materials (recommended)</div>
+        <div class="mockup-body">
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
+            <div>
+              <div class="label">Left panel</div>
+              <div class="placeholder">Customer + Jobber lookup</div>
+              <div class="placeholder">Main Materials</div>
+              <div class="placeholder" style="border-color:#2563eb">Options</div>
+              <div class="placeholder">Option 1: Add garage door repaint</div>
+              <div class="placeholder">Option 2: Add fence staining</div>
+              <button class="mock-button">+ Add Option</button>
+            </div>
+            <div>
+              <div class="label">Right panel</div>
+              <div class="placeholder">Main calculation</div>
+              <div class="placeholder">Formula results</div>
+              <div class="placeholder">$4,850.00 Main Final</div>
+              <div class="placeholder" style="border-color:#2563eb">$620.00 Option 1</div>
+              <div class="placeholder" style="border-color:#2563eb">$1,240.00 Option 2</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>A. Below Materials</h3>
+      <p>Add an Options section under the current material list. Each option expands into its own mini material/labour calculator. Best fit for the current app.</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="tabs" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="mockup">
+        <div class="mockup-header">B. Main / Option tabs</div>
+        <div class="mockup-body">
+          <div class="mock-nav">Main Quote | Option 1 | Option 2 | +</div>
+          <div class="placeholder">Only selected tab's materials and formula results visible</div>
+          <div class="placeholder">Totals bar: Main $4,850 | Opt 1 $620 | Opt 2 $1,240</div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>B. Tabs</h3>
+      <p>Cleaner for many options, but hides information while pricing. It also changes the current one-page workflow more heavily.</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="drawer" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="mockup">
+        <div class="mockup-header">C. Option drawer</div>
+        <div class="mockup-body">
+          <div style="display:flex;gap:12px">
+            <div style="flex:1">
+              <div class="placeholder">Main quote form</div>
+              <div class="placeholder">Final summary</div>
+            </div>
+            <div style="width:35%">
+              <div class="placeholder" style="border-color:#2563eb">Drawer: Edit Option 1</div>
+              <div class="placeholder">Materials</div>
+              <div class="placeholder">Option total</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>C. Side Drawer</h3>
+      <p>Good for advanced editing, but harder on smaller screens and more complex to build/test.</p>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>Recommended app behavior</h3>
+  <p>Use A first: options live under the main Materials panel, and the right Final Summary gets an Options block under the main final total. Clicking an option row expands its own materials, labour, formula results, and min/max selector.</p>
+</div>

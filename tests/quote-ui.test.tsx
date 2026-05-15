@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest'
 import { CustomerPanel } from '@/components/quote-form/customer-panel'
 import { FinalSummary } from '@/components/quote-form/final-summary'
 import { MaterialRow } from '@/components/quote-form/material-row'
+import { OptionTotalsSummary } from '@/components/quote-form/option-totals-summary'
 import { QuoteDetailView } from '@/components/quote-detail/quote-detail-view'
 import { QuoteCard } from '@/components/quote-list/quote-card'
 import type { QuoteRecord } from '@/lib/dev-data'
@@ -41,6 +42,7 @@ describe('quote form pricing UI', () => {
     },
     createdAt: '2026-05-14T00:00:00Z',
     items: [],
+    options: [],
     jobberSnapshot: null,
   }
 
@@ -96,6 +98,24 @@ describe('quote form pricing UI', () => {
     expect(markup).toContain('$1,200.00')
     expect(markup).toContain('Profit margin')
     expect(markup).toContain('80.0%')
+  })
+
+  it('shows option totals separately from the main quote final total', () => {
+    const markup = renderToStaticMarkup(
+      createElement(OptionTotalsSummary, {
+        options: [
+          { id: 'option-1', title: 'Option 1 - Garage door repaint', finalTotal: new Decimal('550') },
+          { id: 'option-2', title: 'Option 2 - Fence staining', finalTotal: new Decimal('1240') },
+        ],
+      })
+    )
+
+    expect(markup).toContain('Optional Add-ons')
+    expect(markup).toContain('Option 1 - Garage door repaint')
+    expect(markup).toContain('$550.00')
+    expect(markup).toContain('Option 2 - Fence staining')
+    expect(markup).toContain('$1240.00')
+    expect(markup).toContain('not included in main total')
   })
 
   it('edits only a single RRP price for material rows', () => {
@@ -369,6 +389,46 @@ describe('quote form pricing UI', () => {
     expect(markup).toContain('Paint supplies')
     expect(markup).toContain('Jobber profit')
     expect(markup).toContain('90.2%')
+  })
+
+  it('shows saved option totals on quote detail pages without changing the main final total', () => {
+    const markup = renderToStaticMarkup(
+      createElement(QuoteDetailView, {
+        quote: {
+          ...quoteRecord,
+          finalTotal: '2550.00',
+          options: [
+            {
+              id: 'option-1',
+              quoteId: quoteRecord.id,
+              title: 'Option 1 - Garage door repaint',
+              workingDays: '1.00',
+              labourPerDay: '1.00',
+              materialMarket: '50.00',
+              materialActual: '50.00',
+              formula1Total: '550.00',
+              formula2Total: '648.00',
+              formula3Total: '663.00',
+              formula4Total: '525.00',
+              formula5Total: '559.00',
+              selectedMin: 1,
+              selectedMax: 1,
+              subtotal: '550.00',
+              finalTotal: '550.00',
+              position: 0,
+              items: [],
+            },
+          ],
+        },
+      })
+    )
+
+    expect(markup).toContain('Final')
+    expect(markup).toContain('$2550.00')
+    expect(markup).toContain('Optional Add-ons')
+    expect(markup).toContain('Option 1 - Garage door repaint')
+    expect(markup).toContain('$550.00')
+    expect(markup).toContain('not included in main total')
   })
 
   it('shows edit and delete actions on quote detail pages', () => {

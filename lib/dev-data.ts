@@ -6,6 +6,11 @@ import {
   calculateSubtotal,
   type PricingSettings,
 } from './calculator'
+<<<<<<< HEAD
+=======
+import { calculateFormulaLabourDays } from './quote-labour'
+import { calculateLabourTotals } from './quote-labour'
+>>>>>>> option
 import { DULUX_PAINT_PRODUCTS } from './products/dulux-paints'
 import { normalizeRrpProduct, type ProductRecord } from './products/types'
 import type { AreaInput } from './validators'
@@ -15,6 +20,10 @@ import type { Database } from './supabase/types'
 import type { JobberQuoteDraft } from './jobber/mapper'
 
 export type { ProductRecord }
+
+type DevQuoteInput = Omit<QuoteInput, 'options'> & {
+  options?: QuoteInput['options']
+}
 
 export interface QuoteRecord {
   id: string
@@ -38,6 +47,7 @@ export interface QuoteRecord {
   pricingSettingsSnapshot: PricingSettings
   createdAt: string
   items: QuoteItemRecord[]
+  options: QuoteOptionRecord[]
 }
 
 export interface QuoteItemRecord {
@@ -55,6 +65,31 @@ export interface QuoteItemRecord {
   areaScopeSnapshot: 'interior' | 'exterior' | null
   isCustom: boolean
   position: number
+}
+
+export interface QuoteOptionRecord {
+  id: string
+  quoteId: string
+  title: string
+  workingDays: string
+  labourPerDay: string
+  materialMarket: string
+  materialActual: string
+  formula1Total: string
+  formula2Total: string
+  formula3Total: string
+  formula4Total: string
+  formula5Total: string
+  selectedMin: 1 | 2 | 3 | 4 | 5
+  selectedMax: 1 | 2 | 3 | 4 | 5
+  subtotal: string
+  finalTotal: string
+  position: number
+  items: QuoteOptionItemRecord[]
+}
+
+export interface QuoteOptionItemRecord extends Omit<QuoteItemRecord, 'quoteId'> {
+  optionId: string
 }
 
 let products: ProductRecord[] = DULUX_PAINT_PRODUCTS.map(normalizeRrpProduct)
@@ -298,7 +333,7 @@ export function getDevQuote(id: string): QuoteRecord | null {
   return store.quotes.find((quote) => quote.id === id) ?? null
 }
 
-function buildDevQuoteRecord(id: string, createdAt: string, input: QuoteInput, settings: PricingSettings): QuoteRecord {
+function buildDevQuoteRecord(id: string, createdAt: string, input: DevQuoteInput, settings: PricingSettings): QuoteRecord {
   const formulaResults = calculateAllFormulas(
     {
       workingDays: input.workingDays,
@@ -348,10 +383,76 @@ function buildDevQuoteRecord(id: string, createdAt: string, input: QuoteInput, s
       isCustom: item.isCustom,
       position: item.position ?? index,
     })),
+    options: (input.options ?? []).map((option, optionIndex) => buildDevQuoteOptionRecord(id, option, option.position ?? optionIndex, settings)),
   }
 }
 
-export function createDevQuote(input: QuoteInput): QuoteRecord {
+function buildDevQuoteOptionRecord(
+  quoteId: string,
+  option: QuoteInput['options'][number],
+  position: number,
+  settings: PricingSettings
+): QuoteOptionRecord {
+  const id = nextId('option')
+  const labour = calculateLabourTotals(option.items)
+  const materialMarket = option.items.reduce(
+    (total, item) => total.add(new Decimal(item.marketPriceSnapshot).mul(item.quantity)),
+    new Decimal(0)
+  )
+  const materialActual = option.items.reduce(
+    (total, item) => total.add(new Decimal(item.actualPriceSnapshot).mul(item.quantity)),
+    new Decimal(0)
+  )
+  const formulaResults = calculateAllFormulas(
+    {
+      workingDays: labour.labourDays,
+      labourPerDay: 1,
+      materialMarket,
+      materialActual,
+    },
+    settings
+  )
+  const subtotal = calculateSubtotal(formulaResults, option.selectedMin, option.selectedMax)
+  const finalTotal = calculateFinal(subtotal)
+
+  return {
+    id,
+    quoteId,
+    title: option.title.trim(),
+    workingDays: money(labour.workingDays),
+    labourPerDay: money(labour.labourPerDay),
+    materialMarket: money(materialMarket),
+    materialActual: money(materialActual),
+    formula1Total: money(formulaResults[0].total),
+    formula2Total: money(formulaResults[1].total),
+    formula3Total: money(formulaResults[2].total),
+    formula4Total: money(formulaResults[3].total),
+    formula5Total: money(formulaResults[4].total),
+    selectedMin: option.selectedMin,
+    selectedMax: option.selectedMax,
+    subtotal: money(subtotal),
+    finalTotal: money(finalTotal),
+    position,
+    items: option.items.map((item, index) => ({
+      id: nextId('option-item'),
+      optionId: id,
+      productId: item.productId ?? null,
+      productNameSnapshot: item.productNameSnapshot,
+      marketPriceSnapshot: money(item.marketPriceSnapshot),
+      actualPriceSnapshot: money(item.actualPriceSnapshot),
+      quantity: money(item.quantity),
+      workingDays: item.workingDays === undefined ? null : money(item.workingDays),
+      labourPerDay: item.labourPerDay === undefined ? null : money(item.labourPerDay),
+      areaId: item.areaId ?? null,
+      areaNameSnapshot: item.areaNameSnapshot ?? null,
+      areaScopeSnapshot: item.areaScopeSnapshot ?? null,
+      isCustom: item.isCustom,
+      position: item.position ?? index,
+    })),
+  }
+}
+
+export function createDevQuote(input: DevQuoteInput): QuoteRecord {
   const settings = getDevPricingSettings()
   const id = nextId('quote')
   const quote = buildDevQuoteRecord(id, new Date().toISOString(), input, settings)
@@ -360,7 +461,7 @@ export function createDevQuote(input: QuoteInput): QuoteRecord {
   return quote
 }
 
-export function updateDevQuote(id: string, input: QuoteInput): QuoteRecord | null {
+export function updateDevQuote(id: string, input: DevQuoteInput): QuoteRecord | null {
   const index = store.quotes.findIndex((quote) => quote.id === id)
   if (index === -1) return null
 

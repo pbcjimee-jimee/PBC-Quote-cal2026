@@ -23,3 +23,12 @@ export interface MaterialItem {
   areaScope?: 'interior' | 'exterior'
   isCustom: boolean
 }
+
+export interface QuoteOptionItem {
+  id: string
+  title: string
+  materials: MaterialItem[]
+  selectedMin: FormulaNumber
+  selectedMax: FormulaNumber
+  isExpanded: boolean
+}

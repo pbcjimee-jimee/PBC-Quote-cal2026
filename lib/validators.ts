@@ -47,6 +47,29 @@ export const jobberQuoteSnapshotSchema = z.object({
   }),
 })
 
+const quoteItemSchema = z.object({
+  productId: z.string().uuid().optional(),
+  productNameSnapshot: z.string().min(1),
+  marketPriceSnapshot: z.number().nonnegative(),
+  actualPriceSnapshot: z.number().nonnegative(),
+  quantity: z.number().positive(),
+  workingDays: z.number().nonnegative().optional(),
+  labourPerDay: z.number().nonnegative().optional(),
+  areaId: z.string().min(1).optional(),
+  areaNameSnapshot: z.string().min(1).optional(),
+  areaScopeSnapshot: z.enum(['interior', 'exterior']).optional(),
+  isCustom: z.boolean().default(false),
+  position: z.number().int().nonnegative().default(0),
+})
+
+const quoteOptionSchema = z.object({
+  title: z.string().trim().min(1),
+  selectedMin: z.number().int().min(1).max(5) as z.ZodType<1 | 2 | 3 | 4 | 5>,
+  selectedMax: z.number().int().min(1).max(5) as z.ZodType<1 | 2 | 3 | 4 | 5>,
+  items: z.array(quoteItemSchema).default([]),
+  position: z.number().int().nonnegative().default(0),
+})
+
 export const quoteSchema = z.object({
   customerName: z.string().optional(),
   customerAddress: z.string().optional(),
@@ -60,20 +83,8 @@ export const quoteSchema = z.object({
   materialActual: z.number().nonnegative(),
   selectedMin: z.number().int().min(1).max(5) as z.ZodType<1 | 2 | 3 | 4 | 5>,
   selectedMax: z.number().int().min(1).max(5) as z.ZodType<1 | 2 | 3 | 4 | 5>,
-  items: z.array(z.object({
-    productId: z.string().uuid().optional(),
-    productNameSnapshot: z.string().min(1),
-    marketPriceSnapshot: z.number().nonnegative(),
-    actualPriceSnapshot: z.number().nonnegative(),
-    quantity: z.number().positive(),
-    workingDays: z.number().nonnegative().optional(),
-    labourPerDay: z.number().nonnegative().optional(),
-    areaId: z.string().min(1).optional(),
-    areaNameSnapshot: z.string().min(1).optional(),
-    areaScopeSnapshot: z.enum(['interior', 'exterior']).optional(),
-    isCustom: z.boolean().default(false),
-    position: z.number().int().nonnegative().default(0),
-  })),
+  items: z.array(quoteItemSchema),
+  options: z.array(quoteOptionSchema).default([]),
 })
 
 export type QuoteInput = z.infer<typeof quoteSchema>

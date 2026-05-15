@@ -16,6 +16,7 @@ import { CustomerPanel } from './customer-panel'
 import { MaterialsPanel } from './materials-panel'
 import { FormulaResults } from './formula-results'
 import { FinalSummary } from './final-summary'
+<<<<<<< HEAD
 import { DecimalInput } from './decimal-input'
 import {
   createEmptyQuoteFormDraft,
@@ -25,6 +26,11 @@ import {
   type QuoteFormDraft,
 } from './quote-draft'
 import type { FormulaNumber, MaterialItem } from './types'
+=======
+import { QuoteOptionsPanel } from './quote-options-panel'
+import { OptionTotalsSummary } from './option-totals-summary'
+import type { FormulaNumber, MaterialItem, QuoteOptionItem } from './types'
+>>>>>>> option
 import type { AreaRecord } from '@/lib/areas/types'
 import type {
   JobberQuoteDraft,
@@ -149,6 +155,34 @@ function mapQuoteItemsToMaterials(quote: QuoteRecord): MaterialItem[] {
   }))
 }
 
+function mapQuoteOptionsToState(quote: QuoteRecord): QuoteOptionItem[] {
+  return quote.options.map((option) => ({
+    id: option.id,
+    title: option.title,
+    selectedMin: option.selectedMin,
+    selectedMax: option.selectedMax,
+    isExpanded: false,
+    materials: option.items.map((item) => ({
+      id: item.id,
+      productId: item.productId ?? undefined,
+      name: item.productNameSnapshot,
+      marketPrice: item.marketPriceSnapshot,
+      actualPrice: item.actualPriceSnapshot,
+      quantity: item.quantity,
+      workingDays: item.workingDays ?? '0',
+      labourPerDay: item.labourPerDay ?? '0',
+      areaId: item.areaId ?? undefined,
+      areaName: item.areaNameSnapshot ?? undefined,
+      areaScope: item.areaScopeSnapshot ?? undefined,
+      isCustom: item.isCustom,
+    })),
+  }))
+}
+
+function createClientId(prefix: string): string {
+  return `${prefix}-${globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`}`
+}
+
 export function QuoteForm({ settings, areas, initialQuote }: QuoteFormProps) {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
@@ -160,8 +194,12 @@ export function QuoteForm({ settings, areas, initialQuote }: QuoteFormProps) {
   const [workType, setWorkType] = useState(initialQuote?.workType ?? '')
   const [customerType, setCustomerType] = useState(initialQuote?.jobberSnapshot?.customerType ?? '')
   const [materials, setMaterials] = useState<MaterialItem[]>(initialQuote ? mapQuoteItemsToMaterials(initialQuote) : [])
+<<<<<<< HEAD
   const [workingDays, setWorkingDays] = useState(initialQuote?.workingDays ?? '0')
   const [labourPerDay, setLabourPerDay] = useState(initialQuote?.labourPerDay ?? '0')
+=======
+  const [options, setOptions] = useState<QuoteOptionItem[]>(initialQuote ? mapQuoteOptionsToState(initialQuote) : [])
+>>>>>>> option
   const [selectedMin, setSelectedMin] = useState<FormulaNumber>(initialQuote?.selectedMin ?? 4)
   const [selectedMax, setSelectedMax] = useState<FormulaNumber>(initialQuote?.selectedMax ?? 1)
   const [saveError, setSaveError] = useState<string | null>(null)
@@ -379,6 +417,71 @@ export function QuoteForm({ settings, areas, initialQuote }: QuoteFormProps) {
     navigateTo(pendingNavigation ?? '/quotes')
   }
 
+  const optionTotals = useMemo(() => {
+    const calculated: Record<string, {
+      materialMarket: Decimal
+      materialActual: Decimal
+      labour: ReturnType<typeof calculateLabourTotals>
+      results: ReturnType<typeof calculateAllFormulas>
+      subtotal: Decimal
+      finalTotal: Decimal
+    }> = {}
+
+    for (const option of options) {
+      const materialMarket = option.materials.reduce(
+        (total, item) => total.add(decimalFromInput(item.marketPrice).mul(decimalFromInput(item.quantity))),
+        new Decimal(0)
+      )
+      const materialActual = option.materials.reduce(
+        (total, item) => total.add(decimalFromInput(item.actualPrice).mul(decimalFromInput(item.quantity))),
+        new Decimal(0)
+      )
+      const labour = calculateLabourTotals(option.materials)
+      const results = calculateAllFormulas(
+        {
+          workingDays: labour.labourDays,
+          labourPerDay: 1,
+          materialMarket,
+          materialActual,
+        },
+        settings
+      )
+      const subtotal = calculateSubtotal(results, option.selectedMin, option.selectedMax)
+      calculated[option.id] = {
+        materialMarket,
+        materialActual,
+        labour,
+        results,
+        subtotal,
+        finalTotal: calculateFinal(subtotal),
+      }
+    }
+
+    return calculated
+  }, [options, settings])
+
+  const optionPanelTotals = useMemo(() => Object.fromEntries(
+    options.map((option) => {
+      const totalsForOption = optionTotals[option.id]
+      return [
+        option.id,
+        {
+          results: totalsForOption.results,
+          finalTotal: totalsForOption.finalTotal.toFixed(2),
+          materialTotal: totalsForOption.materialMarket.toFixed(2),
+          workingDays: totalsForOption.labour.workingDays.toFixed(2),
+          labourPerDay: totalsForOption.labour.labourPerDay.toFixed(2),
+        },
+      ]
+    })
+  ), [optionTotals, options])
+
+  const optionSummaryItems = useMemo(() => options.map((option, index) => ({
+    id: option.id,
+    title: option.title.trim() || `Option ${index + 1}`,
+    finalTotal: optionTotals[option.id].finalTotal,
+  })), [optionTotals, options])
+
   function addMaterial(item: MaterialItem) {
     setMaterials((current) => [...current, item])
   }
@@ -389,6 +492,28 @@ export function QuoteForm({ settings, areas, initialQuote }: QuoteFormProps) {
 
   function removeMaterial(id: string) {
     setMaterials((current) => current.filter((item) => item.id !== id))
+  }
+
+  function addOption() {
+    setOptions((current) => [
+      ...current,
+      {
+        id: createClientId('option'),
+        title: `Option ${current.length + 1}`,
+        materials: [],
+        selectedMin: 4,
+        selectedMax: 1,
+        isExpanded: true,
+      },
+    ])
+  }
+
+  function changeOption(option: QuoteOptionItem) {
+    setOptions((current) => current.map((existing) => existing.id === option.id ? option : existing))
+  }
+
+  function removeOption(id: string) {
+    setOptions((current) => current.filter((option) => option.id !== id))
   }
 
   async function fetchJobberQuote() {
@@ -458,6 +583,26 @@ export function QuoteForm({ settings, areas, initialQuote }: QuoteFormProps) {
           isCustom: item.isCustom,
           position: index,
         })),
+        options: options.map((option, optionIndex) => ({
+          title: option.title.trim() || `Option ${optionIndex + 1}`,
+          selectedMin: option.selectedMin,
+          selectedMax: option.selectedMax,
+          position: optionIndex,
+          items: option.materials.map((item, itemIndex) => ({
+            productId: item.productId,
+            productNameSnapshot: item.name,
+            marketPriceSnapshot: Number(decimalFromInput(item.marketPrice).toString()),
+            actualPriceSnapshot: Number(decimalFromInput(item.actualPrice).toString()),
+            quantity: Number(decimalFromInput(item.quantity).toString()),
+            workingDays: Number(decimalFromInput(item.workingDays).toString()),
+            labourPerDay: Number(decimalFromInput(item.labourPerDay).toString()),
+            areaId: item.areaId,
+            areaNameSnapshot: item.areaName,
+            areaScopeSnapshot: item.areaScope,
+            isCustom: item.isCustom,
+            position: itemIndex,
+          })),
+        })),
       }
       const result = initialQuote
         ? await updateQuote({ ...payload, id: initialQuote.id })
@@ -521,6 +666,14 @@ export function QuoteForm({ settings, areas, initialQuote }: QuoteFormProps) {
             jobberQuoteDraft={jobberQuoteDraft}
           />
           <MaterialsPanel materials={materials} areas={areas} onAdd={addMaterial} onChange={changeMaterial} onRemove={removeMaterial} />
+          <QuoteOptionsPanel
+            options={options}
+            optionTotals={optionPanelTotals}
+            areas={areas}
+            onAddOption={addOption}
+            onChangeOption={changeOption}
+            onRemoveOption={removeOption}
+          />
         </div>
 
         <div className="space-y-6 rounded-md border border-gray-200 bg-white p-5">
@@ -559,6 +712,7 @@ export function QuoteForm({ settings, areas, initialQuote }: QuoteFormProps) {
             finalTotal={totals.finalTotal}
             jobberFinancialSummary={jobberQuoteDraft && !jobberQuoteDraft.jobExpensesError ? jobberQuoteDraft.financialSummary : null}
           />
+          <OptionTotalsSummary options={optionSummaryItems} />
         </div>
       </div>
       {pendingNavigation ? (
