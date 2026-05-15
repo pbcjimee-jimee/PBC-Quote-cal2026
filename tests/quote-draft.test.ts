@@ -18,6 +18,19 @@ describe('quote form draft persistence', () => {
       ...createEmptyQuoteFormDraft(),
       customerName: 'Jane Customer',
     })).toBe(true)
+    expect(hasMeaningfulQuoteDraft({
+      ...createEmptyQuoteFormDraft(),
+      options: [
+        {
+          id: 'option-1',
+          title: 'Option 1',
+          materials: [],
+          selectedMin: 4,
+          selectedMax: 1,
+          isExpanded: true,
+        },
+      ],
+    })).toBe(true)
   })
 
   it('parses valid saved drafts and rejects invalid stored payloads', () => {
@@ -35,6 +48,27 @@ describe('quote form draft persistence', () => {
           workingDays: '0',
           labourPerDay: '0',
           isCustom: true,
+        },
+      ],
+      options: [
+        {
+          id: 'option-1',
+          title: 'Option 1',
+          selectedMin: 4,
+          selectedMax: 1,
+          isExpanded: true,
+          materials: [
+            {
+              id: 'option-item-1',
+              name: 'Door paint',
+              marketPrice: '88.00',
+              actualPrice: '88.00',
+              quantity: '1',
+              workingDays: '0',
+              labourPerDay: '0',
+              isCustom: true,
+            },
+          ],
         },
       ],
       updatedAt: '2026-05-15T00:00:00.000Z',

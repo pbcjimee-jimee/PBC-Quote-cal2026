@@ -6,11 +6,7 @@ import {
   calculateSubtotal,
   type PricingSettings,
 } from './calculator'
-<<<<<<< HEAD
-=======
-import { calculateFormulaLabourDays } from './quote-labour'
 import { calculateLabourTotals } from './quote-labour'
->>>>>>> option
 import { DULUX_PAINT_PRODUCTS } from './products/dulux-paints'
 import { normalizeRrpProduct, type ProductRecord } from './products/types'
 import type { AreaInput } from './validators'

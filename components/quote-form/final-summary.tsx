@@ -32,6 +32,8 @@ export function FinalSummary({
   finalTotal,
   jobberFinancialSummary,
 }: FinalSummaryProps) {
+  const gstTotal = Decimal.max(finalTotal.sub(subtotal), 0)
+
   return (
     <section className="border-t border-gray-200 pt-4">
       <div className="space-y-2 text-sm">
@@ -47,9 +49,13 @@ export function FinalSummary({
           <span className="text-gray-500">Subtotal</span>
           <span className="font-mono font-semibold text-gray-900">${subtotal.toFixed(2)}</span>
         </div>
+        <div className="flex justify-between">
+          <span className="text-gray-500">GST 10%</span>
+          <span className="font-mono text-gray-900">${gstTotal.toFixed(2)}</span>
+        </div>
       </div>
       <div className="mt-4 flex items-end justify-between border-t border-gray-200 pt-4">
-        <span className="text-sm font-semibold uppercase tracking-wide text-gray-500">Final</span>
+        <span className="text-sm font-semibold uppercase tracking-wide text-gray-500">Final total</span>
         <span className="font-mono text-2xl font-bold tabular-nums text-gray-900">${finalTotal.toFixed(2)}</span>
       </div>
       {jobberFinancialSummary ? (

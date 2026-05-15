@@ -16,7 +16,6 @@ import { CustomerPanel } from './customer-panel'
 import { MaterialsPanel } from './materials-panel'
 import { FormulaResults } from './formula-results'
 import { FinalSummary } from './final-summary'
-<<<<<<< HEAD
 import { DecimalInput } from './decimal-input'
 import {
   createEmptyQuoteFormDraft,
@@ -25,12 +24,9 @@ import {
   parseQuoteFormDraft,
   type QuoteFormDraft,
 } from './quote-draft'
-import type { FormulaNumber, MaterialItem } from './types'
-=======
 import { QuoteOptionsPanel } from './quote-options-panel'
 import { OptionTotalsSummary } from './option-totals-summary'
 import type { FormulaNumber, MaterialItem, QuoteOptionItem } from './types'
->>>>>>> option
 import type { AreaRecord } from '@/lib/areas/types'
 import type {
   JobberQuoteDraft,
@@ -194,12 +190,9 @@ export function QuoteForm({ settings, areas, initialQuote }: QuoteFormProps) {
   const [workType, setWorkType] = useState(initialQuote?.workType ?? '')
   const [customerType, setCustomerType] = useState(initialQuote?.jobberSnapshot?.customerType ?? '')
   const [materials, setMaterials] = useState<MaterialItem[]>(initialQuote ? mapQuoteItemsToMaterials(initialQuote) : [])
-<<<<<<< HEAD
   const [workingDays, setWorkingDays] = useState(initialQuote?.workingDays ?? '0')
   const [labourPerDay, setLabourPerDay] = useState(initialQuote?.labourPerDay ?? '0')
-=======
   const [options, setOptions] = useState<QuoteOptionItem[]>(initialQuote ? mapQuoteOptionsToState(initialQuote) : [])
->>>>>>> option
   const [selectedMin, setSelectedMin] = useState<FormulaNumber>(initialQuote?.selectedMin ?? 4)
   const [selectedMax, setSelectedMax] = useState<FormulaNumber>(initialQuote?.selectedMax ?? 1)
   const [saveError, setSaveError] = useState<string | null>(null)
@@ -224,6 +217,7 @@ export function QuoteForm({ settings, areas, initialQuote }: QuoteFormProps) {
     workType,
     customerType,
     materials,
+    options,
     workingDays,
     labourPerDay,
     selectedMin,
@@ -240,6 +234,7 @@ export function QuoteForm({ settings, areas, initialQuote }: QuoteFormProps) {
     jobberQuoteLookup,
     labourPerDay,
     materials,
+    options,
     selectedMax,
     selectedMin,
     workType,
@@ -379,6 +374,7 @@ export function QuoteForm({ settings, areas, initialQuote }: QuoteFormProps) {
     setWorkType(draft.workType)
     setCustomerType(draft.customerType)
     setMaterials(draft.materials)
+    setOptions(draft.options)
     setWorkingDays(draft.workingDays)
     setLabourPerDay(draft.labourPerDay)
     setSelectedMin(draft.selectedMin)

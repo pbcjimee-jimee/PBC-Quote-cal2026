@@ -96,10 +96,10 @@ describe('quote actions', () => {
 
     expect(fetched.ok).toBe(true)
     if (fetched.ok && fetched.data) {
-      expect(fetched.data.finalTotal).toBe('600.00')
+      expect(fetched.data.finalTotal).toBe('660.00')
       expect(fetched.data.options).toHaveLength(1)
       expect(fetched.data.options[0].title).toBe('Option 1 - Garage door repaint')
-      expect(fetched.data.options[0].finalTotal).toBe('550.00')
+      expect(fetched.data.options[0].finalTotal).toBe('605.00')
       expect(fetched.data.options[0].items[0].productNameSnapshot).toBe('Garage paint')
     }
   })

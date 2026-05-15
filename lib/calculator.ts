@@ -136,7 +136,7 @@ export function calculateSubtotal(
 }
 
 export function calculateFinal(subtotal: Decimal): Decimal {
-  return subtotal
+  return subtotal.mul(1.10)
 }
 
 export const DEFAULT_PRICING_SETTINGS: PricingSettings = {

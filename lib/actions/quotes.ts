@@ -10,15 +10,13 @@ import {
   calculateSubtotal,
   type PricingSettings,
 } from '@/lib/calculator'
-<<<<<<< HEAD
-=======
 import Decimal from 'decimal.js'
-import { calculateFormulaLabourDays, calculateLabourTotals } from '@/lib/quote-labour'
->>>>>>> option
+import { calculateLabourTotals } from '@/lib/quote-labour'
 import { createClient } from '@/lib/supabase/server'
 import type { Database, Json } from '@/lib/supabase/types'
 import { jobberQuoteSnapshotSchema, pricingSettingsSchema, quoteSchema, type QuoteInput } from '@/lib/validators'
 import type { JobberQuoteDraft } from '@/lib/jobber/mapper'
+import { QUOTE_DETAIL_SELECT, QUOTES_LIST_SELECT } from '@/lib/quote-query-shape'
 import { getPricingSettings } from './settings'
 import type { ActionResult } from './types'
 import { isDevNoAuthMode } from './types'
@@ -52,6 +50,13 @@ function parseJobberSnapshot(value: unknown): JobberQuoteDraft | null {
 function parsePricingSettingsSnapshot(value: unknown): PricingSettings | null {
   const parsed = pricingSettingsSchema.safeParse(value)
   return parsed.success ? parsed.data : null
+}
+
+function isMissingOptionsRelationError(error: { message?: string } | null): boolean {
+  const message = error?.message ?? ''
+  return message.includes("relationship between 'quotes' and 'quote_options'") ||
+    message.includes("relation \"quote_options\" does not exist") ||
+    message.includes("relation \"quote_option_items\" does not exist")
 }
 
 function toQuoteRecord(row: QuoteWithItemsRow): QuoteRecord {
@@ -456,7 +461,7 @@ export async function searchQuotes(query = ''): Promise<ActionResult<QuoteRecord
   const supabase = await createClient()
   let request = supabase
     .from('quotes')
-    .select('*, quote_items(*), quote_options(*, quote_option_items(*))')
+    .select(QUOTES_LIST_SELECT)
     .order('created_at', { ascending: false })
     .limit(20)
 
@@ -466,11 +471,11 @@ export async function searchQuotes(query = ''): Promise<ActionResult<QuoteRecord
 
   const { data, error } = await request
   if (error) return { ok: false, error: error.message }
-  const rows = data as unknown as QuoteWithItemsRow[]
+  const rows = data as unknown as QuoteWithItemsRow[] | null
 
   return {
     ok: true,
-    data: rows.map(toQuoteRecord),
+    data: (rows ?? []).map(toQuoteRecord),
   }
 }
 
@@ -483,14 +488,26 @@ export async function getQuote(id: string): Promise<ActionResult<QuoteRecord | n
   const supabase = await createClient()
   const { data, error } = await supabase
     .from('quotes')
-    .select('*, quote_items(*), quote_options(*, quote_option_items(*))')
+    .select(QUOTE_DETAIL_SELECT)
     .eq('id', id)
     .single()
 
-  if (error) return { ok: false, error: error.message }
-  const row = data as unknown as QuoteWithItemsRow
+  let row = data as unknown as QuoteWithItemsRow | null
+
+  if (error) {
+    if (!isMissingOptionsRelationError(error)) return { ok: false, error: error.message }
+
+    const { data: fallbackData, error: fallbackError } = await supabase
+      .from('quotes')
+      .select(QUOTES_LIST_SELECT)
+      .eq('id', id)
+      .single()
+    if (fallbackError) return { ok: false, error: fallbackError.message }
+    row = fallbackData as unknown as QuoteWithItemsRow
+  }
+
   return {
     ok: true,
-    data: toQuoteRecord(row),
+    data: row ? toQuoteRecord(row) : null,
   }
 }

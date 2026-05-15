@@ -1,5 +1,5 @@
 import type { JobberQuoteDraft } from '@/lib/jobber/mapper'
-import type { MaterialItem } from './types'
+import type { MaterialItem, QuoteOptionItem } from './types'
 import { isDecimalInputValue } from './decimal-input-utils'
 
 const QUOTE_DRAFT_VERSION = 1
@@ -14,6 +14,7 @@ export interface QuoteFormDraft {
   workType: string
   customerType: string
   materials: MaterialItem[]
+  options: QuoteOptionItem[]
   workingDays: string
   labourPerDay: string
   selectedMin: 1 | 2 | 3 | 4 | 5
@@ -39,6 +40,7 @@ export function createEmptyQuoteFormDraft(): QuoteFormDraft {
     workType: '',
     customerType: '',
     materials: [],
+    options: [],
     workingDays: '0',
     labourPerDay: '0',
     selectedMin: 4,
@@ -124,6 +126,40 @@ function parseMaterial(value: unknown): MaterialItem | null {
   }
 }
 
+function parseOption(value: unknown): QuoteOptionItem | null {
+  if (!isRecord(value)) return null
+
+  const id = readString(value, 'id')
+  const title = readString(value, 'title')
+  const selectedMin = readFormulaNumber(value, 'selectedMin')
+  const selectedMax = readFormulaNumber(value, 'selectedMax')
+  const isExpanded = value.isExpanded
+  const materials = Array.isArray(value.materials)
+    ? value.materials.map(parseMaterial)
+    : null
+
+  if (
+    id === null ||
+    title === null ||
+    selectedMin === null ||
+    selectedMax === null ||
+    typeof isExpanded !== 'boolean' ||
+    materials === null ||
+    materials.some((item) => item === null)
+  ) {
+    return null
+  }
+
+  return {
+    id,
+    title,
+    materials: materials as MaterialItem[],
+    selectedMin,
+    selectedMax,
+    isExpanded,
+  }
+}
+
 export function parseQuoteFormDraft(value: string | null): QuoteFormDraft | null {
   if (!value) return null
 
@@ -151,6 +187,9 @@ export function parseQuoteFormDraft(value: string | null): QuoteFormDraft | null
   const materials = Array.isArray(parsed.materials)
     ? parsed.materials.map(parseMaterial)
     : null
+  const options = Array.isArray(parsed.options)
+    ? parsed.options.map(parseOption)
+    : []
 
   if (
     customerName === null ||
@@ -166,7 +205,8 @@ export function parseQuoteFormDraft(value: string | null): QuoteFormDraft | null
     selectedMax === null ||
     updatedAt === null ||
     materials === null ||
-    materials.some((item) => item === null)
+    materials.some((item) => item === null) ||
+    options.some((item) => item === null)
   ) {
     return null
   }
@@ -181,6 +221,7 @@ export function parseQuoteFormDraft(value: string | null): QuoteFormDraft | null
     workType,
     customerType,
     materials: materials as MaterialItem[],
+    options: options as QuoteOptionItem[],
     workingDays,
     labourPerDay,
     selectedMin,
@@ -199,6 +240,7 @@ export function hasMeaningfulQuoteDraft(draft: QuoteFormDraft): boolean {
     draft.workType.trim() ||
     draft.customerType.trim() ||
     draft.materials.length > 0 ||
+    draft.options.length > 0 ||
     draft.workingDays !== '0' ||
     draft.labourPerDay !== '0' ||
     draft.selectedMin !== 4 ||
