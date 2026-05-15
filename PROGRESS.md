@@ -20,7 +20,7 @@
 ## v1.0 전체 진행 현황
 
 ```
-[██████████████████░░] 90% — 핵심 플로우/Auth/Jobber 읽기 전용/옵션 완료, QA·프로덕션 게이트 잔여
+[███████████████████░] 95% — 핵심 플로우/Auth/Jobber 읽기 전용/옵션/QA 완료, 실제 과거 견적 fixture 잔여
 ```
 
 ---
@@ -139,13 +139,14 @@
 - [x] `tests/calculator.test.ts` — 계산기 커버리지 100% 보강
 - [x] Server Actions Supabase 경로 단위 테스트 보강: `tests/settings-actions-supabase.test.ts`, `tests/areas-actions-supabase.test.ts`, `tests/products-actions-supabase.test.ts`, `tests/quote-actions-supabase.test.ts`
 - [x] `vitest.config.ts` — `lib/actions/**/*.ts` statements/lines/functions 80% threshold 강제
-- [x] 로컬 검증: `npm.cmd run verify` 추가 및 최신 재통과(2026-05-15 17:57, git diff whitespace check, typecheck, lint, test:run 36 passed files / 171 passed tests + 1 skipped file / 2 skipped tests, test:coverage, build, audit, `npm audit --audit-level=high` 0 vulnerabilities)
+- [x] 로컬 검증: `npm.cmd run verify` 추가 및 최신 재통과(2026-05-15 18:12, git diff whitespace check, typecheck, lint, test:run 36 passed files / 171 passed tests + 1 skipped file / 2 skipped tests, test:coverage, build, audit, `npm audit --audit-level=high` 0 vulnerabilities)
 - [x] `npm.cmd audit --audit-level=high` 0 vulnerabilities (`postcss` override로 Next 내부 transitive `postcss`를 8.5.14로 고정)
 - [x] `npm.cmd ls postcss` 확인: `next`/`vite`/`@tailwindcss/postcss` 모두 `postcss@8.5.14` dedupe/override 적용
 - [x] `npm.cmd ci` 재현성 검증 시도: Windows `lightningcss` native binary unlink `EPERM`으로 차단, `npm.cmd install`로 복구 후 typecheck/lint/test/audit/build 재통과
 - [x] 로컬 HTTP smoke: `npm.cmd run dev -- --port 3000` 후 `/login` 200, `/`·`/quotes`·`/quotes/new`·`/settings`·`/api/jobber/connect` 307 확인
 - [x] Production HTTP smoke: `npm.cmd run start -- --port 3100` 후 `/login` 200, `/`·`/quotes`·`/quotes/new`·`/settings`·`/api/jobber/connect` 307 확인
 - [x] Edge headless 보조 smoke(2026-05-15): `npm.cmd run start -- --port 3200` 후 `/login` 실제 브라우저 screenshot 생성(`.gstack/qa-reports/screenshots/edge-login-smoke-2026-05-15.png`) 및 로그인 폼 렌더링 확인. 추가 HTTP 재확인에서 `/`·`/quotes`·`/quotes/new`·`/settings`는 모두 `/login` 307 리다이렉트 정상. Edge `--dump-dom`은 리다이렉트 대상 DOM을 비워 반환해 보호 라우트 브라우저 판정에는 부적합. 이는 `/gstack-qa` 수정 루프 대체가 아니라 gstack browse 차단 중 가능한 보조 검증
+- [x] `/gstack-qa` 브라우저 QA(2026-05-15): gstack browse 런타임에 누락된 `playwright`/`diff` 및 Chromium을 도구 디렉터리에 설치해 서버 기동 복구. `npm.cmd run start -- --port 3300` 후 gstack browse로 `/login` desktop/mobile, invalid login error, 보호 라우트(`/quotes`, `/quotes/new`, `/settings`) 리다이렉트, 임시 Supabase Auth 사용자 로그인, 견적 목록, 신규 견적 생성, 상세, 편집, Settings 화면 확인. 전 구간 console error 없음, QA marker quote 1건 및 임시 Auth user 삭제 완료
 - [x] 프로덕션 Supabase 읽기 전용 재확인(MCP, 2026-05-15): 적용 migration은 `0001_initial_schema`, `0002_rls_policies`, `add_jobber_tokens`, `sync_quote_area_and_labour_schema`, `add_quote_jobber_snapshot`; 앱 테이블 RLS + `authenticated_all` policy 확인, `jobber_tokens` RLS enabled + policy 없음 확인, `quote_options`/`quote_option_items` 미존재 확인
 - [x] 프로덕션 Supabase 0009 preflight 및 적용/검증(MCP, 2026-05-15): `quotes`/`products`/`quote_areas` 및 `gen_random_uuid()` 존재, `quote_options`/`quote_option_items`·관련 index·policy 이름 충돌 없음 확인. 사용자 승인 후 `add_quote_options` migration 적용 완료, `quote_options`/`quote_option_items` 테이블 존재, RLS enabled, `authenticated_all` ALL policy, 관련 index 3개, FK 4개 확인
 - [x] Supabase MCP RLS CRUD 대체 검증(2026-05-15, 사용자 지시): `anon` role은 `products` select 0 rows + insert RLS denied, `authenticated` role은 트랜잭션/ROLLBACK 안에서 `pricing_settings` read/update, `products`/`quote_areas`/`quotes`/`quote_items` create/read/update/delete 모두 affected=1, 테스트 marker 잔여 0건 확인
@@ -170,7 +171,7 @@
 
 ### QA / 배포 준비
 
-- [ ] `/gstack-qa`로 전체 플로우 QA 실행 + 회귀 수정 (원본 dirty worktree는 gstack QA 규칙상 commit/stash/abort 결정 전 차단; `docs/UI-UX-REVIEW.md` 미추적 파일이 섞여 있어 Codex가 임의 처리하지 않음. 대체 시도로 `PBC-Quote-cal-qa-worktree` 임시 worktree에 Codex 변경분만 적용해 baseline commit 후 `npm.cmd install` 및 `npm.cmd run verify` 재통과했으나, gstack browse 실행 파일이 `server.ts`를 찾지 못해 브라우저 QA 단계 차단. report-only QA는 전체 수정 루프 대체 불가)
+- [x] `/gstack-qa`로 전체 플로우 QA 실행 + 회귀 수정 (2026-05-15: 승인 후 Codex 변경분 커밋 `6d7e286`, 사용자 미추적 `docs/UI-UX-REVIEW.md`는 임시 stash로 보호, gstack browse 런타임 복구 후 authenticated 브라우저 QA 실행. 로그인/리다이렉트/견적 목록/신규 생성/상세/편집/Settings 확인, console error 없음, QA용 quote/auth user 정리 완료)
 - [x] 프로덕션 Supabase 마이그레이션 0009 적용 확인 (2026-05-15 MCP: `add_quote_options` migration 적용, `quote_options`/`quote_option_items` 테이블·RLS·policy·index·FK 확인)
 - [x] 자동 백업 셋업 제외 — 사용자 지시로 진행하지 않음 (2026-05-15)
 
@@ -181,7 +182,7 @@
 - [x] PROGRESS.md 업데이트: 완료/차단 항목과 실제 검증 증거 기록
 - [ ] 실제 PBC 과거 견적 3건 확보 후 `tests/fixtures/historical-quotes.ts` 교체
 - [x] Supabase local dev stack 대신 MCP 대체 검증 승인 후 RLS CRUD 통합 검증 완료
-- [ ] dirty worktree 처리(commit/stash/abort) 결정 후 `/gstack-qa` 실행
+- [x] dirty worktree 처리 후 `/gstack-qa` 실행
 - [x] 프로덕션 Supabase 0009 마이그레이션 명시 승인 후 적용/검증
 - [x] 백업 방식 설정 제외 — 사용자 지시로 진행하지 않음 (2026-05-15)
 
@@ -200,19 +201,18 @@
 | 요구사항 | 증거 | 상태 |
 |---|---|---|
 | Jobber 영구 read-only 유지 | `lib/jobber/client.ts` GraphQL mutation 차단, OAuth/저장/dev token scope 검증, Jobber 네트워크 경로가 OAuth token endpoint와 중앙 GraphQL client뿐임을 정적 확인, `tests/jobber-readonly-regression.test.ts` 포함 Jobber 테스트 통과 | 완료 |
-| 모든 로컬 오류 제거 | `npm.cmd run verify` 재통과(2026-05-15 17:57): whitespace, typecheck, lint, test 36 passed files / 171 passed tests + 1 skipped file / 2 skipped tests, coverage, build, audit 0 vulnerabilities | 완료 |
+| 모든 로컬 오류 제거 | `npm.cmd run verify` 재통과(2026-05-15 18:12): whitespace, typecheck, lint, test 36 passed files / 171 passed tests + 1 skipped file / 2 skipped tests, coverage, build, audit 0 vulnerabilities | 완료 |
 | `PROGRESS.md` 최신화 | 완료/차단 항목, Supabase MCP RLS CRUD 대체 검증, 프로덕션 Supabase 0009 적용/검증, fixture 원본 부재, 백업 제외 지시 반영 | 완료 |
 | RLS 자동 회귀 테스트 | `tests/rls.test.ts`로 migration RLS/policy 정적 검증 완료 | 완료 |
 | Supabase RLS CRUD 통합 검증 | 사용자 지시에 따라 MCP 대체 검증 완료: anon select 0 rows/insert denied, authenticated CRUD affected=1, ROLLBACK 후 marker 잔여 0건 | 완료 |
 | 실제 PBC 과거 견적 fixture 3건 | `tests/calculator.test.ts`는 `HISTORICAL_FIXTURES`를 실행하지만 현재 fixture는 샘플 1건 placeholder뿐이며, 작업공간 파일 재확인 결과 `PBC quotation cal - new.xlsx`는 `Sheet1` 단일 시트 `A1:W47`; 3건 과거 견적 원본 없음 | 사용자 데이터 제공 필요 |
-| `/gstack-qa` 전체 플로우 QA | 원본 dirty worktree에서는 commit/stash/abort 결정 전 중단; `docs/UI-UX-REVIEW.md` 미추적 파일이 섞여 있어 Codex가 임의 처리하지 않음. 임시 QA worktree(`PBC-Quote-cal-qa-worktree`, branch `codex-qa-temp`)에 Codex 변경분만 적용해 baseline commit `bccca42` 생성, `npm.cmd install` 및 `npm.cmd run verify` 재통과. 이후 gstack browse `browse.exe status`가 `Cannot find server.ts. Set BROWSE_SERVER_SCRIPT env or run from the browse source tree.`로 실패해 브라우저 QA 차단. `qa-only`는 dirty 차단은 없지만 수정/커밋/재검증 루프가 없어 acceptance 대체 불가 | 사용자 결정/gstack setup 필요 |
+| `/gstack-qa` 전체 플로우 QA | 승인 후 Codex 변경분 커밋 `6d7e286`, 사용자 미추적 문서 임시 stash 보호, gstack browse 런타임 복구(`playwright`/`diff`/Chromium). `localhost:3300`에서 로그인 화면 desktop/mobile, invalid login, 보호 라우트 리다이렉트, 임시 Auth 사용자 로그인, 견적 목록, 신규 견적 생성, 상세, 편집, Settings 화면 확인. 전체 console error 없음, QA marker quote/auth user 정리 완료 | 완료 |
 | 프로덕션 Supabase 0009 적용 | 사용자 승인 후 MCP로 `add_quote_options` migration 적용 완료. `quote_options`/`quote_option_items` 테이블 존재, RLS enabled, `authenticated_all` ALL policy, 관련 index 3개, FK 4개 확인 | 완료 |
 | 백업 방식 | 사용자 지시로 진행하지 않음 | 제외 완료 |
 
-### 사용자 입력/승인 필요 (남은 차단 2개)
+### 사용자 입력/승인 필요 (남은 차단 1개)
 
 - 실제 PBC 과거 견적 3건의 입력값/기대 결과 제공 필요
-- `/gstack-qa` 실행 전 현재 변경사항 commit/stash/abort 중 하나 결정 필요, 또는 gstack browse setup/source tree 복구 필요
 - 백업 방식은 사용자 지시로 진행하지 않음 (2026-05-15)
 
 ### 승인 후 실행 작업
@@ -220,7 +220,6 @@
 | 승인/입력 | 바로 실행할 작업 |
 |---|---|
 | 실제 PBC 과거 견적 3건 제공 | `tests/fixtures/historical-quotes.ts`를 실제 3건으로 교체하고 `npm.cmd run test:run` 및 `npm.cmd run verify` 재실행 |
-| dirty worktree 처리 방식 결정 | 결정된 방식(commit/stash/abort)에 맞춰 정리 후 `/gstack-qa` 실행, 발견 이슈 수정 및 재검증 |
 | 백업 방식 | 사용자 지시로 진행하지 않음 |
 
 ### UX 잔여 (v1.0 완료 차단 아님, v1.1+로 이관 — `docs/DECISIONS.md` #1 기준)
@@ -273,3 +272,4 @@
 | 2026-05-15 | PROGRESS.md·DB-SCHEMA·CALCULATION·ARCHITECTURE·README·TODOS 동기화 (Jobber·옵션·labour_per_day·GST 반영) | Claude Code |
 | 2026-05-15 | RLS 마이그레이션 회귀 테스트 추가, Jobber GraphQL mutation 및 write scope 차단으로 read-only 보강, 계산기 100% 및 Server Actions 80%+ 커버리지 threshold 정렬, 로컬 검증 통과 | Codex |
 | 2026-05-15 | 사용자 승인 후 프로덕션 Supabase `add_quote_options` migration 적용 및 MCP로 option 테이블 RLS/policy/index/FK 검증 | Codex |
+| 2026-05-15 | `/gstack-qa` 브라우저 QA 실행 — gstack browse 런타임 복구, 임시 Supabase Auth 사용자로 로그인 후 견적 생성/상세/편집/Settings 확인, QA 데이터 정리 | Codex |
