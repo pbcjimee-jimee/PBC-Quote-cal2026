@@ -1,7 +1,7 @@
 import { createServiceClient } from '@/lib/supabase/server'
 import { assertJobberReadOnlyScopes, type JobberConfig } from './config'
 import { getTokenExpiresAt, refreshAccessToken } from './oauth'
-import { decryptTokenValue, encryptTokenValue } from './token-encryption'
+import { assertJobberTokenStorageConfigured, decryptTokenValue, encryptTokenValue } from './token-encryption'
 
 export interface StoredJobberToken {
   ownerUserId?: string
@@ -53,6 +53,8 @@ export async function refreshStoredJobberToken(
   config: JobberConfig,
   tokenOwnerUserId = userId
 ): Promise<StoredJobberToken> {
+  assertJobberTokenStorageConfigured()
+
   let token
   try {
     token = await refreshAccessToken(currentRefreshToken, config)
@@ -62,6 +64,8 @@ export async function refreshStoredJobberToken(
       if (latestToken && latestToken.refreshToken !== currentRefreshToken && !shouldRefresh(latestToken.expiresAt)) {
         return latestToken
       }
+
+      throw new Error('Jobber connection expired. Reconnect Jobber from Settings.')
     }
     throw error
   }

@@ -86,6 +86,35 @@ describe('jobber callback security', () => {
     expect(mocks.createServiceClient).not.toHaveBeenCalled()
   })
 
+  it('does not exchange OAuth codes in production when token storage encryption is not configured', async () => {
+    vi.stubEnv('NODE_ENV', 'production')
+    vi.stubEnv('JOBBER_TOKEN_ENCRYPTION_KEY', '')
+    const request = new NextRequest(
+      'http://localhost:3000/api/jobber/callback?code=auth-code&state=state-from-url',
+      {
+        headers: {
+          cookie: 'jobber_oauth_state=state-from-url',
+        },
+      }
+    )
+
+    try {
+      const response = await jobberCallback(request)
+
+      expect(response.status).toBe(503)
+      expect(await response.json()).toEqual({
+        ok: false,
+        error: 'Jobber OAuth is not configured: JOBBER_TOKEN_ENCRYPTION_KEY',
+      })
+    } finally {
+      vi.unstubAllEnvs()
+    }
+
+    expect(mocks.exchangeAuthorizationCode).not.toHaveBeenCalled()
+    expect(mocks.createClient).not.toHaveBeenCalled()
+    expect(mocks.createServiceClient).not.toHaveBeenCalled()
+  })
+
   it('does not save Jobber tokens for authenticated users outside the login allowlist', async () => {
     process.env.ALLOWED_LOGIN_EMAILS = 'owner@example.com'
     mocks.exchangeAuthorizationCode.mockResolvedValueOnce({

@@ -11,6 +11,21 @@ function getEncryptionKey(options: TokenEncryptionOptions = {}): string {
   return options.key ?? process.env.JOBBER_TOKEN_ENCRYPTION_KEY?.trim() ?? ''
 }
 
+export function getMissingJobberTokenStorageConfigKeys(
+  options: TokenEncryptionOptions = {}
+): string[] {
+  const key = getEncryptionKey(options)
+  const nodeEnv = options.nodeEnv ?? process.env.NODE_ENV
+
+  return nodeEnv === 'production' && !key ? ['JOBBER_TOKEN_ENCRYPTION_KEY'] : []
+}
+
+export function assertJobberTokenStorageConfigured(options: TokenEncryptionOptions = {}): void {
+  if (getMissingJobberTokenStorageConfigKeys(options).length > 0) {
+    throw new Error('JOBBER_TOKEN_ENCRYPTION_KEY is required before storing Jobber tokens')
+  }
+}
+
 function deriveKey(key: string): Buffer {
   return createHash('sha256').update(key).digest()
 }
@@ -20,9 +35,7 @@ export function encryptTokenValue(value: string, options: TokenEncryptionOptions
   const nodeEnv = options.nodeEnv ?? process.env.NODE_ENV
 
   if (!key) {
-    if (nodeEnv === 'production') {
-      throw new Error('JOBBER_TOKEN_ENCRYPTION_KEY is required before storing Jobber tokens')
-    }
+    assertJobberTokenStorageConfigured({ ...options, nodeEnv })
 
     return value
   }

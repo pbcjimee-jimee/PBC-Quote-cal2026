@@ -2,14 +2,18 @@ import { NextRequest, NextResponse } from 'next/server'
 import { assertJobberReadOnlyScopes, getJobberConfig, getMissingOAuthConfigKeys } from '@/lib/jobber/config'
 import { saveDevJobberToken } from '@/lib/jobber/dev-tokens'
 import { exchangeAuthorizationCode, getTokenExpiresAt } from '@/lib/jobber/oauth'
-import { encryptTokenValue } from '@/lib/jobber/token-encryption'
+import { encryptTokenValue, getMissingJobberTokenStorageConfigKeys } from '@/lib/jobber/token-encryption'
 import { isAuthenticatedUserAllowed } from '@/lib/security/auth-policy'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { isDevNoAuthMode } from '@/lib/actions/types'
 
 export async function GET(request: NextRequest) {
   const config = getJobberConfig()
-  const missing = getMissingOAuthConfigKeys(config)
+  const isDevTokenStorage = isDevNoAuthMode()
+  const missing = [
+    ...getMissingOAuthConfigKeys(config),
+    ...(isDevTokenStorage ? [] : getMissingJobberTokenStorageConfigKeys()),
+  ]
   if (missing.length > 0) {
     return NextResponse.json({
       ok: false,
@@ -34,7 +38,7 @@ export async function GET(request: NextRequest) {
     assertJobberReadOnlyScopes(token.scope)
     const expiresAt = getTokenExpiresAt(token)
 
-    if (isDevNoAuthMode()) {
+    if (isDevTokenStorage) {
       await saveDevJobberToken(token)
       const response = NextResponse.redirect(new URL('/settings?jobber=connected', request.url))
       response.cookies.delete('jobber_oauth_state')

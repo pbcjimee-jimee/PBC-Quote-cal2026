@@ -207,6 +207,49 @@ describe('jobber tokens', () => {
     })
   })
 
+  it('asks for a Jobber reconnect when the stored refresh token is already invalid', async () => {
+    const expiredRow = {
+      user_id: 'jobber-owner',
+      access_token: 'expired-access-token',
+      refresh_token: 'old-refresh-token',
+      scope: 'quotes:read',
+      expires_at: '2026-05-14T00:00:00.000Z',
+    }
+    const firstSelectBuilder = createSelectBuilder(expiredRow, expiredRow)
+    const secondSelectBuilder = createSelectBuilder(expiredRow, expiredRow)
+
+    mocks.createServiceClient
+      .mockResolvedValueOnce({
+        from: vi.fn(() => firstSelectBuilder),
+      })
+      .mockResolvedValueOnce({
+        from: vi.fn(() => secondSelectBuilder),
+      })
+    mocks.refreshAccessToken.mockRejectedValueOnce(new Error('Jobber token refresh failed with status 401'))
+
+    await expect(getUsableJobberToken('current-user', config))
+      .rejects.toThrow('Jobber connection expired. Reconnect Jobber from Settings.')
+  })
+
+  it('does not consume Jobber refresh tokens when production token storage is not configured', async () => {
+    vi.stubEnv('NODE_ENV', 'production')
+    vi.stubEnv('JOBBER_TOKEN_ENCRYPTION_KEY', '')
+
+    try {
+      await expect(refreshStoredJobberToken(
+        'current-user',
+        'owner-refresh-token',
+        config,
+        'jobber-owner'
+      )).rejects.toThrow('JOBBER_TOKEN_ENCRYPTION_KEY is required before storing Jobber tokens')
+    } finally {
+      vi.unstubAllEnvs()
+    }
+
+    expect(mocks.refreshAccessToken).not.toHaveBeenCalled()
+    expect(mocks.createServiceClient).not.toHaveBeenCalled()
+  })
+
   it('does not save refreshed Jobber tokens when the refresh response gains write scopes', async () => {
     mocks.refreshAccessToken.mockRejectedValueOnce(new Error('Jobber OAuth scopes must be read-only'))
 
