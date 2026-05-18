@@ -11,7 +11,11 @@ describe('security headers', () => {
         source: '/(.*)',
         headers: expect.arrayContaining([
           { key: 'Content-Security-Policy', value: expect.stringContaining("frame-ancestors 'none'") },
+          { key: 'Content-Security-Policy', value: expect.stringContaining("default-src 'self'") },
+          { key: 'Content-Security-Policy', value: expect.stringContaining("form-action 'self'") },
           { key: 'X-Content-Type-Options', value: 'nosniff' },
+          { key: 'X-Frame-Options', value: 'DENY' },
+          { key: 'Strict-Transport-Security', value: expect.stringContaining('max-age=63072000') },
           { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
           { key: 'Permissions-Policy', value: expect.stringContaining('camera=()') },
         ]),

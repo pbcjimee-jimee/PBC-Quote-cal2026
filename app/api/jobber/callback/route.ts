@@ -3,6 +3,7 @@ import { assertJobberReadOnlyScopes, getJobberConfig, getMissingOAuthConfigKeys 
 import { saveDevJobberToken } from '@/lib/jobber/dev-tokens'
 import { exchangeAuthorizationCode, getTokenExpiresAt } from '@/lib/jobber/oauth'
 import { encryptTokenValue } from '@/lib/jobber/token-encryption'
+import { isAuthenticatedUserAllowed } from '@/lib/security/auth-policy'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { isDevNoAuthMode } from '@/lib/actions/types'
 
@@ -44,6 +45,10 @@ export async function GET(request: NextRequest) {
     const { data: { user }, error: userError } = await supabase.auth.getUser()
     if (userError || !user) {
       return NextResponse.redirect(new URL('/login', request.url))
+    }
+
+    if (!isAuthenticatedUserAllowed(user)) {
+      return NextResponse.redirect(new URL('/api/auth/signout?reason=not_allowed', request.url))
     }
 
     const service = await createServiceClient()

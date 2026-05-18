@@ -219,14 +219,14 @@ export function CustomerPanel(props: CustomerPanelProps) {
       <div>
         <h2 className="text-sm font-bold uppercase text-slate-400">Customer Info</h2>
       </div>
-      <div className="grid gap-4 sm:grid-cols-2">
-        <label className="space-y-1 text-sm font-semibold text-slate-600">
-          Customer
+      <div className="grid items-end gap-4 sm:grid-cols-[minmax(0,1fr)_minmax(0,1.35fr)]">
+        <label className="flex min-w-0 flex-col gap-1 text-sm font-semibold text-slate-600">
+          <span className="flex min-h-8 items-center">Customer</span>
           <input value={props.customerName} onChange={(event) => props.onCustomerNameChange(event.target.value)} className="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm" />
         </label>
-        <label className="space-y-1 text-sm font-semibold text-slate-600">
-          <span className="flex flex-wrap items-center justify-between gap-2">
-            <span>{lookupLabel}</span>
+        <label className="flex min-w-0 flex-col gap-1 text-sm font-semibold text-slate-600">
+          <span className="flex min-h-8 flex-wrap items-center justify-between gap-2">
+            <span className="min-w-0">{lookupLabel}</span>
             <span className="inline-flex rounded-lg border border-slate-200 bg-slate-50 p-0.5">
               {(['quote', 'job'] as const).map((type) => (
                 <button
@@ -240,7 +240,7 @@ export function CustomerPanel(props: CustomerPanelProps) {
               ))}
             </span>
           </span>
-          <div className="flex gap-2">
+          <div className="flex min-w-0 gap-2">
             <input value={props.jobberQuoteId} onChange={(event) => props.onJobberQuoteIdChange(event.target.value)} className="min-w-0 flex-1 rounded-lg border border-slate-200 px-3 py-2.5 text-sm" />
             <button type="button" onClick={props.onFetchJobberQuote} disabled={props.isFetchingJobberQuote} className="shrink-0 rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm font-bold text-slate-600 hover:bg-slate-50 disabled:opacity-50">
               {props.isFetchingJobberQuote ? 'Loading' : 'Fetch'}

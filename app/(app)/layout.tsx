@@ -1,4 +1,5 @@
 import { AppHeader } from '@/components/layout/app-header'
+import { isAuthenticatedUserAllowed } from '@/lib/security/auth-policy'
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 
@@ -8,6 +9,10 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
   if (!user) {
     redirect('/login')
+  }
+
+  if (!isAuthenticatedUserAllowed(user)) {
+    redirect('/api/auth/signout?reason=not_allowed')
   }
 
   return (

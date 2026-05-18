@@ -122,8 +122,13 @@ function searchTokens(query: string): string[] {
   return query
     .trim()
     .split(/\s+/)
-    .map((token) => token.replace(/[%,().]/g, ''))
+    .map((token) => token
+      .replace(/[%,()._]/g, '')
+      .replace(/[^A-Za-z0-9&/-]/g, '')
+      .slice(0, 48)
+    )
     .filter(Boolean)
+    .slice(0, 8)
 }
 
 function productSearchOr(token: string): string {
@@ -399,6 +404,11 @@ export async function searchProducts(input: unknown): Promise<ActionResult<Produ
     }
   }
 
+  const tokens = searchTokens(parsed.data.query)
+  if (tokens.length === 0) {
+    return { ok: true, data: [] }
+  }
+
   const supabase = await createClient()
   let request = supabase
     .from('products')
@@ -407,7 +417,7 @@ export async function searchProducts(input: unknown): Promise<ActionResult<Produ
     .order('created_at', { ascending: false })
     .limit(parsed.data.limit)
 
-  for (const token of searchTokens(parsed.data.query)) {
+  for (const token of tokens) {
     request = request.or(productSearchOr(token))
   }
 
@@ -431,6 +441,7 @@ export async function listProducts(input: unknown = {}): Promise<ActionResult<Pr
   }
 
   const supabase = await createClient()
+  const tokens = searchTokens(query)
   let request = supabase
     .from('products')
     .select(PUBLIC_PRODUCT_COLUMNS)
@@ -438,8 +449,8 @@ export async function listProducts(input: unknown = {}): Promise<ActionResult<Pr
     .order('created_at', { ascending: false })
     .limit(limit)
 
-  if (query.trim()) {
-    for (const token of searchTokens(query)) {
+  if (query.trim() && tokens.length > 0) {
+    for (const token of tokens) {
       request = request.or(productSearchOr(token))
     }
   }

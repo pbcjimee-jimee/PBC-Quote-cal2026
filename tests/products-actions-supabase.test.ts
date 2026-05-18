@@ -52,7 +52,10 @@ function createThenableProductsRequest(response: unknown) {
     eq: vi.fn(() => request),
     order: vi.fn(() => request),
     limit: vi.fn(() => request),
-    or: vi.fn(() => request),
+    or: vi.fn((filter: string) => {
+      void filter
+      return request
+    }),
     then: (resolve: (value: unknown) => unknown) => resolve(response),
   }
   return request
@@ -118,6 +121,27 @@ describe('product actions against Supabase', () => {
     expect(result.ok).toBe(true)
     expect(request.or).toHaveBeenCalledTimes(2)
     expect(request.limit).toHaveBeenCalledWith(8)
+  })
+
+  it('does not query Supabase when a search contains only wildcard or filter grammar characters', async () => {
+    const result = await searchProducts({ query: '%,().__', limit: 8 })
+
+    expect(result).toEqual({ ok: true, data: [] })
+    expect(mocks.createClient).not.toHaveBeenCalled()
+  })
+
+  it('strips PostgREST filter grammar and LIKE wildcard characters from search tokens', async () => {
+    const request = createThenableProductsRequest({ data: [productRow], error: null })
+    mocks.createClient.mockResolvedValueOnce({ from: vi.fn(() => request) })
+
+    const result = await searchProducts({ query: 'weathershield%),active.eq.true _', limit: 8 })
+
+    expect(result.ok).toBe(true)
+    expect(request.or).toHaveBeenCalledTimes(1)
+    const filter = request.or.mock.calls[0][0]
+    expect(filter).not.toContain('active.eq.true')
+    expect(filter).not.toContain('%_%')
+    expect(filter).toContain('%weathershieldactiveeqtrue%')
   })
 
   it('lists Supabase products without requesting actual prices', async () => {

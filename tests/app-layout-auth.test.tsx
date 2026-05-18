@@ -28,6 +28,7 @@ import AppLayout from '@/app/(app)/layout'
 describe('app layout auth guard', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    delete process.env.ALLOWED_LOGIN_EMAILS
   })
 
   it('redirects to login when Supabase has no current user', async () => {
@@ -45,7 +46,7 @@ describe('app layout auth guard', () => {
 
   it('renders protected content when Supabase verifies the current user', async () => {
     mocks.getUser.mockResolvedValueOnce({
-      data: { user: { id: 'user-1' } },
+      data: { user: { id: 'user-1', email: 'user@example.com' } },
       error: null,
     })
 
@@ -55,5 +56,19 @@ describe('app layout auth guard', () => {
 
     expect(result.props.children[1].props.children).toBe('Protected content')
     expect(mocks.redirect).not.toHaveBeenCalled()
+  })
+
+  it('redirects disallowed authenticated users through sign-out when an email allowlist is configured', async () => {
+    process.env.ALLOWED_LOGIN_EMAILS = 'owner@example.com'
+    mocks.getUser.mockResolvedValueOnce({
+      data: { user: { id: 'user-2', email: 'intruder@example.com' } },
+      error: null,
+    })
+
+    await expect(
+      Promise.resolve().then(() => AppLayout({ children: <main>Protected content</main> }))
+    ).rejects.toThrow('redirect:/api/auth/signout?reason=not_allowed')
+
+    expect(mocks.redirect).toHaveBeenCalledWith('/api/auth/signout?reason=not_allowed')
   })
 })

@@ -41,6 +41,10 @@ describe('jobber callback security', () => {
     process.env.JOBBER_CLIENT_ID = 'client-id'
     process.env.JOBBER_CLIENT_SECRET = 'client-secret'
     process.env.JOBBER_REDIRECT_URI = 'http://localhost:3000/api/jobber/callback'
+    process.env.NEXT_PUBLIC_SUPABASE_URL = 'https://example.supabase.co'
+    process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY = 'publishable-key'
+    process.env.NEXT_PUBLIC_DEV_NO_AUTH = 'false'
+    delete process.env.ALLOWED_LOGIN_EMAILS
   })
 
   it('rejects OAuth callbacks that do not include the state cookie', async () => {
@@ -79,6 +83,40 @@ describe('jobber callback security', () => {
     expect(await response.json()).toEqual({ ok: false, error: 'Jobber OAuth scopes must be read-only' })
     expect(mocks.saveDevJobberToken).not.toHaveBeenCalled()
     expect(mocks.createClient).not.toHaveBeenCalled()
+    expect(mocks.createServiceClient).not.toHaveBeenCalled()
+  })
+
+  it('does not save Jobber tokens for authenticated users outside the login allowlist', async () => {
+    process.env.ALLOWED_LOGIN_EMAILS = 'owner@example.com'
+    mocks.exchangeAuthorizationCode.mockResolvedValueOnce({
+      accessToken: 'access-token',
+      refreshToken: 'refresh-token',
+      expiresIn: 3600,
+      tokenType: 'Bearer',
+      scope: 'quotes:read jobs:read',
+    })
+    mocks.getTokenExpiresAt.mockReturnValueOnce('2026-05-15T00:00:00.000Z')
+    mocks.createClient.mockResolvedValueOnce({
+      auth: {
+        getUser: vi.fn(async () => ({
+          data: { user: { id: 'user-2', email: 'intruder@example.com' } },
+          error: null,
+        })),
+      },
+    })
+    const request = new NextRequest(
+      'http://localhost:3000/api/jobber/callback?code=auth-code&state=state-from-url',
+      {
+        headers: {
+          cookie: 'jobber_oauth_state=state-from-url',
+        },
+      }
+    )
+
+    const response = await jobberCallback(request)
+
+    expect(response.status).toBe(307)
+    expect(response.headers.get('location')).toBe('http://localhost:3000/api/auth/signout?reason=not_allowed')
     expect(mocks.createServiceClient).not.toHaveBeenCalled()
   })
 })

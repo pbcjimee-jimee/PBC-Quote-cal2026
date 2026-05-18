@@ -12,6 +12,7 @@ import { getJobberConfig, getMissingGraphqlConfigKeys } from '@/lib/jobber/confi
 import { getUsableDevJobberToken, refreshDevJobberToken } from '@/lib/jobber/dev-tokens'
 import { mapJobberJobToDraft, mapJobberQuoteToDraft } from '@/lib/jobber/mapper'
 import { getUsableJobberToken, refreshStoredJobberToken, type StoredJobberToken } from '@/lib/jobber/tokens'
+import { isAuthenticatedUserAllowed } from '@/lib/security/auth-policy'
 import { createClient } from '@/lib/supabase/server'
 import { isDevNoAuthMode } from '@/lib/actions/types'
 
@@ -148,6 +149,10 @@ async function getJobberTokenUserId(): Promise<string | null> {
   const supabase = await createClient()
   const { data: { user }, error: userError } = await supabase.auth.getUser()
   if (userError || !user) {
+    throw new JobberAuthError('Login is required to fetch Jobber quotes')
+  }
+
+  if (!isAuthenticatedUserAllowed(user)) {
     throw new JobberAuthError('Login is required to fetch Jobber quotes')
   }
 

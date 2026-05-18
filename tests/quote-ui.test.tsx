@@ -244,6 +244,31 @@ describe('quote form pricing UI', () => {
     expect(markup).toContain('Jobber Job Number or URL')
   })
 
+  it('keeps the customer and Jobber lookup fields aligned in the first customer row', () => {
+    const markup = renderToStaticMarkup(
+      createElement(CustomerPanel, {
+        customerName: 'Jane Customer',
+        customerAddress: '10 Main St',
+        jobberLookupType: 'quote',
+        jobberQuoteId: '2345',
+        workType: 'Exterior',
+        customerType: 'Residential',
+        onCustomerNameChange: () => undefined,
+        onCustomerAddressChange: () => undefined,
+        onJobberLookupTypeChange: () => undefined,
+        onJobberQuoteIdChange: () => undefined,
+        onFetchJobberQuote: () => undefined,
+        onWorkTypeChange: () => undefined,
+        isFetchingJobberQuote: false,
+        jobberFetchError: null,
+        jobberQuoteDraft: null,
+      })
+    )
+
+    expect(markup).toContain('items-end')
+    expect(markup).toContain('min-h-8')
+  })
+
   it('shows expenses from a converted Jobber job in the quote summary', () => {
     const markup = renderToStaticMarkup(
       createElement(CustomerPanel, {
