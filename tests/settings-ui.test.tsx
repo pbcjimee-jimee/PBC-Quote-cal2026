@@ -6,8 +6,10 @@ import {
   MaterialAddItemForm,
   MaterialCsvTemplate,
   MaterialProductsTable,
+  SettingsForm,
 } from '@/components/settings/settings-form'
 import type { ProductRecord } from '@/lib/products/types'
+import { DEFAULT_PRICING_SETTINGS } from '@/lib/calculator'
 
 describe('settings material UI', () => {
   it('shows paint kind without the full product name subtitle', () => {
@@ -69,6 +71,18 @@ describe('settings material UI', () => {
     expect(markup).toContain('Material or service name')
     expect(markup).toContain('Price')
     expect(markup).toContain('Unit')
+  })
+
+  it('shows a Jobber reconnect action in settings', () => {
+    const markup = renderToStaticMarkup(createElement(SettingsForm, {
+      initialAreas: [],
+      initialProducts: [],
+      initialSettings: DEFAULT_PRICING_SETTINGS,
+    }))
+
+    expect(markup).toContain('Jobber Connection')
+    expect(markup).toContain('Reconnect Jobber')
+    expect(markup).toContain('/api/jobber/connect')
   })
 
   it('normalizes numeric edit form values before saving', () => {

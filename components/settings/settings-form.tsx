@@ -662,6 +662,18 @@ export function SettingsForm({ initialAreas, initialProducts, initialSettings }:
 
   return (
     <div className="overflow-hidden rounded-lg border border-white bg-white/90 shadow-[var(--shadow-soft)]">
+      <div className="flex flex-col gap-3 border-b border-slate-100 bg-white px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h2 className="text-sm font-bold uppercase text-slate-400">Jobber Connection</h2>
+          <p className="mt-1 text-sm text-slate-600">Refresh the Jobber OAuth connection used for quote lookup.</p>
+        </div>
+        <a
+          href="/api/jobber/connect"
+          className="inline-flex w-fit rounded-lg bg-[var(--primary)] px-4 py-2 text-sm font-bold text-white hover:bg-[var(--primary-strong)]"
+        >
+          Reconnect Jobber
+        </a>
+      </div>
       <div className="flex gap-1 border-b border-slate-100 bg-slate-50/80 p-2">
         <button type="button" onClick={() => setActiveTab('labour')} className={`rounded-lg px-4 py-2 text-sm font-bold ${activeTab === 'labour' ? 'bg-white text-[var(--primary)] shadow-sm' : 'text-slate-500 hover:text-slate-950'}`}>
           Labour Rates

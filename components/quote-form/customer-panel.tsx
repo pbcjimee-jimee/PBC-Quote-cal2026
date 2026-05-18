@@ -246,7 +246,16 @@ export function CustomerPanel(props: CustomerPanelProps) {
               {props.isFetchingJobberQuote ? 'Loading' : 'Fetch'}
             </button>
           </div>
-          {props.jobberFetchError ? <span className="block text-xs font-normal text-red-600">{props.jobberFetchError}</span> : null}
+          {props.jobberFetchError ? (
+            <span className="block text-xs font-normal text-red-600">
+              {props.jobberFetchError}
+              {props.jobberFetchError.includes('Reconnect Jobber') ? (
+                <a href="/api/jobber/connect" className="ml-2 font-bold text-red-700 underline underline-offset-2">
+                  Reconnect Jobber
+                </a>
+              ) : null}
+            </span>
+          ) : null}
         </label>
       </div>
       <label className="block space-y-1 text-sm font-medium text-gray-700">

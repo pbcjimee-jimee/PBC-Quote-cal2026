@@ -244,6 +244,31 @@ describe('quote form pricing UI', () => {
     expect(markup).toContain('Jobber Job Number or URL')
   })
 
+  it('shows a reconnect action when Jobber quote fetch needs a reconnect', () => {
+    const markup = renderToStaticMarkup(
+      createElement(CustomerPanel, {
+        customerName: 'Jane Customer',
+        customerAddress: '10 Main St',
+        jobberLookupType: 'quote',
+        jobberQuoteId: '2345',
+        workType: 'Exterior',
+        customerType: 'Residential',
+        onCustomerNameChange: () => undefined,
+        onCustomerAddressChange: () => undefined,
+        onJobberLookupTypeChange: () => undefined,
+        onJobberQuoteIdChange: () => undefined,
+        onFetchJobberQuote: () => undefined,
+        onWorkTypeChange: () => undefined,
+        isFetchingJobberQuote: false,
+        jobberFetchError: 'Jobber connection expired. Reconnect Jobber from Settings.',
+        jobberQuoteDraft: null,
+      })
+    )
+
+    expect(markup).toContain('Reconnect Jobber')
+    expect(markup).toContain('/api/jobber/connect')
+  })
+
   it('keeps the customer and Jobber lookup fields aligned in the first customer row', () => {
     const markup = renderToStaticMarkup(
       createElement(CustomerPanel, {
