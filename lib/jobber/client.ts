@@ -154,6 +154,7 @@ interface FetchJobberQuoteOptions {
   fetcher?: (input: string, init: RequestInit) => Promise<Response>
   throttleRetryDelayMs?: number
   maxThrottleRetries?: number
+  preferFullQuoteQuery?: boolean
 }
 
 export class JobberApiError extends Error {
@@ -180,6 +181,12 @@ export class JobberPermissionError extends Error {
 interface JobberJobSearchResult {
   id: string
   jobNumber: number
+  title: string | null
+}
+
+interface JobberQuoteSearchResult {
+  id: string
+  quoteNumber: string
   title: string | null
 }
 
@@ -314,109 +321,6 @@ const JOBBER_QUOTE_QUERY = `
   }
 `
 
-const JOBBER_QUOTE_SEARCH_QUERY = `
-  fragment PbcCustomFieldParts on CustomFieldUnion {
-    ... on CustomFieldText {
-      label
-      valueText
-    }
-    ... on CustomFieldDropdown {
-      label
-      valueDropdown
-    }
-    ... on CustomFieldNumeric {
-      label
-      unit
-      valueNumeric
-    }
-    ... on CustomFieldArea {
-      label
-      unit
-      valueArea {
-        length
-        width
-      }
-    }
-    ... on CustomFieldTrueFalse {
-      label
-      valueTrueFalse
-    }
-    ... on CustomFieldLink {
-      label
-    }
-  }
-
-  query PbcQuoteSearch($term: String!) {
-    quotes(searchTerm: $term, first: 10) {
-      nodes {
-        id
-        quoteNumber
-        title
-        createdAt
-        message
-        customFields {
-          ...PbcCustomFieldParts
-        }
-        jobberWebUri
-        client {
-          id
-          name
-          companyName
-          firstName
-          lastName
-          leadSource
-          sourceAttribution {
-            displayLeadSource
-            source
-            sourceText
-          }
-          tags(first: 20) {
-            nodes {
-              id
-              label
-            }
-          }
-          customFields {
-            ...PbcCustomFieldParts
-          }
-        }
-        property {
-          id
-          jobberWebUri
-          customFields {
-            ...PbcCustomFieldParts
-          }
-          address {
-            street1
-            street2
-            city
-            province
-            postalCode
-          }
-        }
-        lineItems(first: 100) {
-          nodes {
-            id
-            name
-            category
-            description
-            quantity
-            unitPrice
-            totalPrice
-            textOnly
-            linkedProductOrService {
-              id
-              name
-              category
-              description
-            }
-          }
-        }
-      }
-    }
-  }
-`
-
 const JOBBER_QUOTE_LITE_QUERY = `
   query PbcQuoteLite($id: EncodedId!) {
     quote(id: $id) {
@@ -472,58 +376,13 @@ const JOBBER_QUOTE_LITE_QUERY = `
   }
 `
 
-const JOBBER_QUOTE_LITE_SEARCH_QUERY = `
-  query PbcQuoteLiteSearch($term: String!) {
+const JOBBER_QUOTE_SEARCH_LOOKUP_QUERY = `
+  query PbcQuoteSearchLookup($term: String!) {
     quotes(searchTerm: $term, first: 10) {
       nodes {
         id
         quoteNumber
         title
-        createdAt
-        message
-        jobberWebUri
-        client {
-          id
-          name
-          companyName
-          firstName
-          lastName
-          leadSource
-          sourceAttribution {
-            displayLeadSource
-            source
-            sourceText
-          }
-        }
-        property {
-          id
-          jobberWebUri
-          address {
-            street1
-            street2
-            city
-            province
-            postalCode
-          }
-        }
-        lineItems(first: 100) {
-          nodes {
-            id
-            name
-            category
-            description
-            quantity
-            unitPrice
-            totalPrice
-            textOnly
-            linkedProductOrService {
-              id
-              name
-              category
-              description
-            }
-          }
-        }
       }
     }
   }
@@ -867,7 +726,7 @@ function getQuoteFromPayload(payload: unknown): JobberQuote {
   return data.quote as unknown as JobberQuote
 }
 
-function getQuoteFromSearchPayload(payload: unknown, searchTerm: string): JobberQuote {
+function getQuoteSearchResultFromPayload(payload: unknown, searchTerm: string): JobberQuoteSearchResult {
   if (!isRecord(payload)) throw new Error('Invalid Jobber response')
   const errors = payload.errors
   if (Array.isArray(errors) && errors.length > 0) {
@@ -889,8 +748,16 @@ function getQuoteFromSearchPayload(payload: unknown, searchTerm: string): Jobber
     typeof node.quoteNumber === 'string' &&
     node.quoteNumber.toLowerCase() === searchTerm.toLowerCase()
   ))
+  const quote = exactQuote ?? nodes[0]
+  if (!isRecord(quote) || typeof quote.id !== 'string' || typeof quote.quoteNumber !== 'string') {
+    throw new Error('Jobber quote not found')
+  }
 
-  return (exactQuote ?? nodes[0]) as unknown as JobberQuote
+  return {
+    id: quote.id,
+    quoteNumber: quote.quoteNumber,
+    title: typeof quote.title === 'string' ? quote.title : null,
+  }
 }
 
 function getQuoteLineItemsFromPayload(payload: unknown): JobberQuoteLineItem[] {
@@ -1405,6 +1272,11 @@ export async function fetchJobberQuote(
   quoteId: string,
   options: FetchJobberQuoteOptions
 ): Promise<JobberQuote> {
+  if (!options.preferFullQuoteQuery) {
+    const lightweightPayload = await postJobberGraphql(JOBBER_QUOTE_LITE_QUERY, { id: quoteId }, options)
+    return getQuoteFromPayload(lightweightPayload)
+  }
+
   const payload = await postJobberGraphql(JOBBER_QUOTE_QUERY, { id: quoteId }, options)
   if (shouldUseLightweightQuoteQuery(payload)) {
     const lightweightPayload = await postJobberGraphql(JOBBER_QUOTE_LITE_QUERY, { id: quoteId }, options)
@@ -1538,13 +1410,9 @@ export async function searchJobberQuote(
   searchTerm: string,
   options: FetchJobberQuoteOptions
 ): Promise<JobberQuote> {
-  const payload = await postJobberGraphql(JOBBER_QUOTE_SEARCH_QUERY, { term: searchTerm }, options)
-  if (shouldUseLightweightQuoteQuery(payload)) {
-    const lightweightPayload = await postJobberGraphql(JOBBER_QUOTE_LITE_SEARCH_QUERY, { term: searchTerm }, options)
-    return getQuoteFromSearchPayload(lightweightPayload, searchTerm)
-  }
-
-  return getQuoteFromSearchPayload(payload, searchTerm)
+  const lookupPayload = await postJobberGraphql(JOBBER_QUOTE_SEARCH_LOOKUP_QUERY, { term: searchTerm }, options)
+  const quote = getQuoteSearchResultFromPayload(lookupPayload, searchTerm.trim())
+  return fetchJobberQuote(quote.id, options)
 }
 
 export async function fetchJobberQuoteJobs(

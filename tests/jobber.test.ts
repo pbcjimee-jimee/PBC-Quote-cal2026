@@ -254,11 +254,10 @@ describe('jobber client', () => {
       body: expect.stringContaining('"id":"encoded-quote-id"'),
     })
     const calls = fetcher.mock.calls as unknown as Array<[string, RequestInit]>
-    expect(calls[0][1].body).toEqual(expect.stringContaining('customFields'))
-    expect(calls[0][1].body).toEqual(expect.stringContaining('valueNumeric'))
-    expect(calls[0][1].body).toEqual(expect.stringContaining('valueDropdown'))
-    expect(calls[0][1].body).toEqual(expect.stringContaining('tags(first: 20)'))
+    expect(calls[0][1].body).toEqual(expect.stringContaining('query PbcQuoteLite'))
     expect(calls[0][1].body).toEqual(expect.stringContaining('lineItems(first: 100)'))
+    expect(calls[0][1].body).not.toEqual(expect.stringContaining('customFields'))
+    expect(calls[0][1].body).not.toEqual(expect.stringContaining('tags(first: 20)'))
     expect(calls[0][1].body).not.toEqual(expect.stringContaining('jobs(first: 5)'))
     expect(calls[0][1].body).not.toEqual(expect.stringContaining('expenses(first: 25)'))
   })
@@ -277,32 +276,37 @@ describe('jobber client', () => {
   })
 
   it('searches quotes by quote number and returns the exact quote number match', async () => {
-    const fetcher = vi.fn(async () => new Response(JSON.stringify({
-      data: {
-        quotes: {
-          nodes: [
-            {
-              id: 'quote-id-1',
-              quoteNumber: '12345',
-              title: 'Wrong quote',
-              message: null,
-              jobberWebUri: 'https://secure.getjobber.com/quotes/12345',
-              client: null,
-              property: null,
+    const fetcher = vi.fn(async (_input: string, init: RequestInit) => {
+      const body = typeof init.body === 'string' ? init.body : ''
+      if (body.includes('PbcQuoteSearchLookup')) {
+        return new Response(JSON.stringify({
+          data: {
+            quotes: {
+              nodes: [
+                { id: 'quote-id-1', quoteNumber: '12345', title: 'Wrong quote' },
+                { id: 'quote-id-2', quoteNumber: '2345', title: 'Carolyn project' },
+              ],
             },
-            {
-              id: 'quote-id-2',
-              quoteNumber: '2345',
-              title: 'Carolyn project',
-              message: null,
-              jobberWebUri: 'https://secure.getjobber.com/quotes/2345',
-              client: null,
-              property: null,
-            },
-          ],
+          },
+        }), { status: 200 })
+      }
+
+      return new Response(JSON.stringify({
+        data: {
+          quote: {
+            id: 'quote-id-2',
+            quoteNumber: '2345',
+            title: 'Carolyn project',
+            createdAt: '2026-05-13T01:23:45Z',
+            message: null,
+            jobberWebUri: 'https://secure.getjobber.com/quotes/2345',
+            client: null,
+            property: null,
+            lineItems: { nodes: [] },
+          },
         },
-      },
-    }), { status: 200 }))
+      }), { status: 200 })
+    })
 
     const quote = await searchJobberQuote('2345', {
       accessToken: 'access-token',
@@ -314,9 +318,14 @@ describe('jobber client', () => {
     expect(quote.title).toBe('Carolyn project')
     const calls = fetcher.mock.calls as unknown as Array<[string, RequestInit]>
     expect(calls[0][1].body).toEqual(expect.stringContaining('"term":"2345"'))
+    expect(calls[0][1].body).toEqual(expect.stringContaining('query PbcQuoteSearchLookup'))
     expect(calls[0][1].body).toEqual(expect.stringContaining('quotes(searchTerm: $term, first: 10)'))
-    expect(calls[0][1].body).toEqual(expect.stringContaining('lineItems(first: 100)'))
-    expect(calls[0][1].body).not.toEqual(expect.stringContaining('jobs(first: 5)'))
+    expect(calls[0][1].body).not.toEqual(expect.stringContaining('lineItems(first: 100)'))
+    expect(calls[0][1].body).not.toEqual(expect.stringContaining('customFields'))
+    expect(calls[0][1].body).not.toEqual(expect.stringContaining('tags(first: 20)'))
+    expect(calls[1][1].body).toEqual(expect.stringContaining('query PbcQuoteLite'))
+    expect(calls[1][1].body).toEqual(expect.stringContaining('"id":"quote-id-2"'))
+    expect(calls[1][1].body).toEqual(expect.stringContaining('lineItems(first: 100)'))
   })
 
   it('searches jobs by number with a lightweight query before fetching one job detail', async () => {
@@ -484,6 +493,7 @@ describe('jobber client', () => {
       graphqlVersion: '2025-04-16',
       fetcher,
       throttleRetryDelayMs: 0,
+      preferFullQuoteQuery: true,
     })
 
     expect(quote.quoteNumber).toBe('Q-1001')
@@ -546,6 +556,7 @@ describe('jobber client', () => {
       fetcher,
       throttleRetryDelayMs: 0,
       maxThrottleRetries: 2,
+      preferFullQuoteQuery: true,
     })
 
     expect(quote.quoteNumber).toBe('Q-1001')
@@ -557,9 +568,18 @@ describe('jobber client', () => {
     expect(calls[3][1].body).not.toEqual(expect.stringContaining('customFields'))
   })
 
-  it('falls back to a lightweight quote search when the full quote search query is too expensive to retry', async () => {
+  it('uses quote lookup before falling back from a full exact quote fetch to a lightweight quote fetch', async () => {
     const fetcher = vi
       .fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        data: {
+          quotes: {
+            nodes: [
+              { id: 'quote-id-2', quoteNumber: '2345', title: 'Carolyn project' },
+            ],
+          },
+        },
+      }), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify({
         errors: [
           {
@@ -581,31 +601,16 @@ describe('jobber client', () => {
       }), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify({
         data: {
-          quotes: {
-            nodes: [
-              {
-                id: 'quote-id-1',
-                quoteNumber: '12345',
-                title: 'Wrong quote',
-                createdAt: '2026-05-13T01:23:45Z',
-                message: null,
-                jobberWebUri: 'https://secure.getjobber.com/quotes/12345',
-                client: null,
-                property: null,
-                lineItems: { nodes: [] },
-              },
-              {
-                id: 'quote-id-2',
-                quoteNumber: '2345',
-                title: 'Carolyn project',
-                createdAt: '2026-05-13T01:23:45Z',
-                message: null,
-                jobberWebUri: 'https://secure.getjobber.com/quotes/2345',
-                client: null,
-                property: null,
-                lineItems: { nodes: [] },
-              },
-            ],
+          quote: {
+            id: 'quote-id-2',
+            quoteNumber: '2345',
+            title: 'Carolyn project',
+            createdAt: '2026-05-13T01:23:45Z',
+            message: null,
+            jobberWebUri: 'https://secure.getjobber.com/quotes/2345',
+            client: null,
+            property: null,
+            lineItems: { nodes: [] },
           },
         },
       }), { status: 200 }))
@@ -615,19 +620,21 @@ describe('jobber client', () => {
       graphqlVersion: '2025-04-16',
       fetcher,
       throttleRetryDelayMs: 0,
+      preferFullQuoteQuery: true,
     })
 
     expect(quote.id).toBe('quote-id-2')
     expect(quote.title).toBe('Carolyn project')
-    expect(fetcher).toHaveBeenCalledTimes(2)
+    expect(fetcher).toHaveBeenCalledTimes(3)
     const calls = fetcher.mock.calls as unknown as Array<[string, RequestInit]>
-    expect(calls[0][1].body).toEqual(expect.stringContaining('query PbcQuoteSearch'))
-    expect(calls[0][1].body).toEqual(expect.stringContaining('customFields'))
-    expect(calls[1][1].body).toEqual(expect.stringContaining('query PbcQuoteLiteSearch'))
-    expect(calls[1][1].body).toEqual(expect.stringContaining('quotes(searchTerm: $term, first: 10)'))
-    expect(calls[1][1].body).toEqual(expect.stringContaining('lineItems(first: 100)'))
-    expect(calls[1][1].body).not.toEqual(expect.stringContaining('customFields'))
-    expect(calls[1][1].body).not.toEqual(expect.stringContaining('tags(first: 20)'))
+    expect(calls[0][1].body).toEqual(expect.stringContaining('query PbcQuoteSearchLookup'))
+    expect(calls[0][1].body).not.toEqual(expect.stringContaining('lineItems(first: 100)'))
+    expect(calls[1][1].body).toEqual(expect.stringContaining('query PbcQuote'))
+    expect(calls[1][1].body).toEqual(expect.stringContaining('customFields'))
+    expect(calls[2][1].body).toEqual(expect.stringContaining('query PbcQuoteLite'))
+    expect(calls[2][1].body).toEqual(expect.stringContaining('lineItems(first: 100)'))
+    expect(calls[2][1].body).not.toEqual(expect.stringContaining('customFields'))
+    expect(calls[2][1].body).not.toEqual(expect.stringContaining('tags(first: 20)'))
   })
 
   it('fetches a Jobber job by encoded id with line items and expenses', async () => {
