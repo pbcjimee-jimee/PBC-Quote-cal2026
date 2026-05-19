@@ -248,8 +248,20 @@ export const productServiceCreateSchema = z.object({
   active: z.boolean().default(true),
 })
 
-export const productServiceUpdateSchema = productServiceCreateSchema.partial().extend({
+export const productServiceUpdateSchema = z.object({
   id: z.string().uuid(),
+  name: z.string().trim().min(1).max(200).optional(),
+  description: z.string().trim().max(4000).nullable().optional(),
+  category: z.string().trim().max(120).nullable().optional(),
+  unitPrice: z.coerce.number().nonnegative().optional(),
+  unitCost: z.coerce.number().nonnegative().nullable().optional(),
+  bookable: z.boolean().optional(),
+  durationMinutes: z.coerce.number().int().nonnegative().nullable().optional(),
+  quantityEnabled: z.boolean().optional(),
+  minimumQuantity: z.coerce.number().nonnegative().nullable().optional(),
+  maximumQuantity: z.coerce.number().nonnegative().nullable().optional(),
+  taxable: z.boolean().optional(),
+  active: z.boolean().optional(),
 })
 
 export const productServiceDeleteSchema = z.object({

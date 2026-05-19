@@ -19,9 +19,11 @@ vi.mock('@/lib/actions/types', async () => {
 
 import {
   createProductService,
+  deleteProductService,
   importProductServicesCSV,
   listProductServices,
   searchProductServices,
+  updateProductService,
 } from '@/lib/actions/product-services'
 
 const productServiceRow = {
@@ -58,6 +60,8 @@ function createInsertBuilder(response: unknown) {
   const builder = {
     insert: vi.fn(() => builder),
     upsert: vi.fn(() => builder),
+    update: vi.fn(() => builder),
+    eq: vi.fn(() => builder),
     select: vi.fn(() => builder),
     single: vi.fn(async () => response),
     then: (resolve: (value: unknown) => unknown) => resolve(response),
@@ -132,5 +136,62 @@ describe('product service actions against Supabase', () => {
 
     expect(result.ok).toBe(true)
     expect(request.eq).toHaveBeenCalledWith('active', true)
+  })
+
+  it('updates product service fields through Supabase', async () => {
+    const builder = createInsertBuilder({
+      data: { ...productServiceRow, name: 'Ceiling Updated', unit_price: '18.25', active: true },
+      error: null,
+    })
+    mocks.createClient.mockResolvedValueOnce({ from: vi.fn(() => builder) })
+
+    const result = await updateProductService({
+      id: productServiceRow.id,
+      name: 'Ceiling Updated',
+      unitPrice: 18.25,
+      unitCost: null,
+      active: true,
+    })
+
+    expect(result.ok).toBe(true)
+    expect(builder.update).toHaveBeenCalledWith(expect.objectContaining({
+      name: 'Ceiling Updated',
+      unit_price: '18.25',
+      unit_cost: null,
+      active: true,
+      updated_at: expect.any(String),
+    }))
+    expect(builder.eq).toHaveBeenCalledWith('id', productServiceRow.id)
+  })
+
+  it('soft deletes product services through Supabase', async () => {
+    const builder = createInsertBuilder({
+      data: { ...productServiceRow, active: false },
+      error: null,
+    })
+    mocks.createClient.mockResolvedValueOnce({ from: vi.fn(() => builder) })
+
+    const result = await deleteProductService({ id: productServiceRow.id })
+
+    expect(result.ok).toBe(true)
+    expect(builder.update).toHaveBeenCalledWith(expect.objectContaining({
+      active: false,
+      updated_at: expect.any(String),
+    }))
+    expect(builder.eq).toHaveBeenCalledWith('id', productServiceRow.id)
+  })
+
+  it('returns validation and CSV errors before Supabase writes', async () => {
+    const emptyUpdate = await updateProductService({ id: productServiceRow.id })
+    expect(emptyUpdate.ok).toBe(false)
+    if (!emptyUpdate.ok) expect(emptyUpdate.error).toBe('No fields to update')
+
+    const malformedImport = await importProductServicesCSV({
+      csvText: 'Name,Unit Price\nCeiling,not-a-number',
+    })
+
+    expect(malformedImport.ok).toBe(false)
+    if (!malformedImport.ok) expect(malformedImport.error).toContain('invalid amount')
+    expect(mocks.createClient).not.toHaveBeenCalled()
   })
 })

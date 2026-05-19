@@ -22,7 +22,12 @@ vi.mock('next/cache', () => ({
   revalidatePath: mocks.revalidatePath,
 }))
 
-import { createQuoteLineTemplate, listQuoteLineTemplates } from '@/lib/actions/quote-line-templates'
+import {
+  createQuoteLineTemplate,
+  deleteQuoteLineTemplate,
+  listQuoteLineTemplates,
+  updateQuoteLineTemplate,
+} from '@/lib/actions/quote-line-templates'
 
 const templateRow = {
   id: '00000000-0000-4000-8000-000000000021',
@@ -52,6 +57,8 @@ const templateRow = {
 function createTemplateBuilder(response: unknown) {
   const builder = {
     insert: vi.fn(() => builder),
+    update: vi.fn(() => builder),
+    eq: vi.fn(() => builder),
     select: vi.fn(() => builder),
     single: vi.fn(async () => response),
   }
@@ -61,6 +68,8 @@ function createTemplateBuilder(response: unknown) {
 function createItemBuilder(response: unknown) {
   const builder = {
     insert: vi.fn(() => builder),
+    delete: vi.fn(() => builder),
+    eq: vi.fn(async () => response),
     select: vi.fn(async () => response),
   }
   return builder
@@ -132,5 +141,107 @@ describe('quote line template actions against Supabase', () => {
     if (result.ok) {
       expect(result.data[0].items[0].name).toBe('Dulux Accredited Painting Company')
     }
+  })
+
+  it('updates template parent and replaces child line items', async () => {
+    const templateBuilder = createTemplateBuilder({
+      data: { ...templateRow, name: 'Updated quote text' },
+      error: null,
+    })
+    const deleteBuilder = createItemBuilder({ error: null })
+    const itemBuilder = createItemBuilder({
+      data: [
+        {
+          ...templateRow.quote_line_template_items[0],
+          kind: 'line_item',
+          name: 'Total',
+          quantity: '1.00',
+          unit_price: '1281.88',
+          taxable: true,
+          position: 0,
+        },
+      ],
+      error: null,
+    })
+    const from = vi.fn((table: string) => {
+      if (table === 'quote_line_templates') return templateBuilder
+      if (table === 'quote_line_template_items') {
+        return deleteBuilder.delete.mock.calls.length === 0 ? deleteBuilder : itemBuilder
+      }
+      throw new Error(`unexpected table ${table}`)
+    })
+    mocks.createClient.mockResolvedValueOnce({ from })
+
+    const result = await updateQuoteLineTemplate({
+      id: templateRow.id,
+      name: 'Updated quote text',
+      items: [
+        {
+          kind: 'line_item',
+          name: 'Total',
+          description: 'All labour and paints',
+          quantity: 1,
+          unitPrice: 1281.88,
+          taxable: true,
+          clientVisible: true,
+          position: 0,
+        },
+      ],
+    })
+
+    expect(result.ok).toBe(true)
+    expect(templateBuilder.update).toHaveBeenCalledWith(expect.objectContaining({
+      name: 'Updated quote text',
+      updated_at: expect.any(String),
+    }))
+    expect(deleteBuilder.delete).toHaveBeenCalled()
+    expect(deleteBuilder.eq).toHaveBeenCalledWith('template_id', templateRow.id)
+    expect(itemBuilder.insert).toHaveBeenCalledWith([
+      expect.objectContaining({
+        kind: 'line_item',
+        quantity: '1.00',
+        unit_price: '1281.88',
+        taxable: true,
+      }),
+    ])
+  })
+
+  it('soft deletes templates through Supabase', async () => {
+    const templateBuilder = createTemplateBuilder({
+      data: { ...templateRow, active: false },
+      error: null,
+    })
+    mocks.createClient.mockResolvedValueOnce({ from: vi.fn(() => templateBuilder) })
+
+    const result = await deleteQuoteLineTemplate({ id: templateRow.id })
+
+    expect(result.ok).toBe(true)
+    expect(templateBuilder.update).toHaveBeenCalledWith(expect.objectContaining({
+      active: false,
+      updated_at: expect.any(String),
+    }))
+    expect(templateBuilder.eq).toHaveBeenCalledWith('id', templateRow.id)
+    if (result.ok) expect(result.data.active).toBe(false)
+  })
+
+  it('does not insert child rows for empty templates', async () => {
+    const templateBuilder = createTemplateBuilder({
+      data: { ...templateRow, quote_line_template_items: [] },
+      error: null,
+    })
+    const from = vi.fn((table: string) => {
+      if (table === 'quote_line_templates') return templateBuilder
+      throw new Error(`unexpected table ${table}`)
+    })
+    mocks.createClient.mockResolvedValueOnce({ from })
+
+    const result = await createQuoteLineTemplate({
+      name: 'Empty template',
+      items: [],
+    })
+
+    expect(result.ok).toBe(true)
+    expect(from).not.toHaveBeenCalledWith('quote_line_template_items')
+    if (result.ok) expect(result.data.items).toEqual([])
   })
 })
