@@ -499,6 +499,64 @@ describe('jobber client', () => {
     expect(calls[1][1].body).not.toEqual(expect.stringContaining('tags(first: 20)'))
   })
 
+  it('falls back to a lightweight quote fetch after exhausting temporary full quote throttles', async () => {
+    const throttledPayload = {
+      errors: [
+        {
+          message: 'Throttled',
+          extensions: { code: 'THROTTLED' },
+        },
+      ],
+      extensions: {
+        cost: {
+          requestedQueryCost: 120,
+          actualQueryCost: 0,
+          throttleStatus: {
+            maximumAvailable: 10000,
+            currentlyAvailable: 1,
+            restoreRate: 1,
+          },
+        },
+      },
+    }
+    const fetcher = vi
+      .fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify(throttledPayload), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(throttledPayload), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(throttledPayload), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        data: {
+          quote: {
+            id: 'encoded-quote-id',
+            quoteNumber: 'Q-1001',
+            title: 'Interior repaint',
+            createdAt: '2026-05-13T01:23:45Z',
+            message: null,
+            jobberWebUri: 'https://secure.getjobber.com/quotes/1001',
+            client: null,
+            property: null,
+            lineItems: { nodes: [] },
+          },
+        },
+      }), { status: 200 }))
+
+    const quote = await fetchJobberQuote('encoded-quote-id', {
+      accessToken: 'access-token',
+      graphqlVersion: '2025-04-16',
+      fetcher,
+      throttleRetryDelayMs: 0,
+      maxThrottleRetries: 2,
+    })
+
+    expect(quote.quoteNumber).toBe('Q-1001')
+    expect(fetcher).toHaveBeenCalledTimes(4)
+    const calls = fetcher.mock.calls as unknown as Array<[string, RequestInit]>
+    expect(calls[0][1].body).toEqual(expect.stringContaining('query PbcQuote'))
+    expect(calls[2][1].body).toEqual(expect.stringContaining('query PbcQuote'))
+    expect(calls[3][1].body).toEqual(expect.stringContaining('query PbcQuoteLite'))
+    expect(calls[3][1].body).not.toEqual(expect.stringContaining('customFields'))
+  })
+
   it('falls back to a lightweight quote search when the full quote search query is too expensive to retry', async () => {
     const fetcher = vi
       .fn()

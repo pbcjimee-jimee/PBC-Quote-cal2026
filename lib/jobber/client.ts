@@ -1059,7 +1059,7 @@ function isQueryCostTooHighForRetry(payload: unknown): boolean {
 }
 
 function shouldUseLightweightQuoteQuery(payload: unknown): boolean {
-  return isThrottledPayload(payload) && isQueryCostTooHighForRetry(payload)
+  return isThrottledPayload(payload)
 }
 
 function getThrottleRetryDelayMs(payload: unknown, options: FetchJobberQuoteOptions, attempt: number): number {
