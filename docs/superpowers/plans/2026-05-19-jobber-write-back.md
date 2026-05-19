@@ -23,7 +23,7 @@
 - Modify `lib/jobber/client.ts`: split read query execution from approved write execution.
 - Modify `lib/jobber/config.ts`: replace read-only scope assertion with narrow write-scope policy.
 - Create `app/api/jobber/products/route.ts`: search Jobber ProductOrService catalog.
-- Create `app/api/jobber/quote/[quoteId]/sync/route.ts`: external Jobber write-back Route Handler, matching existing Jobber API boundary.
+- Create `app/api/jobber/quote/[quoteId]/sync/route.ts`: external Jobber write-back Route Handler, matching existing Jobber API boundary. Deferred; current implementation syncs from `lib/actions/quotes.ts` through the centralized Jobber client.
 - Modify `lib/actions/quotes.ts`: save `jobber_quote_lines`, save sync status, preserve local save on Jobber failure.
 - Create `components/quote-form/jobber-product-service-editor.tsx`: Jobber-like editor with Add Line Item and Add Text.
 - Modify `components/quote-form/quote-form.tsx`: own editor state, draft persistence, save payload.
@@ -41,12 +41,12 @@
 
 ## Task 0: Confirm Jobber GraphQL Schema
 
-- [ ] Open Jobber Developer Center GraphiQL for the connected PBC app.
+- [x] Confirm Jobber GraphQL schema through introspection against the connected PBC app token.
 - [ ] Confirm ProductOrService query name, searchable fields, and pagination shape.
-- [ ] Confirm quote line item mutation name and whether quote line items are replaced as a full set or edited individually.
-- [ ] Confirm whether Jobber supports public text blocks through API. If not, use zero-price line items for `Add Text`.
-- [ ] Confirm tax input behavior. Default implementation assumes Jobber calculates GST from quote tax settings.
-- [ ] Record the confirmed mutation/query names at the top of `lib/jobber/client.ts` when implementing.
+- [x] Confirm quote line item mutation names and replacement behavior: create new line items first, then delete old line items because Jobber rejects deleting the final remaining line item.
+- [x] Confirm public text blocks through `quoteCreateTextLineItems`.
+- [x] Confirm tax input behavior for current flow. Default implementation sends GST-exclusive total as taxable so Jobber applies GST.
+- [x] Record the confirmed mutation/query names in `lib/jobber/client.ts` through the approved mutation constants.
 
 Expected result: exact Jobber schema names are known before code is written.
 
@@ -58,10 +58,10 @@ Expected result: exact Jobber schema names are known before code is written.
 - Create `tests/jobber-quote-line-payload.test.ts`
 - Create `lib/jobber/quote-line-payload.ts`
 
-- [ ] Add failing tests for `priced_line_items`.
-- [ ] Add a regression assertion that serialized payload does not contain internal material values.
-- [ ] Add failing tests for `description_total`.
-- [ ] Implement `buildJobberQuoteLinePayload(input)` using `decimal.js`.
+- [x] Add failing tests for `priced_line_items`.
+- [x] Add a regression assertion that serialized payload does not contain internal material values.
+- [x] Add failing tests for `description_total`.
+- [x] Implement `buildJobberQuoteLinePayload(input)` using `decimal.js`.
 
 Required assertions:
 
@@ -77,7 +77,7 @@ expect(payload.lineItems.at(-1)).toMatchObject({
 })
 ```
 
-Acceptance: `npm.cmd run test:run -- tests/jobber-quote-line-payload.test.ts` passes.
+Acceptance: `npm.cmd run test:run -- tests/jobber-quote-line-payload.test.ts` passes. Completed 2026-05-19.
 
 ---
 
@@ -88,13 +88,13 @@ Acceptance: `npm.cmd run test:run -- tests/jobber-quote-line-payload.test.ts` pa
 - Modify `docs/DB-SCHEMA.md`
 - Modify `tests/rls.test.ts`
 
-- [ ] Write migration for `jobber_quote_lines`.
-- [ ] Add quote sync columns to `quotes`.
-- [ ] Enable RLS on `jobber_quote_lines`.
-- [ ] Add authenticated ALL policy matching existing app table policy.
-- [ ] Update `tests/rls.test.ts` table list to include `jobber_quote_lines`.
+- [x] Write migration for `jobber_quote_lines`.
+- [x] Add quote sync columns to `quotes`.
+- [x] Enable RLS on `jobber_quote_lines`.
+- [x] Add authenticated ALL policy matching existing app table policy.
+- [x] Update `tests/rls.test.ts` table list to include `jobber_quote_lines`.
 
-Acceptance: RLS static test includes the new table and migration order.
+Acceptance: RLS static test includes the new table and migration order. Completed 2026-05-19.
 
 ---
 
@@ -105,13 +105,13 @@ Acceptance: RLS static test includes the new table and migration order.
 - Modify `components/quote-form/types.ts`
 - Modify `components/quote-form/quote-draft.ts`
 
-- [ ] Add `jobberSaveModeSchema = z.enum(['priced_line_items','description_total'])`.
-- [ ] Add `jobberQuoteLineSchema` with `kind`, `name`, `description`, `quantity`, `unitPrice`, `taxable`, `clientVisible`, `linkedProductOrServiceId`, and `position`.
-- [ ] Add `jobberQuoteLines` and `jobberSaveMode` to `quoteSchema`.
-- [ ] Add TypeScript UI draft type matching the schema.
-- [ ] Update local draft parse/restore so Jobber line items survive refresh.
+- [x] Add `jobberSaveModeSchema = z.enum(['priced_line_items','description_total'])`.
+- [x] Add `jobberQuoteLineSchema` with `kind`, `name`, `description`, `quantity`, `unitPrice`, `taxable`, `clientVisible`, `linkedProductOrServiceId`, and `position`.
+- [x] Add `jobberQuoteLines` and `jobberSaveMode` to `quoteSchema`.
+- [x] Add TypeScript UI draft type matching the schema.
+- [x] Update local draft parse/restore so Jobber line items survive refresh.
 
-Acceptance: typecheck passes and quote draft tests are updated.
+Acceptance: typecheck passes and quote draft tests are updated. Completed 2026-05-19.
 
 ---
 
@@ -124,14 +124,14 @@ Acceptance: typecheck passes and quote draft tests are updated.
 - Modify `tests/jobber-route-security.test.ts`
 - Create `tests/jobber-write-client.test.ts`
 
-- [ ] Keep query execution centralized in `lib/jobber/client.ts`.
-- [ ] Add an approved write function for the confirmed quote line item mutation only.
-- [ ] Reject raw mutation strings outside the approved function.
-- [ ] Update scope validation to allow only required quote write scope and existing read scopes.
-- [ ] Reject broad `manage`, `delete`, unrelated write scopes.
+- [x] Keep query execution centralized in `lib/jobber/client.ts`.
+- [x] Add an approved write function for the confirmed quote line item mutations only.
+- [x] Reject raw mutation strings outside the approved function.
+- [x] Update scope validation to allow only narrow quote write scope and existing read scopes.
+- [x] Reject broad `manage`, `delete`, unrelated write scopes.
 - [ ] Rename read-only regression tests to narrow-write regression tests.
 
-Acceptance: tests prove only approved quote line item write-back is possible.
+Acceptance: tests prove only approved quote line item write-back is possible. Completed 2026-05-19 for quote line replacement.
 
 ---
 
@@ -158,15 +158,15 @@ Acceptance: route test covers success, unauthenticated user, and Jobber API erro
 - Modify `components/quote-form/quote-form.tsx`
 - Modify `components/quote-form/types.ts`
 
-- [ ] Render a `Product / Service` section below customer info and above internal materials.
-- [ ] Add segmented save mode control: `Priced Line Items` and `Description + Total`.
-- [ ] Add `Add Line Item` button.
-- [ ] Add `Add Text` button.
-- [ ] Add editable row fields matching the design doc.
+- [x] Render a `Product / Service` section below customer info and above internal materials.
+- [x] Add segmented save mode control: `Priced Line Items` and `Description + Total`.
+- [x] Add `Add Line Item` button.
+- [x] Add `Add Text` button.
+- [x] Add editable row fields matching the design doc.
 - [ ] Use Jobber product search when linking a line item.
-- [ ] Do not include Build Option Set, image upload, or notes UI.
+- [x] Do not include Build Option Set, image upload, or notes UI.
 
-Acceptance: UI tests or render tests verify both line kinds and mode labels are present.
+Acceptance: UI tests or render tests verify both line kinds and mode labels are present. Partially completed 2026-05-19; ProductOrService search remains blocked by Task 0 schema confirmation.
 
 ---
 
@@ -178,13 +178,13 @@ Acceptance: UI tests or render tests verify both line kinds and mode labels are 
 - Modify `lib/dev-data.ts`
 - Add `tests/quote-actions-jobber-lines.test.ts`
 
-- [ ] Persist `jobber_quote_lines` with the quote.
-- [ ] Read quote details with saved Jobber lines.
-- [ ] On update, replace saved Jobber lines transactionally with the new ordered set.
-- [ ] Store `jobber_save_mode`.
-- [ ] Keep material persistence unchanged.
+- [x] Persist `jobber_quote_lines` with the quote.
+- [x] Read quote details with saved Jobber lines.
+- [x] On update, replace saved Jobber lines with the new ordered set.
+- [x] Store `jobber_save_mode`.
+- [x] Keep material persistence unchanged.
 
-Acceptance: quote create/update tests prove material rows and Jobber public lines are stored separately.
+Acceptance: quote create/update tests prove material rows and Jobber public lines are stored separately. Completed 2026-05-19 for current action flow; full DB transaction wrapping remains a future hardening item if failures between child inserts become a practical issue.
 
 ---
 
@@ -196,20 +196,21 @@ Acceptance: quote create/update tests prove material rows and Jobber public line
 - Modify `components/quote-form/quote-form.tsx`
 - Add tests for partial failure.
 
-- [ ] After local save succeeds, call approved Jobber write-back if `jobberQuoteId` exists and Jobber is connected.
-- [ ] On Jobber success, set `jobber_sync_status = 'synced'`, `jobber_last_synced_at = now()`, clear error.
-- [ ] On Jobber failure, keep local quote saved and set `jobber_sync_status = 'failed'` with error.
+- [x] After local save succeeds, call approved Jobber write-back if `jobberQuoteId` exists and Jobber is connected.
+- [x] On Jobber success, set `jobber_sync_status = 'synced'`, `jobber_last_synced_at = now()`, clear error.
+- [x] On Jobber failure, keep local quote saved and set `jobber_sync_status = 'failed'` with error.
 - [ ] Show Retry button for failed sync.
 
-Acceptance: failing Jobber mock does not roll back local quote save.
+Acceptance: failing Jobber mock does not roll back local quote save. Completed 2026-05-19 for save-time automatic sync; retry UI remains pending.
 
 ---
 
 ## Task 9: Verification
 
-- [ ] Run `npm.cmd run typecheck`.
-- [ ] Run `npm.cmd run lint`.
-- [ ] Run `npm.cmd run test:run`.
+- [x] Run `npm.cmd run typecheck`.
+- [x] Run `npm.cmd run lint`.
+- [x] Run `npm.cmd run test:run`.
+- [x] Run `npm.cmd run build`.
 - [ ] Browser QA on `http://localhost:3000/quotes/new`:
   - fetch Jobber quote
   - add priced line item
@@ -217,6 +218,7 @@ Acceptance: failing Jobber mock does not roll back local quote save.
   - save local quote
   - verify Jobber quote receives public Product / Service line items only
   - verify material prices remain only in our app
-- [ ] Update `PROGRESS.md` with final test evidence after implementation.
+- [x] Verify connected Jobber quote #3535 receives public Product / Service line items only.
+- [x] Update `PROGRESS.md` with final test evidence after implementation.
 
 Acceptance: all automated checks pass and one connected Jobber test quote is manually verified.

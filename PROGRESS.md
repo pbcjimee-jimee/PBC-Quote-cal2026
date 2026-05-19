@@ -11,7 +11,7 @@
 |---|---|
 | **앱** | PBC 견적 계산기 — 페인팅 회사 PBC 사내 도구 |
 | **스택** | Next.js 16 (App Router) + React 19 + TypeScript + Tailwind CSS 4 + Supabase + Vercel |
-| **현재 버전** | v1.0 핵심 플로우 완성, v1.0+ 옵션·Jobber 읽기 전용·QA 완료, Jobber controlled write-back 계획 수립, 실제 과거 견적 fixture 대기 |
+| **현재 버전** | v1.0 핵심 플로우 완성, v1.0+ 옵션·Jobber 읽기 전용·QA 완료, Jobber controlled write-back 로컬 편집·저장 및 실제 quote line item write-back 1차 구현 |
 | **배포 URL** | https://pbc-quote-cal2026-kjm12081-3858s-projects.vercel.app |
 | **GitHub Repo** | jimeekang/PBC-Quote-cal2026 (branch: main) |
 
@@ -20,7 +20,7 @@
 ## v1.0 전체 진행 현황
 
 ```
-[███████████████████░] 95% — 핵심 플로우/Auth/Jobber 읽기 전용/옵션/QA 완료, Jobber controlled write-back 계획 수립, 실제 과거 견적 fixture 잔여
+[███████████████████░] 97% — 핵심 플로우/Auth/Jobber 읽기 전용/옵션/QA 완료, Jobber controlled write-back 로컬 편집·저장 및 실제 quote line item mutation 구현, ProductOrService search와 과거 견적 fixture 잔여
 ```
 
 ---
@@ -131,7 +131,14 @@
 - [x] 설계: `docs/superpowers/specs/2026-05-19-jobber-write-back-design.md`
 - [x] 구현 계획: `docs/superpowers/plans/2026-05-19-jobber-write-back.md`
 - [x] 관련 문서 동기화: `docs/DECISIONS.md`, `docs/ARCHITECTURE.md`, `docs/SECURITY.md`, `docs/DB-SCHEMA.md`, `docs/UI-QUOTE-FORM.md`, `docs/AGENT-MAP.md`
-- [ ] 구현 전 Jobber GraphiQL에서 quote line item mutation/input shape 확정 필요
+- [x] `0010_add_jobber_quote_lines.sql` 로컬 저장 스키마 추가: `quotes` sync 상태 + `jobber_quote_lines` RLS
+- [x] `/quotes/new` Product / Service editor 1차 구현: `Priced Line Items`, `Description + Total`, `Add Line Item`, `Add Text`
+- [x] 공개 Jobber line item을 material `quote_items`와 분리 저장, draft 복원 포함
+- [x] Jobber payload builder 추가: material `actual_price`/`market_price`/내부 material detail 미전송 회귀 테스트
+- [x] 실제 Jobber write-back 전송 구현: Jobber schema introspection으로 `quoteCreateLineItems`, `quoteCreateTextLineItems`, `quoteDeleteLineItems` 확인 후 중앙 client에 승인된 mutation 경로 추가. 저장 후 같은 Jobber quote에 공개 Product / Service line item만 동기화하고 material 가격은 전송하지 않음
+- [x] Jobber line item ID 기반 동기화 보강: Fetch한 Product / Service line item을 편집기 row로 바로 채우고, 저장 시 기존 ID가 있으면 edit mutation 경로를 사용하며 Jobber에만 있는 다른 line item은 삭제하지 않음. 앱에서 명시적으로 제거한 ID만 delete 후보로 전송
+- [x] 연결된 Jobber Quote #3535 실동기화 검증: 기존 line item 1개 유지 삭제 순서 오류 확인 후, 새 line item 생성 후 기존 line item 삭제 순서로 수정. 최종 Jobber line items는 `Ceiling` text line + `Total` priced line 2개, DB `jobber_sync_status = synced`
+- [x] 로컬 검증(2026-05-19): `npm.cmd run typecheck`, `npm.cmd run lint`, `npm.cmd run test:run`(43 passed / 1 skipped files, 209 passed / 2 skipped tests), `npm.cmd run build`, `git diff --check` 통과
 
 ### 옵션 견적 (2026-05-15)
 
@@ -204,7 +211,7 @@
 |---|---|
 | `PROGRESS.md` 134번째 줄 이후 남은 v1.0 작업 계획/진행 | 완료된 항목은 체크 처리, 차단 항목은 원인과 승인/입력 조건 기록 |
 | Jobber controlled write-back으로 결정 변경 | 기존 read-only fetch는 유지하되, 같은 Jobber quote에 공개 Product / Service line item만 write-back. material 가격은 Jobber에 저장하지 않음 |
-| 모든 오류 제거 | `npm.cmd run verify` 전체 통과 및 audit 0 vulnerabilities |
+| 모든 오류 제거 | typecheck, lint, 신규/전체 unit test 통과. `npm.cmd run verify` 전체 통과 여부는 이번 구현 최종 검증 기록 참조 |
 | 완료되면 파일 업데이트 | `PROGRESS.md`에 검증 결과, 남은 차단 항목, 승인 후 실행 작업 기록 |
 | 백업 방식은 진행하지 않기 | 백업 관련 항목을 제외 완료로 표시하고 실행하지 않음 |
 
@@ -225,7 +232,7 @@
 ### 사용자 입력/승인 필요
 
 - 실제 PBC 과거 견적 3건의 입력값/기대 결과 제공 필요
-- Jobber write-back 구현 전 Developer Center GraphiQL에서 quote line item mutation/input shape 확인 필요
+- Jobber ProductOrService search query shape 확인 및 import/link UI 연결 필요
 - 백업 방식은 사용자 지시로 진행하지 않음 (2026-05-15)
 
 ### 승인 후 실행 작업
@@ -233,7 +240,7 @@
 | 승인/입력 | 바로 실행할 작업 |
 |---|---|
 | 실제 PBC 과거 견적 3건 제공 | `tests/fixtures/historical-quotes.ts`를 실제 3건으로 교체하고 `npm.cmd run test:run` 및 `npm.cmd run verify` 재실행 |
-| Jobber GraphiQL schema 확인 | `docs/superpowers/plans/2026-05-19-jobber-write-back.md` Task 1부터 TDD로 구현 시작 |
+| Jobber ProductOrService schema 확인 | 실제 Jobber ProductOrService search route 및 link UI 구현 시작 |
 | 백업 방식 | 사용자 지시로 진행하지 않음 |
 
 ### UX 잔여 (v1.0 완료 차단 아님, v1.1+로 이관 — `docs/DECISIONS.md` #1 기준)
@@ -290,3 +297,11 @@
 | 2026-05-15 | `/gstack-qa` 브라우저 QA 실행 — gstack browse 런타임 복구, 임시 Supabase Auth 사용자로 로그인 후 견적 생성/상세/편집/Settings 확인, QA 데이터 정리 | Codex |
 | 2026-05-15 | `docs/UI-UX-REVIEW.md` 문서 발견성 반영, README/AGENT-MAP/PROGRESS 동기화, `next.config.ts` Turbopack root 설정 기록 | Codex |
 | 2026-05-19 | Jobber controlled write-back 결정 변경 설계 및 구현 계획 문서화. `DECISIONS`/`ARCHITECTURE`/`SECURITY`/`DB-SCHEMA`/`UI-QUOTE-FORM`/`AGENT-MAP` 동기화 | Codex |
+| 2026-05-19 | Jobber Product / Service 로컬 편집·저장 1차 구현. `jobber_quote_lines` migration/RLS, quote action 저장·조회, draft persistence, payload privacy builder, UI editor, 회귀 테스트 추가. 실제 Jobber mutation은 GraphiQL schema 확인 전까지 차단 유지 | Codex |
+| 2026-05-19 | 실제 Jobber quote line item write-back 구현 및 검증. `quoteCreateTextLineItems`/`quoteCreateLineItems`로 새 공개 line item 생성 후 `quoteDeleteLineItems`로 기존 line item 삭제, 저장 후 `synced`/`failed` 상태 기록. Quote #3535 실동기화 완료 | Codex |
+| 2026-05-19 | Jobber line item 단위 동기화 보강. Fetch한 Jobber Product / Service를 편집 row로 채우고, `jobberLineItemId`가 있는 row는 edit 경로로 저장하며 Jobber에만 있는 line item은 보존. 앱에서 제거한 line item ID만 명시 delete 대상으로 처리 | Codex |
+| 2026-05-19 | Jobber edit mutation 실패 수정. `QuoteEditLineItemsPayload` 실제 응답 필드가 `editedLineItems`가 아니라 `modifiedLineItems`임을 Jobber schema introspection으로 확인하고 client/test를 수정. 실패한 Quote #3535는 기존 2개 edit + 신규 1개 create로 재동기화했고 DB `jobber_sync_status = synced` 확인 | Codex |
+| 2026-05-19 | Quote detail 화면에 앱 저장 Product / Service line item 표시 추가. DB `jobber_quote_lines`에는 저장되어 있었지만 상세 화면이 `jobberSnapshot`만 보여줘 저장 안 된 것처럼 보이던 문제를 수정하고 회귀 테스트 추가 | Codex |
+| 2026-05-19 | Jobber write-back 성공 후 `jobber_snapshot` 자동 갱신 추가. 저장 후 같은 Jobber quote를 다시 fetch해서 Jobber Data 섹션의 Product / Service 캐시도 최신 line item으로 바뀌도록 수정하고 Quote #3535 snapshot을 현재 Jobber live 값으로 재갱신 | Codex |
+| 2026-05-19 | Product / Service editor line item drag reorder added. Rows now expose drag handles, reordered arrays save back through existing `position` fields, and Jobber write-back sends the app position as `sortOrder` so edited Jobber line items can follow the app order. Targeted TDD tests, typecheck, lint, quote action tests, and payload tests passed. | Codex |
+| 2026-05-19 | Jobber reorder sync hardening. Before write-back, live Jobber quote lines are used to relink stale app `jobberLineItemId` values by matching current line content or current position, then reordered edit lines are sent in one `quoteEditLineItems` mutation with `sortOrder`. Added regression coverage for stale session relinking and batched reorder sync. | Codex |

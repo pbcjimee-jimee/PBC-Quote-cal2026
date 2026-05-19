@@ -15,22 +15,50 @@ import { calculateFormulaLabourDays, calculateLabourTotals } from '@/lib/quote-l
 import { createClient } from '@/lib/supabase/server'
 import type { Database, Json } from '@/lib/supabase/types'
 import { jobberQuoteSnapshotSchema, pricingSettingsSchema, quoteSchema, type QuoteInput } from '@/lib/validators'
-import type { JobberQuoteDraft } from '@/lib/jobber/mapper'
+import { mapJobberQuoteToDraft, type JobberQuoteDraft } from '@/lib/jobber/mapper'
+import { fetchJobberQuote, JobberApiError, syncJobberQuoteLineItems } from '@/lib/jobber/client'
+import { getJobberConfig, getMissingGraphqlConfigKeys } from '@/lib/jobber/config'
+import { getUsableJobberToken, refreshStoredJobberToken, type StoredJobberToken } from '@/lib/jobber/tokens'
 import { QUOTE_DETAIL_SELECT, QUOTES_LIST_SELECT } from '@/lib/quote-query-shape'
 import { getAuthUserProfilesById, type UserProfile } from '@/lib/user-profiles'
 import { getPricingSettings } from './settings'
 import type { ActionResult } from './types'
 import { isDevNoAuthMode } from './types'
+import type { JobberQuoteLineInput, JobberSaveModeInput } from '@/lib/validators'
 
-type QuoteRow = Database['public']['Tables']['quotes']['Row']
+type JobberSyncStatus = 'not_synced' | 'synced' | 'failed'
+type QuoteRow = Database['public']['Tables']['quotes']['Row'] & {
+  jobber_save_mode?: JobberSaveModeInput | null
+  jobber_sync_status?: JobberSyncStatus
+  jobber_last_synced_at?: string | null
+  jobber_sync_error?: string | null
+}
 type QuoteItemRow = Database['public']['Tables']['quote_items']['Row']
 type QuoteOptionRow = Database['public']['Tables']['quote_options']['Row']
 type QuoteOptionItemRow = Database['public']['Tables']['quote_option_items']['Row']
+type JobberQuoteLineRow = {
+  id: string
+  quote_id: string
+  kind: 'line_item' | 'text'
+  name: string
+  description: string | null
+  quantity: string | null
+  unit_price: string | null
+  total_price: string | null
+  taxable: boolean
+  client_visible: boolean
+  jobber_line_item_id: string | null
+  linked_product_or_service_id: string | null
+  position: number
+  created_at: string
+  updated_at: string
+}
 type QuoteOptionWithItemsRow = QuoteOptionRow & {
   quote_option_items?: QuoteOptionItemRow[]
 }
 type QuoteWithItemsRow = QuoteRow & {
   quote_items?: QuoteItemRow[]
+  jobber_quote_lines?: JobberQuoteLineRow[]
   quote_options?: QuoteOptionWithItemsRow[]
 }
 
@@ -57,11 +85,14 @@ function isMissingOptionsRelationError(error: { message?: string } | null): bool
   const message = error?.message ?? ''
   return message.includes("relationship between 'quotes' and 'quote_options'") ||
     message.includes("relation \"quote_options\" does not exist") ||
-    message.includes("relation \"quote_option_items\" does not exist")
+    message.includes("relation \"quote_option_items\" does not exist") ||
+    message.includes("relationship between 'quotes' and 'jobber_quote_lines'") ||
+    message.includes("relation \"jobber_quote_lines\" does not exist")
 }
 
 function toQuoteRecord(row: QuoteWithItemsRow, creatorProfile?: UserProfile): QuoteRecord {
   const quoteItems = [...(row.quote_items ?? [])].sort((a, b) => a.position - b.position)
+  const jobberQuoteLines = [...(row.jobber_quote_lines ?? [])].sort((a, b) => a.position - b.position)
   const quoteOptions = [...(row.quote_options ?? [])].sort((a, b) => a.position - b.position)
 
   return {
@@ -70,6 +101,10 @@ function toQuoteRecord(row: QuoteWithItemsRow, creatorProfile?: UserProfile): Qu
     customerAddress: row.customer_address,
     jobberQuoteId: row.jobber_quote_id,
     jobberSnapshot: parseJobberSnapshot(row.jobber_snapshot),
+    jobberSaveMode: row.jobber_save_mode ?? null,
+    jobberSyncStatus: row.jobber_sync_status ?? 'not_synced',
+    jobberLastSyncedAt: row.jobber_last_synced_at ?? null,
+    jobberSyncError: row.jobber_sync_error ?? null,
     areaSqft: row.area_sqft,
     workType: row.work_type,
     workingDays: row.working_days,
@@ -103,6 +138,23 @@ function toQuoteRecord(row: QuoteWithItemsRow, creatorProfile?: UserProfile): Qu
       areaScopeSnapshot: item.area_scope_snapshot,
       isCustom: item.is_custom,
       position: item.position,
+    })),
+    jobberQuoteLines: jobberQuoteLines.map((line) => ({
+      id: line.id,
+      quoteId: line.quote_id,
+      kind: line.kind,
+      name: line.name,
+      description: line.description,
+      quantity: line.quantity,
+      unitPrice: line.unit_price,
+      totalPrice: line.total_price,
+      taxable: line.taxable,
+      clientVisible: line.client_visible,
+      jobberLineItemId: line.jobber_line_item_id,
+      linkedProductOrServiceId: line.linked_product_or_service_id,
+      position: line.position,
+      createdAt: line.created_at,
+      updatedAt: line.updated_at,
     })),
     options: quoteOptions.map((option) => ({
       id: option.id,
@@ -272,6 +324,10 @@ export async function createQuote(input: unknown): Promise<ActionResult<{ id: st
       customer_address: parsed.data.customerAddress || null,
       jobber_quote_id: parsed.data.jobberQuoteId || null,
       jobber_snapshot: (parsed.data.jobberSnapshot ?? null) as unknown as Json | null,
+      jobber_save_mode: parsed.data.jobberSaveMode ?? null,
+      jobber_sync_status: 'not_synced',
+      jobber_last_synced_at: null,
+      jobber_sync_error: null,
       area_sqft: parsed.data.areaSqft ?? null,
       work_type: parsed.data.workType || null,
       working_days: parsed.data.workingDays.toFixed(2),
@@ -315,8 +371,22 @@ export async function createQuote(input: unknown): Promise<ActionResult<{ id: st
     if (itemsError) return { ok: false, error: itemsError.message }
   }
 
+  const jobberLinesError = await insertJobberQuoteLines(supabase, quote.id, parsed.data.jobberQuoteLines)
+  if (jobberLinesError) return { ok: false, error: jobberLinesError }
+
   const optionsError = await insertQuoteOptions(supabase, quote.id, parsed.data.options, settingsResult.data)
   if (optionsError) return { ok: false, error: optionsError }
+
+  await syncSavedQuoteToJobber({
+    supabase,
+    quoteId: quote.id,
+    userId: userData.user.id,
+    jobberQuoteId: parsed.data.jobberQuoteId || null,
+    saveMode: parsed.data.jobberSaveMode,
+    lines: parsed.data.jobberQuoteLines,
+    deletedJobberLineItemIds: parsed.data.deletedJobberLineItemIds,
+    finalTotal,
+  })
 
   revalidatePath('/quotes')
   return { ok: true, data: { id: quote.id } }
@@ -377,6 +447,10 @@ export async function updateQuote(input: unknown): Promise<ActionResult<{ id: st
       customer_address: parsed.data.customerAddress || null,
       jobber_quote_id: parsed.data.jobberQuoteId || null,
       jobber_snapshot: (parsed.data.jobberSnapshot ?? null) as unknown as Json | null,
+      jobber_save_mode: parsed.data.jobberSaveMode ?? null,
+      jobber_sync_status: 'not_synced',
+      jobber_last_synced_at: null,
+      jobber_sync_error: null,
       area_sqft: parsed.data.areaSqft ?? null,
       work_type: parsed.data.workType || null,
       working_days: parsed.data.workingDays.toFixed(2),
@@ -403,6 +477,9 @@ export async function updateQuote(input: unknown): Promise<ActionResult<{ id: st
   const { error: deleteOptionsError } = await supabase.from('quote_options').delete().eq('quote_id', id)
   if (deleteOptionsError) return { ok: false, error: deleteOptionsError.message }
 
+  const { error: deleteJobberLinesError } = await supabase.from('jobber_quote_lines').delete().eq('quote_id', id)
+  if (deleteJobberLinesError) return { ok: false, error: deleteJobberLinesError.message }
+
   const items = parsed.data.items.map((item, index) => ({
     quote_id: id,
     product_id: item.productId ?? null,
@@ -426,6 +503,20 @@ export async function updateQuote(input: unknown): Promise<ActionResult<{ id: st
 
   const optionsError = await insertQuoteOptions(supabase, id, parsed.data.options, settings)
   if (optionsError) return { ok: false, error: optionsError }
+
+  const jobberLinesError = await insertJobberQuoteLines(supabase, id, parsed.data.jobberQuoteLines)
+  if (jobberLinesError) return { ok: false, error: jobberLinesError }
+
+  await syncSavedQuoteToJobber({
+    supabase,
+    quoteId: id,
+    userId: userData.user.id,
+    jobberQuoteId: parsed.data.jobberQuoteId || null,
+    saveMode: parsed.data.jobberSaveMode,
+    lines: parsed.data.jobberQuoteLines,
+    deletedJobberLineItemIds: parsed.data.deletedJobberLineItemIds,
+    finalTotal,
+  })
 
   revalidatePath('/quotes')
   revalidatePath(`/quotes/${id}`)
@@ -482,6 +573,155 @@ export async function searchQuotes(query = ''): Promise<ActionResult<QuoteRecord
   return {
     ok: true,
     data: quoteRows.map((row) => toQuoteRecord(row, creatorProfiles.get(row.created_by))),
+  }
+}
+
+function calculateJobberLineTotal(line: JobberQuoteLineInput): Decimal | number | undefined {
+  if (line.totalPrice !== undefined) return line.totalPrice
+  if (line.quantity === undefined || line.unitPrice === undefined) return undefined
+  return new Decimal(line.quantity).mul(line.unitPrice)
+}
+
+function optionalTrimmedText(value: string | undefined): string | null {
+  return value?.trim() || null
+}
+
+function toJobberQuoteLineInsert(quoteId: string, line: JobberQuoteLineInput, index: number) {
+  return {
+    quote_id: quoteId,
+    kind: line.kind,
+    name: line.name.trim(),
+    description: optionalTrimmedText(line.description),
+    quantity: optionalMoney(line.quantity),
+    unit_price: optionalMoney(line.unitPrice),
+    total_price: optionalMoney(calculateJobberLineTotal(line)),
+    taxable: line.taxable,
+    client_visible: line.clientVisible,
+    jobber_line_item_id: optionalTrimmedText(line.jobberLineItemId),
+    linked_product_or_service_id: optionalTrimmedText(line.linkedProductOrServiceId),
+    position: line.position ?? index,
+  }
+}
+
+async function insertJobberQuoteLines(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  quoteId: string,
+  lines: JobberQuoteLineInput[]
+): Promise<string | null> {
+  if (lines.length === 0) return null
+
+  const { error } = await supabase
+    .from('jobber_quote_lines')
+    .insert(lines.map((line, index) => toJobberQuoteLineInsert(quoteId, line, index)))
+
+  return error?.message ?? null
+}
+
+async function markJobberSyncStatus(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  quoteId: string,
+  status: JobberSyncStatus,
+  errorMessage: string | null,
+  snapshot?: JobberQuoteDraft | null
+): Promise<void> {
+  const updatePayload: Database['public']['Tables']['quotes']['Update'] = {
+    jobber_sync_status: status,
+    jobber_last_synced_at: status === 'synced' ? new Date().toISOString() : null,
+    jobber_sync_error: errorMessage ? errorMessage.slice(0, 500) : null,
+  }
+
+  if (snapshot !== undefined) {
+    updatePayload.jobber_snapshot = snapshot as unknown as Json | null
+  }
+
+  await supabase
+    .from('quotes')
+    .update(updatePayload)
+    .eq('id', quoteId)
+}
+
+async function recordSyncedJobberLineIds(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  quoteId: string,
+  syncedLineItems: Array<{ sourcePosition: number; jobberLineItemId: string }>
+): Promise<void> {
+  for (const line of syncedLineItems) {
+    await supabase
+      .from('jobber_quote_lines')
+      .update({ jobber_line_item_id: line.jobberLineItemId })
+      .eq('quote_id', quoteId)
+      .eq('position', line.sourcePosition)
+  }
+}
+
+function getSyncErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : 'Unable to sync quote to Jobber'
+}
+
+async function syncSavedQuoteToJobber(params: {
+  supabase: Awaited<ReturnType<typeof createClient>>
+  quoteId: string
+  userId: string
+  jobberQuoteId: string | null
+  saveMode: QuoteInput['jobberSaveMode']
+  lines: QuoteInput['jobberQuoteLines']
+  deletedJobberLineItemIds: QuoteInput['deletedJobberLineItemIds']
+  finalTotal: Decimal
+}): Promise<void> {
+  if (!params.jobberQuoteId || (params.lines.length === 0 && params.deletedJobberLineItemIds.length === 0)) return
+
+  const config = getJobberConfig()
+  const missing = getMissingGraphqlConfigKeys(config)
+  if (missing.length > 0) {
+    await markJobberSyncStatus(params.supabase, params.quoteId, 'failed', `Jobber quote sync is not configured: ${missing.join(', ')}`)
+    return
+  }
+
+  let token: StoredJobberToken | null = null
+  try {
+    token = await getUsableJobberToken(params.userId, config)
+    let accessToken = token?.accessToken ?? config.accessToken
+    if (!accessToken) {
+      await markJobberSyncStatus(params.supabase, params.quoteId, 'failed', 'Jobber is not connected. Connect Jobber first.')
+      return
+    }
+
+    const syncInput = {
+      saveMode: params.saveMode ?? 'priced_line_items',
+      lines: params.lines,
+      finalTotal: params.finalTotal,
+      finalTotalIncludesGst: true,
+      deletedJobberLineItemIds: params.deletedJobberLineItemIds,
+    }
+
+    let syncResult: Awaited<ReturnType<typeof syncJobberQuoteLineItems>>
+    try {
+      syncResult = await syncJobberQuoteLineItems(params.jobberQuoteId, syncInput, {
+        accessToken,
+        graphqlVersion: config.graphqlVersion,
+      })
+    } catch (error) {
+      if (!(error instanceof JobberApiError) || error.status !== 401 || !token) {
+        throw error
+      }
+
+      token = await refreshStoredJobberToken(params.userId, token.refreshToken, config, token.ownerUserId ?? params.userId)
+      accessToken = token.accessToken
+      syncResult = await syncJobberQuoteLineItems(params.jobberQuoteId, syncInput, {
+        accessToken,
+        graphqlVersion: config.graphqlVersion,
+      })
+    }
+
+    const refreshedSnapshot = mapJobberQuoteToDraft(await fetchJobberQuote(params.jobberQuoteId, {
+      accessToken,
+      graphqlVersion: config.graphqlVersion,
+    }))
+
+    await recordSyncedJobberLineIds(params.supabase, params.quoteId, syncResult.syncedLineItems)
+    await markJobberSyncStatus(params.supabase, params.quoteId, 'synced', null, refreshedSnapshot)
+  } catch (error) {
+    await markJobberSyncStatus(params.supabase, params.quoteId, 'failed', getSyncErrorMessage(error))
   }
 }
 

@@ -17,6 +17,10 @@ describe('quote form pricing UI', () => {
     customerName: 'Jane Customer',
     customerAddress: '10 Main St',
     jobberQuoteId: 'encoded-quote-id',
+    jobberSaveMode: 'priced_line_items',
+    jobberSyncStatus: 'not_synced',
+    jobberLastSyncedAt: null,
+    jobberSyncError: null,
     areaSqft: null,
     workType: 'Exterior',
     workingDays: '5.00',
@@ -46,6 +50,7 @@ describe('quote form pricing UI', () => {
     createdByName: 'Mia Kang',
     createdByEmail: 'mia@example.com',
     items: [],
+    jobberQuoteLines: [],
     options: [],
     jobberSnapshot: null,
   }
@@ -546,6 +551,58 @@ describe('quote form pricing UI', () => {
     expect(markup).toContain('Paint supplies')
     expect(markup).toContain('Jobber profit')
     expect(markup).toContain('90.2%')
+  })
+
+  it('shows app-saved Product / Service line items on quote detail pages', () => {
+    const markup = renderToStaticMarkup(
+      createElement(QuoteDetailView, {
+        quote: {
+          ...quoteRecord,
+          jobberQuoteLines: [
+            {
+              id: 'app-line-1',
+              quoteId: quoteRecord.id,
+              kind: 'text',
+              name: 'Ceiling',
+              description: 'All interior ceiling\n2 coats of Dulux ceiling paint',
+              quantity: '1.00',
+              unitPrice: '0.00',
+              totalPrice: '0.00',
+              taxable: false,
+              clientVisible: true,
+              jobberLineItemId: 'jobber-line-1',
+              linkedProductOrServiceId: null,
+              position: 0,
+              createdAt: '2026-05-19T00:00:00Z',
+              updatedAt: '2026-05-19T00:00:00Z',
+            },
+            {
+              id: 'app-line-2',
+              quoteId: quoteRecord.id,
+              kind: 'line_item',
+              name: 'Total',
+              description: 'Public quote total',
+              quantity: '1.00',
+              unitPrice: '3478.93',
+              totalPrice: '3478.93',
+              taxable: true,
+              clientVisible: true,
+              jobberLineItemId: 'jobber-line-2',
+              linkedProductOrServiceId: null,
+              position: 1,
+              createdAt: '2026-05-19T00:00:00Z',
+              updatedAt: '2026-05-19T00:00:00Z',
+            },
+          ],
+        },
+      })
+    )
+
+    expect(markup).toContain('App Product / Service')
+    expect(markup).toContain('Ceiling')
+    expect(markup).toContain('All interior ceiling')
+    expect(markup).toContain('Total')
+    expect(markup).toContain('$3478.93')
   })
 
   it('shows saved option totals on quote detail pages without changing the main final total', () => {

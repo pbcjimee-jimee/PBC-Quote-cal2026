@@ -1,5 +1,5 @@
 import type { JobberQuoteDraft } from '@/lib/jobber/mapper'
-import type { MaterialItem, QuoteOptionItem } from './types'
+import type { JobberQuoteLineItemDraft, JobberSaveMode, MaterialItem, QuoteOptionItem } from './types'
 import { isDecimalInputValue } from './decimal-input-utils'
 
 const QUOTE_DRAFT_VERSION = 1
@@ -13,6 +13,8 @@ export interface QuoteFormDraft {
   jobberQuoteId: string
   workType: string
   customerType: string
+  jobberSaveMode: JobberSaveMode
+  jobberQuoteLines: JobberQuoteLineItemDraft[]
   materials: MaterialItem[]
   options: QuoteOptionItem[]
   workingDays: string
@@ -39,6 +41,8 @@ export function createEmptyQuoteFormDraft(): QuoteFormDraft {
     jobberQuoteId: '',
     workType: '',
     customerType: '',
+    jobberSaveMode: 'priced_line_items',
+    jobberQuoteLines: [],
     materials: [],
     options: [],
     workingDays: '0',
@@ -160,6 +164,45 @@ function parseOption(value: unknown): QuoteOptionItem | null {
   }
 }
 
+function parseJobberQuoteLine(value: unknown): JobberQuoteLineItemDraft | null {
+  if (!isRecord(value)) return null
+
+  const id = readString(value, 'id')
+  const kind = value.kind
+  const name = readString(value, 'name')
+  const description = readString(value, 'description')
+  const quantity = readDecimalString(value, 'quantity')
+  const unitPrice = readDecimalString(value, 'unitPrice')
+  const taxable = value.taxable
+  const clientVisible = value.clientVisible
+
+  if (
+    id === null ||
+    (kind !== 'line_item' && kind !== 'text') ||
+    name === null ||
+    description === null ||
+    quantity === null ||
+    unitPrice === null ||
+    typeof taxable !== 'boolean' ||
+    typeof clientVisible !== 'boolean'
+  ) {
+    return null
+  }
+
+  return {
+    id,
+    kind,
+    name,
+    description,
+    quantity,
+    unitPrice,
+    taxable,
+    clientVisible,
+    jobberLineItemId: readOptionalString(value, 'jobberLineItemId'),
+    linkedProductOrServiceId: readOptionalString(value, 'linkedProductOrServiceId'),
+  }
+}
+
 export function parseQuoteFormDraft(value: string | null): QuoteFormDraft | null {
   if (!value) return null
 
@@ -179,6 +222,7 @@ export function parseQuoteFormDraft(value: string | null): QuoteFormDraft | null
   const jobberQuoteId = readString(parsed, 'jobberQuoteId')
   const workType = readString(parsed, 'workType')
   const customerType = readString(parsed, 'customerType')
+  const jobberSaveMode = parsed.jobberSaveMode
   const workingDays = readDecimalString(parsed, 'workingDays')
   const labourPerDay = readDecimalString(parsed, 'labourPerDay')
   const selectedMin = readFormulaNumber(parsed, 'selectedMin')
@@ -190,6 +234,9 @@ export function parseQuoteFormDraft(value: string | null): QuoteFormDraft | null
   const options = Array.isArray(parsed.options)
     ? parsed.options.map(parseOption)
     : []
+  const jobberQuoteLines = Array.isArray(parsed.jobberQuoteLines)
+    ? parsed.jobberQuoteLines.map(parseJobberQuoteLine)
+    : []
 
   if (
     customerName === null ||
@@ -199,6 +246,7 @@ export function parseQuoteFormDraft(value: string | null): QuoteFormDraft | null
     jobberQuoteId === null ||
     workType === null ||
     customerType === null ||
+    (jobberSaveMode !== 'priced_line_items' && jobberSaveMode !== 'description_total') ||
     workingDays === null ||
     labourPerDay === null ||
     selectedMin === null ||
@@ -206,7 +254,8 @@ export function parseQuoteFormDraft(value: string | null): QuoteFormDraft | null
     updatedAt === null ||
     materials === null ||
     materials.some((item) => item === null) ||
-    options.some((item) => item === null)
+    options.some((item) => item === null) ||
+    jobberQuoteLines.some((item) => item === null)
   ) {
     return null
   }
@@ -220,6 +269,8 @@ export function parseQuoteFormDraft(value: string | null): QuoteFormDraft | null
     jobberQuoteId,
     workType,
     customerType,
+    jobberSaveMode,
+    jobberQuoteLines: jobberQuoteLines as JobberQuoteLineItemDraft[],
     materials: materials as MaterialItem[],
     options: options as QuoteOptionItem[],
     workingDays,
@@ -239,6 +290,8 @@ export function hasMeaningfulQuoteDraft(draft: QuoteFormDraft): boolean {
     draft.jobberQuoteId.trim() ||
     draft.workType.trim() ||
     draft.customerType.trim() ||
+    draft.jobberQuoteLines.length > 0 ||
+    draft.jobberSaveMode !== 'priced_line_items' ||
     draft.materials.length > 0 ||
     draft.options.length > 0 ||
     draft.workingDays !== '0' ||

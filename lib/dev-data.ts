@@ -10,14 +10,15 @@ import { calculateFormulaLabourDays, calculateLabourTotals } from './quote-labou
 import { DULUX_PAINT_PRODUCTS } from './products/dulux-paints'
 import { normalizeRrpProduct, type ProductRecord } from './products/types'
 import type { AreaInput } from './validators'
-import type { QuoteInput } from './validators'
+import type { JobberQuoteLineInput, JobberSaveModeInput, QuoteInput } from './validators'
 import type { AreaRecord } from './areas/types'
 import type { Database } from './supabase/types'
 import type { JobberQuoteDraft } from './jobber/mapper'
 
 export type { ProductRecord }
 
-type DevQuoteInput = Omit<QuoteInput, 'options'> & {
+type DevQuoteInput = Omit<QuoteInput, 'deletedJobberLineItemIds' | 'jobberQuoteLines' | 'options'> & {
+  jobberQuoteLines?: JobberQuoteLineInput[]
   options?: QuoteInput['options']
 }
 
@@ -27,6 +28,10 @@ export interface QuoteRecord {
   customerAddress: string | null
   jobberQuoteId: string | null
   jobberSnapshot: JobberQuoteDraft | null
+  jobberSaveMode: JobberSaveModeInput | null
+  jobberSyncStatus: JobberSyncStatus
+  jobberLastSyncedAt: string | null
+  jobberSyncError: string | null
   areaSqft: number | null
   workType: string | null
   workingDays: string
@@ -46,6 +51,7 @@ export interface QuoteRecord {
   createdByName: string | null
   createdByEmail: string | null
   items: QuoteItemRecord[]
+  jobberQuoteLines: JobberQuoteLineRecord[]
   options: QuoteOptionRecord[]
 }
 
@@ -91,6 +97,26 @@ export interface QuoteOptionItemRecord extends Omit<QuoteItemRecord, 'quoteId'> 
   optionId: string
 }
 
+export type JobberSyncStatus = 'not_synced' | 'synced' | 'failed'
+
+export interface JobberQuoteLineRecord {
+  id: string
+  quoteId: string
+  kind: 'line_item' | 'text'
+  name: string
+  description: string | null
+  quantity: string | null
+  unitPrice: string | null
+  totalPrice: string | null
+  taxable: boolean
+  clientVisible: boolean
+  jobberLineItemId: string | null
+  linkedProductOrServiceId: string | null
+  position: number
+  createdAt: string
+  updatedAt: string
+}
+
 let products: ProductRecord[] = DULUX_PAINT_PRODUCTS.map(normalizeRrpProduct)
 
 interface DevDataStore {
@@ -115,6 +141,10 @@ function nextId(prefix: string): string {
 
 function money(value: Decimal | number | string): string {
   return new Decimal(value).toFixed(2)
+}
+
+function optionalPublicMoney(value: Decimal | number | string | undefined): string | null {
+  return value === undefined ? null : money(value)
 }
 
 function searchTokens(query: string): string[] {
@@ -351,6 +381,10 @@ function buildDevQuoteRecord(id: string, createdAt: string, input: DevQuoteInput
     customerAddress: input.customerAddress?.trim() || null,
     jobberQuoteId: input.jobberQuoteId?.trim() || null,
     jobberSnapshot: input.jobberSnapshot ?? null,
+    jobberSaveMode: input.jobberSaveMode ?? null,
+    jobberSyncStatus: 'not_synced',
+    jobberLastSyncedAt: null,
+    jobberSyncError: null,
     areaSqft: input.areaSqft ?? null,
     workType: input.workType?.trim() || null,
     workingDays: money(input.workingDays),
@@ -385,7 +419,37 @@ function buildDevQuoteRecord(id: string, createdAt: string, input: DevQuoteInput
       isCustom: item.isCustom,
       position: item.position ?? index,
     })),
+    jobberQuoteLines: (input.jobberQuoteLines ?? []).map((line, index) => buildDevJobberQuoteLineRecord(id, line, line.position ?? index)),
     options: (input.options ?? []).map((option, optionIndex) => buildDevQuoteOptionRecord(id, option, option.position ?? optionIndex, settings)),
+  }
+}
+
+function buildDevJobberQuoteLineRecord(
+  quoteId: string,
+  line: JobberQuoteLineInput,
+  position: number
+): JobberQuoteLineRecord {
+  const now = new Date().toISOString()
+  const totalPrice = line.totalPrice === undefined && line.quantity !== undefined && line.unitPrice !== undefined
+    ? new Decimal(line.quantity).mul(line.unitPrice)
+    : line.totalPrice
+
+  return {
+    id: nextId('jobber-line'),
+    quoteId,
+    kind: line.kind,
+    name: line.name.trim(),
+    description: line.description?.trim() || null,
+    quantity: optionalPublicMoney(line.quantity),
+    unitPrice: optionalPublicMoney(line.unitPrice),
+    totalPrice: optionalPublicMoney(totalPrice),
+    taxable: line.taxable,
+    clientVisible: line.clientVisible,
+    jobberLineItemId: line.jobberLineItemId?.trim() || null,
+    linkedProductOrServiceId: line.linkedProductOrServiceId?.trim() || null,
+    position,
+    createdAt: now,
+    updatedAt: now,
   }
 }
 

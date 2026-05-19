@@ -1,4 +1,9 @@
 import { JOBBER_GRAPHQL_URL } from './config'
+import {
+  buildJobberQuoteLineMutationItems,
+  type BuildJobberQuoteLinePayloadInput,
+  type JobberQuoteLineMutationItem,
+} from './quote-line-payload'
 
 export interface JobberQuoteAddress {
   street1?: string | null
@@ -134,6 +139,7 @@ export interface JobberQuoteLineItem {
   quantity: number
   unitPrice: number
   totalPrice: number
+  textOnly?: boolean
   linkedProductOrService: {
     id: string
     name: string
@@ -175,6 +181,20 @@ interface JobberJobSearchResult {
   id: string
   jobNumber: number
   title: string | null
+}
+
+export interface JobberQuoteLineSyncResult {
+  deletedLineItemIds: string[]
+  createdLineItemIds: string[]
+  editedLineItemIds: string[]
+  syncedLineItems: Array<{
+    sourcePosition: number
+    jobberLineItemId: string
+  }>
+}
+
+interface MutationError {
+  message?: string
 }
 
 const DEFAULT_THROTTLE_RETRIES = 2
@@ -281,6 +301,7 @@ const JOBBER_QUOTE_QUERY = `
           quantity
           unitPrice
           totalPrice
+          textOnly
           linkedProductOrService {
             id
             name
@@ -382,6 +403,7 @@ const JOBBER_QUOTE_SEARCH_QUERY = `
             quantity
             unitPrice
             totalPrice
+            textOnly
             linkedProductOrService {
               id
               name
@@ -531,6 +553,7 @@ const JOBBER_JOB_QUERY = `
           quantity
           unitPrice
           totalPrice
+          textOnly
           linkedProductOrService {
             id
             name
@@ -582,10 +605,11 @@ const JOBBER_JOB_VISITS_QUERY = `
               name
               category
               description
-              quantity
-              unitPrice
-              totalPrice
-              linkedProductOrService {
+          quantity
+          unitPrice
+          totalPrice
+          textOnly
+          linkedProductOrService {
                 id
                 name
                 category
@@ -606,6 +630,62 @@ const JOBBER_JOB_SEARCH_QUERY = `
         id
         jobNumber
         title
+      }
+    }
+  }
+`
+
+const JOBBER_QUOTE_DELETE_LINE_ITEMS_MUTATION = `
+  mutation PbcQuoteDeleteLineItems($quoteId: EncodedId!, $lineItemIds: [EncodedId!]!) {
+    quoteDeleteLineItems(quoteId: $quoteId, lineItemIds: $lineItemIds) {
+      deletedLineItems {
+        id
+      }
+      userErrors {
+        message
+        path
+      }
+    }
+  }
+`
+
+const JOBBER_QUOTE_CREATE_LINE_ITEMS_MUTATION = `
+  mutation PbcQuoteCreateLineItems($quoteId: EncodedId!, $lineItems: [QuoteCreateLineItemAttributes!]!) {
+    quoteCreateLineItems(quoteId: $quoteId, lineItems: $lineItems) {
+      createdLineItems {
+        id
+      }
+      userErrors {
+        message
+        path
+      }
+    }
+  }
+`
+
+const JOBBER_QUOTE_CREATE_TEXT_LINE_ITEMS_MUTATION = `
+  mutation PbcQuoteCreateTextLineItems($quoteId: EncodedId!, $lineItems: [QuoteCreateTextLineItemAttributes!]!) {
+    quoteCreateTextLineItems(quoteId: $quoteId, lineItems: $lineItems) {
+      createdLineItems {
+        id
+      }
+      userErrors {
+        message
+        path
+      }
+    }
+  }
+`
+
+const JOBBER_QUOTE_EDIT_LINE_ITEMS_MUTATION = `
+  mutation PbcQuoteEditLineItems($quoteId: EncodedId!, $lineItems: [QuoteEditLineItemAttributes!]!) {
+    quoteEditLineItems(quoteId: $quoteId, lineItems: $lineItems) {
+      modifiedLineItems {
+        id
+      }
+      userErrors {
+        message
+        path
       }
     }
   }
@@ -872,10 +952,13 @@ async function delay(ms: number): Promise<void> {
 
 async function postJobberGraphql(
   query: string,
-  variables: Record<string, string>,
-  options: FetchJobberQuoteOptions
+  variables: Record<string, unknown>,
+  options: FetchJobberQuoteOptions,
+  allowMutation = false
 ): Promise<unknown> {
-  assertJobberReadOnlyGraphqlDocument(query)
+  if (!allowMutation) {
+    assertJobberReadOnlyGraphqlDocument(query)
+  }
 
   const fetcher = options.fetcher ?? fetch
   const maxRetries = options.maxThrottleRetries ?? DEFAULT_THROTTLE_RETRIES
@@ -917,12 +1000,313 @@ async function postJobberGraphql(
   throw new JobberApiError('Jobber request failed after retrying throttled responses', 429)
 }
 
+function getMutationUserErrors(payload: unknown, mutationName: string): MutationError[] {
+  if (!isRecord(payload)) throw new Error('Invalid Jobber response')
+  const errors = payload.errors
+  if (Array.isArray(errors) && errors.length > 0) {
+    throw new JobberGraphqlError(formatGraphqlErrors(errors))
+  }
+
+  const data = payload.data
+  const mutationPayload = isRecord(data) ? data[mutationName] : null
+  if (!isRecord(mutationPayload)) throw new Error('Invalid Jobber response')
+
+  const userErrors = mutationPayload.userErrors
+  return Array.isArray(userErrors) ? userErrors.filter(isRecord) as MutationError[] : []
+}
+
+function assertNoMutationUserErrors(payload: unknown, mutationName: string): void {
+  const userErrors = getMutationUserErrors(payload, mutationName)
+  if (userErrors.length === 0) return
+
+  const messages = userErrors
+    .map((error) => typeof error.message === 'string' ? error.message.trim() : '')
+    .filter(Boolean)
+
+  throw new JobberGraphqlError(messages.length > 0
+    ? `Jobber returned a GraphQL error: ${messages.join('; ')}`
+    : 'Jobber returned a GraphQL error')
+}
+
+function getCreatedLineItemIds(payload: unknown, mutationName: string): string[] {
+  if (!isRecord(payload) || !isRecord(payload.data)) return []
+  const mutationPayload = payload.data[mutationName]
+  if (!isRecord(mutationPayload) || !Array.isArray(mutationPayload.createdLineItems)) return []
+
+  return mutationPayload.createdLineItems
+    .filter(isRecord)
+    .map((lineItem) => lineItem.id)
+    .filter((id): id is string => typeof id === 'string')
+}
+
+function getEditedLineItemIds(payload: unknown, mutationName: string): string[] {
+  if (!isRecord(payload) || !isRecord(payload.data)) return []
+  const mutationPayload = payload.data[mutationName]
+  if (!isRecord(mutationPayload) || !Array.isArray(mutationPayload.modifiedLineItems)) return []
+
+  return mutationPayload.modifiedLineItems
+    .filter(isRecord)
+    .map((lineItem) => lineItem.id)
+    .filter((id): id is string => typeof id === 'string')
+}
+
+function toQuoteCreateLineItemAttributes(item: JobberQuoteLineMutationItem) {
+  return {
+    name: item.name,
+    description: item.description,
+    category: 'SERVICE',
+    taxable: item.taxable ?? true,
+    saveToProductsAndServices: false,
+    quantity: item.quantity ?? 1,
+    unitPrice: item.unitPrice ?? 0,
+    totalPrice: item.totalPrice ?? (item.quantity ?? 1) * (item.unitPrice ?? 0),
+    ...(typeof item.sortOrder === 'number' ? { sortOrder: item.sortOrder } : {}),
+    ...(item.productOrServiceId ? { productOrServiceId: item.productOrServiceId } : {}),
+  }
+}
+
+function toQuoteCreateTextLineItemAttributes(item: JobberQuoteLineMutationItem) {
+  return {
+    name: item.name,
+    description: item.description,
+    category: 'SERVICE',
+    ...(typeof item.sortOrder === 'number' ? { sortOrder: item.sortOrder } : {}),
+  }
+}
+
+function toQuoteEditLineItemAttributes(item: JobberQuoteLineMutationItem) {
+  if (item.kind === 'text') {
+    return {
+      lineItemId: item.jobberLineItemId,
+      name: item.name,
+      description: item.description,
+      category: 'SERVICE',
+      ...(typeof item.sortOrder === 'number' ? { sortOrder: item.sortOrder } : {}),
+    }
+  }
+
+  return {
+    lineItemId: item.jobberLineItemId,
+    name: item.name,
+    description: item.description,
+    category: 'SERVICE',
+    taxable: item.taxable ?? true,
+    quantity: item.quantity ?? 1,
+    unitPrice: item.unitPrice ?? 0,
+    totalPrice: item.totalPrice ?? (item.quantity ?? 1) * (item.unitPrice ?? 0),
+    ...(typeof item.sortOrder === 'number' ? { sortOrder: item.sortOrder } : {}),
+    ...(item.productOrServiceId ? { productOrServiceId: item.productOrServiceId } : {}),
+  }
+}
+
+function normalizeLineText(value: string | null | undefined): string {
+  return value?.trim().toLowerCase() ?? ''
+}
+
+function lineNumberKey(value: number | null | undefined): string {
+  return typeof value === 'number' && Number.isFinite(value) ? value.toFixed(2) : '0.00'
+}
+
+function currentLineKind(lineItem: JobberQuoteLineItem): JobberQuoteLineMutationItem['kind'] {
+  return lineItem.textOnly || (lineItem.unitPrice === 0 && lineItem.totalPrice === 0) ? 'text' : 'line_item'
+}
+
+function currentLineMatchKey(lineItem: JobberQuoteLineItem): string {
+  const kind = currentLineKind(lineItem)
+  const base = [
+    kind,
+    normalizeLineText(lineItem.name),
+    normalizeLineText(lineItem.description),
+  ]
+
+  if (kind === 'text') return base.join('|')
+
+  return [
+    ...base,
+    lineNumberKey(lineItem.quantity),
+    lineNumberKey(lineItem.unitPrice),
+    lineNumberKey(lineItem.totalPrice),
+  ].join('|')
+}
+
+function mutationLineMatchKey(item: JobberQuoteLineMutationItem): string {
+  const base = [
+    item.kind,
+    normalizeLineText(item.name),
+    normalizeLineText(item.description),
+  ]
+
+  if (item.kind === 'text') return base.join('|')
+
+  return [
+    ...base,
+    lineNumberKey(item.quantity),
+    lineNumberKey(item.unitPrice),
+    lineNumberKey(item.totalPrice),
+  ].join('|')
+}
+
+function resolveCurrentJobberLineId(
+  item: JobberQuoteLineMutationItem,
+  currentLineItems: JobberQuoteLineItem[],
+  currentLineItemIds: Set<string>,
+  usedLineItemIds: Set<string>,
+  currentLineItemsByKey: Map<string, JobberQuoteLineItem[]>
+): string | undefined {
+  if (item.jobberLineItemId && currentLineItemIds.has(item.jobberLineItemId)) {
+    usedLineItemIds.add(item.jobberLineItemId)
+    return item.jobberLineItemId
+  }
+
+  const matchingLines = currentLineItemsByKey.get(mutationLineMatchKey(item)) ?? []
+  const matchingLine = matchingLines.find((lineItem) => !usedLineItemIds.has(lineItem.id))
+  if (matchingLine) {
+    usedLineItemIds.add(matchingLine.id)
+    return matchingLine.id
+  }
+
+  if (typeof item.sourcePosition === 'number') {
+    const lineAtPosition = currentLineItems[item.sourcePosition]
+    if (lineAtPosition && !usedLineItemIds.has(lineAtPosition.id)) {
+      usedLineItemIds.add(lineAtPosition.id)
+      return lineAtPosition.id
+    }
+  }
+
+  return item.jobberLineItemId
+}
+
+function relinkMutationItemsToCurrentQuote(
+  mutationItems: JobberQuoteLineMutationItem[],
+  currentLineItems: JobberQuoteLineItem[],
+  currentLineItemIds: Set<string>
+): JobberQuoteLineMutationItem[] {
+  const usedLineItemIds = new Set<string>()
+  const currentLineItemsByKey = new Map<string, JobberQuoteLineItem[]>()
+
+  for (const lineItem of currentLineItems) {
+    const key = currentLineMatchKey(lineItem)
+    currentLineItemsByKey.set(key, [...(currentLineItemsByKey.get(key) ?? []), lineItem])
+  }
+
+  return mutationItems.map((item) => {
+    const resolvedLineItemId = resolveCurrentJobberLineId(
+      item,
+      currentLineItems,
+      currentLineItemIds,
+      usedLineItemIds,
+      currentLineItemsByKey
+    )
+
+    return resolvedLineItemId ? { ...item, jobberLineItemId: resolvedLineItemId } : item
+  })
+}
+
+async function postApprovedJobberMutation(
+  query: string,
+  variables: Record<string, unknown>,
+  options: FetchJobberQuoteOptions
+): Promise<unknown> {
+  return postJobberGraphql(query, variables, options, true)
+}
+
 export async function fetchJobberQuote(
   quoteId: string,
   options: FetchJobberQuoteOptions
 ): Promise<JobberQuote> {
   const payload = await postJobberGraphql(JOBBER_QUOTE_QUERY, { id: quoteId }, options)
   return getQuoteFromPayload(payload)
+}
+
+export async function syncJobberQuoteLineItems(
+  quoteId: string,
+  input: BuildJobberQuoteLinePayloadInput,
+  options: FetchJobberQuoteOptions
+): Promise<JobberQuoteLineSyncResult> {
+  const quote = await fetchJobberQuote(quoteId, options)
+  const currentLineItems = quote.lineItems.nodes
+  const currentLineItemIds = new Set(currentLineItems.map((lineItem) => lineItem.id).filter(Boolean))
+  const deletedLineItemIds: string[] = []
+  const createdLineItemIds: string[] = []
+  const editedLineItemIds: string[] = []
+  const syncedLineItems: JobberQuoteLineSyncResult['syncedLineItems'] = []
+  const mutationItems = relinkMutationItemsToCurrentQuote(
+    buildJobberQuoteLineMutationItems(input),
+    currentLineItems,
+    currentLineItemIds
+  )
+
+  const editItems = mutationItems.filter((item) => item.jobberLineItemId && currentLineItemIds.has(item.jobberLineItemId))
+  if (editItems.length > 0) {
+    const payload = await postApprovedJobberMutation(
+      JOBBER_QUOTE_EDIT_LINE_ITEMS_MUTATION,
+      {
+        quoteId,
+        lineItems: editItems.map(toQuoteEditLineItemAttributes),
+      },
+      options
+    )
+    assertNoMutationUserErrors(payload, 'quoteEditLineItems')
+    const editedIds = getEditedLineItemIds(payload, 'quoteEditLineItems')
+    editedLineItemIds.push(...editedIds)
+    editItems.forEach((item, index) => {
+      if (typeof item.sourcePosition === 'number' && item.jobberLineItemId) {
+        syncedLineItems.push({
+          sourcePosition: item.sourcePosition,
+          jobberLineItemId: editedIds[index] ?? item.jobberLineItemId,
+        })
+      }
+    })
+  }
+
+  const createItems = mutationItems.filter((item) => !item.jobberLineItemId || !currentLineItemIds.has(item.jobberLineItemId))
+  for (const item of createItems) {
+    const mutationName = item.kind === 'text' ? 'quoteCreateTextLineItems' : 'quoteCreateLineItems'
+    const payload = await postApprovedJobberMutation(
+      item.kind === 'text' ? JOBBER_QUOTE_CREATE_TEXT_LINE_ITEMS_MUTATION : JOBBER_QUOTE_CREATE_LINE_ITEMS_MUTATION,
+      {
+        quoteId,
+        lineItems: [
+          item.kind === 'text'
+            ? toQuoteCreateTextLineItemAttributes(item)
+            : toQuoteCreateLineItemAttributes(item),
+        ],
+      },
+      options
+    )
+    assertNoMutationUserErrors(payload, mutationName)
+    const createdIds = getCreatedLineItemIds(payload, mutationName)
+    createdLineItemIds.push(...createdIds)
+    if (typeof item.sourcePosition === 'number' && createdIds[0]) {
+      syncedLineItems.push({
+        sourcePosition: item.sourcePosition,
+        jobberLineItemId: createdIds[0],
+      })
+    }
+  }
+
+  const submittedLineItemIds = new Set(mutationItems
+    .map((item) => item.jobberLineItemId)
+    .filter((id): id is string => typeof id === 'string' && id.trim().length > 0))
+  const deleteCandidateIds = (input.deletedJobberLineItemIds ?? [])
+    .filter((id) => currentLineItemIds.has(id) && !submittedLineItemIds.has(id))
+  const lineCountAfterDelete = currentLineItemIds.size + createdLineItemIds.length - deleteCandidateIds.length
+
+  if (deleteCandidateIds.length > 0 && lineCountAfterDelete > 0) {
+    const payload = await postApprovedJobberMutation(JOBBER_QUOTE_DELETE_LINE_ITEMS_MUTATION, {
+      quoteId,
+      lineItemIds: deleteCandidateIds,
+    }, options)
+    assertNoMutationUserErrors(payload, 'quoteDeleteLineItems')
+    deletedLineItemIds.push(...deleteCandidateIds)
+  }
+
+  return {
+    deletedLineItemIds,
+    createdLineItemIds,
+    editedLineItemIds,
+    syncedLineItems,
+  }
 }
 
 export async function searchJobberQuote(

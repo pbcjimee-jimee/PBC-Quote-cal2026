@@ -87,6 +87,10 @@ export interface Database {
           customer_address: string | null
           jobber_quote_id: string | null
           jobber_snapshot: Json | null
+          jobber_save_mode: 'priced_line_items' | 'description_total' | null
+          jobber_sync_status: 'not_synced' | 'synced' | 'failed'
+          jobber_last_synced_at: string | null
+          jobber_sync_error: string | null
           area_sqft: number | null
           work_type: string | null
           working_days: string
@@ -184,6 +188,32 @@ export interface Database {
           id?: string
         }
         Update: Partial<Database['public']['Tables']['quote_option_items']['Insert']>
+        Relationships: []
+      }
+      jobber_quote_lines: {
+        Row: {
+          id: string
+          quote_id: string
+          kind: 'line_item' | 'text'
+          name: string
+          description: string | null
+          quantity: string | null
+          unit_price: string | null
+          total_price: string | null
+          taxable: boolean
+          client_visible: boolean
+          jobber_line_item_id: string | null
+          linked_product_or_service_id: string | null
+          position: number
+          created_at: string
+          updated_at: string
+        }
+        Insert: Omit<Database['public']['Tables']['jobber_quote_lines']['Row'], 'id' | 'created_at' | 'updated_at'> & {
+          id?: string
+          created_at?: string
+          updated_at?: string
+        }
+        Update: Partial<Database['public']['Tables']['jobber_quote_lines']['Insert']>
         Relationships: []
       }
       jobber_tokens: {

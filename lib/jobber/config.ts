@@ -51,14 +51,22 @@ export function assertJobberReadOnlyScopes(scope: string | null): void {
     .map((item) => item.trim())
     .filter(Boolean)
 
-  const hasWriteScope = scopes.some((item) => {
+  const hasDisallowedScope = scopes.some((item) => {
     const normalized = item.toLowerCase()
+    const parts = normalized.split(/[:._-]/).filter(Boolean)
+    const operation = parts.at(-1) ?? ''
+    const target = parts.slice(0, -1).join(':')
+    const isNarrowQuoteWrite = (
+      (target === 'quote' || target === 'quotes') &&
+      (operation === 'write' || operation === 'update' || operation === 'edit' || operation === 'create')
+    )
+    if (isNarrowQuoteWrite) return false
     if (/(write|create|update|delete|edit|manage)/i.test(normalized)) return true
-    if (normalized.includes(':')) return !normalized.endsWith(':read')
+    if (normalized.includes(':')) return operation !== 'read'
     return !/(^|[._-])read$/.test(normalized)
   })
 
-  if (hasWriteScope) {
+  if (hasDisallowedScope) {
     throw new Error('Jobber OAuth scopes must be read-only')
   }
 }

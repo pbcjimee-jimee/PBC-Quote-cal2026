@@ -20,6 +20,7 @@ export const jobberQuoteSnapshotSchema = z.object({
     unitPrice: z.number(),
     totalPrice: z.number(),
     linkedName: z.string().nullable(),
+    textOnly: z.boolean().optional(),
   })),
   jobExpenses: z.array(z.object({
     jobId: z.string(),
@@ -70,11 +71,48 @@ const quoteOptionSchema = z.object({
   position: z.number().int().nonnegative().default(0),
 })
 
+export const jobberSaveModeSchema = z.enum(['priced_line_items', 'description_total'])
+
+export const jobberQuoteLineSchema = z.object({
+  kind: z.enum(['line_item', 'text']),
+  name: z.string().trim().min(1).max(200),
+  description: z.string().trim().max(2000).optional(),
+  quantity: z.number().nonnegative().optional(),
+  unitPrice: z.number().nonnegative().optional(),
+  totalPrice: z.number().nonnegative().optional(),
+  taxable: z.boolean().default(true),
+  clientVisible: z.boolean().default(true),
+  jobberLineItemId: z.string().trim().min(1).optional(),
+  linkedProductOrServiceId: z.string().trim().min(1).optional(),
+  position: z.number().int().nonnegative().default(0),
+}).superRefine((line, context) => {
+  if (line.kind !== 'line_item') return
+
+  if (line.quantity === undefined) {
+    context.addIssue({
+      code: 'custom',
+      path: ['quantity'],
+      message: 'Line item quantity is required',
+    })
+  }
+
+  if (line.unitPrice === undefined) {
+    context.addIssue({
+      code: 'custom',
+      path: ['unitPrice'],
+      message: 'Line item unit price is required',
+    })
+  }
+})
+
 export const quoteSchema = z.object({
   customerName: z.string().optional(),
   customerAddress: z.string().optional(),
   jobberQuoteId: z.string().optional(),
   jobberSnapshot: jobberQuoteSnapshotSchema.optional(),
+  jobberSaveMode: jobberSaveModeSchema.optional(),
+  jobberQuoteLines: z.array(jobberQuoteLineSchema).default([]),
+  deletedJobberLineItemIds: z.array(z.string().trim().min(1)).default([]),
   areaSqft: z.number().int().nonnegative().optional(),
   workType: z.string().optional(),
   workingDays: z.number().nonnegative(),
@@ -88,6 +126,8 @@ export const quoteSchema = z.object({
 })
 
 export type QuoteInput = z.infer<typeof quoteSchema>
+export type JobberSaveModeInput = z.infer<typeof jobberSaveModeSchema>
+export type JobberQuoteLineInput = z.infer<typeof jobberQuoteLineSchema>
 
 export const pricingSettingsSchema = z.object({
   f1LabourRate: z.number().nonnegative(),

@@ -1,0 +1,57 @@
+﻿<h2>Wage Calculator: Implementation Approach</h2>
+<p class="subtitle">Choose the first build shape. All options keep Jobber read-only and use employee profile rules.</p>
+
+<div class="options">
+  <div class="option" data-choice="recommended" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>Recommended: Calculator-first Jobber Sync</h3>
+      <p>Employee rule settings, weekly wage run storage, manual Jobber refresh, formula snapshots, and one focused weekly calculation screen.</p>
+    </div>
+  </div>
+  <div class="option" data-choice="settings-first" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>Settings-first</h3>
+      <p>Build employee profiles and formulas first, then attach Jobber sync later. Lowest integration risk, but slower to replace the spreadsheet.</p>
+    </div>
+  </div>
+  <div class="option" data-choice="full-payroll" onclick="toggleSelect(this)">
+    <div class="letter">C</div>
+    <div class="content">
+      <h3>Full Payroll Workspace</h3>
+      <p>Add staff management, audit history, exports, finalized locks, and broader payroll controls in one pass. Powerful but too large for the first implementation.</p>
+    </div>
+  </div>
+</div>
+
+<div class="mockup">
+  <div class="mockup-header">Preview: Weekly Wage Run</div>
+  <div class="mockup-body">
+    <div style="display:grid;grid-template-columns:220px 1fr 260px;gap:14px;min-height:360px">
+      <div class="mock-sidebar">
+        <strong>Wage</strong><br><br>
+        Staff Rules<br>
+        Weekly Runs<br>
+        Jobber Sync
+      </div>
+      <div class="mock-content">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+          <div><strong>11 May - 17 May</strong><br><span style="color:#64748b">Approved only · 9 employees</span></div>
+          <button class="mock-button">Refresh from Jobber</button>
+        </div>
+        <div class="placeholder" style="height:46px;margin-bottom:8px">Edgar · 31h Jobber · 8.6h off · $282.21 cash</div>
+        <div class="placeholder" style="height:46px;margin-bottom:8px">Jimee · 44h Jobber · 4h off · -$122.76 adjustment</div>
+        <div class="placeholder" style="height:46px;margin-bottom:8px">Eric · 37h20m Jobber · $1,836.67 cash</div>
+        <div class="placeholder" style="height:46px">Students · payslip cap + cash day overtime</div>
+      </div>
+      <div class="mock-content">
+        <strong>Totals</strong><br><br>
+        Bank/Payslip $6,190.25<br>
+        Cash $2,348.05<br>
+        Adjustments $2,025.40<br><br>
+        <button class="mock-button">Save Wage Run</button>
+      </div>
+    </div>
+  </div>
+</div>

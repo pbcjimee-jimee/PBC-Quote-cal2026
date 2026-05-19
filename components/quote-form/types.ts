@@ -1,4 +1,19 @@
 export type FormulaNumber = 1 | 2 | 3 | 4 | 5
+export type JobberSaveMode = 'priced_line_items' | 'description_total'
+export type JobberQuoteLineKind = 'line_item' | 'text'
+
+export interface JobberQuoteLineItemDraft {
+  id: string
+  kind: JobberQuoteLineKind
+  name: string
+  description: string
+  quantity: string
+  unitPrice: string
+  taxable: boolean
+  clientVisible: boolean
+  jobberLineItemId?: string
+  linkedProductOrServiceId?: string
+}
 
 export interface MaterialItem {
   id: string

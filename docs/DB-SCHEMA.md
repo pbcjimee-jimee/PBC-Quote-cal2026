@@ -91,7 +91,7 @@
 | `0007_add_jobber_tokens.sql` | `jobber_tokens`(사용자별 access/refresh 토큰, 암호화 저장) + RLS |
 | `0008_add_quote_jobber_snapshot.sql` | `quotes.jobber_snapshot JSONB` (Jobber 원본 응답 캐시) |
 | `0009_add_quote_options.sql` | `quote_options` + `quote_option_items` + RLS |
-| `0010_add_jobber_quote_lines.sql` (planned) | Jobber write-back용 공개 Product / Service line item + quote sync 상태 |
+| `0010_add_jobber_quote_lines.sql` | Jobber write-back용 공개 Product / Service line item + quote sync 상태 |
 
 > 아래 DDL은 변경 후 최종 형태 요약. 정확한 SQL은 마이그레이션 파일 자체를 source of truth로 본다.
 
@@ -264,9 +264,9 @@ CREATE TABLE quote_option_items (
 > 옵션 견적은 메인 견적과 독립 계산되며 `quotes.final_total`에 합산되지 않는다.
 > 자세한 규칙: `docs/superpowers/specs/2026-05-15-quote-options-design.md`.
 
-## Planned v1.1 Jobber write-back schema
+## Jobber write-back local schema
 
-정확한 SQL은 구현 시 `supabase/migrations/0010_add_jobber_quote_lines.sql`을 source of truth로 둔다.
+정확한 SQL은 `supabase/migrations/0010_add_jobber_quote_lines.sql`을 source of truth로 둔다. 이 스키마는 우리 앱의 로컬 저장용이며, Jobber 실제 mutation 전송은 중앙 Jobber client의 승인된 quote line item write-back 경로만 사용한다.
 
 ```sql
 ALTER TABLE quotes

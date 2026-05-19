@@ -104,6 +104,63 @@ describe('quote actions', () => {
     }
   })
 
+  it('stores public Jobber lines separately from internal material rows', async () => {
+    const created = await createQuote({
+      customerName: 'Jobber Line Customer',
+      workingDays: 1,
+      labourPerDay: 1,
+      materialMarket: 80,
+      materialActual: 50,
+      selectedMin: 1,
+      selectedMax: 1,
+      items: [
+        {
+          productNameSnapshot: 'Internal paint material',
+          marketPriceSnapshot: 80,
+          actualPriceSnapshot: 50,
+          quantity: 1,
+          isCustom: true,
+          position: 0,
+        },
+      ],
+      jobberSaveMode: 'priced_line_items',
+      jobberQuoteLines: [
+        {
+          kind: 'line_item',
+          name: 'Exterior painting',
+          description: 'Public service line',
+          quantity: 2,
+          unitPrice: 1250,
+          taxable: true,
+          clientVisible: true,
+          linkedProductOrServiceId: 'jobber-product-1',
+          position: 0,
+        },
+        {
+          kind: 'text',
+          name: 'Scope notes',
+          description: 'Materials are tracked internally only.',
+          taxable: false,
+          clientVisible: true,
+          position: 1,
+        },
+      ],
+    })
+    if (!created.ok) throw new Error(created.error)
+
+    const fetched = await getQuote(created.data.id)
+
+    expect(fetched.ok).toBe(true)
+    if (fetched.ok && fetched.data) {
+      expect(fetched.data.items).toHaveLength(1)
+      expect(fetched.data.items[0].productNameSnapshot).toBe('Internal paint material')
+      expect(fetched.data.jobberSaveMode).toBe('priced_line_items')
+      expect(fetched.data.jobberQuoteLines.map((line) => line.name)).toEqual(['Exterior painting', 'Scope notes'])
+      expect(fetched.data.jobberQuoteLines[0].totalPrice).toBe('2500.00')
+      expect(fetched.data.jobberQuoteLines[0]).not.toHaveProperty('actualPriceSnapshot')
+    }
+  })
+
   it('stores main labour column totals while pricing formulas use summed main row labour days', async () => {
     const created = await createQuote({
       customerName: 'Main Labour Customer',

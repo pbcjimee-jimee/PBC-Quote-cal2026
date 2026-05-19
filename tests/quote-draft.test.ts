@@ -78,4 +78,42 @@ describe('quote form draft persistence', () => {
     expect(parseQuoteFormDraft('not json')).toBeNull()
     expect(parseQuoteFormDraft(JSON.stringify({ ...draft, workingDays: '/' }))).toBeNull()
   })
+
+  it('preserves Jobber public line editor state', () => {
+    const draft = {
+      ...createEmptyQuoteFormDraft(),
+      jobberSaveMode: 'description_total' as const,
+      jobberQuoteLines: [
+        {
+          id: 'jobber-line-1',
+          kind: 'line_item' as const,
+          name: 'Exterior deck',
+          description: 'Public Jobber line',
+          quantity: '1',
+          unitPrice: '2500.00',
+          taxable: true,
+          clientVisible: true,
+          linkedProductOrServiceId: 'product-or-service-1',
+        },
+        {
+          id: 'jobber-text-1',
+          kind: 'text' as const,
+          name: 'Scope notes',
+          description: 'Material prices stay internal.',
+          quantity: '1',
+          unitPrice: '0',
+          taxable: false,
+          clientVisible: true,
+        },
+      ],
+      updatedAt: '2026-05-19T00:00:00.000Z',
+    }
+
+    expect(parseQuoteFormDraft(JSON.stringify(draft))).toEqual(draft)
+    expect(hasMeaningfulQuoteDraft(draft)).toBe(true)
+    expect(parseQuoteFormDraft(JSON.stringify({
+      ...draft,
+      jobberQuoteLines: [{ ...draft.jobberQuoteLines[0], unitPrice: '/' }],
+    }))).toBeNull()
+  })
 })

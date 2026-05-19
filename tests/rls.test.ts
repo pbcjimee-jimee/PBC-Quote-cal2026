@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 const migrationsDir = join(process.cwd(), 'supabase', 'migrations')
@@ -9,10 +9,15 @@ const migrations = [
   '0005_add_quote_areas.sql',
   '0007_add_jobber_tokens.sql',
   '0009_add_quote_options.sql',
-].map((file) => ({
-  file,
-  sql: readFileSync(join(migrationsDir, file), 'utf8'),
-}))
+  '0010_add_jobber_quote_lines.sql',
+].map((file) => {
+  const path = join(migrationsDir, file)
+
+  return {
+    file,
+    sql: existsSync(path) ? readFileSync(path, 'utf8') : '',
+  }
+})
 
 const combinedSql = migrations.map(({ sql }) => sql).join('\n')
 
@@ -24,6 +29,7 @@ const authenticatedCrudTables = [
   'quote_areas',
   'quote_options',
   'quote_option_items',
+  'jobber_quote_lines',
 ]
 
 function escapeRegExp(value: string): string {
@@ -46,6 +52,14 @@ function expectAuthenticatedCrudPolicy(table: string): void {
 }
 
 describe('RLS migrations', () => {
+  it('covers planned Jobber quote lines with authenticated-only RLS', () => {
+    const jobberLinesMigration = migrations.find(({ file }) => file === '0010_add_jobber_quote_lines.sql')
+
+    expect(jobberLinesMigration?.sql, 'expected supabase/migrations/0010_add_jobber_quote_lines.sql').not.toBe('')
+    expectRlsEnabled('jobber_quote_lines')
+    expectAuthenticatedCrudPolicy('jobber_quote_lines')
+  })
+
   it('enables RLS on every application table', () => {
     for (const table of [...authenticatedCrudTables, 'jobber_tokens']) {
       expectRlsEnabled(table)

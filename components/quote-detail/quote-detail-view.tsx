@@ -17,6 +17,12 @@ function itemMaterialTotal(quote: QuoteRecord): Decimal {
   )
 }
 
+function jobberLineTotal(line: QuoteRecord['jobberQuoteLines'][number]): string | null {
+  if (line.totalPrice) return new Decimal(line.totalPrice).toFixed(2)
+  if (!line.quantity || !line.unitPrice) return null
+  return new Decimal(line.quantity).mul(line.unitPrice).toFixed(2)
+}
+
 export function QuoteDetailView({ quote }: QuoteDetailViewProps) {
   const materialTotal = itemMaterialTotal(quote)
   const subtotal = new Decimal(quote.subtotal)
@@ -93,6 +99,39 @@ export function QuoteDetailView({ quote }: QuoteDetailViewProps) {
             <JobberQuoteSummary quote={quote.jobberSnapshot} />
           </section>
         ) : null}
+
+        <section className="rounded-lg border border-white bg-white/90 p-5 shadow-[var(--shadow-soft)] lg:col-span-2">
+          <h2 className="text-sm font-bold uppercase text-slate-400">App Product / Service</h2>
+          <div className="mt-4 divide-y divide-slate-100">
+            {quote.jobberQuoteLines.length === 0 ? <p className="text-sm text-slate-500">No product or service lines saved.</p> : null}
+            {quote.jobberQuoteLines.map((line) => {
+              const total = jobberLineTotal(line)
+              return (
+                <div key={line.id} className="grid gap-3 py-4 text-sm md:grid-cols-[minmax(0,1fr)_8rem]">
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h3 className="font-bold text-slate-950">{line.name}</h3>
+                      <span className="rounded-full bg-slate-50 px-2 py-0.5 text-xs font-semibold text-slate-500">
+                        {line.kind === 'text' ? 'Text' : 'Line item'}
+                      </span>
+                    </div>
+                    {line.description ? <p className="mt-2 whitespace-pre-line text-slate-600">{line.description}</p> : null}
+                  </div>
+                  <div className="font-mono text-slate-500 md:text-right">
+                    {line.kind === 'line_item' && total ? (
+                      <>
+                        <div>{line.quantity ?? '1'} x ${line.unitPrice ?? '0.00'}</div>
+                        <div className="mt-1 font-semibold text-slate-950">${total}</div>
+                      </>
+                    ) : (
+                      <span className="text-xs font-sans font-semibold text-slate-400">Description only</span>
+                    )}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </section>
 
         <section className="rounded-lg border border-white bg-white/90 p-5 shadow-[var(--shadow-soft)] lg:col-span-2">
           <h2 className="text-sm font-bold uppercase text-slate-400">Materials</h2>
