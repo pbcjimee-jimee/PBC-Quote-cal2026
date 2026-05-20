@@ -164,8 +164,8 @@ describe('quote actions', () => {
   it('stores main labour column totals while pricing formulas use summed main row labour days', async () => {
     const created = await createQuote({
       customerName: 'Main Labour Customer',
-      workingDays: 3,
-      labourPerDay: 3,
+      workingDays: 999,
+      labourPerDay: 999,
       materialMarket: 60,
       materialActual: 60,
       selectedMin: 1,
@@ -220,7 +220,7 @@ describe('quote actions', () => {
     expect(fetched.ok).toBe(true)
     if (fetched.ok && fetched.data) {
       expect(fetched.data.workingDays).toBe('3.00')
-      expect(fetched.data.labourPerDay).toBe('3.00')
+      expect(fetched.data.labourPerDay).toBe('4.00')
       expect(fetched.data.formula1Total).toBe('2060.00')
       expect(fetched.data.finalTotal).toBe('2266.00')
     }

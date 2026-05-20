@@ -17,7 +17,7 @@ export function QuoteCard({ quote }: { quote: QuoteRecord }) {
           </p>
           <div className="mt-3 flex flex-wrap gap-2 text-xs font-semibold text-slate-500">
             <span className="rounded-full bg-slate-50 px-2.5 py-1">{quote.workingDays} days</span>
-            <span className="rounded-full bg-slate-50 px-2.5 py-1">{quote.labourPerDay} labour</span>
+            <span className="rounded-full bg-slate-50 px-2.5 py-1">{quote.labourPerDay} total labour</span>
             <span className="rounded-full bg-slate-50 px-2.5 py-1">{savedDate}</span>
             <span className="rounded-full bg-slate-50 px-2.5 py-1">Created by {creatorName}</span>
           </div>

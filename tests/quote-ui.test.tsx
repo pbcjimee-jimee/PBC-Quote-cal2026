@@ -93,6 +93,75 @@ describe('quote form pricing UI', () => {
     expect(markup).toContain('sticky top-16')
   })
 
+  it('shows total labour as the sum of material row working days times labour', () => {
+    const markup = renderToStaticMarkup(
+      createElement(QuoteForm, {
+        settings: quoteRecord.pricingSettingsSnapshot,
+        areas: [],
+        productServices: [],
+        quoteLineTemplates: [],
+        initialQuote: {
+          ...quoteRecord,
+          items: [
+            {
+              id: 'item-1',
+              quoteId: quoteRecord.id,
+              productId: null,
+              productNameSnapshot: 'Prep',
+              marketPriceSnapshot: '0.00',
+              actualPriceSnapshot: '0.00',
+              quantity: '1.00',
+              workingDays: '0.50',
+              labourPerDay: '2.00',
+              areaId: null,
+              areaNameSnapshot: null,
+              areaScopeSnapshot: null,
+              isCustom: true,
+              position: 0,
+            },
+            {
+              id: 'item-2',
+              quoteId: quoteRecord.id,
+              productId: null,
+              productNameSnapshot: 'Coats',
+              marketPriceSnapshot: '0.00',
+              actualPriceSnapshot: '0.00',
+              quantity: '1.00',
+              workingDays: '2.00',
+              labourPerDay: '3.00',
+              areaId: null,
+              areaNameSnapshot: null,
+              areaScopeSnapshot: null,
+              isCustom: true,
+              position: 1,
+            },
+            {
+              id: 'item-3',
+              quoteId: quoteRecord.id,
+              productId: null,
+              productNameSnapshot: 'Finish',
+              marketPriceSnapshot: '0.00',
+              actualPriceSnapshot: '0.00',
+              quantity: '1.00',
+              workingDays: '2.50',
+              labourPerDay: '2.00',
+              areaId: null,
+              areaNameSnapshot: null,
+              areaScopeSnapshot: null,
+              isCustom: true,
+              position: 2,
+            },
+          ],
+        },
+      })
+    )
+
+    expect(markup).toContain('Total Working Days')
+    expect(markup).toContain('value="5.00"')
+    expect(markup).toContain('Total Labour')
+    expect(markup).toContain('value="12.00"')
+  })
+
   it('passes saved templates into the Product / Service editor', () => {
     const markup = renderToStaticMarkup(
       createElement(QuoteForm, {

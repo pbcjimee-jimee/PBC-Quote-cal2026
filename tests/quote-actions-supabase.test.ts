@@ -618,6 +618,40 @@ describe('quote actions against Supabase', () => {
     }
   })
 
+  it('derives displayed labour totals from saved material rows when loading older quotes', async () => {
+    const olderQuoteRow = {
+      ...quoteRow,
+      working_days: '999.00',
+      labour_per_day: '999.00',
+      quote_items: [
+        {
+          ...quoteRow.quote_items[0],
+          working_days: '0.50',
+          labour_per_day: '1.00',
+          position: 0,
+        },
+        {
+          ...quoteRow.quote_items[0],
+          id: '00000000-0000-4000-8000-000000000202',
+          product_name_snapshot: 'Second saved row',
+          working_days: '0.50',
+          labour_per_day: '1.00',
+          position: 1,
+        },
+      ],
+    }
+    const detailBuilder = createSelectSingleBuilder({ data: olderQuoteRow, error: null })
+    mocks.createClient.mockResolvedValueOnce({ from: vi.fn(() => detailBuilder) })
+
+    const result = await getQuote(quoteId)
+
+    expect(result.ok).toBe(true)
+    if (result.ok) {
+      expect(result.data?.workingDays).toBe('1.00')
+      expect(result.data?.labourPerDay).toBe('1.00')
+    }
+  })
+
   it('returns non-migration Supabase errors when quote detail loading fails', async () => {
     const detailBuilder = createSelectSingleBuilder({
       data: null,

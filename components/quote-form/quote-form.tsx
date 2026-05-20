@@ -479,7 +479,7 @@ export function QuoteForm({ settings, areas, productServices = [], quoteLineTemp
           finalTotal: totalsForOption.finalTotal.toFixed(2),
           materialTotal: totalsForOption.materialMarket.toFixed(2),
           workingDays: totalsForOption.labour.workingDays.toFixed(2),
-          labourPerDay: totalsForOption.labour.labourPerDay.toFixed(2),
+          labourPerDay: totalsForOption.labour.labourDays.toFixed(2),
         },
       ]
     })
@@ -747,7 +747,7 @@ export function QuoteForm({ settings, areas, productServices = [], quoteLineTemp
                 readOnly
               />
               <DecimalInput
-                label="Labour Per Day"
+                label="Total Labour"
                 value={totals.totalLabourPerDay.toFixed(2)}
                 onValueChange={() => undefined}
                 labelClassName="space-y-1 text-sm font-semibold text-slate-600"
@@ -756,10 +756,6 @@ export function QuoteForm({ settings, areas, productServices = [], quoteLineTemp
                 readOnly
               />
             </div>
-            <p className="text-sm text-slate-500">Labour days: {totals.totalLabourDays.toFixed(2)}</p>
-            {totals.materialLabour.labourDays.gt(0) ? (
-              <p className="text-xs text-slate-400">Material row labour: {totals.materialLabour.labourDays.toFixed(2)}</p>
-            ) : null}
             {totals.totalWorkingDays.gt(365) ? <p className="text-sm text-amber-600">Over 365 days - double check.</p> : null}
           </section>
 

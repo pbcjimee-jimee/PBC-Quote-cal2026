@@ -6,7 +6,7 @@ import {
   calculateSubtotal,
   type PricingSettings,
 } from './calculator'
-import { calculateFormulaLabourDays, calculateLabourTotals } from './quote-labour'
+import { calculateDisplayLabourTotals, calculateFormulaLabourDays, calculateLabourTotals } from './quote-labour'
 import { DULUX_PAINT_PRODUCTS } from './products/dulux-paints'
 import { normalizeRrpProduct, type ProductRecord } from './products/types'
 import { normalizeProductService, type ProductServiceRecord } from './product-services/types'
@@ -534,6 +534,7 @@ export function getDevQuote(id: string): QuoteRecord | null {
 }
 
 function buildDevQuoteRecord(id: string, createdAt: string, input: DevQuoteInput, settings: PricingSettings): QuoteRecord {
+  const displayLabour = calculateDisplayLabourTotals(input.workingDays, input.labourPerDay, input.items)
   const formulaResults = calculateAllFormulas(
     {
       workingDays: calculateFormulaLabourDays(input.workingDays, input.labourPerDay, input.items),
@@ -558,8 +559,8 @@ function buildDevQuoteRecord(id: string, createdAt: string, input: DevQuoteInput
     jobberSyncError: null,
     areaSqft: input.areaSqft ?? null,
     workType: input.workType?.trim() || null,
-    workingDays: money(input.workingDays),
-    labourPerDay: money(input.labourPerDay),
+    workingDays: money(displayLabour.workingDays),
+    labourPerDay: money(displayLabour.labourPerDay),
     formula1Total: money(formulaResults[0].total),
     formula2Total: money(formulaResults[1].total),
     formula3Total: money(formulaResults[2].total),
@@ -657,7 +658,7 @@ function buildDevQuoteOptionRecord(
     quoteId,
     title: option.title.trim(),
     workingDays: money(labour.workingDays),
-    labourPerDay: money(labour.labourPerDay),
+    labourPerDay: money(labour.labourDays),
     materialMarket: money(materialMarket),
     materialActual: money(materialActual),
     formula1Total: money(formulaResults[0].total),

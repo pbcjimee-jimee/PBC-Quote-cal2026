@@ -59,7 +59,7 @@ export function calculateMainQuoteTotals({
     materialActual,
     materialLabour,
     totalWorkingDays: materialLabour.workingDays,
-    totalLabourPerDay: materialLabour.labourPerDay,
+    totalLabourPerDay: materialLabour.labourDays,
     totalLabourDays: materialLabour.labourDays,
     results,
     subtotal,
