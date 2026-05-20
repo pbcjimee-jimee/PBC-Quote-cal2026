@@ -108,6 +108,14 @@ describe('jobber quote write client', () => {
       .mockResolvedValueOnce(new Response(JSON.stringify({
         data: { quoteCreateLineItems: { createdLineItems: [{ id: 'new-line-1' }], userErrors: [] } },
       }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        data: {
+          quoteEditLineItems: {
+            modifiedLineItems: [{ id: 'old-line-1' }, { id: 'new-line-1' }],
+            userErrors: [],
+          },
+        },
+      }), { status: 200 }))
 
     const result = await syncJobberQuoteLineItems('quote-id', {
       saveMode: 'priced_line_items',
@@ -168,6 +176,12 @@ describe('jobber quote write client', () => {
         taxable: true,
         saveToProductsAndServices: false,
       }),
+    ])
+    expect(bodies[2].variables.lineItems[0]).not.toHaveProperty('sortOrder')
+    expect(bodies[3].query).toContain('quoteEditLineItems')
+    expect(bodies[3].variables.lineItems).toEqual([
+      expect.objectContaining({ lineItemId: 'old-line-1', name: 'Walls updated', sortOrder: 0 }),
+      expect.objectContaining({ lineItemId: 'new-line-1', name: 'New ceiling', sortOrder: 1 }),
     ])
     expect(bodies.some((body) => String(body.query).includes('quoteDeleteLineItems'))).toBe(false)
   })
@@ -592,6 +606,70 @@ describe('jobber quote write client', () => {
         category: 'SERVICE',
       },
     ])
+  })
+
+  it('creates priced line items without sort order because Jobber rejects sortOrder on line item create attributes', async () => {
+    const fetcher = vi
+      .fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        data: {
+          quote: {
+            id: 'quote-id',
+            quoteNumber: '4192',
+            title: null,
+            createdAt: '2026-05-20T00:00:00Z',
+            message: null,
+            jobberWebUri: 'https://secure.getjobber.com/quotes/59441915',
+            client: null,
+            property: null,
+            lineItems: { nodes: [] },
+          },
+        },
+      }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        data: { quoteCreateLineItems: { createdLineItems: [{ id: 'created-total-line' }], userErrors: [] } },
+      }), { status: 200 }))
+
+    const result = await syncJobberQuoteLineItems('quote-id', {
+      saveMode: 'priced_line_items',
+      lines: [
+        {
+          kind: 'line_item',
+          name: 'Total',
+          description: '',
+          quantity: 1,
+          unitPrice: 410.18,
+          taxable: true,
+          clientVisible: true,
+          position: 7,
+        },
+      ],
+      finalTotal: '451.20',
+      finalTotalIncludesGst: true,
+    }, {
+      accessToken: 'access-token',
+      graphqlVersion: '2025-04-16',
+      fetcher,
+    })
+
+    expect(result.createdLineItemIds).toEqual(['created-total-line'])
+    expect(result.syncedLineItems).toEqual([
+      { sourcePosition: 7, jobberLineItemId: 'created-total-line' },
+    ])
+
+    const bodies = fetcher.mock.calls.map(([, init]) => JSON.parse(String(init.body)))
+    expect(bodies[1].query).toContain('quoteCreateLineItems')
+    expect(bodies[1].variables.lineItems).toEqual([
+      expect.not.objectContaining({ sortOrder: expect.any(Number) }),
+    ])
+    expect(bodies[1].variables.lineItems[0]).toEqual(expect.objectContaining({
+      name: 'Total',
+      quantity: 1,
+      unitPrice: 410.18,
+      totalPrice: 410.18,
+      taxable: true,
+      saveToProductsAndServices: false,
+    }))
   })
 
   it('applies final Jobber sort order after creating a text line item', async () => {

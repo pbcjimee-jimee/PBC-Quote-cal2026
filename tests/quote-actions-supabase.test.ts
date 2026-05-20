@@ -662,6 +662,85 @@ describe('quote actions against Supabase', () => {
     }
   })
 
+  it('normalizes numeric Supabase decimal values before sending quote data to the edit form', async () => {
+    const detailBuilder = createSelectSingleBuilder({
+      data: {
+        ...quoteRow,
+        working_days: 3,
+        labour_per_day: 3,
+        formula1_total: 1599,
+        subtotal: 1599,
+        final_total: 1758.9,
+        quote_items: [
+          {
+            ...quoteRow.quote_items[0],
+            market_price_snapshot: 99,
+            actual_price_snapshot: 99,
+            quantity: 1,
+            working_days: 3,
+            labour_per_day: 3,
+          },
+        ],
+        jobber_quote_lines: [
+          {
+            ...quoteRow.jobber_quote_lines[0],
+            quantity: 1,
+            unit_price: 1281.88,
+            total_price: 1281.88,
+          },
+        ],
+        quote_options: [
+          {
+            id: '00000000-0000-4000-8000-000000000401',
+            quote_id: quoteId,
+            title: 'Option 1',
+            working_days: 1,
+            labour_per_day: 2,
+            material_market: 50,
+            material_actual: 45,
+            formula1_total: 500,
+            formula2_total: 510,
+            formula3_total: 520,
+            formula4_total: 530,
+            formula5_total: 540,
+            selected_min: 1,
+            selected_max: 1,
+            subtotal: 500,
+            final_total: 550,
+            position: 0,
+            quote_option_items: [
+              {
+                ...quoteRow.quote_items[0],
+                option_id: '00000000-0000-4000-8000-000000000401',
+                market_price_snapshot: 50,
+                actual_price_snapshot: 45,
+                quantity: 1,
+                working_days: 1,
+                labour_per_day: 2,
+              },
+            ],
+          },
+        ],
+      },
+      error: null,
+    })
+    mocks.createClient.mockResolvedValueOnce({ from: vi.fn(() => detailBuilder) })
+
+    const result = await getQuote(quoteId)
+
+    expect(result.ok).toBe(true)
+    if (result.ok && result.data) {
+      expect(result.data.workingDays).toBe('3.00')
+      expect(result.data.labourPerDay).toBe('3.00')
+      expect(result.data.items[0].marketPriceSnapshot).toBe('99.00')
+      expect(result.data.items[0].quantity).toBe('1.00')
+      expect(result.data.items[0].workingDays).toBe('3.00')
+      expect(result.data.jobberQuoteLines[0].unitPrice).toBe('1281.88')
+      expect(result.data.options[0].items[0].marketPriceSnapshot).toBe('50.00')
+      expect(result.data.options[0].items[0].labourPerDay).toBe('2.00')
+    }
+  })
+
   it('returns non-migration Supabase errors when quote detail loading fails', async () => {
     const detailBuilder = createSelectSingleBuilder({
       data: null,

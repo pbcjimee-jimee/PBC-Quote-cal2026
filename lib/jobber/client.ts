@@ -1089,7 +1089,6 @@ function toQuoteCreateLineItemAttributes(item: JobberQuoteLineMutationItem) {
     quantity: item.quantity ?? 1,
     unitPrice: item.unitPrice ?? 0,
     totalPrice: item.totalPrice ?? (item.quantity ?? 1) * (item.unitPrice ?? 0),
-    ...(typeof item.sortOrder === 'number' ? { sortOrder: item.sortOrder } : {}),
     ...(item.productOrServiceId ? { productOrServiceId: item.productOrServiceId } : {}),
   }
 }
@@ -1386,7 +1385,7 @@ export async function syncJobberQuoteLineItems(
     .filter((item) => item.jobberLineItemId && typeof item.sortOrder === 'number')
     .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0))
 
-  if (createItems.some((item) => item.kind === 'text') && finalSortItems.length > 1) {
+  if (createItems.length > 0 && finalSortItems.length > 1) {
     const payload = await postApprovedJobberMutation(
       JOBBER_QUOTE_EDIT_LINE_ITEMS_MUTATION,
       {
