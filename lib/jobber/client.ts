@@ -1060,7 +1060,6 @@ function toQuoteCreateLineItemAttributes(item: JobberQuoteLineMutationItem) {
     quantity: item.quantity ?? 1,
     unitPrice: item.unitPrice ?? 0,
     totalPrice: item.totalPrice ?? (item.quantity ?? 1) * (item.unitPrice ?? 0),
-    ...(typeof item.sortOrder === 'number' ? { sortOrder: item.sortOrder } : {}),
     ...(item.productOrServiceId ? { productOrServiceId: item.productOrServiceId } : {}),
   }
 }
@@ -1167,10 +1166,12 @@ function resolveCurrentJobberLineId(
   currentLineItemsByKey: Map<string, JobberQuoteLineItem[]>,
   currentLineItemsByNameKey: Map<string, JobberQuoteLineItem[]>
 ): string | undefined {
-  if (item.jobberLineItemId && currentLineItemIds.has(item.jobberLineItemId)) {
+  if (item.jobberLineItemId && currentLineItemIds.has(item.jobberLineItemId) && !usedLineItemIds.has(item.jobberLineItemId)) {
     usedLineItemIds.add(item.jobberLineItemId)
     return item.jobberLineItemId
   }
+
+  if (!item.jobberLineItemId) return undefined
 
   const matchingLines = currentLineItemsByKey.get(mutationLineMatchKey(item)) ?? []
   const matchingLine = matchingLines.find((lineItem) => !usedLineItemIds.has(lineItem.id))
@@ -1228,6 +1229,21 @@ function relinkMutationItemsToCurrentQuote(
     )
 
     return resolvedLineItemId ? { ...item, jobberLineItemId: resolvedLineItemId } : item
+  })
+}
+
+function shouldApplyFinalSortAfterCreate(
+  createItems: JobberQuoteLineMutationItem[],
+  editItems: JobberQuoteLineMutationItem[]
+): boolean {
+  return createItems.some((createdItem) => {
+    const createdSortOrder = createdItem.sortOrder
+    if (typeof createdSortOrder !== 'number') return false
+
+    return editItems.some((editItem) => (
+      typeof editItem.sortOrder === 'number' &&
+      createdSortOrder < editItem.sortOrder
+    ))
   })
 }
 
@@ -1340,7 +1356,7 @@ export async function syncJobberQuoteLineItems(
     .filter((item) => item.jobberLineItemId && typeof item.sortOrder === 'number')
     .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0))
 
-  if (createItems.some((item) => item.kind === 'text') && finalSortItems.length > 1) {
+  if (shouldApplyFinalSortAfterCreate(createItems, editItems) && finalSortItems.length > 1) {
     const payload = await postApprovedJobberMutation(
       JOBBER_QUOTE_EDIT_LINE_ITEMS_MUTATION,
       {
