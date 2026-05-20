@@ -108,7 +108,7 @@ export function QuoteOptionsPanel({
                         <div className="font-mono text-slate-950">{totals.workingDays}</div>
                       </div>
                       <div className="rounded-lg border border-[var(--border)] bg-white px-3 py-2 text-sm">
-                        <div className="text-xs font-semibold text-slate-400">Labour / Day</div>
+                        <div className="text-xs font-semibold text-slate-400">Total Labour</div>
                         <div className="font-mono text-slate-950">{totals.labourPerDay}</div>
                       </div>
                       <div className="rounded-lg border border-[var(--border)] bg-white px-3 py-2 text-sm">

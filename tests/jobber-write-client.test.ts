@@ -281,6 +281,112 @@ describe('jobber quote write client', () => {
     ])
   })
 
+  it('creates priced line items without sort order and reorders after creation when inserted before tracked lines', async () => {
+    const fetcher = vi
+      .fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        data: {
+          quote: {
+            id: 'quote-id',
+            quoteNumber: '3535',
+            title: null,
+            createdAt: '2026-05-19T00:00:00Z',
+            message: null,
+            jobberWebUri: 'https://secure.getjobber.com/quotes/59439251',
+            client: null,
+            property: null,
+            lineItems: {
+              nodes: [
+                {
+                  id: 'existing-line',
+                  name: 'Ceiling',
+                  category: 'SERVICE',
+                  description: 'Existing ceiling scope',
+                  quantity: 1,
+                  unitPrice: 13,
+                  totalPrice: 13,
+                  linkedProductOrService: null,
+                },
+              ],
+            },
+          },
+        },
+      }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        data: { quoteEditLineItems: { modifiedLineItems: [{ id: 'existing-line' }], userErrors: [] } },
+      }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        data: { quoteCreateLineItems: { createdLineItems: [{ id: 'created-priced-line' }], userErrors: [] } },
+      }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        data: {
+          quoteEditLineItems: {
+            modifiedLineItems: [{ id: 'created-priced-line' }, { id: 'existing-line' }],
+            userErrors: [],
+          },
+        },
+      }), { status: 200 }))
+
+    const result = await syncJobberQuoteLineItems('quote-id', {
+      saveMode: 'priced_line_items',
+      lines: [
+        {
+          kind: 'line_item',
+          name: 'Walls',
+          description: 'New wall scope',
+          quantity: 1,
+          unitPrice: 1200,
+          taxable: true,
+          clientVisible: true,
+          position: 0,
+        },
+        {
+          kind: 'line_item',
+          name: 'Ceiling',
+          description: 'Existing ceiling scope',
+          quantity: 1,
+          unitPrice: 13,
+          taxable: true,
+          clientVisible: true,
+          jobberLineItemId: 'existing-line',
+          position: 1,
+        },
+      ],
+      finalTotal: '0',
+      finalTotalIncludesGst: true,
+    }, {
+      accessToken: 'access-token',
+      graphqlVersion: '2025-04-16',
+      fetcher,
+    })
+
+    expect(result.createdLineItemIds).toEqual(['created-priced-line'])
+    expect(result.syncedLineItems).toEqual([
+      { sourcePosition: 1, jobberLineItemId: 'existing-line' },
+      { sourcePosition: 0, jobberLineItemId: 'created-priced-line' },
+    ])
+
+    const bodies = fetcher.mock.calls.map(([, init]) => JSON.parse(String(init.body)))
+    expect(bodies[2].query).toContain('quoteCreateLineItems')
+    expect(bodies[2].variables.lineItems).toEqual([
+      {
+        name: 'Walls',
+        description: 'New wall scope',
+        category: 'SERVICE',
+        taxable: true,
+        saveToProductsAndServices: false,
+        quantity: 1,
+        unitPrice: 1200,
+        totalPrice: 1200,
+      },
+    ])
+    expect(bodies[3].query).toContain('quoteEditLineItems')
+    expect(bodies[3].variables.lineItems).toEqual([
+      expect.objectContaining({ lineItemId: 'created-priced-line', name: 'Walls', unitPrice: 1200, sortOrder: 0 }),
+      expect.objectContaining({ lineItemId: 'existing-line', name: 'Ceiling', unitPrice: 13, sortOrder: 1 }),
+    ])
+  })
+
   it('relinks stale app line ids to the current Jobber session before reordering', async () => {
     const fetcher = vi
       .fn()

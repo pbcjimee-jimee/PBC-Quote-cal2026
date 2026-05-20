@@ -538,7 +538,7 @@ describe('quote actions against Supabase', () => {
     expect(syncStatusUpdate.eq).toHaveBeenCalledWith('id', quoteId)
   })
 
-  it('keeps the Jobber sync marked synced when only the post-sync snapshot refresh is throttled', async () => {
+  it('keeps successful Jobber line sync when only the post-write snapshot refresh is throttled', async () => {
     const existingQuote = createSelectSingleBuilder({
       data: { pricing_settings_snapshot: DEFAULT_PRICING_SETTINGS },
       error: null,
@@ -550,28 +550,38 @@ describe('quote actions against Supabase', () => {
     const jobberLineDelete = createThenableBuilder({ error: null })
     const itemInsert = createInsertOnlyBuilder({ error: null })
     const jobberLineInsert = createInsertOnlyBuilder({ error: null })
+    const jobberLineIdUpdate = createThenableBuilder({ error: null })
     const builders: Record<string, unknown[]> = {
       quotes: [existingQuote, quoteUpdate, syncStatusUpdate],
       quote_items: [itemDelete, itemInsert],
       quote_options: [optionDelete],
-      jobber_quote_lines: [jobberLineDelete, jobberLineInsert],
+      jobber_quote_lines: [jobberLineDelete, jobberLineInsert, jobberLineIdUpdate],
     }
     const from = vi.fn((table: string) => {
       const builder = builders[table]?.shift()
       if (!builder) throw new Error(`unexpected table ${table}`)
       return builder
     })
-    mocks.createClient.mockResolvedValueOnce({ auth: createAuthUser(), from })
+    mocks.syncJobberQuoteLineItems.mockResolvedValueOnce({
+      deletedLineItemIds: [],
+      createdLineItemIds: ['created-line-id'],
+      editedLineItemIds: [],
+      syncedLineItems: [{ sourcePosition: 0, jobberLineItemId: 'created-line-id' }],
+    })
     mocks.fetchJobberQuote.mockRejectedValueOnce(new Error('Jobber returned a GraphQL error: Throttled'))
+    mocks.createClient.mockResolvedValueOnce({ auth: createAuthUser(), from })
 
     const result = await updateQuote({
       id: quoteId,
       ...quoteInputWithJobberLines,
       jobberQuoteId: 'jobber-quote-id',
+      jobberSaveMode: 'priced_line_items',
     })
 
     expect(result).toEqual({ ok: true, data: { id: quoteId } })
-    expect(mocks.syncJobberQuoteLineItems).toHaveBeenCalled()
+    expect(jobberLineIdUpdate.update).toHaveBeenCalledWith({ jobber_line_item_id: 'created-line-id' })
+    expect(jobberLineIdUpdate.eq).toHaveBeenCalledWith('quote_id', quoteId)
+    expect(jobberLineIdUpdate.eq).toHaveBeenCalledWith('position', 0)
     expect(syncStatusUpdate.update).toHaveBeenCalledWith(expect.objectContaining({
       jobber_sync_status: 'synced',
       jobber_sync_error: null,
@@ -579,6 +589,9 @@ describe('quote actions against Supabase', () => {
     }))
     expect(syncStatusUpdate.update).not.toHaveBeenCalledWith(expect.objectContaining({
       jobber_sync_status: 'failed',
+    }))
+    expect(syncStatusUpdate.update).toHaveBeenCalledWith(expect.not.objectContaining({
+      jobber_snapshot: expect.anything(),
     }))
   })
 
@@ -724,6 +737,7 @@ describe('quote actions against Supabase', () => {
       },
       error: null,
     })
+
     mocks.createClient.mockResolvedValueOnce({ from: vi.fn(() => detailBuilder) })
 
     const result = await getQuote(quoteId)
@@ -731,13 +745,47 @@ describe('quote actions against Supabase', () => {
     expect(result.ok).toBe(true)
     if (result.ok && result.data) {
       expect(result.data.workingDays).toBe('3.00')
-      expect(result.data.labourPerDay).toBe('3.00')
+      expect(result.data.labourPerDay).toBe('9.00')
       expect(result.data.items[0].marketPriceSnapshot).toBe('99.00')
       expect(result.data.items[0].quantity).toBe('1.00')
       expect(result.data.items[0].workingDays).toBe('3.00')
       expect(result.data.jobberQuoteLines[0].unitPrice).toBe('1281.88')
       expect(result.data.options[0].items[0].marketPriceSnapshot).toBe('50.00')
       expect(result.data.options[0].items[0].labourPerDay).toBe('2.00')
+    }
+  })
+
+  it('derives displayed labour totals from saved material rows when loading older quotes', async () => {
+    const olderQuoteRow = {
+      ...quoteRow,
+      working_days: '999.00',
+      labour_per_day: '999.00',
+      quote_items: [
+        {
+          ...quoteRow.quote_items[0],
+          working_days: '0.50',
+          labour_per_day: '1.00',
+          position: 0,
+        },
+        {
+          ...quoteRow.quote_items[0],
+          id: '00000000-0000-4000-8000-000000000202',
+          product_name_snapshot: 'Second saved row',
+          working_days: '0.50',
+          labour_per_day: '1.00',
+          position: 1,
+        },
+      ],
+    }
+    const detailBuilder = createSelectSingleBuilder({ data: olderQuoteRow, error: null })
+    mocks.createClient.mockResolvedValueOnce({ from: vi.fn(() => detailBuilder) })
+
+    const result = await getQuote(quoteId)
+
+    expect(result.ok).toBe(true)
+    if (result.ok) {
+      expect(result.data?.workingDays).toBe('1.00')
+      expect(result.data?.labourPerDay).toBe('1.00')
     }
   })
 

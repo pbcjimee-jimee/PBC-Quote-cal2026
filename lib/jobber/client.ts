@@ -204,9 +204,9 @@ interface MutationError {
   message?: string
 }
 
-const DEFAULT_THROTTLE_RETRIES = 2
+const DEFAULT_THROTTLE_RETRIES = 4
 const DEFAULT_THROTTLE_RETRY_DELAY_MS = 500
-const MAX_THROTTLE_RETRY_DELAY_MS = 3000
+const MAX_THROTTLE_RETRY_DELAY_MS = 10000
 
 export function assertJobberReadOnlyGraphqlDocument(query: string): void {
   const executableLines = query
@@ -1195,10 +1195,12 @@ function resolveCurrentJobberLineId(
   currentLineItemsByKey: Map<string, JobberQuoteLineItem[]>,
   currentLineItemsByNameKey: Map<string, JobberQuoteLineItem[]>
 ): string | undefined {
-  if (item.jobberLineItemId && currentLineItemIds.has(item.jobberLineItemId)) {
+  if (item.jobberLineItemId && currentLineItemIds.has(item.jobberLineItemId) && !usedLineItemIds.has(item.jobberLineItemId)) {
     usedLineItemIds.add(item.jobberLineItemId)
     return item.jobberLineItemId
   }
+
+  if (!item.jobberLineItemId) return undefined
 
   const matchingLines = currentLineItemsByKey.get(mutationLineMatchKey(item)) ?? []
   const matchingLine = matchingLines.find((lineItem) => !usedLineItemIds.has(lineItem.id))

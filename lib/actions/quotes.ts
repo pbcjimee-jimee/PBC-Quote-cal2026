@@ -11,7 +11,7 @@ import {
   type PricingSettings,
 } from '@/lib/calculator'
 import Decimal from 'decimal.js'
-import { calculateFormulaLabourDays, calculateLabourTotals } from '@/lib/quote-labour'
+import { calculateDisplayLabourTotals, calculateFormulaLabourDays, calculateLabourTotals } from '@/lib/quote-labour'
 import { createClient } from '@/lib/supabase/server'
 import type { Database, Json } from '@/lib/supabase/types'
 import { jobberQuoteSnapshotSchema, pricingSettingsSchema, quoteSchema, type QuoteInput } from '@/lib/validators'
@@ -105,6 +105,11 @@ function toQuoteRecord(row: QuoteWithItemsRow, creatorProfile?: UserProfile): Qu
   const quoteItems = [...(row.quote_items ?? [])].sort((a, b) => a.position - b.position)
   const jobberQuoteLines = [...(row.jobber_quote_lines ?? [])].sort((a, b) => a.position - b.position)
   const quoteOptions = [...(row.quote_options ?? [])].sort((a, b) => a.position - b.position)
+  const displayLabour = calculateDisplayLabourTotals(
+    row.working_days,
+    row.labour_per_day,
+    quoteItems.map((item) => ({ workingDays: item.working_days, labourPerDay: item.labour_per_day }))
+  )
 
   return {
     id: row.id,
@@ -118,8 +123,8 @@ function toQuoteRecord(row: QuoteWithItemsRow, creatorProfile?: UserProfile): Qu
     jobberSyncError: row.jobber_sync_error ?? null,
     areaSqft: row.area_sqft,
     workType: row.work_type,
-    workingDays: decimalText(row.working_days),
-    labourPerDay: decimalText(row.labour_per_day),
+    workingDays: money(displayLabour.workingDays),
+    labourPerDay: money(displayLabour.labourPerDay),
     formula1Total: decimalText(row.formula1_total),
     formula2Total: decimalText(row.formula2_total),
     formula3Total: decimalText(row.formula3_total),
@@ -167,41 +172,50 @@ function toQuoteRecord(row: QuoteWithItemsRow, creatorProfile?: UserProfile): Qu
       createdAt: line.created_at,
       updatedAt: line.updated_at,
     })),
-    options: quoteOptions.map((option) => ({
-      id: option.id,
-      quoteId: option.quote_id,
-      title: option.title,
-      workingDays: decimalText(option.working_days),
-      labourPerDay: decimalText(option.labour_per_day),
-      materialMarket: decimalText(option.material_market),
-      materialActual: decimalText(option.material_actual),
-      formula1Total: decimalText(option.formula1_total),
-      formula2Total: decimalText(option.formula2_total),
-      formula3Total: decimalText(option.formula3_total),
-      formula4Total: decimalText(option.formula4_total),
-      formula5Total: decimalText(option.formula5_total),
-      selectedMin: option.selected_min as 1 | 2 | 3 | 4 | 5,
-      selectedMax: option.selected_max as 1 | 2 | 3 | 4 | 5,
-      subtotal: decimalText(option.subtotal),
-      finalTotal: decimalText(option.final_total),
-      position: option.position,
-      items: [...(option.quote_option_items ?? [])].sort((a, b) => a.position - b.position).map((item) => ({
-        id: item.id,
-        optionId: item.option_id,
-        productId: item.product_id,
-        productNameSnapshot: item.product_name_snapshot,
-        marketPriceSnapshot: decimalText(item.market_price_snapshot),
-        actualPriceSnapshot: decimalText(item.actual_price_snapshot),
-        quantity: decimalText(item.quantity),
-        workingDays: optionalDecimalText(item.working_days),
-        labourPerDay: optionalDecimalText(item.labour_per_day),
-        areaId: item.area_id,
-        areaNameSnapshot: item.area_name_snapshot,
-        areaScopeSnapshot: item.area_scope_snapshot,
-        isCustom: item.is_custom,
-        position: item.position,
-      })),
-    })),
+    options: quoteOptions.map((option) => {
+      const optionItems = [...(option.quote_option_items ?? [])].sort((a, b) => a.position - b.position)
+      const optionDisplayLabour = calculateDisplayLabourTotals(
+        option.working_days,
+        option.labour_per_day,
+        optionItems.map((item) => ({ workingDays: item.working_days, labourPerDay: item.labour_per_day }))
+      )
+
+      return {
+        id: option.id,
+        quoteId: option.quote_id,
+        title: option.title,
+        workingDays: money(optionDisplayLabour.workingDays),
+        labourPerDay: money(optionDisplayLabour.labourPerDay),
+        materialMarket: decimalText(option.material_market),
+        materialActual: decimalText(option.material_actual),
+        formula1Total: decimalText(option.formula1_total),
+        formula2Total: decimalText(option.formula2_total),
+        formula3Total: decimalText(option.formula3_total),
+        formula4Total: decimalText(option.formula4_total),
+        formula5Total: decimalText(option.formula5_total),
+        selectedMin: option.selected_min as 1 | 2 | 3 | 4 | 5,
+        selectedMax: option.selected_max as 1 | 2 | 3 | 4 | 5,
+        subtotal: decimalText(option.subtotal),
+        finalTotal: decimalText(option.final_total),
+        position: option.position,
+        items: optionItems.map((item) => ({
+          id: item.id,
+          optionId: item.option_id,
+          productId: item.product_id,
+          productNameSnapshot: item.product_name_snapshot,
+          marketPriceSnapshot: decimalText(item.market_price_snapshot),
+          actualPriceSnapshot: decimalText(item.actual_price_snapshot),
+          quantity: decimalText(item.quantity),
+          workingDays: optionalDecimalText(item.working_days),
+          labourPerDay: optionalDecimalText(item.labour_per_day),
+          areaId: item.area_id,
+          areaNameSnapshot: item.area_name_snapshot,
+          areaScopeSnapshot: item.area_scope_snapshot,
+          isCustom: item.is_custom,
+          position: item.position,
+        })),
+      }
+    }),
   }
 }
 
@@ -251,7 +265,7 @@ async function insertQuoteOptions(
         quote_id: quoteId,
         title: option.title.trim(),
         working_days: money(calculated.labour.workingDays),
-        labour_per_day: money(calculated.labour.labourPerDay),
+        labour_per_day: money(calculated.labour.labourDays),
         material_market: money(calculated.materialMarket),
         material_actual: money(calculated.materialActual),
         formula1_total: money(calculated.formulas[0].total),
@@ -327,6 +341,7 @@ export async function createQuote(input: unknown): Promise<ActionResult<{ id: st
   )
   const subtotal = calculateSubtotal(formulas, parsed.data.selectedMin, parsed.data.selectedMax)
   const finalTotal = calculateFinal(subtotal)
+  const displayLabour = calculateDisplayLabourTotals(parsed.data.workingDays, parsed.data.labourPerDay, parsed.data.items)
 
   const { data: quote, error: quoteError } = await supabase
     .from('quotes')
@@ -341,8 +356,8 @@ export async function createQuote(input: unknown): Promise<ActionResult<{ id: st
       jobber_sync_error: null,
       area_sqft: parsed.data.areaSqft ?? null,
       work_type: parsed.data.workType || null,
-      working_days: parsed.data.workingDays.toFixed(2),
-      labour_per_day: parsed.data.labourPerDay.toFixed(2),
+      working_days: money(displayLabour.workingDays),
+      labour_per_day: money(displayLabour.labourPerDay),
       formula1_total: money(formulas[0].total),
       formula2_total: money(formulas[1].total),
       formula3_total: money(formulas[2].total),
@@ -450,6 +465,7 @@ export async function updateQuote(input: unknown): Promise<ActionResult<{ id: st
   )
   const subtotal = calculateSubtotal(formulas, parsed.data.selectedMin, parsed.data.selectedMax)
   const finalTotal = calculateFinal(subtotal)
+  const displayLabour = calculateDisplayLabourTotals(parsed.data.workingDays, parsed.data.labourPerDay, parsed.data.items)
 
   const { error: quoteError } = await supabase
     .from('quotes')
@@ -464,8 +480,8 @@ export async function updateQuote(input: unknown): Promise<ActionResult<{ id: st
       jobber_sync_error: null,
       area_sqft: parsed.data.areaSqft ?? null,
       work_type: parsed.data.workType || null,
-      working_days: parsed.data.workingDays.toFixed(2),
-      labour_per_day: parsed.data.labourPerDay.toFixed(2),
+      working_days: money(displayLabour.workingDays),
+      labour_per_day: money(displayLabour.labourPerDay),
       formula1_total: money(formulas[0].total),
       formula2_total: money(formulas[1].total),
       formula3_total: money(formulas[2].total),

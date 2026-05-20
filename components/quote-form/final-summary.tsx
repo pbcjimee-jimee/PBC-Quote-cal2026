@@ -45,8 +45,8 @@ export function FinalSummary({
     <section className="rounded-lg border border-[var(--border)] bg-white p-4">
       <div className="rounded-lg bg-[var(--primary-soft)] px-4 py-4">
         <span className="text-sm font-bold uppercase text-[var(--primary)]">Final total</span>
-        <div className="mt-2 font-mono text-4xl font-bold tabular-nums text-slate-950">${finalTotal.toFixed(2)}</div>
-        <p className="mt-1 text-xs font-medium text-slate-500">GST included. Snapshot is saved with the quote.</p>
+        <div className="mt-2 font-mono text-4xl font-bold tabular-nums text-slate-950">${subtotal.toFixed(2)}</div>
+        <p className="mt-1 text-xs font-medium text-slate-500">Ex GST. GST is shown at the end.</p>
       </div>
       <div className="space-y-2 text-sm">
         <div className="mt-4 flex justify-between">
@@ -58,8 +58,12 @@ export function FinalSummary({
           <span className="font-mono text-slate-900">${materialTotal.toFixed(2)}</span>
         </div>
         <div className="flex justify-between">
-          <span className="text-slate-500">Subtotal</span>
+          <span className="text-slate-500">Subtotal price</span>
           <span className="font-mono font-semibold text-slate-950">${subtotal.toFixed(2)}</span>
+        </div>
+        <div className="flex justify-between">
+          <span className="text-slate-500">Total price</span>
+          <span className="text-right text-xs font-semibold text-slate-500">Subtotal price + GST</span>
         </div>
         <div className="flex justify-between">
           <span className="text-slate-500">GST 10%</span>

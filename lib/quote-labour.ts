@@ -49,8 +49,34 @@ export function calculateFormulaLabourDays(
   labourPerDay: Decimal | number | string,
   lines: LabourLineInput[]
 ): Decimal {
-  const hasLineLabour = lines.some((line) => line.workingDays !== undefined || line.labourPerDay !== undefined)
+  const hasLineLabour = lines.some((line) => line.workingDays != null || line.labourPerDay != null)
   if (!hasLineLabour) return decimalFromInput(workingDays).mul(decimalFromInput(labourPerDay))
 
   return calculateLabourTotals(lines).labourDays
+}
+
+export function calculateDisplayLabourTotals(
+  workingDays: Decimal | number | string,
+  labourPerDay: Decimal | number | string,
+  lines: LabourLineInput[]
+): LabourTotals {
+  const hasLineLabour = lines.some((line) => line.workingDays != null || line.labourPerDay != null)
+  if (!hasLineLabour) {
+    const totalWorkingDays = decimalFromInput(workingDays)
+    const totalLabour = totalWorkingDays.mul(decimalFromInput(labourPerDay))
+
+    return {
+      workingDays: totalWorkingDays,
+      labourPerDay: totalLabour,
+      labourDays: totalLabour,
+    }
+  }
+
+  const totals = calculateLabourTotals(lines)
+
+  return {
+    workingDays: totals.workingDays,
+    labourPerDay: totals.labourDays,
+    labourDays: totals.labourDays,
+  }
 }

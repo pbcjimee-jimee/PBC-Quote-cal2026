@@ -99,6 +99,75 @@ describe('quote form pricing UI', () => {
     expect(shouldRunDraftGuard(false, false)).toBe(false)
   })
 
+  it('shows total labour as the sum of material row working days times labour', () => {
+    const markup = renderToStaticMarkup(
+      createElement(QuoteForm, {
+        settings: quoteRecord.pricingSettingsSnapshot,
+        areas: [],
+        productServices: [],
+        quoteLineTemplates: [],
+        initialQuote: {
+          ...quoteRecord,
+          items: [
+            {
+              id: 'item-1',
+              quoteId: quoteRecord.id,
+              productId: null,
+              productNameSnapshot: 'Prep',
+              marketPriceSnapshot: '0.00',
+              actualPriceSnapshot: '0.00',
+              quantity: '1.00',
+              workingDays: '0.50',
+              labourPerDay: '2.00',
+              areaId: null,
+              areaNameSnapshot: null,
+              areaScopeSnapshot: null,
+              isCustom: true,
+              position: 0,
+            },
+            {
+              id: 'item-2',
+              quoteId: quoteRecord.id,
+              productId: null,
+              productNameSnapshot: 'Coats',
+              marketPriceSnapshot: '0.00',
+              actualPriceSnapshot: '0.00',
+              quantity: '1.00',
+              workingDays: '2.00',
+              labourPerDay: '3.00',
+              areaId: null,
+              areaNameSnapshot: null,
+              areaScopeSnapshot: null,
+              isCustom: true,
+              position: 1,
+            },
+            {
+              id: 'item-3',
+              quoteId: quoteRecord.id,
+              productId: null,
+              productNameSnapshot: 'Finish',
+              marketPriceSnapshot: '0.00',
+              actualPriceSnapshot: '0.00',
+              quantity: '1.00',
+              workingDays: '2.50',
+              labourPerDay: '2.00',
+              areaId: null,
+              areaNameSnapshot: null,
+              areaScopeSnapshot: null,
+              isCustom: true,
+              position: 2,
+            },
+          ],
+        },
+      })
+    )
+
+    expect(markup).toContain('Total Working Days')
+    expect(markup).toContain('value="5.00"')
+    expect(markup).toContain('Total Labour')
+    expect(markup).toContain('value="12.00"')
+  })
+
   it('passes saved templates into the Product / Service editor', () => {
     const markup = renderToStaticMarkup(
       createElement(QuoteForm, {
@@ -122,7 +191,7 @@ describe('quote form pricing UI', () => {
     expect(markup).toContain('Standard terms')
   })
 
-  it('shows subtotal details for labour and material totals', () => {
+  it('shows the app final total as the GST-exclusive subtotal with GST at the end', () => {
     const markup = renderToStaticMarkup(
       createElement(FinalSummary, {
         labourTotal: new Decimal('1200'),
@@ -137,11 +206,16 @@ describe('quote form pricing UI', () => {
     expect(markup).toContain('$1200.00')
     expect(markup).toContain('Material total')
     expect(markup).toContain('$255.74')
-    expect(markup).toContain('Subtotal')
+    expect(markup).toContain('Subtotal price')
     expect(markup).toContain('GST 10%')
     expect(markup).toContain('$145.57')
     expect(markup).toContain('Final total')
-    expect(markup).toContain('$1601.31')
+    expect(markup).toContain('$1455.74')
+    expect(markup).toContain('Ex GST')
+    expect(markup).toContain('Total price')
+    expect(markup).toContain('Subtotal price + GST')
+    expect(markup).not.toContain('$1601.31')
+    expect(markup.lastIndexOf('GST 10%')).toBeGreaterThan(markup.lastIndexOf('Total price'))
   })
 
   it('shows Jobber quote total, expenses total, and profit margin in the right summary', () => {
@@ -718,5 +792,21 @@ describe('quote form pricing UI', () => {
     expect(cardMarkup).toContain('Created by Mia Kang')
     expect(detailMarkup).toContain('Created by')
     expect(detailMarkup).toContain('Mia Kang')
+  })
+
+  it('uses saved subtotal, not GST-inclusive final total, as the visible quote amount', () => {
+    const quoteWithGstIncludedTotal = {
+      ...quoteRecord,
+      subtotal: '1455.74',
+      finalTotal: '1601.31',
+    }
+
+    const cardMarkup = renderToStaticMarkup(createElement(QuoteCard, { quote: quoteWithGstIncludedTotal }))
+    const detailMarkup = renderToStaticMarkup(createElement(QuoteDetailView, { quote: quoteWithGstIncludedTotal }))
+
+    expect(cardMarkup).toContain('$1455.74')
+    expect(cardMarkup).not.toContain('$1601.31')
+    expect(detailMarkup).toContain('$1455.74')
+    expect(detailMarkup).not.toContain('$1601.31')
   })
 })

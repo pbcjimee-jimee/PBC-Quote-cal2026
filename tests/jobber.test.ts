@@ -275,7 +275,7 @@ describe('jobber client', () => {
     } satisfies Partial<JobberApiError>)
   })
 
-  it('searches quotes by quote number and returns the exact quote number match', async () => {
+  it('searches quotes by quote number with a lightweight lookup before fetching exact quote detail', async () => {
     const fetcher = vi.fn(async (_input: string, init: RequestInit) => {
       const body = typeof init.body === 'string' ? init.body : ''
       if (body.includes('PbcQuoteSearchLookup')) {
@@ -323,6 +323,7 @@ describe('jobber client', () => {
     expect(calls[0][1].body).not.toEqual(expect.stringContaining('lineItems(first: 100)'))
     expect(calls[0][1].body).not.toEqual(expect.stringContaining('customFields'))
     expect(calls[0][1].body).not.toEqual(expect.stringContaining('tags(first: 20)'))
+    expect(calls[0][1].body).not.toEqual(expect.stringContaining('jobs(first: 5)'))
     expect(calls[1][1].body).toEqual(expect.stringContaining('query PbcQuoteLite'))
     expect(calls[1][1].body).toEqual(expect.stringContaining('"id":"quote-id-2"'))
     expect(calls[1][1].body).toEqual(expect.stringContaining('lineItems(first: 100)'))
@@ -564,6 +565,62 @@ describe('jobber client', () => {
     const calls = fetcher.mock.calls as unknown as Array<[string, RequestInit]>
     expect(calls[0][1].body).toEqual(expect.stringContaining('query PbcQuote'))
     expect(calls[2][1].body).toEqual(expect.stringContaining('query PbcQuote'))
+    expect(calls[3][1].body).toEqual(expect.stringContaining('query PbcQuoteLite'))
+    expect(calls[3][1].body).not.toEqual(expect.stringContaining('customFields'))
+  })
+
+  it('continues retrying repeated temporary GraphQL throttles before returning quote detail', async () => {
+    const throttledResponse = new Response(JSON.stringify({
+      errors: [
+        {
+          message: 'Throttled',
+          extensions: { code: 'THROTTLED' },
+        },
+      ],
+      extensions: {
+        cost: {
+          requestedQueryCost: 120,
+          actualQueryCost: 0,
+          throttleStatus: {
+            maximumAvailable: 10000,
+            currentlyAvailable: 119,
+            restoreRate: 500,
+          },
+        },
+      },
+    }), { status: 200 })
+    const fetcher = vi
+      .fn()
+      .mockResolvedValueOnce(throttledResponse.clone())
+      .mockResolvedValueOnce(throttledResponse.clone())
+      .mockResolvedValueOnce(throttledResponse.clone())
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        data: {
+          quote: {
+            id: 'encoded-quote-id',
+            quoteNumber: 'Q-1001',
+            title: 'Interior repaint',
+            createdAt: '2026-05-13T01:23:45Z',
+            message: null,
+            jobberWebUri: 'https://secure.getjobber.com/quotes/1001',
+            client: null,
+            property: null,
+            lineItems: { nodes: [] },
+          },
+        },
+      }), { status: 200 }))
+
+    const quote = await fetchJobberQuote('encoded-quote-id', {
+      accessToken: 'access-token',
+      graphqlVersion: '2025-04-16',
+      fetcher,
+      throttleRetryDelayMs: 0,
+    })
+
+    expect(quote.quoteNumber).toBe('Q-1001')
+    expect(fetcher).toHaveBeenCalledTimes(4)
+    const calls = fetcher.mock.calls as unknown as Array<[string, RequestInit]>
+    expect(calls[0][1].body).toEqual(expect.stringContaining('query PbcQuoteLite'))
     expect(calls[3][1].body).toEqual(expect.stringContaining('query PbcQuoteLite'))
     expect(calls[3][1].body).not.toEqual(expect.stringContaining('customFields'))
   })
