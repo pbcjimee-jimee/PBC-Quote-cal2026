@@ -97,7 +97,7 @@
 
 ```typescript
 // app/(app)/quotes/page.tsx — Server Component, searchParams로 검색어 받음
-// components/quote-list/quote-card.tsx — 고객명·주소·일수·날짜·final_total, [View] → /quotes/[id]
+// components/quote-list/quote-card.tsx — 고객명·주소·일수·날짜·subtotal(ex GST), [View] → /quotes/[id]
 // components/quote-list/search-input.tsx — 'use client', onChange → router.push(?q=...), debounce 300ms
 ```
 
@@ -144,6 +144,13 @@ F1 rate: $500  F2 rate: $460  ...
 ```
 
 `[Duplicate]` 버튼: 이 견적 데이터를 채운 채로 `/quotes/new` 진입.
+
+2026-05-27 planned detail update:
+
+- Quote detail summary should show Interior subtotal, Exterior subtotal, and Final subtotal, all ex GST.
+- GST-inclusive `final_total` can remain available as a secondary GST row.
+- Saved option summaries should show `quote_options.subtotal` (ex GST), not `quote_options.final_total`.
+- Quote detail should show saved Internal Memos from `quote_memos`. These notes are app-only and are not Jobber notes.
 
 ---
 

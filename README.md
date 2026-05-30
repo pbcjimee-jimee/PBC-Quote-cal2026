@@ -4,7 +4,7 @@
 
 Excel 2개 + Jobber를 오가던 견적 작업을 **한 페이지**에서 끝낸다. 페인트 자재 검색, 5가지 견적 공식 동시 계산, min/max 선택, 견적 저장·검색까지.
 
-**상태:** v1.0 핵심 플로우 완성 (Auth · 견적 생성·수정·삭제 · 옵션 견적 · Jobber 읽기 연동 · QA/RLS 검증 완료 / 실제 과거 견적 fixture 잔여)
+**상태:** v1.0 핵심 플로우 완성 (Auth · 견적 생성·수정·삭제 · 옵션 견적 · app-only internal memos · Jobber 읽기 연동 · QA/RLS 검증 완료 / 실제 과거 견적 fixture 잔여)
 
 ---
 
@@ -42,6 +42,8 @@ npm test
 | **[docs/UI-UX-REVIEW.md](./docs/UI-UX-REVIEW.md)** | v1.0 UI/UX 정적 리뷰, 접근성·시각 위계·quick win 개선안 |
 | **[docs/WORKFLOW.md](./docs/WORKFLOW.md)** | Claude ↔ Codex 협업 흐름, 작업 분담, 충돌 처리 |
 | **[TODOS.md](./TODOS.md)** | v1.1+ 작업 목록 (Jobber 연동, 자동 백업 등) |
+| **[docs/superpowers/specs/2026-05-27-quote-workspace-area-subtotals-design.md](./docs/superpowers/specs/2026-05-27-quote-workspace-area-subtotals-design.md)** | Quote workspace, Interior/Exterior grouped subtotal, option subtotal display design |
+| **[docs/superpowers/plans/2026-05-27-quote-workspace-area-subtotals.md](./docs/superpowers/plans/2026-05-27-quote-workspace-area-subtotals.md)** | Implementation plan for the quote workspace and grouped subtotal update |
 
 ---
 

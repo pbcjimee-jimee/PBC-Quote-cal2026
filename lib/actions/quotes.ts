@@ -19,7 +19,7 @@ import { mapJobberQuoteToDraft, type JobberQuoteDraft } from '@/lib/jobber/mappe
 import { fetchJobberQuote, JobberApiError, syncJobberQuoteLineItems } from '@/lib/jobber/client'
 import { getJobberConfig, getMissingGraphqlConfigKeys } from '@/lib/jobber/config'
 import { getUsableJobberToken, refreshStoredJobberToken, type StoredJobberToken } from '@/lib/jobber/tokens'
-import { QUOTE_DETAIL_SELECT, QUOTES_LIST_SELECT } from '@/lib/quote-query-shape'
+import { QUOTE_DETAIL_SELECT, QUOTE_DETAIL_WITHOUT_MEMOS_SELECT, QUOTES_LIST_SELECT } from '@/lib/quote-query-shape'
 import { getAuthUserProfilesById, type UserProfile } from '@/lib/user-profiles'
 import { getPricingSettings } from './settings'
 import type { ActionResult } from './types'
@@ -36,6 +36,7 @@ type QuoteRow = Database['public']['Tables']['quotes']['Row'] & {
 type QuoteItemRow = Database['public']['Tables']['quote_items']['Row']
 type QuoteOptionRow = Database['public']['Tables']['quote_options']['Row']
 type QuoteOptionItemRow = Database['public']['Tables']['quote_option_items']['Row']
+type QuoteMemoRow = Database['public']['Tables']['quote_memos']['Row']
 type JobberQuoteLineRow = {
   id: string
   quote_id: string
@@ -60,6 +61,7 @@ type QuoteWithItemsRow = QuoteRow & {
   quote_items?: QuoteItemRow[]
   jobber_quote_lines?: JobberQuoteLineRow[]
   quote_options?: QuoteOptionWithItemsRow[]
+  quote_memos?: QuoteMemoRow[]
 }
 
 function money(value: { toFixed(decimalPlaces: number): string } | number): string {
@@ -77,6 +79,56 @@ function decimalText(value: unknown): string {
   return '0.00'
 }
 
+type FormulaSelection = {
+  selectedMin: 1 | 2 | 3 | 4 | 5
+  selectedMax: 1 | 2 | 3 | 4 | 5
+}
+
+function formulaNumber(value: unknown, fallback: 1 | 2 | 3 | 4 | 5): 1 | 2 | 3 | 4 | 5 {
+  return value === 1 || value === 2 || value === 3 || value === 4 || value === 5 ? value : fallback
+}
+
+function getAreaFormulaSelections(input: QuoteInput): { interior: FormulaSelection; exterior: FormulaSelection } {
+  const fallback = { selectedMin: input.selectedMin, selectedMax: input.selectedMax }
+  return {
+    interior: input.areaFormulaSelections?.interior ?? fallback,
+    exterior: input.areaFormulaSelections?.exterior ?? fallback,
+  }
+}
+
+function calculateAreaSubtotalFromInputItems(
+  items: QuoteInput['items'],
+  selection: FormulaSelection,
+  scope: 'interior' | 'exterior',
+  settings: PricingSettings
+): Decimal {
+  const scopedItems = items.filter((item) => item.areaScopeSnapshot === scope)
+  const labour = calculateLabourTotals(scopedItems)
+  const materialMarket = scopedItems.reduce(
+    (total, item) => total.add(new Decimal(item.marketPriceSnapshot).mul(item.quantity)),
+    new Decimal(0)
+  )
+  const formulaResults = calculateAllFormulas(
+    {
+      workingDays: labour.labourDays,
+      labourPerDay: 1,
+      materialMarket,
+      materialActual: materialMarket,
+    },
+    settings
+  )
+  return calculateSubtotal(formulaResults, selection.selectedMin, selection.selectedMax)
+}
+
+function calculateMainQuoteSubtotal(input: QuoteInput, formulaResults: ReturnType<typeof calculateAllFormulas>, settings: PricingSettings): Decimal {
+  const selections = getAreaFormulaSelections(input)
+  const hasAssignedAreaRows = input.items.some((item) => item.areaScopeSnapshot === 'interior' || item.areaScopeSnapshot === 'exterior')
+  if (!hasAssignedAreaRows) return calculateSubtotal(formulaResults, input.selectedMin, input.selectedMax)
+
+  return calculateAreaSubtotalFromInputItems(input.items, selections.interior, 'interior', settings)
+    .add(calculateAreaSubtotalFromInputItems(input.items, selections.exterior, 'exterior', settings))
+}
+
 function optionalDecimalText(value: unknown): string | null {
   if (value === null || value === undefined) return null
   return decimalText(value)
@@ -92,24 +144,37 @@ function parsePricingSettingsSnapshot(value: unknown): PricingSettings | null {
   return parsed.success ? parsed.data : null
 }
 
-function isMissingOptionsRelationError(error: { message?: string } | null): boolean {
+function isMissingRelationError(error: { message?: string } | null, relationNames: string[]): boolean {
   const message = error?.message ?? ''
-  return message.includes("relationship between 'quotes' and 'quote_options'") ||
-    message.includes("relation \"quote_options\" does not exist") ||
-    message.includes("relation \"quote_option_items\" does not exist") ||
-    message.includes("relationship between 'quotes' and 'jobber_quote_lines'") ||
-    message.includes("relation \"jobber_quote_lines\" does not exist")
+  const isSchemaError = message.includes('relationship') ||
+    message.includes('does not exist') ||
+    message.includes('schema cache')
+
+  return isSchemaError && relationNames.some((relationName) =>
+    message.includes(`'${relationName}'`) || message.includes(`"${relationName}"`)
+  )
+}
+
+function isMissingMemoRelationError(error: { message?: string } | null): boolean {
+  return isMissingRelationError(error, ['quote_memos'])
+}
+
+function isMissingLegacyDetailRelationError(error: { message?: string } | null): boolean {
+  return isMissingRelationError(error, ['quote_options', 'quote_option_items', 'jobber_quote_lines'])
 }
 
 function toQuoteRecord(row: QuoteWithItemsRow, creatorProfile?: UserProfile): QuoteRecord {
   const quoteItems = [...(row.quote_items ?? [])].sort((a, b) => a.position - b.position)
   const jobberQuoteLines = [...(row.jobber_quote_lines ?? [])].sort((a, b) => a.position - b.position)
   const quoteOptions = [...(row.quote_options ?? [])].sort((a, b) => a.position - b.position)
+  const quoteMemos = [...(row.quote_memos ?? [])].sort((a, b) => a.position - b.position)
   const displayLabour = calculateDisplayLabourTotals(
     row.working_days,
     row.labour_per_day,
     quoteItems.map((item) => ({ workingDays: item.working_days, labourPerDay: item.labour_per_day }))
   )
+  const selectedMin = formulaNumber(row.selected_min, 4)
+  const selectedMax = formulaNumber(row.selected_max, 1)
 
   return {
     id: row.id,
@@ -130,8 +195,12 @@ function toQuoteRecord(row: QuoteWithItemsRow, creatorProfile?: UserProfile): Qu
     formula3Total: decimalText(row.formula3_total),
     formula4Total: decimalText(row.formula4_total),
     formula5Total: decimalText(row.formula5_total),
-    selectedMin: row.selected_min as 1 | 2 | 3 | 4 | 5,
-    selectedMax: row.selected_max as 1 | 2 | 3 | 4 | 5,
+    selectedMin,
+    selectedMax,
+    interiorSelectedMin: formulaNumber(row.interior_selected_min, selectedMin),
+    interiorSelectedMax: formulaNumber(row.interior_selected_max, selectedMax),
+    exteriorSelectedMin: formulaNumber(row.exterior_selected_min, selectedMin),
+    exteriorSelectedMax: formulaNumber(row.exterior_selected_max, selectedMax),
     subtotal: decimalText(row.subtotal),
     finalTotal: decimalText(row.final_total),
     pricingSettingsSnapshot: row.pricing_settings_snapshot as never,
@@ -216,6 +285,15 @@ function toQuoteRecord(row: QuoteWithItemsRow, creatorProfile?: UserProfile): Qu
         })),
       }
     }),
+    memos: quoteMemos.map((memo) => ({
+      id: memo.id,
+      quoteId: memo.quote_id,
+      body: memo.body,
+      position: memo.position,
+      createdAt: memo.created_at,
+      updatedAt: memo.updated_at,
+      createdBy: memo.created_by,
+    })),
   }
 }
 
@@ -309,6 +387,63 @@ async function insertQuoteOptions(
   return null
 }
 
+async function insertQuoteMemos(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  quoteId: string,
+  memos: QuoteInput['memos'],
+  userId: string
+): Promise<{ ok: true; ids: string[] } | { ok: false; error: string }> {
+  const rows = memos
+    .map((memo, index) => ({
+      quote_id: quoteId,
+      body: memo.body.trim(),
+      position: memo.position ?? index,
+      created_by: userId,
+    }))
+    .filter((memo) => memo.body.length > 0)
+
+  if (rows.length === 0) return { ok: true, ids: [] }
+
+  const { data, error } = await supabase
+    .from('quote_memos')
+    .insert(rows)
+    .select('id')
+  if (error) return { ok: false, error: error.message }
+  return { ok: true, ids: (data ?? []).map((row) => row.id) }
+}
+
+async function deleteQuoteMemos(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  quoteId: string,
+  keepIds: string[] = []
+): Promise<string | null> {
+  let request = supabase.from('quote_memos').delete().eq('quote_id', quoteId)
+  if (keepIds.length > 0) {
+    request = request.not('id', 'in', `(${keepIds.join(',')})`)
+  }
+
+  const { error } = await request
+  return error?.message ?? null
+}
+
+async function replaceQuoteMemos(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  quoteId: string,
+  memos: QuoteInput['memos'],
+  userId: string
+): Promise<string | null> {
+  const inserted = await insertQuoteMemos(supabase, quoteId, memos, userId)
+  if (!inserted.ok) return inserted.error
+  return deleteQuoteMemos(supabase, quoteId, inserted.ids)
+}
+
+async function deleteCreatedQuote(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  quoteId: string
+): Promise<void> {
+  await supabase.from('quotes').delete().eq('id', quoteId)
+}
+
 export async function createQuote(input: unknown): Promise<ActionResult<{ id: string }>> {
   const parsed = quoteSchema.safeParse(input)
   if (!parsed.success) {
@@ -339,7 +474,8 @@ export async function createQuote(input: unknown): Promise<ActionResult<{ id: st
     },
     settingsResult.data
   )
-  const subtotal = calculateSubtotal(formulas, parsed.data.selectedMin, parsed.data.selectedMax)
+  const areaFormulaSelections = getAreaFormulaSelections(parsed.data)
+  const subtotal = calculateMainQuoteSubtotal(parsed.data, formulas, settingsResult.data)
   const finalTotal = calculateFinal(subtotal)
   const displayLabour = calculateDisplayLabourTotals(parsed.data.workingDays, parsed.data.labourPerDay, parsed.data.items)
 
@@ -365,6 +501,10 @@ export async function createQuote(input: unknown): Promise<ActionResult<{ id: st
       formula5_total: money(formulas[4].total),
       selected_min: parsed.data.selectedMin,
       selected_max: parsed.data.selectedMax,
+      interior_selected_min: areaFormulaSelections.interior.selectedMin,
+      interior_selected_max: areaFormulaSelections.interior.selectedMax,
+      exterior_selected_min: areaFormulaSelections.exterior.selectedMin,
+      exterior_selected_max: areaFormulaSelections.exterior.selectedMax,
       subtotal: money(subtotal),
       final_total: money(finalTotal),
       pricing_settings_snapshot: settingsResult.data as unknown as Json,
@@ -394,14 +534,29 @@ export async function createQuote(input: unknown): Promise<ActionResult<{ id: st
 
   if (items.length > 0) {
     const { error: itemsError } = await supabase.from('quote_items').insert(items)
-    if (itemsError) return { ok: false, error: itemsError.message }
+    if (itemsError) {
+      await deleteCreatedQuote(supabase, quote.id)
+      return { ok: false, error: itemsError.message }
+    }
   }
 
   const jobberLinesError = await insertJobberQuoteLines(supabase, quote.id, parsed.data.jobberQuoteLines)
-  if (jobberLinesError) return { ok: false, error: jobberLinesError }
+  if (jobberLinesError) {
+    await deleteCreatedQuote(supabase, quote.id)
+    return { ok: false, error: jobberLinesError }
+  }
 
   const optionsError = await insertQuoteOptions(supabase, quote.id, parsed.data.options, settingsResult.data)
-  if (optionsError) return { ok: false, error: optionsError }
+  if (optionsError) {
+    await deleteCreatedQuote(supabase, quote.id)
+    return { ok: false, error: optionsError }
+  }
+
+  const memosResult = await insertQuoteMemos(supabase, quote.id, parsed.data.memos, userData.user.id)
+  if (!memosResult.ok) {
+    await deleteCreatedQuote(supabase, quote.id)
+    return { ok: false, error: memosResult.error }
+  }
 
   await syncSavedQuoteToJobber({
     supabase,
@@ -463,7 +618,8 @@ export async function updateQuote(input: unknown): Promise<ActionResult<{ id: st
     },
     settings
   )
-  const subtotal = calculateSubtotal(formulas, parsed.data.selectedMin, parsed.data.selectedMax)
+  const areaFormulaSelections = getAreaFormulaSelections(parsed.data)
+  const subtotal = calculateMainQuoteSubtotal(parsed.data, formulas, settings)
   const finalTotal = calculateFinal(subtotal)
   const displayLabour = calculateDisplayLabourTotals(parsed.data.workingDays, parsed.data.labourPerDay, parsed.data.items)
 
@@ -489,6 +645,10 @@ export async function updateQuote(input: unknown): Promise<ActionResult<{ id: st
       formula5_total: money(formulas[4].total),
       selected_min: parsed.data.selectedMin,
       selected_max: parsed.data.selectedMax,
+      interior_selected_min: areaFormulaSelections.interior.selectedMin,
+      interior_selected_max: areaFormulaSelections.interior.selectedMax,
+      exterior_selected_min: areaFormulaSelections.exterior.selectedMin,
+      exterior_selected_max: areaFormulaSelections.exterior.selectedMax,
       subtotal: money(subtotal),
       final_total: money(finalTotal),
       pricing_settings_snapshot: settings as unknown as Json,
@@ -533,6 +693,9 @@ export async function updateQuote(input: unknown): Promise<ActionResult<{ id: st
 
   const jobberLinesError = await insertJobberQuoteLines(supabase, id, parsed.data.jobberQuoteLines)
   if (jobberLinesError) return { ok: false, error: jobberLinesError }
+
+  const memosError = await replaceQuoteMemos(supabase, id, parsed.data.memos, userData.user.id)
+  if (memosError) return { ok: false, error: memosError }
 
   await syncSavedQuoteToJobber({
     supabase,
@@ -773,15 +936,33 @@ export async function getQuote(id: string): Promise<ActionResult<QuoteRecord | n
   let row = data as unknown as QuoteWithItemsRow | null
 
   if (error) {
-    if (!isMissingOptionsRelationError(error)) return { ok: false, error: error.message }
+    if (!isMissingMemoRelationError(error) && !isMissingLegacyDetailRelationError(error)) {
+      return { ok: false, error: error.message }
+    }
 
-    const { data: fallbackData, error: fallbackError } = await supabase
-      .from('quotes')
-      .select(QUOTES_LIST_SELECT)
-      .eq('id', id)
-      .single()
-    if (fallbackError) return { ok: false, error: fallbackError.message }
-    row = fallbackData as unknown as QuoteWithItemsRow
+    if (isMissingMemoRelationError(error)) {
+      const { data: fallbackData, error: fallbackError } = await supabase
+        .from('quotes')
+        .select(QUOTE_DETAIL_WITHOUT_MEMOS_SELECT)
+        .eq('id', id)
+        .single()
+
+      if (!fallbackError) {
+        row = fallbackData as unknown as QuoteWithItemsRow
+      } else if (!isMissingLegacyDetailRelationError(fallbackError)) {
+        return { ok: false, error: fallbackError.message }
+      }
+    }
+
+    if (!row) {
+      const { data: fallbackData, error: fallbackError } = await supabase
+        .from('quotes')
+        .select(QUOTES_LIST_SELECT)
+        .eq('id', id)
+        .single()
+      if (fallbackError) return { ok: false, error: fallbackError.message }
+      row = fallbackData as unknown as QuoteWithItemsRow
+    }
   }
 
   return {

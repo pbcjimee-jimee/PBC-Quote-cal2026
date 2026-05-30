@@ -79,6 +79,7 @@
 │  - product_services
 │  - quote_line_templates
 │  - quote_line_template_items
+│  - quote_memos (app-only internal notes)
 │  - pricing_settings (singleton)
 │  - jobber_tokens (user-scoped, encrypted)
 └────────────────┘
@@ -95,10 +96,12 @@
 4. → 5가지 공식 **클라이언트 사이드 실시간 계산** (서버 왕복 없음)
 5. min/max 선택 → subtotal → final_total (× 1.10 GST)
 6. 옵션(add-on) 견적 추가/편집 → 자체 final_total (메인에 합산 안 함)
-7. [저장] → Server Action → DB 저장 → approved Jobber quote write-back
+7. Internal memos 작성/편집 → `quote_memos`에만 저장, Jobber fetch/write-back 제외
+8. [저장] → Server Action → DB 저장 → approved Jobber quote write-back
 ```
 
 > 원칙: material 가격과 내부 계산 데이터는 우리 DB에만 저장한다. Jobber에는 사용자가 공개용으로 작성한 Product / Service line item만 저장한다.
+> Internal quote memos are also app-only data. They are stored in `quote_memos` and never synced to Jobber notes or line items.
 > 토큰은 만료 시 자동 refresh, `lib/jobber/token-encryption.ts`로 암호화 저장.
 
 ### v1.1 Jobber write-back 경계
@@ -143,3 +146,28 @@
 - 환경 변수·배포: `docs/DEPLOY.md`
 - 계산 공식: `docs/CALCULATION.md`
 - UI 명세: `docs/UI-DESIGN.md`
+
+---
+
+## 2026-05-29 Area subtotal architecture note
+
+Interior/Exterior grouped totals are derived from existing item snapshots:
+
+- Main quote rows: `quote_items.area_scope_snapshot`
+- Option rows: `quote_option_items.area_scope_snapshot`
+
+Main quotes also store separate Interior and Exterior formula min/max selections in `quotes.interior_selected_min`, `quotes.interior_selected_max`, `quotes.exterior_selected_min`, and `quotes.exterior_selected_max` via `0014_add_quote_area_formula_selections.sql`.
+
+The application recalculates grouped totals using saved row snapshots, the quote pricing settings snapshot, and the area-specific formula selections. Stored `quotes.subtotal` is the GST-exclusive sum of the selected Interior subtotal plus the selected Exterior subtotal. Stored `quotes.final_total` remains `quotes.subtotal * 1.10`. Option totals remain option-owned and are not included in the main quote total.
+
+Related design: `docs/superpowers/specs/2026-05-27-quote-workspace-area-subtotals-design.md`.
+
+## 2026-05-28 Internal quote memo architecture note
+
+Internal quote memos are stored as child rows in `quote_memos`.
+
+- A quote can have multiple memos, ordered by `position`.
+- Empty memo rows are ignored at save time.
+- Memos are created, updated, deleted, and read through the app quote Server Actions.
+- Memos are app-only. They are not fetched from Jobber and are not written back to Jobber notes, text line items, or public Product / Service line items.
+- RLS follows the app v1.0 authenticated-user policy, matching other quote child tables.

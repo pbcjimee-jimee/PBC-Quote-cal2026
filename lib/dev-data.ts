@@ -19,9 +19,10 @@ import type { JobberQuoteDraft } from './jobber/mapper'
 
 export type { ProductRecord }
 
-type DevQuoteInput = Omit<QuoteInput, 'deletedJobberLineItemIds' | 'jobberQuoteLines' | 'options'> & {
+type DevQuoteInput = Omit<QuoteInput, 'deletedJobberLineItemIds' | 'jobberQuoteLines' | 'options' | 'memos'> & {
   jobberQuoteLines?: JobberQuoteLineInput[]
   options?: QuoteInput['options']
+  memos?: QuoteInput['memos']
 }
 
 export interface QuoteRecord {
@@ -45,6 +46,10 @@ export interface QuoteRecord {
   formula5Total: string
   selectedMin: 1 | 2 | 3 | 4 | 5
   selectedMax: 1 | 2 | 3 | 4 | 5
+  interiorSelectedMin?: 1 | 2 | 3 | 4 | 5
+  interiorSelectedMax?: 1 | 2 | 3 | 4 | 5
+  exteriorSelectedMin?: 1 | 2 | 3 | 4 | 5
+  exteriorSelectedMax?: 1 | 2 | 3 | 4 | 5
   subtotal: string
   finalTotal: string
   pricingSettingsSnapshot: PricingSettings
@@ -55,6 +60,7 @@ export interface QuoteRecord {
   items: QuoteItemRecord[]
   jobberQuoteLines: JobberQuoteLineRecord[]
   options: QuoteOptionRecord[]
+  memos: QuoteMemoRecord[]
 }
 
 export interface QuoteItemRecord {
@@ -97,6 +103,16 @@ export interface QuoteOptionRecord {
 
 export interface QuoteOptionItemRecord extends Omit<QuoteItemRecord, 'quoteId'> {
   optionId: string
+}
+
+export interface QuoteMemoRecord {
+  id: string
+  quoteId: string
+  body: string
+  position: number
+  createdAt: string
+  updatedAt: string
+  createdBy: string | null
 }
 
 export type JobberSyncStatus = 'not_synced' | 'synced' | 'failed'
@@ -150,6 +166,54 @@ function money(value: Decimal | number | string): string {
 
 function optionalPublicMoney(value: Decimal | number | string | undefined): string | null {
   return value === undefined ? null : money(value)
+}
+
+type FormulaSelection = {
+  selectedMin: 1 | 2 | 3 | 4 | 5
+  selectedMax: 1 | 2 | 3 | 4 | 5
+}
+
+type AreaFormulaInput = Pick<QuoteInput, 'selectedMin' | 'selectedMax' | 'areaFormulaSelections' | 'items'>
+
+function getAreaFormulaSelections(input: AreaFormulaInput): { interior: FormulaSelection; exterior: FormulaSelection } {
+  const fallback = { selectedMin: input.selectedMin, selectedMax: input.selectedMax }
+  return {
+    interior: input.areaFormulaSelections?.interior ?? fallback,
+    exterior: input.areaFormulaSelections?.exterior ?? fallback,
+  }
+}
+
+function calculateAreaSubtotalFromInputItems(
+  items: QuoteInput['items'],
+  selection: FormulaSelection,
+  scope: 'interior' | 'exterior',
+  settings: PricingSettings
+): Decimal {
+  const scopedItems = items.filter((item) => item.areaScopeSnapshot === scope)
+  const labour = calculateLabourTotals(scopedItems)
+  const materialMarket = scopedItems.reduce(
+    (total, item) => total.add(new Decimal(item.marketPriceSnapshot).mul(item.quantity)),
+    new Decimal(0)
+  )
+  const formulaResults = calculateAllFormulas(
+    {
+      workingDays: labour.labourDays,
+      labourPerDay: 1,
+      materialMarket,
+      materialActual: materialMarket,
+    },
+    settings
+  )
+  return calculateSubtotal(formulaResults, selection.selectedMin, selection.selectedMax)
+}
+
+function calculateMainQuoteSubtotal(input: AreaFormulaInput, formulaResults: ReturnType<typeof calculateAllFormulas>, settings: PricingSettings): Decimal {
+  const selections = getAreaFormulaSelections(input)
+  const hasAssignedAreaRows = input.items.some((item) => item.areaScopeSnapshot === 'interior' || item.areaScopeSnapshot === 'exterior')
+  if (!hasAssignedAreaRows) return calculateSubtotal(formulaResults, input.selectedMin, input.selectedMax)
+
+  return calculateAreaSubtotalFromInputItems(input.items, selections.interior, 'interior', settings)
+    .add(calculateAreaSubtotalFromInputItems(input.items, selections.exterior, 'exterior', settings))
 }
 
 function searchTokens(query: string): string[] {
@@ -544,7 +608,8 @@ function buildDevQuoteRecord(id: string, createdAt: string, input: DevQuoteInput
     },
     settings
   )
-  const subtotal = calculateSubtotal(formulaResults, input.selectedMin, input.selectedMax)
+  const areaFormulaSelections = getAreaFormulaSelections(input)
+  const subtotal = calculateMainQuoteSubtotal(input, formulaResults, settings)
   const finalTotal = calculateFinal(subtotal)
 
   return {
@@ -568,6 +633,10 @@ function buildDevQuoteRecord(id: string, createdAt: string, input: DevQuoteInput
     formula5Total: money(formulaResults[4].total),
     selectedMin: input.selectedMin,
     selectedMax: input.selectedMax,
+    interiorSelectedMin: areaFormulaSelections.interior.selectedMin,
+    interiorSelectedMax: areaFormulaSelections.interior.selectedMax,
+    exteriorSelectedMin: areaFormulaSelections.exterior.selectedMin,
+    exteriorSelectedMax: areaFormulaSelections.exterior.selectedMax,
     subtotal: money(subtotal),
     finalTotal: money(finalTotal),
     pricingSettingsSnapshot: settings,
@@ -593,6 +662,27 @@ function buildDevQuoteRecord(id: string, createdAt: string, input: DevQuoteInput
     })),
     jobberQuoteLines: (input.jobberQuoteLines ?? []).map((line, index) => buildDevJobberQuoteLineRecord(id, line, line.position ?? index)),
     options: (input.options ?? []).map((option, optionIndex) => buildDevQuoteOptionRecord(id, option, option.position ?? optionIndex, settings)),
+    memos: (input.memos ?? [])
+      .map((memo, memoIndex) => buildDevQuoteMemoRecord(id, memo, memo.position ?? memoIndex))
+      .sort((a, b) => a.position - b.position),
+  }
+}
+
+function buildDevQuoteMemoRecord(
+  quoteId: string,
+  memo: QuoteInput['memos'][number],
+  position: number
+): QuoteMemoRecord {
+  const now = new Date().toISOString()
+
+  return {
+    id: nextId('memo'),
+    quoteId,
+    body: memo.body.trim(),
+    position,
+    createdAt: now,
+    updatedAt: now,
+    createdBy: 'dev-user',
   }
 }
 

@@ -104,6 +104,88 @@ describe('quote actions', () => {
     }
   })
 
+  it('stores area-specific formula selections and sums area subtotals for the main final subtotal', async () => {
+    const created = await createQuote({
+      customerName: 'Area Formula Customer',
+      workingDays: 0,
+      labourPerDay: 0,
+      materialMarket: 300,
+      materialActual: 300,
+      selectedMin: 1,
+      selectedMax: 1,
+      areaFormulaSelections: {
+        interior: { selectedMin: 5, selectedMax: 5 },
+        exterior: { selectedMin: 1, selectedMax: 1 },
+      },
+      items: [
+        {
+          productNameSnapshot: 'Interior wall paint',
+          marketPriceSnapshot: 100,
+          actualPriceSnapshot: 100,
+          quantity: 1,
+          workingDays: 2,
+          labourPerDay: 1,
+          areaScopeSnapshot: 'interior',
+          isCustom: true,
+          position: 0,
+        },
+        {
+          productNameSnapshot: 'Exterior trim paint',
+          marketPriceSnapshot: 200,
+          actualPriceSnapshot: 200,
+          quantity: 1,
+          workingDays: 3,
+          labourPerDay: 1,
+          areaScopeSnapshot: 'exterior',
+          isCustom: true,
+          position: 1,
+        },
+      ],
+    })
+    if (!created.ok) throw new Error(created.error)
+
+    const fetched = await getQuote(created.data.id)
+
+    expect(fetched.ok).toBe(true)
+    if (fetched.ok && fetched.data) {
+      expect(fetched.data.interiorSelectedMin).toBe(5)
+      expect(fetched.data.interiorSelectedMax).toBe(5)
+      expect(fetched.data.exteriorSelectedMin).toBe(1)
+      expect(fetched.data.exteriorSelectedMax).toBe(1)
+      expect(fetched.data.subtotal).toBe('2818.00')
+      expect(fetched.data.finalTotal).toBe('3099.80')
+    }
+  })
+
+  it('stores multiple app-only internal memos with the quote', async () => {
+    const created = await createQuote({
+      customerName: 'Memo Customer',
+      workingDays: 1,
+      labourPerDay: 1,
+      materialMarket: 10,
+      materialActual: 10,
+      selectedMin: 1,
+      selectedMax: 1,
+      items: [],
+      memos: [
+        { body: '  Call before arriving.  ', position: 1 },
+        { body: 'Use side gate access.', position: 0 },
+      ],
+    })
+    if (!created.ok) throw new Error(created.error)
+
+    const fetched = await getQuote(created.data.id)
+
+    expect(fetched.ok).toBe(true)
+    if (fetched.ok && fetched.data) {
+      expect(fetched.data.memos.map((memo) => memo.body)).toEqual([
+        'Use side gate access.',
+        'Call before arriving.',
+      ])
+      expect(fetched.data.jobberQuoteLines).toHaveLength(0)
+    }
+  })
+
   it('stores public Jobber lines separately from internal material rows', async () => {
     const created = await createQuote({
       customerName: 'Jobber Line Customer',

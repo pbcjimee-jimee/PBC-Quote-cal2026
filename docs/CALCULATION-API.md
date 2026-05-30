@@ -103,3 +103,45 @@ export const HISTORICAL_FIXTURES = [
 - 회귀 fixture 3건 모두 통과 필수
 - Server Actions: 80%+ 커버리지 (happy path + 1 error path + 1 edge case)
 - 전체 정책: `docs/DECISIONS.md` #9
+
+---
+
+## 2026-05-27 Quote-form grouped subtotal helper
+
+The core calculator API in `lib/calculator.ts` does not change for Interior/Exterior grouping. Grouping is a quote-form helper around material rows and saved item snapshots.
+
+Planned helper location:
+
+```typescript
+// components/quote-form/quote-calculation-totals.ts
+export interface AreaSubtotalGroup {
+  scope: 'interior' | 'exterior'
+  materialMarket: Decimal
+  materialActual: Decimal
+  labour: LabourTotals
+  results: FormulaResult[]
+  subtotal: Decimal
+  finalTotal: Decimal
+}
+
+export interface AreaSubtotalBreakdown {
+  interior: AreaSubtotalGroup
+  exterior: AreaSubtotalGroup
+  finalSubtotal: Decimal
+  finalTotal: Decimal
+  unassigned: {
+    count: number
+    materialMarket: Decimal
+    labourDays: Decimal
+  }
+}
+
+export function calculateAreaSubtotalBreakdown(input: {
+  materials: MaterialItem[]
+  selectedMin: 1 | 2 | 3 | 4 | 5
+  selectedMax: 1 | 2 | 3 | 4 | 5
+  settings: PricingSettings
+}): AreaSubtotalBreakdown
+```
+
+This helper must call the existing `calculateAllFormulas`, `calculateSubtotal`, and `calculateFinal` functions for each scoped group. It must not duplicate formula math.

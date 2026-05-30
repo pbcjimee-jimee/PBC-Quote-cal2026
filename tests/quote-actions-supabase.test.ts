@@ -131,6 +131,7 @@ const quoteRow = {
     },
   ],
   quote_options: [],
+  quote_memos: [],
 }
 
 const quoteInput = {
@@ -202,6 +203,14 @@ function createInsertOnlyBuilder(response: unknown) {
       return response
     }),
   }
+}
+
+function createInsertSelectBuilder(response: unknown) {
+  const builder = {
+    insert: vi.fn(() => builder),
+    select: vi.fn(async () => response),
+  }
+  return builder
 }
 
 function createSelectSingleBuilder(response: unknown) {
@@ -382,6 +391,78 @@ describe('quote actions against Supabase', () => {
     expect(insertedJobberRows?.[0]).not.toHaveProperty('actual_price_snapshot')
   })
 
+  it('creates app-only memo rows through Supabase without adding Jobber lines', async () => {
+    const quoteInsert = createInsertSingleBuilder({ data: { id: quoteId }, error: null })
+    const itemInsert = createInsertOnlyBuilder({ error: null })
+    const memoInsert = createInsertSelectBuilder({
+      data: [
+        { id: '00000000-0000-4000-8000-000000000501' },
+        { id: '00000000-0000-4000-8000-000000000502' },
+      ],
+      error: null,
+    })
+    const from = vi.fn((table: string) => {
+      if (table === 'quotes') return quoteInsert
+      if (table === 'quote_items') return itemInsert
+      if (table === 'quote_memos') return memoInsert
+      throw new Error(`unexpected table ${table}`)
+    })
+    mocks.createClient.mockResolvedValueOnce({ auth: createAuthUser(), from })
+
+    const result = await createQuote({
+      ...quoteInput,
+      memos: [
+        { body: 'Call before arriving.', position: 0 },
+        { body: 'Use side gate access.', position: 1 },
+      ],
+    })
+
+    expect(result).toEqual({ ok: true, data: { id: quoteId } })
+    expect(memoInsert.insert).toHaveBeenCalledWith([
+      expect.objectContaining({
+        quote_id: quoteId,
+        body: 'Call before arriving.',
+        created_by: 'user-1',
+        position: 0,
+      }),
+      expect.objectContaining({
+        quote_id: quoteId,
+        body: 'Use side gate access.',
+        created_by: 'user-1',
+        position: 1,
+      }),
+    ])
+    expect(memoInsert.select).toHaveBeenCalledWith('id')
+    expect(from).not.toHaveBeenCalledWith('jobber_quote_lines')
+  })
+
+  it('cleans up a created quote when memo rows fail to insert', async () => {
+    const quoteInsert = createInsertSingleBuilder({ data: { id: quoteId }, error: null })
+    const quoteDelete = createThenableBuilder({ error: null })
+    const itemInsert = createInsertOnlyBuilder({ error: null })
+    const memoInsert = createInsertSelectBuilder({ data: null, error: new Error('memo insert failed') })
+    const builders: Record<string, unknown[]> = {
+      quotes: [quoteInsert, quoteDelete],
+      quote_items: [itemInsert],
+      quote_memos: [memoInsert],
+    }
+    const from = vi.fn((table: string) => {
+      const builder = builders[table]?.shift()
+      if (!builder) throw new Error(`unexpected table ${table}`)
+      return builder
+    })
+    mocks.createClient.mockResolvedValueOnce({ auth: createAuthUser(), from })
+
+    const result = await createQuote({
+      ...quoteInput,
+      memos: [{ body: 'Call first.', position: 0 }],
+    })
+
+    expect(result).toEqual({ ok: false, error: 'memo insert failed' })
+    expect(quoteDelete.delete).toHaveBeenCalled()
+    expect(quoteDelete.eq).toHaveBeenCalledWith('id', quoteId)
+  })
+
   it('requires authentication before creating a quote', async () => {
     mocks.createClient.mockResolvedValueOnce({ auth: createAuthUser(null) })
 
@@ -399,12 +480,14 @@ describe('quote actions against Supabase', () => {
     const itemDelete = createThenableBuilder({ error: null })
     const optionDelete = createThenableBuilder({ error: null })
     const jobberLineDelete = createThenableBuilder({ error: null })
+    const memoDelete = createThenableBuilder({ error: null })
     const itemInsert = createInsertOnlyBuilder({ error: null })
     const from = vi.fn((table: string) => {
       if (table === 'quotes') return from.mock.calls.filter(([name]) => name === 'quotes').length === 1 ? existingQuote : quoteUpdate
       if (table === 'quote_items') return from.mock.calls.filter(([name]) => name === 'quote_items').length === 1 ? itemDelete : itemInsert
       if (table === 'quote_options') return optionDelete
       if (table === 'jobber_quote_lines') return jobberLineDelete
+      if (table === 'quote_memos') return memoDelete
       throw new Error(`unexpected table ${table}`)
     })
     mocks.createClient.mockResolvedValueOnce({ auth: createAuthUser(), from })
@@ -419,8 +502,47 @@ describe('quote actions against Supabase', () => {
     expect(itemDelete.delete).toHaveBeenCalled()
     expect(optionDelete.delete).toHaveBeenCalled()
     expect(jobberLineDelete.delete).toHaveBeenCalled()
+    expect(memoDelete.delete).toHaveBeenCalled()
     expect(itemInsert.insert).toHaveBeenCalledWith([expect.objectContaining({ quote_id: quoteId })])
     expect(mocks.revalidatePath).toHaveBeenCalledWith(`/quotes/${quoteId}`)
+  })
+
+  it('does not delete existing memos before replacement memo rows insert successfully', async () => {
+    const existingQuote = createSelectSingleBuilder({
+      data: { pricing_settings_snapshot: DEFAULT_PRICING_SETTINGS },
+      error: null,
+    })
+    const quoteUpdate = createThenableBuilder({ error: null })
+    const itemDelete = createThenableBuilder({ error: null })
+    const optionDelete = createThenableBuilder({ error: null })
+    const jobberLineDelete = createThenableBuilder({ error: null })
+    const itemInsert = createInsertOnlyBuilder({ error: null })
+    const memoReplace = {
+      delete: vi.fn(() => memoReplace),
+      insert: vi.fn(() => memoReplace),
+      select: vi.fn(async () => ({ data: null, error: new Error('memo insert failed') })),
+      eq: vi.fn(async () => ({ error: null })),
+    }
+    const from = vi.fn((table: string) => {
+      if (table === 'quotes') return from.mock.calls.filter(([name]) => name === 'quotes').length === 1 ? existingQuote : quoteUpdate
+      if (table === 'quote_items') return from.mock.calls.filter(([name]) => name === 'quote_items').length === 1 ? itemDelete : itemInsert
+      if (table === 'quote_options') return optionDelete
+      if (table === 'jobber_quote_lines') return jobberLineDelete
+      if (table === 'quote_memos') return memoReplace
+      throw new Error(`unexpected table ${table}`)
+    })
+    mocks.createClient.mockResolvedValueOnce({ auth: createAuthUser(), from })
+
+    const result = await updateQuote({
+      id: quoteId,
+      ...quoteInput,
+      memos: [{ body: 'Replacement memo', position: 0 }],
+    })
+
+    expect(result).toEqual({ ok: false, error: 'memo insert failed' })
+    expect(memoReplace.insert).toHaveBeenCalled()
+    expect(memoReplace.select).toHaveBeenCalledWith('id')
+    expect(memoReplace.delete).not.toHaveBeenCalled()
   })
 
   it('updates public Jobber rows by replacing the saved ordered set', async () => {
@@ -439,6 +561,7 @@ describe('quote actions against Supabase', () => {
       quote_items: [itemDelete, itemInsert],
       quote_options: [optionDelete],
       jobber_quote_lines: [jobberLineDelete, jobberLineInsert],
+      quote_memos: [createThenableBuilder({ error: null })],
     }
     const from = vi.fn((table: string) => {
       const builder = builders[table]?.shift()
@@ -495,6 +618,7 @@ describe('quote actions against Supabase', () => {
       quote_items: [itemDelete, itemInsert],
       quote_options: [optionDelete],
       jobber_quote_lines: [jobberLineDelete, jobberLineInsert],
+      quote_memos: [createThenableBuilder({ error: null })],
     }
     const from = vi.fn((table: string) => {
       const builder = builders[table]?.shift()
@@ -556,6 +680,7 @@ describe('quote actions against Supabase', () => {
       quote_items: [itemDelete, itemInsert],
       quote_options: [optionDelete],
       jobber_quote_lines: [jobberLineDelete, jobberLineInsert, jobberLineIdUpdate],
+      quote_memos: [createThenableBuilder({ error: null })],
     }
     const from = vi.fn((table: string) => {
       const builder = builders[table]?.shift()
@@ -752,6 +877,28 @@ describe('quote actions against Supabase', () => {
       expect(result.data.jobberQuoteLines[0].unitPrice).toBe('1281.88')
       expect(result.data.options[0].items[0].marketPriceSnapshot).toBe('50.00')
       expect(result.data.options[0].items[0].labourPerDay).toBe('2.00')
+    }
+  })
+
+  it('falls back without memos while preserving detail child relations when quote memos are not migrated yet', async () => {
+    const detailBuilder = createSelectSingleBuilder({
+      data: null,
+      error: { message: "Could not find a relationship between 'quotes' and 'quote_memos'" },
+    })
+    const fallbackBuilder = createSelectSingleBuilder({
+      data: { ...quoteRow, quote_memos: undefined },
+      error: null,
+    })
+    const from = vi.fn(() => from.mock.calls.length === 1 ? detailBuilder : fallbackBuilder)
+    mocks.createClient.mockResolvedValueOnce({ from })
+
+    const result = await getQuote(quoteId)
+
+    expect(result.ok).toBe(true)
+    expect(fallbackBuilder.select).toHaveBeenCalledWith('*, quote_items(*), quote_options(*, quote_option_items(*)), jobber_quote_lines(*)')
+    if (result.ok) {
+      expect(result.data?.jobberQuoteLines[0].name).toBe('Public painting service')
+      expect(result.data?.memos).toEqual([])
     }
   })
 

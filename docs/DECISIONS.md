@@ -29,6 +29,7 @@
 - 기본 흐름: Jobber에서 quote를 만든 뒤 우리 앱이 같은 quote를 fetch한다.
 - 우리 앱은 내부 견적·material 계산을 저장하고, 공개용 Product / Service line item만 같은 Jobber quote에 write-back한다.
 - material 이름, material 원가, material 상세 가격은 Jobber에 저장하지 않는다.
+- Internal quote memos are app-only. They are stored in our DB and are not fetched from Jobber or written back to Jobber notes/line items.
 - Jobber write는 기존 quote update에 한정한다. 앱에서 새 Jobber quote/client/job 생성·삭제는 하지 않는다.
 - Jobber 사진, notes, attachments, Build Option Set 동기화는 제외한다.
 - OAuth 2.0, GraphQL API 사용. write scope는 quote line item 업데이트에 필요한 최소 scope만 허용한다.
@@ -58,7 +59,8 @@ formula_5 = (380 × D + material_market) × 1.30      (총액 30%)
 
 - 사용자가 5개 결과 중 min·max **수동 선택** (자동 정렬 아님)
 - `subtotal = (min_amount + max_amount) / 2`
-- `final_total = subtotal + travel_fee + misc_fee`
+- `final_total = subtotal * 1.10` (GST 10%)
+- 2026-05-27 사용자 요청: quote UI는 Interior/Exterior grouped subtotal을 별도 표시하고, prominent option amount는 GST-inclusive `final_total`이 아니라 ex GST `subtotal`을 표시한다. 저장 컬럼 의미는 바꾸지 않는다.
 
 ---
 

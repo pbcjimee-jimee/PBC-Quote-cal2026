@@ -106,3 +106,13 @@ lib/actions/
 8. **견적 상세** — quotes/[id]/page.tsx (읽기 전용)
 
 각 단계는 독립적으로 테스트 가능. 1→2→3 순서로 인증 흐름 먼저, 그 뒤 메인 화면.
+
+---
+
+## 2026-05-27 App shell update
+
+Desktop app navigation uses a left sidebar with Overview, New Quote, and Settings. The sidebar can collapse to an icon rail and stores the preference in `localStorage`. Mobile keeps the compact top navigation.
+
+The quote form workspace should use the freed horizontal space when the sidebar is collapsed. Main layout padding should therefore be driven by the current sidebar width instead of a hard-coded `lg:pl-64` value.
+
+Related plan: `docs/superpowers/plans/2026-05-27-quote-workspace-area-subtotals.md`.

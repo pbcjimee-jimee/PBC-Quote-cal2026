@@ -24,6 +24,7 @@
 │  - working_days, labour_per_day               │
 │  - formula1_total .. formula5_total           │
 │  - selected_min, selected_max                 │
+│  - interior/exterior selected_min/max         │
 │  - subtotal, final_total (GST 10% 포함)       │
 │  - pricing_settings_snapshot (JSONB)          │
 │  - created_by/at, updated_by/at               │
@@ -94,6 +95,8 @@
 | `0010_add_jobber_quote_lines.sql` | Jobber write-back용 공개 Product / Service line item + quote sync 상태 |
 | `0011_add_product_services.sql` | Jobber Product & Service CSV import용 공개 line item 카탈로그 |
 | `0012_add_quote_line_templates.sql` | Settings에서 저장하는 재사용 Product / Service line/text template |
+| `0013_add_quote_memos.sql` | App-only internal quote memos. Multiple memo rows per quote, not synced to Jobber |
+| `0014_add_quote_area_formula_selections.sql` | Main quote Interior/Exterior formula min/max selections |
 
 > 아래 DDL은 변경 후 최종 형태 요약. 정확한 SQL은 마이그레이션 파일 자체를 source of truth로 본다.
 
@@ -154,6 +157,10 @@ CREATE TABLE quotes (
   formula5_total            NUMERIC(10,2) NOT NULL,
   selected_min              INT NOT NULL CHECK (selected_min BETWEEN 1 AND 5),
   selected_max              INT NOT NULL CHECK (selected_max BETWEEN 1 AND 5),
+  interior_selected_min     INT NOT NULL CHECK (interior_selected_min BETWEEN 1 AND 5),
+  interior_selected_max     INT NOT NULL CHECK (interior_selected_max BETWEEN 1 AND 5),
+  exterior_selected_min     INT NOT NULL CHECK (exterior_selected_min BETWEEN 1 AND 5),
+  exterior_selected_max     INT NOT NULL CHECK (exterior_selected_max BETWEEN 1 AND 5),
   subtotal                  NUMERIC(10,2) NOT NULL,
   final_total               NUMERIC(10,2) NOT NULL,
   pricing_settings_snapshot JSONB NOT NULL,
@@ -360,6 +367,41 @@ CREATE TABLE quote_line_template_items (
 );
 ```
 
+## Quote memo schema
+
+Exact SQL is in `supabase/migrations/0013_add_quote_memos.sql`.
+
+`quote_memos` stores internal app-only notes for a quote. A quote can have multiple memo rows. These memos are not fetched from Jobber, not written back to Jobber, and are not part of the public Product / Service quote lines.
+
+```sql
+CREATE TABLE quote_memos (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  quote_id UUID NOT NULL REFERENCES quotes(id) ON DELETE CASCADE,
+  body TEXT NOT NULL CHECK (length(btrim(body)) > 0),
+  position INT NOT NULL DEFAULT 0,
+  created_by UUID REFERENCES auth.users(id),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX idx_quote_memos_quote
+  ON quote_memos(quote_id, position);
+```
+
+## Quote area formula selection columns
+
+Exact SQL is in `supabase/migrations/0014_add_quote_area_formula_selections.sql`.
+
+The main quote stores separate formula min/max selections for Interior and Exterior. Existing `selected_min` and `selected_max` remain as legacy/fallback quote-level selections.
+
+```sql
+ALTER TABLE quotes
+  ADD COLUMN interior_selected_min INT CHECK (interior_selected_min BETWEEN 1 AND 5),
+  ADD COLUMN interior_selected_max INT CHECK (interior_selected_max BETWEEN 1 AND 5),
+  ADD COLUMN exterior_selected_min INT CHECK (exterior_selected_min BETWEEN 1 AND 5),
+  ADD COLUMN exterior_selected_max INT CHECK (exterior_selected_max BETWEEN 1 AND 5);
+```
+
 ---
 
 ## RLS 정책 (`supabase/migrations/0002_rls_policies.sql`)
@@ -377,6 +419,7 @@ ALTER TABLE quote_areas         ENABLE ROW LEVEL SECURITY;   -- 0005
 ALTER TABLE jobber_tokens       ENABLE ROW LEVEL SECURITY;   -- 0007 (본인 행만)
 ALTER TABLE quote_options       ENABLE ROW LEVEL SECURITY;   -- 0009
 ALTER TABLE quote_option_items  ENABLE ROW LEVEL SECURITY;   -- 0009
+ALTER TABLE quote_memos         ENABLE ROW LEVEL SECURITY;   -- 0013
 
 -- v1.0 공통 정책: 인증 사용자 = read/write 전부, 미인증 = 거부
 CREATE POLICY "authenticated_all" ON products            FOR ALL TO authenticated USING (true) WITH CHECK (true);
@@ -389,6 +432,7 @@ CREATE POLICY "authenticated_all" ON quote_items         FOR ALL TO authenticate
 CREATE POLICY "authenticated_all" ON quote_areas         FOR ALL TO authenticated USING (true) WITH CHECK (true);
 CREATE POLICY "authenticated_all" ON quote_options       FOR ALL TO authenticated USING (true) WITH CHECK (true);
 CREATE POLICY "authenticated_all" ON quote_option_items  FOR ALL TO authenticated USING (true) WITH CHECK (true);
+CREATE POLICY "authenticated_all" ON quote_memos         FOR ALL TO authenticated USING (true) WITH CHECK (true);
 
 -- jobber_tokens 만 본인 행 정책 (자세한 SQL은 0007 참조)
 -- 미인증 사용자는 모든 테이블 접근 불가 (정책 없음 = 거부)
@@ -414,3 +458,16 @@ CREATE POLICY "authenticated_all" ON quote_option_items  FOR ALL TO authenticate
 | 민감 정보 | `actual_price`는 RLS 보호, 로그 출력 금지 |
 
 전체 보안 규칙: `docs/SECURITY.md`.
+
+---
+
+## 2026-05-29 Interior / Exterior formula selections
+
+Interior/Exterior grouped totals are derived from saved item area snapshots when rendering quote forms and detail pages. The selected formula numbers for each main quote area are stored on `quotes`.
+
+- Main quote grouping source: `quote_items.area_scope_snapshot`
+- Option grouping source: `quote_option_items.area_scope_snapshot`
+- Main quote formula selection columns: `quotes.interior_selected_min`, `quotes.interior_selected_max`, `quotes.exterior_selected_min`, `quotes.exterior_selected_max`
+- Stored `quotes.subtotal` is the GST-exclusive sum of the selected Interior subtotal plus the selected Exterior subtotal.
+- Stored `quotes.final_total` remains `quotes.subtotal * 1.10`.
+- `quote_options.subtotal` and `quote_options.final_total` remain option-owned totals and are not included in the main quote total.

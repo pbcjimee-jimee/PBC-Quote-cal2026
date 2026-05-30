@@ -151,3 +151,31 @@ const display = total.toFixed(2);  // "2725.63"
 - TypeScript API & fixture: `docs/CALCULATION-API.md`
 - 결정 배경 (왜 decimal.js, 왜 snapshot): `docs/DECISIONS.md` #3, #5, #6
 - DB 컬럼 정의: `docs/DB-SCHEMA.md` (quotes, pricing_settings)
+
+---
+
+## 2026-05-29 Interior / Exterior grouped subtotals
+
+Grouped subtotals are calculated from material row area snapshots. They do not change the five formula definitions, but the main quote stores separate selected formula numbers for Interior and Exterior.
+
+- Interior subtotal: calculate formula results from rows where `area_scope_snapshot = 'interior'`, then apply `interior_selected_min` and `interior_selected_max`.
+- Exterior subtotal: calculate formula results from rows where `area_scope_snapshot = 'exterior'`, then apply `exterior_selected_min` and `exterior_selected_max`.
+- Final subtotal: `interior_subtotal + exterior_subtotal`.
+- Unassigned rows: rows with no Interior/Exterior scope are shown as unassigned and are excluded from grouped subtotals until assigned.
+
+Stored totals:
+
+- `quotes.subtotal` stores the GST-exclusive sum of selected Interior and Exterior subtotals.
+- `quotes.final_total` remains `quotes.subtotal * 1.10`.
+- `quote_options.subtotal` remains the option GST-exclusive subtotal.
+- `quote_options.final_total` remains `quote_options.subtotal * 1.10`.
+
+UI display rule:
+
+- Main quote summary shows grouped GST-exclusive subtotals and GST separately.
+- Materials shows only the active Interior or Exterior Formula Results selector, matching the Materials toggle.
+- The right Calculation panel keeps combined Total Working Days / Total Labour Days and the final summary, without showing both area formula selectors at once.
+- Option summaries show `quote_options.subtotal` / calculated option subtotal, not GST-inclusive `final_total`.
+
+Implementation design: `docs/superpowers/specs/2026-05-27-quote-workspace-area-subtotals-design.md`.
+Implementation plan: `docs/superpowers/plans/2026-05-27-quote-workspace-area-subtotals.md`.

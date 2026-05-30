@@ -1,5 +1,5 @@
 import type { JobberQuoteDraft } from '@/lib/jobber/mapper'
-import type { JobberQuoteLineItemDraft, JobberSaveMode, MaterialItem, QuoteOptionItem } from './types'
+import type { AreaFormulaSelections, FormulaSelection, JobberQuoteLineItemDraft, JobberSaveMode, MaterialItem, QuoteMemoItem, QuoteOptionItem } from './types'
 import { isDecimalInputValue } from './decimal-input-utils'
 
 const QUOTE_DRAFT_VERSION = 1
@@ -17,10 +17,12 @@ export interface QuoteFormDraft {
   jobberQuoteLines: JobberQuoteLineItemDraft[]
   materials: MaterialItem[]
   options: QuoteOptionItem[]
+  memos: QuoteMemoItem[]
   workingDays: string
   labourPerDay: string
   selectedMin: 1 | 2 | 3 | 4 | 5
   selectedMax: 1 | 2 | 3 | 4 | 5
+  areaFormulaSelections: AreaFormulaSelections
   jobberQuoteDraft: JobberQuoteDraft | null
   updatedAt: string
 }
@@ -45,10 +47,15 @@ export function createEmptyQuoteFormDraft(): QuoteFormDraft {
     jobberQuoteLines: [],
     materials: [],
     options: [],
+    memos: [],
     workingDays: '0',
     labourPerDay: '0',
     selectedMin: 4,
     selectedMax: 1,
+    areaFormulaSelections: {
+      interior: { selectedMin: 4, selectedMax: 1 },
+      exterior: { selectedMin: 4, selectedMax: 1 },
+    },
     jobberQuoteDraft: null,
     updatedAt: new Date(0).toISOString(),
   }
@@ -164,6 +171,32 @@ function parseOption(value: unknown): QuoteOptionItem | null {
   }
 }
 
+function parseFormulaSelection(value: unknown): FormulaSelection | null {
+  if (!isRecord(value)) return null
+  const selectedMin = readFormulaNumber(value, 'selectedMin')
+  const selectedMax = readFormulaNumber(value, 'selectedMax')
+  if (selectedMin === null || selectedMax === null) return null
+  return { selectedMin, selectedMax }
+}
+
+function parseAreaFormulaSelections(value: unknown): AreaFormulaSelections | null {
+  if (!isRecord(value)) return null
+  const interior = parseFormulaSelection(value.interior)
+  const exterior = parseFormulaSelection(value.exterior)
+  if (interior === null || exterior === null) return null
+  return { interior, exterior }
+}
+
+function parseMemo(value: unknown): QuoteMemoItem | null {
+  if (!isRecord(value)) return null
+
+  const id = readString(value, 'id')
+  const body = readString(value, 'body')
+  if (id === null || body === null) return null
+
+  return { id, body }
+}
+
 function parseJobberQuoteLine(value: unknown): JobberQuoteLineItemDraft | null {
   if (!isRecord(value)) return null
 
@@ -227,12 +260,16 @@ export function parseQuoteFormDraft(value: string | null): QuoteFormDraft | null
   const labourPerDay = readDecimalString(parsed, 'labourPerDay')
   const selectedMin = readFormulaNumber(parsed, 'selectedMin')
   const selectedMax = readFormulaNumber(parsed, 'selectedMax')
+  const parsedAreaFormulaSelections = parseAreaFormulaSelections(parsed.areaFormulaSelections)
   const updatedAt = readString(parsed, 'updatedAt')
   const materials = Array.isArray(parsed.materials)
     ? parsed.materials.map(parseMaterial)
     : null
   const options = Array.isArray(parsed.options)
     ? parsed.options.map(parseOption)
+    : []
+  const memos = Array.isArray(parsed.memos)
+    ? parsed.memos.map(parseMemo)
     : []
   const jobberQuoteLines = Array.isArray(parsed.jobberQuoteLines)
     ? parsed.jobberQuoteLines.map(parseJobberQuoteLine)
@@ -251,13 +288,20 @@ export function parseQuoteFormDraft(value: string | null): QuoteFormDraft | null
     labourPerDay === null ||
     selectedMin === null ||
     selectedMax === null ||
+    (parsed.areaFormulaSelections !== undefined && parsedAreaFormulaSelections === null) ||
     updatedAt === null ||
     materials === null ||
     materials.some((item) => item === null) ||
     options.some((item) => item === null) ||
+    memos.some((item) => item === null) ||
     jobberQuoteLines.some((item) => item === null)
   ) {
     return null
+  }
+
+  const areaFormulaSelections = parsedAreaFormulaSelections ?? {
+    interior: { selectedMin, selectedMax },
+    exterior: { selectedMin, selectedMax },
   }
 
   return {
@@ -273,10 +317,12 @@ export function parseQuoteFormDraft(value: string | null): QuoteFormDraft | null
     jobberQuoteLines: jobberQuoteLines as JobberQuoteLineItemDraft[],
     materials: materials as MaterialItem[],
     options: options as QuoteOptionItem[],
+    memos: memos as QuoteMemoItem[],
     workingDays,
     labourPerDay,
     selectedMin,
     selectedMax,
+    areaFormulaSelections,
     jobberQuoteDraft: isRecord(parsed.jobberQuoteDraft) ? parsed.jobberQuoteDraft as unknown as JobberQuoteDraft : null,
     updatedAt,
   }
@@ -294,10 +340,15 @@ export function hasMeaningfulQuoteDraft(draft: QuoteFormDraft): boolean {
     draft.jobberSaveMode !== 'priced_line_items' ||
     draft.materials.length > 0 ||
     draft.options.length > 0 ||
+    draft.memos.some((memo) => memo.body.trim()) ||
     draft.workingDays !== '0' ||
     draft.labourPerDay !== '0' ||
     draft.selectedMin !== 4 ||
     draft.selectedMax !== 1 ||
+    draft.areaFormulaSelections.interior.selectedMin !== 4 ||
+    draft.areaFormulaSelections.interior.selectedMax !== 1 ||
+    draft.areaFormulaSelections.exterior.selectedMin !== 4 ||
+    draft.areaFormulaSelections.exterior.selectedMax !== 1 ||
     draft.jobberQuoteDraft
   )
 }

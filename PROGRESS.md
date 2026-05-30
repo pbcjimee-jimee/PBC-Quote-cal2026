@@ -133,6 +133,8 @@
 - [x] 관련 문서 동기화: `docs/DECISIONS.md`, `docs/ARCHITECTURE.md`, `docs/SECURITY.md`, `docs/DB-SCHEMA.md`, `docs/UI-QUOTE-FORM.md`, `docs/AGENT-MAP.md`
 - [x] `0010_add_jobber_quote_lines.sql` 로컬 저장 스키마 추가: `quotes` sync 상태 + `jobber_quote_lines` RLS
 - [x] `0012_add_quote_line_templates.sql` 템플릿 스키마 추가: `quote_line_templates`, `quote_line_template_items` RLS
+- [x] `0013_add_quote_memos.sql` app-only internal memo 스키마 추가: quote별 multiple memo rows, Jobber 미동기화, RLS
+- [x] `0014_add_quote_area_formula_selections.sql` main quote Interior/Exterior별 formula min/max 선택값 저장 컬럼 추가
 - [x] `/quotes/new` Product / Service editor 1차 구현: `Priced Line Items`, `Description + Total`, `Add Line Item`, `Add Text`
 - [x] 공개 Jobber line item을 material `quote_items`와 분리 저장, draft 복원 포함
 - [x] Jobber payload builder 추가: material `actual_price`/`market_price`/내부 material detail 미전송 회귀 테스트
@@ -266,6 +268,16 @@
 
 | 날짜 | 작업 | 담당 |
 |---|---|---|
+| 2026-05-29 | Materials active-area summary now shows Interior/Exterior Labour Days beside the material/subtotal prices instead of repeating Final subtotal. | Codex |
+| 2026-05-29 | Main quote formula selection split by Interior/Exterior. Materials now shows only the active area's Formula Results selector, and the final subtotal is the selected Interior subtotal plus selected Exterior subtotal. | Codex |
+| 2026-05-29 | Materials labour display narrowed to the active Interior/Exterior section only, with active section subtotal price shown in Materials and the separate right-side Area labour block removed from Calculation. | Codex |
+| 2026-05-29 | Materials panel now filters visible rows by the Interior/Exterior toggle, assigns newly added materials to the active section's default area when available, shows active section material/subtotal plus combined Final subtotal, and can collapse/expand like Options. | Codex |
+| 2026-05-28 | Materials and the sticky Calculation panel now show Interior/Exterior labour totals from assigned material rows, including Working Days and Labour Days, while keeping existing grouped subtotal behavior unchanged. | Codex |
+| 2026-05-28 | Product / Service drag sorting now auto-scrolls the internal row list when dragging near its top or bottom edge, while preserving the original page-scroll quote layout and Top/Up/Down/Bottom controls. | Codex |
+| 2026-05-28 | Quote workspace layout correction: restored the original two-column page-scroll editor. The left panel is Customer Info -> Product / Service -> Materials -> Options -> Internal Memos, the right Calculation panel is sticky without its own scroll container, and only the Product / Service row list uses internal scrolling. Product / Service catalog dropdowns still open only from the active row input. | Codex |
+| 2026-05-28 | Quote workspace subtotal plan implemented: Interior/Exterior grouped subtotals, option subtotal ex GST display, section-scroll workspace, collapsible sidebar, faster Product / Service row movement controls, and app-only quote memos. Verification: typecheck, lint, test:run, build, diff check passed. | Codex |
+| 2026-05-28 | Quote internal memo feature documented. `quote_memos` stores multiple app-only memos per quote and does not sync to Jobber. | Codex |
+| 2026-05-27 | Quote workspace / Interior-Exterior grouped subtotal / option subtotal ex GST / collapsible sidebar / faster Product-Service sorting design and implementation plan documented. No code or DB migration applied yet. | Codex |
 | 2026-05-12 | 초안 설계: office-hours + plan-eng-review 세션. 핵심 결정 박제 | Claude Code |
 | 2026-05-12 | `docs/ARCHITECTURE.md` 초안 (시스템 구조·DB 스키마·RLS·환경 변수) | Claude Code |
 | 2026-05-12 | `docs/CALCULATION.md` 초안 (5가지 공식·검증 규칙·정밀도·fixture 정의) | Claude Code |

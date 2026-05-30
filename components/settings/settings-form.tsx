@@ -755,10 +755,8 @@ export function QuoteLineTemplateEditor({
         </label>
         <JobberProductServiceEditor
           value={templateLines}
-          saveMode="priced_line_items"
           productServices={productServices}
           onChange={setTemplateLines}
-          onSaveModeChange={() => undefined}
         />
         <div className="mt-4 flex flex-wrap items-center gap-2">
           <button type="button" onClick={saveTemplate} disabled={isDisabled || !trimFormValue(templateName)} className="rounded-lg bg-[var(--primary)] px-4 py-2 text-sm font-bold text-white hover:bg-[var(--primary-strong)] disabled:opacity-50">

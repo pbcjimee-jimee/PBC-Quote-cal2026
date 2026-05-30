@@ -1,11 +1,11 @@
 import Decimal from 'decimal.js'
 import type { JobberQuoteFinancialSummary } from '@/lib/jobber/mapper'
+import type { AreaSubtotalBreakdown } from './quote-calculation-totals'
 
 interface FinalSummaryProps {
   labourTotal: Decimal
   materialTotal: Decimal
-  subtotal: Decimal
-  finalTotal: Decimal
+  areaBreakdown: AreaSubtotalBreakdown
   jobberFinancialSummary: JobberQuoteFinancialSummary | null
 }
 
@@ -35,21 +35,35 @@ function getMarginBarTone(value: number | null): string {
 export function FinalSummary({
   labourTotal,
   materialTotal,
-  subtotal,
-  finalTotal,
+  areaBreakdown,
   jobberFinancialSummary,
 }: FinalSummaryProps) {
-  const gstTotal = Decimal.max(finalTotal.sub(subtotal), 0)
+  const visibleSubtotal = areaBreakdown.finalSubtotal
+  const visibleFinalTotal = areaBreakdown.finalTotal
+  const gstTotal = Decimal.max(visibleFinalTotal.sub(visibleSubtotal), 0)
+  const unassignedLabel = areaBreakdown.unassigned.count === 1 ? 'material row needs' : 'material rows need'
 
   return (
     <section className="rounded-lg border border-[var(--border)] bg-white p-4">
       <div className="rounded-lg bg-[var(--primary-soft)] px-4 py-4">
-        <span className="text-sm font-bold uppercase text-[var(--primary)]">Final total</span>
-        <div className="mt-2 font-mono text-4xl font-bold tabular-nums text-slate-950">${subtotal.toFixed(2)}</div>
-        <p className="mt-1 text-xs font-medium text-slate-500">Ex GST. GST is shown at the end.</p>
+        <span className="text-sm font-bold uppercase text-[var(--primary)]">Final subtotal</span>
+        <div className="mt-2 font-mono text-4xl font-bold tabular-nums text-slate-950">${visibleSubtotal.toFixed(2)}</div>
+        <p className="mt-1 text-xs font-medium text-slate-500">Ex GST. Interior and exterior are calculated separately.</p>
       </div>
       <div className="space-y-2 text-sm">
         <div className="mt-4 flex justify-between">
+          <span className="text-slate-500">Interior subtotal</span>
+          <span className="font-mono font-semibold text-slate-950">${areaBreakdown.interior.subtotal.toFixed(2)}</span>
+        </div>
+        <div className="flex justify-between">
+          <span className="text-slate-500">Exterior subtotal</span>
+          <span className="font-mono font-semibold text-slate-950">${areaBreakdown.exterior.subtotal.toFixed(2)}</span>
+        </div>
+        <div className="flex justify-between border-t border-slate-100 pt-2">
+          <span className="text-slate-500">Final subtotal</span>
+          <span className="font-mono font-bold text-slate-950">${visibleSubtotal.toFixed(2)}</span>
+        </div>
+        <div className="flex justify-between">
           <span className="text-slate-500">Labour total</span>
           <span className="font-mono text-slate-900">${labourTotal.toFixed(2)}</span>
         </div>
@@ -58,17 +72,14 @@ export function FinalSummary({
           <span className="font-mono text-slate-900">${materialTotal.toFixed(2)}</span>
         </div>
         <div className="flex justify-between">
-          <span className="text-slate-500">Subtotal price</span>
-          <span className="font-mono font-semibold text-slate-950">${subtotal.toFixed(2)}</span>
-        </div>
-        <div className="flex justify-between">
-          <span className="text-slate-500">Total price</span>
-          <span className="text-right text-xs font-semibold text-slate-500">Subtotal price + GST</span>
-        </div>
-        <div className="flex justify-between">
           <span className="text-slate-500">GST 10%</span>
           <span className="font-mono text-slate-900">${gstTotal.toFixed(2)}</span>
         </div>
+        {areaBreakdown.unassigned.count > 0 ? (
+          <p className="rounded-lg border border-amber-100 bg-[var(--warning-soft)] px-3 py-2 text-xs font-medium text-amber-800">
+            {areaBreakdown.unassigned.count} {unassignedLabel} an Interior or Exterior area before being included in grouped subtotals.
+          </p>
+        ) : null}
       </div>
       {jobberFinancialSummary ? (
         <div className="mt-5 border-t border-slate-100 pt-4">

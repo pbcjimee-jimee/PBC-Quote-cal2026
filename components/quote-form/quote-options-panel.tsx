@@ -2,14 +2,17 @@ import type { FormulaResult } from '@/lib/calculator'
 import type { AreaRecord } from '@/lib/areas/types'
 import { FormulaResults } from './formula-results'
 import { MaterialsPanel } from './materials-panel'
+import type { AreaSubtotalBreakdown } from './quote-calculation-totals'
 import type { FormulaNumber, MaterialItem, QuoteOptionItem } from './types'
 
 interface QuoteOptionTotals {
   results: FormulaResult[]
+  subtotal: string
   finalTotal: string
   materialTotal: string
   workingDays: string
   labourPerDay: string
+  areaBreakdown: AreaSubtotalBreakdown
 }
 
 interface QuoteOptionsPanelProps {
@@ -30,7 +33,7 @@ export function QuoteOptionsPanel({
   onRemoveOption,
 }: QuoteOptionsPanelProps) {
   return (
-    <section className="space-y-4 border-t border-slate-100 pt-6">
+    <section className="mt-6 space-y-4 border-t border-slate-100 pt-6">
       <div className="flex items-center justify-between gap-3">
         <div>
           <h2 className="text-sm font-bold uppercase text-slate-400">Options</h2>
@@ -67,7 +70,10 @@ export function QuoteOptionsPanel({
                 </div>
                 <div className="flex items-center gap-2">
                   {totals ? (
-                    <span className="font-mono text-sm font-bold text-slate-950">${totals.finalTotal}</span>
+                    <span className="flex items-baseline gap-1">
+                      <span className="font-mono text-sm font-bold text-slate-950">${totals.subtotal}</span>
+                      <span className="text-xs font-medium text-slate-500">Ex GST</span>
+                    </span>
                   ) : null}
                   <button
                     type="button"
@@ -91,6 +97,7 @@ export function QuoteOptionsPanel({
                   <MaterialsPanel
                     materials={option.materials}
                     areas={areas}
+                    areaBreakdown={totals?.areaBreakdown}
                     onAdd={(item) => onChangeOption({ ...option, materials: [...option.materials, item] })}
                     onChange={(item: MaterialItem) => onChangeOption({
                       ...option,

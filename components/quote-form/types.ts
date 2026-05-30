@@ -1,6 +1,17 @@
 export type FormulaNumber = 1 | 2 | 3 | 4 | 5
+export type AreaScope = 'interior' | 'exterior'
 export type JobberSaveMode = 'priced_line_items' | 'description_total'
 export type JobberQuoteLineKind = 'line_item' | 'text'
+
+export interface FormulaSelection {
+  selectedMin: FormulaNumber
+  selectedMax: FormulaNumber
+}
+
+export interface AreaFormulaSelections {
+  interior: FormulaSelection
+  exterior: FormulaSelection
+}
 
 export interface JobberQuoteLineItemDraft {
   id: string
@@ -35,7 +46,7 @@ export interface MaterialItem {
   labourPerDay: string
   areaId?: string
   areaName?: string
-  areaScope?: 'interior' | 'exterior'
+  areaScope?: AreaScope
   isCustom: boolean
 }
 
@@ -46,4 +57,9 @@ export interface QuoteOptionItem {
   selectedMin: FormulaNumber
   selectedMax: FormulaNumber
   isExpanded: boolean
+}
+
+export interface QuoteMemoItem {
+  id: string
+  body: string
 }

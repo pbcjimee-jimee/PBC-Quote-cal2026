@@ -71,6 +71,21 @@ const quoteOptionSchema = z.object({
   position: z.number().int().nonnegative().default(0),
 })
 
+const formulaSelectionSchema = z.object({
+  selectedMin: z.number().int().min(1).max(5) as z.ZodType<1 | 2 | 3 | 4 | 5>,
+  selectedMax: z.number().int().min(1).max(5) as z.ZodType<1 | 2 | 3 | 4 | 5>,
+})
+
+const areaFormulaSelectionsSchema = z.object({
+  interior: formulaSelectionSchema,
+  exterior: formulaSelectionSchema,
+})
+
+const quoteMemoSchema = z.object({
+  body: z.string().trim().min(1).max(4000),
+  position: z.number().int().nonnegative().default(0),
+})
+
 export const jobberSaveModeSchema = z.enum(['priced_line_items', 'description_total'])
 
 export const jobberQuoteLineSchema = z.object({
@@ -121,8 +136,10 @@ export const quoteSchema = z.object({
   materialActual: z.number().nonnegative(),
   selectedMin: z.number().int().min(1).max(5) as z.ZodType<1 | 2 | 3 | 4 | 5>,
   selectedMax: z.number().int().min(1).max(5) as z.ZodType<1 | 2 | 3 | 4 | 5>,
+  areaFormulaSelections: areaFormulaSelectionsSchema.optional(),
   items: z.array(quoteItemSchema),
   options: z.array(quoteOptionSchema).default([]),
+  memos: z.array(quoteMemoSchema).default([]),
 })
 
 export type QuoteInput = z.infer<typeof quoteSchema>

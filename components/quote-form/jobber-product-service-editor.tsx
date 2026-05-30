@@ -1,17 +1,15 @@
 'use client'
 
-import { useState, type ChangeEvent, type DragEvent } from 'react'
-import type { JobberQuoteLineItemDraft, JobberSaveMode } from './types'
+import { useEffect, useRef, useState, type ChangeEvent, type DragEvent } from 'react'
+import type { JobberQuoteLineItemDraft } from './types'
 import type { ProductServiceRecord } from '@/lib/product-services/types'
 import type { QuoteLineTemplateRecord } from '@/lib/quote-line-templates/types'
 
 interface JobberProductServiceEditorProps {
   value: JobberQuoteLineItemDraft[]
-  saveMode: JobberSaveMode
   productServices?: ProductServiceRecord[]
   templates?: QuoteLineTemplateRecord[]
   onChange: (lines: JobberQuoteLineItemDraft[]) => void
-  onSaveModeChange: (mode: JobberSaveMode) => void
 }
 
 function createLineId(prefix: string) {
@@ -45,6 +43,33 @@ function createTextLine(): JobberQuoteLineItemDraft {
 }
 
 type DropPlacement = 'before' | 'after'
+type MoveDirection = 'top' | 'up' | 'down' | 'bottom'
+type ScrollContainerRect = Pick<DOMRect, 'top' | 'bottom' | 'height'>
+
+const PRODUCT_SERVICE_DRAG_SCROLL_EDGE_PX = 72
+const PRODUCT_SERVICE_DRAG_SCROLL_MAX_STEP_PX = 18
+
+export function getProductServiceDragScrollStep(
+  containerRect: ScrollContainerRect,
+  pointerY: number
+): number {
+  const edgeSize = Math.min(PRODUCT_SERVICE_DRAG_SCROLL_EDGE_PX, containerRect.height / 3)
+  if (edgeSize <= 0) return 0
+
+  const topEdge = containerRect.top + edgeSize
+  if (pointerY < topEdge) {
+    const distanceIntoEdge = topEdge - pointerY
+    return -Math.ceil((distanceIntoEdge / edgeSize) * PRODUCT_SERVICE_DRAG_SCROLL_MAX_STEP_PX)
+  }
+
+  const bottomEdge = containerRect.bottom - edgeSize
+  if (pointerY > bottomEdge) {
+    const distanceIntoEdge = pointerY - bottomEdge
+    return Math.ceil((distanceIntoEdge / edgeSize) * PRODUCT_SERVICE_DRAG_SCROLL_MAX_STEP_PX)
+  }
+
+  return 0
+}
 
 export function applyProductServiceToLine(
   line: JobberQuoteLineItemDraft,
@@ -77,9 +102,8 @@ export function getProductServiceMatches(
 ): ProductServiceRecord[] {
   const nameQuery = query.trim()
   const lookupTokens = nameQuery.toLowerCase().split(/\s+/).filter(Boolean)
-  const hasExactNameMatch = productServices.some((productService) => productService.name.toLowerCase() === nameQuery.toLowerCase())
 
-  if (lookupTokens.length === 0 || hasExactNameMatch) return []
+  if (lookupTokens.length === 0) return []
 
   return productServices
     .filter((productService) => {
@@ -106,6 +130,32 @@ export function reorderJobberQuoteLines(
   const nextTargetIndex = nextLines.findIndex((line) => line.id === targetId)
   const insertIndex = placement === 'after' ? nextTargetIndex + 1 : nextTargetIndex
   nextLines.splice(insertIndex, 0, draggedLine)
+  return nextLines
+}
+
+export function moveJobberQuoteLine(
+  lines: JobberQuoteLineItemDraft[],
+  lineId: string,
+  direction: MoveDirection
+): JobberQuoteLineItemDraft[] {
+  const currentIndex = lines.findIndex((line) => line.id === lineId)
+  if (currentIndex < 0) return lines
+
+  const targetIndex = direction === 'top'
+    ? 0
+    : direction === 'bottom'
+      ? lines.length - 1
+      : direction === 'up'
+        ? currentIndex - 1
+        : currentIndex + 1
+
+  if (targetIndex < 0 || targetIndex >= lines.length || targetIndex === currentIndex) {
+    return lines
+  }
+
+  const nextLines = [...lines]
+  const [movedLine] = nextLines.splice(currentIndex, 1)
+  nextLines.splice(targetIndex, 0, movedLine)
   return nextLines
 }
 
@@ -139,17 +189,65 @@ export function JobberProductServiceEditor({
   const [draggedLineId, setDraggedLineId] = useState<string | null>(null)
   const [dropTarget, setDropTarget] = useState<{ id: string; placement: DropPlacement } | null>(null)
   const [selectedTemplateId, setSelectedTemplateId] = useState('')
+  const [activeLookupLineId, setActiveLookupLineId] = useState<string | null>(null)
+  const scrollListRef = useRef<HTMLDivElement | null>(null)
+  const dragScrollFrameRef = useRef<number | null>(null)
+  const dragScrollStepRef = useRef(0)
+
+  function stopProductServiceDragScroll() {
+    dragScrollStepRef.current = 0
+    if (dragScrollFrameRef.current !== null) {
+      window.cancelAnimationFrame(dragScrollFrameRef.current)
+      dragScrollFrameRef.current = null
+    }
+  }
+
+  function runProductServiceDragScroll() {
+    const scrollList = scrollListRef.current
+    const scrollStep = dragScrollStepRef.current
+
+    if (!scrollList || scrollStep === 0) {
+      dragScrollFrameRef.current = null
+      return
+    }
+
+    scrollList.scrollTop += scrollStep
+    dragScrollFrameRef.current = window.requestAnimationFrame(runProductServiceDragScroll)
+  }
+
+  function updateProductServiceDragScroll(pointerY: number) {
+    const scrollList = scrollListRef.current
+    if (!scrollList || !draggedLineId) return
+
+    const scrollStep = getProductServiceDragScrollStep(scrollList.getBoundingClientRect(), pointerY)
+    dragScrollStepRef.current = scrollStep
+
+    if (scrollStep === 0) {
+      stopProductServiceDragScroll()
+      return
+    }
+
+    if (dragScrollFrameRef.current === null) {
+      dragScrollFrameRef.current = window.requestAnimationFrame(runProductServiceDragScroll)
+    }
+  }
+
+  useEffect(() => stopProductServiceDragScroll, [])
 
   function updateLine(updatedLine: JobberQuoteLineItemDraft) {
     onChange(value.map((line) => line.id === updatedLine.id ? updatedLine : line))
   }
 
   function removeLine(id: string) {
+    if (activeLookupLineId === id) {
+      setActiveLookupLineId(null)
+    }
     onChange(value.filter((line) => line.id !== id))
   }
 
   function applyProductService(line: JobberQuoteLineItemDraft, productService: ProductServiceRecord) {
     updateLine(applyProductServiceToLine(line, productService))
+    setActiveLookupLineId(null)
   }
 
   function getDropPlacement(event: DragEvent<HTMLDivElement>): DropPlacement {
@@ -164,8 +262,11 @@ export function JobberProductServiceEditor({
   }
 
   function handleDragOver(lineId: string, event: DragEvent<HTMLDivElement>) {
-    if (!draggedLineId || draggedLineId === lineId) return
     event.preventDefault()
+    if (!draggedLineId) return
+    updateProductServiceDragScroll(event.clientY)
+    if (draggedLineId === lineId) return
+
     const placement = getDropPlacement(event)
     setDropTarget({ id: lineId, placement })
     const reordered = reorderJobberQuoteLines(value, draggedLineId, lineId, placement)
@@ -176,6 +277,7 @@ export function JobberProductServiceEditor({
 
   function handleDrop(lineId: string, event: DragEvent<HTMLDivElement>) {
     event.preventDefault()
+    stopProductServiceDragScroll()
     const droppedLineId = draggedLineId ?? event.dataTransfer.getData('text/plain')
     if (!droppedLineId) return
 
@@ -186,8 +288,15 @@ export function JobberProductServiceEditor({
   }
 
   function handleDragEnd() {
+    stopProductServiceDragScroll()
     setDraggedLineId(null)
     setDropTarget(null)
+  }
+
+  function handleListDragOver(event: DragEvent<HTMLDivElement>) {
+    if (!draggedLineId) return
+    event.preventDefault()
+    updateProductServiceDragScroll(event.clientY)
   }
 
   function applyTemplate(templateId: string) {
@@ -199,7 +308,7 @@ export function JobberProductServiceEditor({
   }
 
   return (
-    <section className="space-y-4 border-t border-slate-100 pt-6">
+    <section className="space-y-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h2 className="text-sm font-bold uppercase text-slate-400">Product / Service</h2>
@@ -228,8 +337,18 @@ export function JobberProductServiceEditor({
         </p>
       ) : null}
 
-      <div className="space-y-3">
-        {value.map((line) => {
+      <div
+        ref={scrollListRef}
+        onDragOver={handleListDragOver}
+        onDrop={() => stopProductServiceDragScroll()}
+        onDragLeave={(event) => {
+          if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+            stopProductServiceDragScroll()
+          }
+        }}
+        className="product-service-scroll-list max-h-[30rem] space-y-3 overflow-y-auto pr-1"
+      >
+        {value.map((line, index) => {
           const isDropTarget = dropTarget?.id === line.id
           if (line.kind === 'line_item') {
             return (
@@ -242,6 +361,12 @@ export function JobberProductServiceEditor({
                 onDragOver={(event) => handleDragOver(line.id, event)}
                 onDrop={(event) => handleDrop(line.id, event)}
                 onDragEnd={handleDragEnd}
+                rowIndex={index}
+                rowCount={value.length}
+                onMove={(direction) => onChange(moveJobberQuoteLine(value, line.id, direction))}
+                isLookupActive={activeLookupLineId === line.id}
+                onLookupFocus={() => setActiveLookupLineId(line.id)}
+                onLookupBlur={() => setActiveLookupLineId(null)}
                 productServices={productServices}
                 onApplyProductService={(productService) => applyProductService(line, productService)}
                 onChange={updateLine}
@@ -260,6 +385,12 @@ export function JobberProductServiceEditor({
               onDragOver={(event) => handleDragOver(line.id, event)}
               onDrop={(event) => handleDrop(line.id, event)}
               onDragEnd={handleDragEnd}
+              rowIndex={index}
+              rowCount={value.length}
+              onMove={(direction) => onChange(moveJobberQuoteLine(value, line.id, direction))}
+              isLookupActive={activeLookupLineId === line.id}
+              onLookupFocus={() => setActiveLookupLineId(line.id)}
+              onLookupBlur={() => setActiveLookupLineId(null)}
               productServices={productServices}
               onApplyProductService={(productService) => applyProductService(line, productService)}
               onChange={updateLine}
@@ -297,6 +428,12 @@ interface PricedLineRowProps {
   onDragOver: (event: DragEvent<HTMLDivElement>) => void
   onDrop: (event: DragEvent<HTMLDivElement>) => void
   onDragEnd: () => void
+  rowIndex: number
+  rowCount: number
+  onMove: (direction: MoveDirection) => void
+  isLookupActive: boolean
+  onLookupFocus: () => void
+  onLookupBlur: () => void
   productServices: ProductServiceRecord[]
   onApplyProductService: (productService: ProductServiceRecord) => void
   onChange: (line: JobberQuoteLineItemDraft) => void
@@ -317,6 +454,12 @@ function PricedLineRow({
   onDragOver,
   onDrop,
   onDragEnd,
+  rowIndex,
+  rowCount,
+  onMove,
+  isLookupActive,
+  onLookupFocus,
+  onLookupBlur,
   productServices,
   onApplyProductService,
   onChange,
@@ -346,6 +489,12 @@ function PricedLineRow({
         >
           ::
         </button>
+        <LineMoveControls
+          lineName={line.name || 'line item'}
+          rowIndex={rowIndex}
+          rowCount={rowCount}
+          onMove={onMove}
+        />
         <div className="min-w-0 flex-1 space-y-3">
           <div className="relative">
             <label className="sr-only" htmlFor={`${line.id}-name`}>Line item name</label>
@@ -353,16 +502,19 @@ function PricedLineRow({
               id={`${line.id}-name`}
               aria-label="Line item name"
               value={line.name}
+              onFocus={onLookupFocus}
+              onBlur={onLookupBlur}
               onChange={(event: ChangeEvent<HTMLInputElement>) => onChange({ ...line, name: event.target.value })}
               className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-950"
               placeholder="Line item name"
             />
-            {filteredProductServices.length > 0 ? (
+            {isLookupActive && filteredProductServices.length > 0 ? (
               <div className="absolute z-20 mt-1 max-h-56 w-full overflow-auto rounded-lg border border-slate-200 bg-white py-1 shadow-lg" aria-label="Product / Service dropdown">
                 {filteredProductServices.map((productService) => (
                   <button
                     key={productService.id}
                     type="button"
+                    onMouseDown={(event) => event.preventDefault()}
                     onClick={() => onApplyProductService(productService)}
                     className="block w-full px-3 py-2 text-left text-sm hover:bg-slate-50"
                   >
@@ -447,6 +599,12 @@ interface TextLineRowProps {
   onDragOver: (event: DragEvent<HTMLDivElement>) => void
   onDrop: (event: DragEvent<HTMLDivElement>) => void
   onDragEnd: () => void
+  rowIndex: number
+  rowCount: number
+  onMove: (direction: MoveDirection) => void
+  isLookupActive: boolean
+  onLookupFocus: () => void
+  onLookupBlur: () => void
   productServices: ProductServiceRecord[]
   onApplyProductService: (productService: ProductServiceRecord) => void
   onChange: (line: JobberQuoteLineItemDraft) => void
@@ -461,6 +619,12 @@ function TextLineRow({
   onDragOver,
   onDrop,
   onDragEnd,
+  rowIndex,
+  rowCount,
+  onMove,
+  isLookupActive,
+  onLookupFocus,
+  onLookupBlur,
   productServices,
   onApplyProductService,
   onChange,
@@ -490,6 +654,12 @@ function TextLineRow({
         >
           ::
         </button>
+        <LineMoveControls
+          lineName={line.name || 'text line'}
+          rowIndex={rowIndex}
+          rowCount={rowCount}
+          onMove={onMove}
+        />
         <div className="min-w-0 flex-1 space-y-3">
           <div className="relative">
             <label className="sr-only" htmlFor={`${line.id}-title`}>Text title</label>
@@ -497,16 +667,19 @@ function TextLineRow({
               id={`${line.id}-title`}
               aria-label="Text title"
               value={line.name}
+              onFocus={onLookupFocus}
+              onBlur={onLookupBlur}
               onChange={(event: ChangeEvent<HTMLInputElement>) => onChange({ ...line, name: event.target.value })}
               className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-950"
               placeholder="Text title"
             />
-            {filteredProductServices.length > 0 ? (
+            {isLookupActive && filteredProductServices.length > 0 ? (
               <div className="absolute z-20 mt-1 max-h-56 w-full overflow-auto rounded-lg border border-slate-200 bg-white py-1 shadow-lg" aria-label="Product / Service dropdown">
                 {filteredProductServices.map((productService) => (
                   <button
                     key={productService.id}
                     type="button"
+                    onMouseDown={(event) => event.preventDefault()}
                     onClick={() => onApplyProductService(productService)}
                     className="block w-full px-3 py-2 text-left text-sm hover:bg-slate-50"
                   >
@@ -548,6 +721,41 @@ function TextLineRow({
           Delete
         </button>
       </div>
+    </div>
+  )
+}
+
+interface LineMoveControlsProps {
+  lineName: string
+  rowIndex: number
+  rowCount: number
+  onMove: (direction: MoveDirection) => void
+}
+
+function LineMoveControls({ lineName, rowIndex, rowCount, onMove }: LineMoveControlsProps) {
+  const isFirst = rowIndex === 0
+  const isLast = rowIndex === rowCount - 1
+  const controls: Array<{ direction: MoveDirection; label: string; disabled: boolean }> = [
+    { direction: 'top', label: 'Top', disabled: isFirst },
+    { direction: 'up', label: 'Up', disabled: isFirst },
+    { direction: 'down', label: 'Down', disabled: isLast },
+    { direction: 'bottom', label: 'Bottom', disabled: isLast },
+  ]
+
+  return (
+    <div className="mt-1 grid grid-cols-2 gap-1" aria-label={`Move ${lineName}`}>
+      {controls.map((control) => (
+        <button
+          key={control.direction}
+          type="button"
+          aria-label={`Move ${lineName} ${control.direction === 'top' ? 'to top' : control.direction === 'bottom' ? 'to bottom' : control.direction}`}
+          disabled={control.disabled}
+          onClick={() => onMove(control.direction)}
+          className="h-5 rounded border border-slate-200 bg-white px-1 text-[10px] font-bold leading-none text-slate-500 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          {control.label}
+        </button>
+      ))}
     </div>
   )
 }

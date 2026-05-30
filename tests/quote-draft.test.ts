@@ -31,6 +31,17 @@ describe('quote form draft persistence', () => {
         },
       ],
     })).toBe(true)
+    expect(hasMeaningfulQuoteDraft({
+      ...createEmptyQuoteFormDraft(),
+      memos: [{ id: 'memo-1', body: 'Internal access note' }],
+    })).toBe(true)
+    expect(hasMeaningfulQuoteDraft({
+      ...createEmptyQuoteFormDraft(),
+      areaFormulaSelections: {
+        interior: { selectedMin: 5, selectedMax: 5 },
+        exterior: { selectedMin: 4, selectedMax: 1 },
+      },
+    })).toBe(true)
   })
 
   it('parses valid saved drafts and rejects invalid stored payloads', () => {
@@ -71,12 +82,24 @@ describe('quote form draft persistence', () => {
           ],
         },
       ],
+      memos: [
+        { id: 'memo-1', body: 'Call before arriving.' },
+        { id: 'memo-2', body: 'Use side gate access.' },
+      ],
+      areaFormulaSelections: {
+        interior: { selectedMin: 5 as const, selectedMax: 5 as const },
+        exterior: { selectedMin: 1 as const, selectedMax: 1 as const },
+      },
       updatedAt: '2026-05-15T00:00:00.000Z',
     }
 
     expect(parseQuoteFormDraft(JSON.stringify(draft))).toEqual(draft)
     expect(parseQuoteFormDraft('not json')).toBeNull()
     expect(parseQuoteFormDraft(JSON.stringify({ ...draft, workingDays: '/' }))).toBeNull()
+    expect(parseQuoteFormDraft(JSON.stringify({
+      ...draft,
+      memos: [{ id: 'memo-1', body: 123 }],
+    }))).toBeNull()
   })
 
   it('preserves Jobber public line editor state', () => {

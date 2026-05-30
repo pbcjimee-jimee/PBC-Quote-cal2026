@@ -4,8 +4,10 @@ import { describe, expect, it } from 'vitest'
 import {
   applyQuoteLineTemplateToDrafts,
   applyProductServiceToLine,
+  getProductServiceDragScrollStep,
   getProductServiceMatches,
   JobberProductServiceEditor,
+  moveJobberQuoteLine,
   reorderJobberQuoteLines,
 } from '@/components/quote-form/jobber-product-service-editor'
 import type { JobberQuoteLineItemDraft } from '@/components/quote-form/types'
@@ -38,9 +40,7 @@ describe('JobberProductServiceEditor', () => {
   it('renders priced line item editor without Description + Total or Build Option Set modes', () => {
     const markup = renderToStaticMarkup(createElement(JobberProductServiceEditor, {
       value: lines,
-      saveMode: 'priced_line_items',
       onChange: () => undefined,
-      onSaveModeChange: () => undefined,
     }))
 
     expect(markup).toContain('Product / Service')
@@ -52,9 +52,7 @@ describe('JobberProductServiceEditor', () => {
   it('renders editable priced line item fields and text rows without price fields', () => {
     const markup = renderToStaticMarkup(createElement(JobberProductServiceEditor, {
       value: lines,
-      saveMode: 'priced_line_items',
       onChange: () => undefined,
-      onSaveModeChange: () => undefined,
     }))
 
     expect(markup).toContain('aria-label="Line item name"')
@@ -70,10 +68,28 @@ describe('JobberProductServiceEditor', () => {
     expect(markup).not.toContain('aria-label="Text unit price"')
   })
 
+  it('keeps only the Product Service row list as an internal scroll area', () => {
+    const markup = renderToStaticMarkup(createElement(JobberProductServiceEditor, {
+      value: lines,
+      onChange: () => undefined,
+    }))
+
+    expect(markup).toContain('product-service-scroll-list')
+    expect(markup).toContain('max-h-[30rem]')
+    expect(markup).toContain('overflow-y-auto')
+  })
+
+  it('calculates Product Service drag auto-scroll only near the row list edges', () => {
+    const container = { top: 100, bottom: 500, height: 400 }
+
+    expect(getProductServiceDragScrollStep(container, 120)).toBeLessThan(0)
+    expect(getProductServiceDragScrollStep(container, 480)).toBeGreaterThan(0)
+    expect(getProductServiceDragScrollStep(container, 300)).toBe(0)
+  })
+
   it('renders Add Line Item and Add Text controls', () => {
     const markup = renderToStaticMarkup(createElement(JobberProductServiceEditor, {
       value: [],
-      saveMode: 'description_total',
       templates: [
         {
           id: 'template-1',
@@ -101,7 +117,6 @@ describe('JobberProductServiceEditor', () => {
         },
       ],
       onChange: () => undefined,
-      onSaveModeChange: () => undefined,
     }))
 
     expect(markup).toContain('Template')
@@ -114,9 +129,7 @@ describe('JobberProductServiceEditor', () => {
   it('renders drag handles for reordering line items', () => {
     const markup = renderToStaticMarkup(createElement(JobberProductServiceEditor, {
       value: lines,
-      saveMode: 'priced_line_items',
       onChange: () => undefined,
-      onSaveModeChange: () => undefined,
     }))
 
     expect(markup).toContain('draggable="true"')
@@ -126,7 +139,27 @@ describe('JobberProductServiceEditor', () => {
     expect(markup).toContain('cursor-grab')
   })
 
-  it('shows product service matches from the line item name field only', () => {
+  it('renders compact move controls for priced and text rows with edge controls disabled', () => {
+    const markup = renderToStaticMarkup(createElement(JobberProductServiceEditor, {
+      value: lines,
+      onChange: () => undefined,
+    }))
+
+    expect(markup).toContain('aria-label="Move Exterior repaint to top"')
+    expect(markup).toContain('aria-label="Move Exterior repaint up"')
+    expect(markup).toContain('aria-label="Move Exterior repaint down"')
+    expect(markup).toContain('aria-label="Move Exterior repaint to bottom"')
+    expect(markup).toContain('aria-label="Move Access notes to top"')
+    expect(markup).toContain('aria-label="Move Access notes up"')
+    expect(markup).toContain('aria-label="Move Access notes down"')
+    expect(markup).toContain('aria-label="Move Access notes to bottom"')
+    expect(markup).toMatch(/aria-label="Move Exterior repaint to top"[^>]*disabled/)
+    expect(markup).toMatch(/aria-label="Move Exterior repaint up"[^>]*disabled/)
+    expect(markup).toMatch(/aria-label="Move Access notes down"[^>]*disabled/)
+    expect(markup).toMatch(/aria-label="Move Access notes to bottom"[^>]*disabled/)
+  })
+
+  it('does not open product service matches until the line item name field is active', () => {
     const productServices: ProductServiceRecord[] = [
       {
         id: 'service-1',
@@ -165,20 +198,17 @@ describe('JobberProductServiceEditor', () => {
     ]
     const markup = renderToStaticMarkup(createElement(JobberProductServiceEditor, {
       value: [{ ...lines[0], name: 'ceil' }],
-      saveMode: 'priced_line_items',
       productServices,
       onChange: () => undefined,
-      onSaveModeChange: () => undefined,
     }))
 
-    expect(markup).toContain('Product / Service dropdown')
-    expect(markup).toContain('Ceiling')
+    expect(markup).not.toContain('Product / Service dropdown')
     expect(markup).not.toContain('Walls')
     expect(markup).not.toContain('Search Product &amp; Service')
     expect(markup).not.toContain('aria-label="Search product or service catalog"')
   })
 
-  it('shows product service matches from the text title field without price controls', () => {
+  it('does not open product service matches until the text title field is active', () => {
     const productServices: ProductServiceRecord[] = [
       {
         id: 'service-1',
@@ -217,14 +247,11 @@ describe('JobberProductServiceEditor', () => {
     ]
     const markup = renderToStaticMarkup(createElement(JobberProductServiceEditor, {
       value: [{ ...lines[1], name: 'accredited' }],
-      saveMode: 'priced_line_items',
       productServices,
       onChange: () => undefined,
-      onSaveModeChange: () => undefined,
     }))
 
-    expect(markup).toContain('Product / Service dropdown')
-    expect(markup).toContain('Dulux Accredited Painting Company')
+    expect(markup).not.toContain('Product / Service dropdown')
     expect(markup).not.toContain('Touch up')
     expect(markup).not.toContain('Unit price')
   })
@@ -252,6 +279,47 @@ describe('JobberProductServiceEditor', () => {
         id: 'service-2',
         name: 'Walls',
         description: 'All interior ceilings',
+        category: 'Service',
+        unitPrice: '13.00',
+        unitCost: '0.00',
+        bookable: false,
+        durationMinutes: null,
+        quantityEnabled: true,
+        minimumQuantity: null,
+        maximumQuantity: null,
+        taxable: true,
+        active: true,
+        createdAt: '2026-05-19T00:00:00.000Z',
+        updatedAt: '2026-05-19T00:00:00.000Z',
+      },
+    ])
+
+    expect(matches.map((match) => match.name)).toEqual(['Ceiling'])
+  })
+
+  it('returns an exact product service name match so a fully typed catalog entry can still be applied', () => {
+    const matches = getProductServiceMatches('Ceiling', [
+      {
+        id: 'service-1',
+        name: 'Ceiling',
+        description: 'All interior ceilings',
+        category: 'Service',
+        unitPrice: '14.50',
+        unitCost: '0.00',
+        bookable: false,
+        durationMinutes: null,
+        quantityEnabled: true,
+        minimumQuantity: null,
+        maximumQuantity: null,
+        taxable: true,
+        active: true,
+        createdAt: '2026-05-19T00:00:00.000Z',
+        updatedAt: '2026-05-19T00:00:00.000Z',
+      },
+      {
+        id: 'service-2',
+        name: 'Walls',
+        description: 'Ceiling paint description',
         category: 'Service',
         unitPrice: '13.00',
         unitCost: '0.00',
@@ -333,6 +401,26 @@ describe('JobberProductServiceEditor', () => {
 
     expect(reordered.map((line) => line.id)).toEqual(['text-1', 'line-1'])
     expect(lines.map((line) => line.id)).toEqual(['line-1', 'text-1'])
+  })
+
+  it('moves line items to top, up, down, and bottom without mutating the original list', () => {
+    const moveLines = [
+      lines[0],
+      { ...lines[1], id: 'text-1' },
+      { ...lines[0], id: 'line-2', name: 'Final clean' },
+    ]
+
+    expect(moveJobberQuoteLine(moveLines, 'line-2', 'top').map((line) => line.id)).toEqual(['line-2', 'line-1', 'text-1'])
+    expect(moveJobberQuoteLine(moveLines, 'line-2', 'up').map((line) => line.id)).toEqual(['line-1', 'line-2', 'text-1'])
+    expect(moveJobberQuoteLine(moveLines, 'line-1', 'down').map((line) => line.id)).toEqual(['text-1', 'line-1', 'line-2'])
+    expect(moveJobberQuoteLine(moveLines, 'line-1', 'bottom').map((line) => line.id)).toEqual(['text-1', 'line-2', 'line-1'])
+    expect(moveLines.map((line) => line.id)).toEqual(['line-1', 'text-1', 'line-2'])
+  })
+
+  it('returns the original line item list when a move cannot change the order', () => {
+    expect(moveJobberQuoteLine(lines, 'missing-line', 'top')).toBe(lines)
+    expect(moveJobberQuoteLine(lines, 'line-1', 'up')).toBe(lines)
+    expect(moveJobberQuoteLine(lines, 'text-1', 'down')).toBe(lines)
   })
 
   it('appends template items to existing quote lines without removing saved lines', () => {

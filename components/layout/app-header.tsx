@@ -2,6 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
+import { useEffect, useSyncExternalStore } from 'react'
 import { signOut } from '@/lib/actions/auth'
 import type { UserProfile } from '@/lib/user-profiles'
 
@@ -16,6 +17,30 @@ const navItems: NavItem[] = [
   { href: '/quotes/new', label: 'New Quote', icon: 'quote' },
   { href: '/settings', label: 'Settings', icon: 'settings' },
 ]
+
+const SIDEBAR_STORAGE_KEY = 'pbc-sidebar-collapsed'
+const SIDEBAR_PREFERENCE_EVENT = 'pbc-sidebar-preference-change'
+
+function subscribeSidebarPreference(callback: () => void) {
+  if (typeof window === 'undefined') return () => undefined
+
+  window.addEventListener('storage', callback)
+  window.addEventListener(SIDEBAR_PREFERENCE_EVENT, callback)
+
+  return () => {
+    window.removeEventListener('storage', callback)
+    window.removeEventListener(SIDEBAR_PREFERENCE_EVENT, callback)
+  }
+}
+
+function getSidebarPreferenceSnapshot() {
+  if (typeof window === 'undefined') return false
+  return window.localStorage.getItem(SIDEBAR_STORAGE_KEY) === 'true'
+}
+
+function getServerSidebarPreferenceSnapshot() {
+  return false
+}
 
 function NavIcon({ icon }: { icon: NavItem['icon'] }) {
   if (icon === 'quote') {
@@ -46,22 +71,54 @@ function NavIcon({ icon }: { icon: NavItem['icon'] }) {
 
 export function AppHeader({ userProfile }: { userProfile: UserProfile }) {
   const pathname = usePathname()
+  const isSidebarCollapsed = useSyncExternalStore(
+    subscribeSidebarPreference,
+    getSidebarPreferenceSnapshot,
+    getServerSidebarPreferenceSnapshot
+  )
+
+  useEffect(() => {
+    document.documentElement.style.setProperty('--app-sidebar-width', isSidebarCollapsed ? '4.5rem' : '16rem')
+  }, [isSidebarCollapsed])
+
+  function toggleSidebar() {
+    const nextValue = isSidebarCollapsed ? 'false' : 'true'
+    window.localStorage.setItem(SIDEBAR_STORAGE_KEY, nextValue)
+    window.dispatchEvent(new Event(SIDEBAR_PREFERENCE_EVENT))
+  }
 
   return (
     <>
-      <aside className="fixed inset-y-0 left-0 z-40 hidden w-64 border-r border-white/80 bg-white/75 px-5 py-5 shadow-[12px_0_45px_rgb(37_77_128_/_8%)] backdrop-blur lg:block">
-        <Link href="/quotes" className="flex items-center gap-3">
-          <span className="grid h-10 w-10 place-items-center rounded-lg bg-[var(--primary)] text-sm font-bold text-white shadow-sm">
-            P
-          </span>
-          <span>
-            <span className="block text-sm font-bold text-slate-950">PBC Quote</span>
-            <span className="block text-xs font-medium text-slate-400">Calculator</span>
-          </span>
-        </Link>
+      <aside
+        data-sidebar-state={isSidebarCollapsed ? 'collapsed' : 'expanded'}
+        className={[
+          'fixed inset-y-0 left-0 z-40 hidden border-r border-white/80 bg-white/75 py-5 shadow-[12px_0_45px_rgb(37_77_128_/_8%)] backdrop-blur transition-[width,padding] duration-200 lg:block',
+          isSidebarCollapsed ? 'w-[4.5rem] px-3' : 'w-64 px-5',
+        ].join(' ')}
+      >
+        <div className={`flex items-center gap-2 ${isSidebarCollapsed ? 'justify-center' : 'justify-between'}`}>
+          <Link href="/quotes" className={`flex min-w-0 items-center gap-3 ${isSidebarCollapsed ? 'justify-center' : ''}`}>
+            <span className="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-[var(--primary)] text-sm font-bold text-white shadow-sm">
+              P
+            </span>
+            <span className={isSidebarCollapsed ? 'sr-only' : 'min-w-0'}>
+              <span className="block text-sm font-bold text-slate-950">PBC Quote</span>
+              <span className="block text-xs font-medium text-slate-400">Calculator</span>
+            </span>
+          </Link>
+          <button
+            type="button"
+            aria-label="Toggle sidebar"
+            onClick={toggleSidebar}
+            className="grid h-9 w-9 shrink-0 place-items-center rounded-lg border border-slate-200 bg-white text-sm font-bold text-slate-500 hover:bg-slate-50 hover:text-slate-950"
+            title={isSidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+          >
+            {isSidebarCollapsed ? '>' : '<'}
+          </button>
+        </div>
 
         <nav className="mt-9 space-y-1">
-          <p className="px-3 text-[11px] font-bold uppercase text-slate-400">Admin tools</p>
+          <p className={isSidebarCollapsed ? 'sr-only' : 'px-3 text-[11px] font-bold uppercase text-slate-400'}>Admin tools</p>
           <div className="mt-3 space-y-1">
             {navItems.map((item) => {
               const isActive = item.href === '/quotes'
@@ -72,24 +129,34 @@ export function AppHeader({ userProfile }: { userProfile: UserProfile }) {
                 : 'text-slate-500 hover:bg-white hover:text-slate-950'
 
               return (
-                <Link key={item.href} href={item.href} className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-semibold ${activeClass}`}>
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  title={item.label}
+                  className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-semibold ${isSidebarCollapsed ? 'justify-center' : ''} ${activeClass}`}
+                >
                   <NavIcon icon={item.icon} />
-                  {item.label}
+                  <span className={isSidebarCollapsed ? 'sr-only' : ''}>{item.label}</span>
                 </Link>
               )
             })}
           </div>
         </nav>
 
-        <div className="mt-10 rounded-lg border border-[var(--border)] bg-white/80 p-3">
+        <div className={`mt-10 rounded-lg border border-[var(--border)] bg-white/80 p-3 ${isSidebarCollapsed ? 'text-center' : ''}`}>
           <p className="text-xs font-semibold text-slate-500">Signed in as</p>
-          <p className="mt-1 truncate text-sm font-bold text-slate-900">{userProfile.displayName}</p>
-          {userProfile.email ? <p className="mt-1 truncate text-[11px] leading-4 text-slate-400">{userProfile.email}</p> : null}
+          <p className={isSidebarCollapsed ? 'sr-only' : 'mt-1 truncate text-sm font-bold text-slate-900'}>{userProfile.displayName}</p>
+          {userProfile.email ? <p className={isSidebarCollapsed ? 'sr-only' : 'mt-1 truncate text-[11px] leading-4 text-slate-400'}>{userProfile.email}</p> : null}
         </div>
 
-        <form action={signOut} className="absolute bottom-5 left-5 right-5">
-          <button type="submit" className="w-full rounded-lg border border-[var(--border)] bg-white px-3 py-2 text-sm font-semibold text-slate-500 hover:border-[var(--danger)] hover:bg-[var(--danger-soft)] hover:text-[var(--danger)]">
-            Sign out
+        <form action={signOut} className={isSidebarCollapsed ? 'absolute bottom-5 left-3 right-3' : 'absolute bottom-5 left-5 right-5'}>
+          <button
+            type="submit"
+            title="Sign out"
+            className="w-full rounded-lg border border-[var(--border)] bg-white px-3 py-2 text-sm font-semibold text-slate-500 hover:border-[var(--danger)] hover:bg-[var(--danger-soft)] hover:text-[var(--danger)]"
+          >
+            <span className={isSidebarCollapsed ? 'sr-only' : ''}>Sign out</span>
+            {isSidebarCollapsed ? 'Out' : null}
           </button>
         </form>
       </aside>

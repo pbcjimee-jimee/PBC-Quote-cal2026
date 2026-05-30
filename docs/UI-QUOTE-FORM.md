@@ -69,6 +69,11 @@ QuoteNewPage (Server, /app/(app)/quotes/new/page.tsx)
     │   ├── Input: customer_name
     │   └── Input: customer_address
     │
+    ├── QuoteMemosPanel
+    │   ├── Add memo
+    │   ├── Memo textarea × N
+    │   └── Remove memo
+    │
     ├── JobberProductServiceEditor
     │   ├── Template dropdown (copies saved line/text item sets from Settings)
     │   ├── Line item name / text title input with Product & Service title dropdown
@@ -269,3 +274,40 @@ F2  L460 + Labour 30%
 - Selecting a catalog item for Add Text fills only title/body and leaves the item as price-free text.
 - The local catalog id is not sent to Jobber as `productOrServiceId`; it is a template for public quote text/pricing only.
 - Settings > Template stores reusable sets of these public line/text items, so frequently used Product & Service descriptions can be inserted into a new quote without rebuilding each row.
+
+---
+
+## 2026-05-27 Workspace update
+
+Source documents:
+
+- Design: `docs/superpowers/specs/2026-05-27-quote-workspace-area-subtotals-design.md`
+- Implementation plan: `docs/superpowers/plans/2026-05-27-quote-workspace-area-subtotals.md`
+
+Implemented quote editor behavior:
+
+- `/quotes/new` and `/quotes/[id]/edit` use the original desktop two-column page layout: the left quote editor panel and the right Calculation panel.
+- The left panel is ordered Customer Info -> Product / Service -> Materials -> Options -> Internal Memos and uses normal page scroll.
+- Only the Product / Service row list uses an internal scroll container for long public line-item lists.
+- The Calculation panel is sticky on desktop and does not use its own scroll container.
+- The summary shows Interior subtotal, Exterior subtotal, and Final subtotal, all ex GST.
+- Materials shows labour totals for the active Interior or Exterior section only: Working Days, Labour / Day, and Labour Days. The Calculation panel keeps only the combined Total Working Days and Total Labour Days.
+- Materials uses an Interior/Exterior toggle to filter the visible material rows to the active area section. New material rows added while a section is active receive that section's default area when one exists.
+- Materials shows only the active area's Formula Results selector. Interior shows Interior Formula Results; Exterior shows Exterior Formula Results. The right Calculation panel does not show both at once.
+- Interior and Exterior each keep their own min/max formula selection, and Final subtotal is the sum of the selected Interior subtotal plus selected Exterior subtotal.
+- Materials can collapse and expand like Options. The expanded and collapsed summaries show the active section material total, the active section subtotal when available, and the active section Labour Days.
+- GST remains visible as a separate row at the end.
+- Optional add-ons display subtotal ex GST and remain separate from the main quote total.
+- Product / Service line items keep drag sorting, auto-scroll the row list while dragging near its top or bottom edge, and add Top / Up / Down / Bottom controls for long line lists.
+- Internal Memos lets a user add multiple app-only notes per quote. These memos save to `quote_memos` and do not sync to Jobber.
+- Unassigned material rows are allowed, but they are excluded from grouped Interior/Exterior subtotals and shown as a warning.
+- The page keeps natural document scrolling on desktop and mobile, except for the Product / Service row list.
+
+## 2026-05-28 Internal Memos
+
+The quote form supports multiple internal memo rows per quote.
+
+- Memos are edited in `QuoteMemosPanel` near the customer and Jobber quote context.
+- Empty memo rows are ignored when saving.
+- Saved memo rows are restored on `/quotes/[id]/edit` and displayed on quote detail.
+- Memos are app-only and must not be sent to Jobber as notes, text line items, or Product / Service rows.

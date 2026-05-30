@@ -8,6 +8,7 @@ interface FormulaResultsProps {
   onSelectedMinChange: (value: FormulaNumber) => void
   onSelectedMaxChange: (value: FormulaNumber) => void
   namePrefix?: string
+  title?: string
 }
 
 export function FormulaResults({
@@ -17,11 +18,12 @@ export function FormulaResults({
   onSelectedMinChange,
   onSelectedMaxChange,
   namePrefix = 'main',
+  title = 'Formula Results',
 }: FormulaResultsProps) {
   return (
     <section className="space-y-3">
       <div className="flex items-center justify-between gap-3">
-        <h2 className="text-sm font-bold uppercase text-slate-400">Formula Results</h2>
+        <h2 className="text-sm font-bold uppercase text-slate-400">{title}</h2>
         <span className="rounded-full bg-[var(--primary-soft)] px-3 py-1 text-xs font-bold text-[var(--primary)]">Select range</span>
       </div>
       <div className="overflow-hidden rounded-lg border border-[var(--border)] bg-white">

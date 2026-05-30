@@ -168,6 +168,10 @@ export interface Database {
           formula5_total: string
           selected_min: number
           selected_max: number
+          interior_selected_min: number
+          interior_selected_max: number
+          exterior_selected_min: number
+          exterior_selected_max: number
           subtotal: string
           final_total: string
           pricing_settings_snapshot: Json
@@ -254,6 +258,24 @@ export interface Database {
           id?: string
         }
         Update: Partial<Database['public']['Tables']['quote_option_items']['Insert']>
+        Relationships: []
+      }
+      quote_memos: {
+        Row: {
+          id: string
+          quote_id: string
+          body: string
+          position: number
+          created_by: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: Omit<Database['public']['Tables']['quote_memos']['Row'], 'id' | 'created_at' | 'updated_at'> & {
+          id?: string
+          created_at?: string
+          updated_at?: string
+        }
+        Update: Partial<Database['public']['Tables']['quote_memos']['Insert']>
         Relationships: []
       }
       jobber_quote_lines: {

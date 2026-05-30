@@ -1,20 +1,11 @@
 'use client'
 
-import Decimal from 'decimal.js'
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
-import {
-  calculateAllFormulas,
-  calculateFinal,
-  calculateSubtotal,
-  type PricingSettings,
-} from '@/lib/calculator'
-import { calculateLabourTotals, decimalFromInput } from '@/lib/quote-labour'
-import { createQuote, updateQuote } from '@/lib/actions/quotes'
+import type { PricingSettings } from '@/lib/calculator'
 import type { QuoteRecord } from '@/lib/dev-data'
 import { CustomerPanel } from './customer-panel'
 import { MaterialsPanel } from './materials-panel'
-import { FormulaResults } from './formula-results'
 import { FinalSummary } from './final-summary'
 import { DecimalInput } from './decimal-input'
 import {
@@ -27,9 +18,18 @@ import {
 import { QuoteOptionsPanel } from './quote-options-panel'
 import { OptionTotalsSummary } from './option-totals-summary'
 import { calculateMainQuoteTotals } from './quote-calculation-totals'
-import type { FormulaNumber, JobberQuoteLineItemDraft, MaterialItem, QuoteOptionItem } from './types'
+import type { AreaFormulaSelections, AreaScope, FormulaNumber, JobberQuoteLineItemDraft, MaterialItem, QuoteMemoItem, QuoteOptionItem } from './types'
 import { JobberProductServiceEditor } from './jobber-product-service-editor'
 import { mapJobberDraftLineItemsToState } from './jobber-line-state'
+import { QuoteMemosPanel } from './quote-memos-panel'
+import { calculateQuoteOptionTotals } from './quote-option-totals'
+import {
+  mapJobberQuoteLinesToState,
+  mapQuoteItemsToMaterials,
+  mapQuoteMemosToState,
+  mapQuoteOptionsToState,
+} from './quote-record-mappers'
+import { saveQuoteFormPayload } from './quote-save-payload'
 import type { AreaRecord } from '@/lib/areas/types'
 import type {
   JobberQuoteDraft,
@@ -41,6 +41,8 @@ import type {
 import { getVisibleJobberQuoteLookupAfterFetch } from '@/lib/jobber/quote-lookup'
 import type { ProductServiceRecord } from '@/lib/product-services/types'
 import type { QuoteLineTemplateRecord } from '@/lib/quote-line-templates/types'
+
+export { buildQuoteSavePayload, saveQuoteFormPayload } from './quote-save-payload'
 
 interface QuoteFormProps {
   settings: PricingSettings
@@ -146,64 +148,24 @@ function isJobberQuoteFinancialSummary(value: unknown): value is JobberQuoteFina
   )
 }
 
-function mapQuoteItemsToMaterials(quote: QuoteRecord): MaterialItem[] {
-  return quote.items.map((item) => ({
-    id: item.id,
-    productId: item.productId ?? undefined,
-    name: item.productNameSnapshot,
-    marketPrice: item.marketPriceSnapshot,
-    actualPrice: item.actualPriceSnapshot,
-    quantity: item.quantity,
-    workingDays: item.workingDays ?? '0',
-    labourPerDay: item.labourPerDay ?? '0',
-    areaId: item.areaId ?? undefined,
-    areaName: item.areaNameSnapshot ?? undefined,
-    areaScope: item.areaScopeSnapshot ?? undefined,
-    isCustom: item.isCustom,
-  }))
-}
-
-function mapQuoteOptionsToState(quote: QuoteRecord): QuoteOptionItem[] {
-  return quote.options.map((option) => ({
-    id: option.id,
-    title: option.title,
-    selectedMin: option.selectedMin,
-    selectedMax: option.selectedMax,
-    isExpanded: false,
-    materials: option.items.map((item) => ({
-      id: item.id,
-      productId: item.productId ?? undefined,
-      name: item.productNameSnapshot,
-      marketPrice: item.marketPriceSnapshot,
-      actualPrice: item.actualPriceSnapshot,
-      quantity: item.quantity,
-      workingDays: item.workingDays ?? '0',
-      labourPerDay: item.labourPerDay ?? '0',
-      areaId: item.areaId ?? undefined,
-      areaName: item.areaNameSnapshot ?? undefined,
-      areaScope: item.areaScopeSnapshot ?? undefined,
-      isCustom: item.isCustom,
-    })),
-  }))
-}
-
-function mapJobberQuoteLinesToState(quote: QuoteRecord): JobberQuoteLineItemDraft[] {
-  return quote.jobberQuoteLines.map((line) => ({
-    id: line.id,
-    kind: line.kind,
-    name: line.name,
-    description: line.description ?? '',
-    quantity: line.quantity ?? '1',
-    unitPrice: line.unitPrice ?? '0',
-    taxable: line.taxable,
-    clientVisible: line.clientVisible,
-    jobberLineItemId: line.jobberLineItemId ?? undefined,
-    linkedProductOrServiceId: line.linkedProductOrServiceId ?? undefined,
-  }))
-}
-
 function createClientId(prefix: string): string {
   return `${prefix}-${globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`}`
+}
+
+function getInitialAreaFormulaSelections(initialQuote: QuoteRecord | undefined): AreaFormulaSelections {
+  const fallbackMin = initialQuote?.selectedMin ?? 4
+  const fallbackMax = initialQuote?.selectedMax ?? 1
+
+  return {
+    interior: {
+      selectedMin: initialQuote?.interiorSelectedMin ?? fallbackMin,
+      selectedMax: initialQuote?.interiorSelectedMax ?? fallbackMax,
+    },
+    exterior: {
+      selectedMin: initialQuote?.exteriorSelectedMin ?? fallbackMin,
+      selectedMax: initialQuote?.exteriorSelectedMax ?? fallbackMax,
+    },
+  }
 }
 
 export function QuoteForm({ settings, areas, productServices = [], quoteLineTemplates = [], initialQuote }: QuoteFormProps) {
@@ -222,8 +184,10 @@ export function QuoteForm({ settings, areas, productServices = [], quoteLineTemp
   const [workingDays, setWorkingDays] = useState(initialQuote?.workingDays ?? '0')
   const [labourPerDay, setLabourPerDay] = useState(initialQuote?.labourPerDay ?? '0')
   const [options, setOptions] = useState<QuoteOptionItem[]>(initialQuote ? mapQuoteOptionsToState(initialQuote) : [])
+  const [memos, setMemos] = useState<QuoteMemoItem[]>(initialQuote ? mapQuoteMemosToState(initialQuote) : [])
   const [selectedMin, setSelectedMin] = useState<FormulaNumber>(initialQuote?.selectedMin ?? 4)
   const [selectedMax, setSelectedMax] = useState<FormulaNumber>(initialQuote?.selectedMax ?? 1)
+  const [areaFormulaSelections, setAreaFormulaSelections] = useState<AreaFormulaSelections>(() => getInitialAreaFormulaSelections(initialQuote))
   const [saveError, setSaveError] = useState<string | null>(null)
   const [jobberFetchError, setJobberFetchError] = useState<string | null>(null)
   const [isFetchingJobberQuote, setIsFetchingJobberQuote] = useState(false)
@@ -249,13 +213,16 @@ export function QuoteForm({ settings, areas, productServices = [], quoteLineTemp
     jobberQuoteLines,
     materials,
     options,
+    memos,
     workingDays,
     labourPerDay,
     selectedMin,
     selectedMax,
+    areaFormulaSelections,
     jobberQuoteDraft,
     updatedAt: new Date().toISOString(),
   }), [
+    areaFormulaSelections,
     customerAddress,
     customerName,
     customerType,
@@ -266,6 +233,7 @@ export function QuoteForm({ settings, areas, productServices = [], quoteLineTemp
     jobberQuoteLookup,
     labourPerDay,
     materials,
+    memos,
     options,
     selectedMax,
     selectedMin,
@@ -301,9 +269,10 @@ export function QuoteForm({ settings, areas, productServices = [], quoteLineTemp
       materials,
       selectedMin,
       selectedMax,
+      areaFormulaSelections,
       settings,
     })
-  }, [materials, selectedMax, selectedMin, settings])
+  }, [areaFormulaSelections, materials, selectedMax, selectedMin, settings])
 
   useEffect(() => {
     const storedDraft = parseQuoteFormDraft(window.localStorage.getItem(draftStorageKey))
@@ -392,10 +361,12 @@ export function QuoteForm({ settings, areas, productServices = [], quoteLineTemp
     setDeletedJobberLineItemIds([])
     setMaterials(draft.materials)
     setOptions(draft.options)
+    setMemos(draft.memos)
     setWorkingDays(draft.workingDays)
     setLabourPerDay(draft.labourPerDay)
     setSelectedMin(draft.selectedMin)
     setSelectedMax(draft.selectedMax)
+    setAreaFormulaSelections(draft.areaFormulaSelections)
     setJobberQuoteDraft(draft.jobberQuoteDraft)
     setAvailableDraft(null)
     setDraftMessage('Draft restored.')
@@ -432,48 +403,7 @@ export function QuoteForm({ settings, areas, productServices = [], quoteLineTemp
     navigateTo(pendingNavigation ?? '/quotes')
   }
 
-  const optionTotals = useMemo(() => {
-    const calculated: Record<string, {
-      materialMarket: Decimal
-      materialActual: Decimal
-      labour: ReturnType<typeof calculateLabourTotals>
-      results: ReturnType<typeof calculateAllFormulas>
-      subtotal: Decimal
-      finalTotal: Decimal
-    }> = {}
-
-    for (const option of options) {
-      const materialMarket = option.materials.reduce(
-        (total, item) => total.add(decimalFromInput(item.marketPrice).mul(decimalFromInput(item.quantity))),
-        new Decimal(0)
-      )
-      const materialActual = option.materials.reduce(
-        (total, item) => total.add(decimalFromInput(item.actualPrice).mul(decimalFromInput(item.quantity))),
-        new Decimal(0)
-      )
-      const labour = calculateLabourTotals(option.materials)
-      const results = calculateAllFormulas(
-        {
-          workingDays: labour.labourDays,
-          labourPerDay: 1,
-          materialMarket,
-          materialActual,
-        },
-        settings
-      )
-      const subtotal = calculateSubtotal(results, option.selectedMin, option.selectedMax)
-      calculated[option.id] = {
-        materialMarket,
-        materialActual,
-        labour,
-        results,
-        subtotal,
-        finalTotal: calculateFinal(subtotal),
-      }
-    }
-
-    return calculated
-  }, [options, settings])
+  const optionTotals = useMemo(() => calculateQuoteOptionTotals(options, settings), [options, settings])
 
   const optionPanelTotals = useMemo(() => Object.fromEntries(
     options.map((option) => {
@@ -482,10 +412,12 @@ export function QuoteForm({ settings, areas, productServices = [], quoteLineTemp
         option.id,
         {
           results: totalsForOption.results,
+          subtotal: totalsForOption.subtotal.toFixed(2),
           finalTotal: totalsForOption.finalTotal.toFixed(2),
           materialTotal: totalsForOption.materialMarket.toFixed(2),
           workingDays: totalsForOption.labour.workingDays.toFixed(2),
           labourPerDay: totalsForOption.labour.labourDays.toFixed(2),
+          areaBreakdown: totalsForOption.areaBreakdown,
         },
       ]
     })
@@ -494,7 +426,10 @@ export function QuoteForm({ settings, areas, productServices = [], quoteLineTemp
   const optionSummaryItems = useMemo(() => options.map((option, index) => ({
     id: option.id,
     title: option.title.trim() || `Option ${index + 1}`,
+    subtotal: optionTotals[option.id].subtotal,
     finalTotal: optionTotals[option.id].finalTotal,
+    interiorSubtotal: optionTotals[option.id].areaBreakdown.interior.subtotal,
+    exteriorSubtotal: optionTotals[option.id].areaBreakdown.exterior.subtotal,
   })), [optionTotals, options])
 
   function addMaterial(item: MaterialItem) {
@@ -529,6 +464,28 @@ export function QuoteForm({ settings, areas, productServices = [], quoteLineTemp
 
   function removeOption(id: string) {
     setOptions((current) => current.filter((option) => option.id !== id))
+  }
+
+  function addMemo() {
+    setMemos((current) => [...current, { id: createClientId('memo'), body: '' }])
+  }
+
+  function changeMemo(memo: QuoteMemoItem) {
+    setMemos((current) => current.map((existing) => existing.id === memo.id ? memo : existing))
+  }
+
+  function removeMemo(id: string) {
+    setMemos((current) => current.filter((memo) => memo.id !== id))
+  }
+
+  function changeAreaFormulaSelection(scope: AreaScope, field: 'selectedMin' | 'selectedMax', value: FormulaNumber) {
+    setAreaFormulaSelections((current) => ({
+      ...current,
+      [scope]: {
+        ...current[scope],
+        [field]: value,
+      },
+    }))
   }
 
   function changeJobberQuoteLines(nextLines: JobberQuoteLineItemDraft[]) {
@@ -597,70 +554,24 @@ export function QuoteForm({ settings, areas, productServices = [], quoteLineTemp
   function saveQuote() {
     setSaveError(null)
     startTransition(async () => {
-      const payload = {
+      const result = await saveQuoteFormPayload({
+        settings,
+        initialQuoteId: initialQuote?.id,
         customerName,
         customerAddress,
-        jobberQuoteId: jobberQuoteId || jobberQuoteLookup,
-        jobberSnapshot: jobberQuoteDraft ?? undefined,
-        jobberSaveMode: 'priced_line_items',
+        jobberQuoteId,
+        jobberQuoteLookup,
+        jobberQuoteDraft,
         deletedJobberLineItemIds,
-        jobberQuoteLines: jobberQuoteLines.map((line, index) => ({
-          kind: line.kind,
-          name: line.name.trim() || (line.kind === 'text' ? `Text ${index + 1}` : `Line item ${index + 1}`),
-          description: line.description,
-          quantity: Number(decimalFromInput(line.quantity).toString()),
-          unitPrice: Number(decimalFromInput(line.unitPrice).toString()),
-          taxable: line.taxable,
-          clientVisible: line.clientVisible,
-          jobberLineItemId: line.jobberLineItemId,
-          linkedProductOrServiceId: line.linkedProductOrServiceId,
-          position: index,
-        })),
+        jobberQuoteLines,
         workType,
-        workingDays: Number(totals.totalWorkingDays.toString()),
-        labourPerDay: Number(totals.totalLabourPerDay.toString()),
-        materialMarket: Number(totals.materialMarket.toString()),
-        materialActual: Number(totals.materialActual.toString()),
         selectedMin,
         selectedMax,
-        items: materials.map((item, index) => ({
-          productId: item.productId,
-          productNameSnapshot: item.name,
-          marketPriceSnapshot: Number(decimalFromInput(item.marketPrice).toString()),
-          actualPriceSnapshot: Number(decimalFromInput(item.marketPrice).toString()),
-          quantity: Number(decimalFromInput(item.quantity).toString()),
-          workingDays: Number(decimalFromInput(item.workingDays).toString()),
-          labourPerDay: Number(decimalFromInput(item.labourPerDay).toString()),
-          areaId: item.areaId,
-          areaNameSnapshot: item.areaName,
-          areaScopeSnapshot: item.areaScope,
-          isCustom: item.isCustom,
-          position: index,
-        })),
-        options: options.map((option, optionIndex) => ({
-          title: option.title.trim() || `Option ${optionIndex + 1}`,
-          selectedMin: option.selectedMin,
-          selectedMax: option.selectedMax,
-          position: optionIndex,
-          items: option.materials.map((item, itemIndex) => ({
-            productId: item.productId,
-            productNameSnapshot: item.name,
-            marketPriceSnapshot: Number(decimalFromInput(item.marketPrice).toString()),
-            actualPriceSnapshot: Number(decimalFromInput(item.actualPrice).toString()),
-            quantity: Number(decimalFromInput(item.quantity).toString()),
-            workingDays: Number(decimalFromInput(item.workingDays).toString()),
-            labourPerDay: Number(decimalFromInput(item.labourPerDay).toString()),
-            areaId: item.areaId,
-            areaNameSnapshot: item.areaName,
-            areaScopeSnapshot: item.areaScope,
-            isCustom: item.isCustom,
-            position: itemIndex,
-          })),
-        })),
-      }
-      const result = initialQuote
-        ? await updateQuote({ ...payload, id: initialQuote.id })
-        : await createQuote(payload)
+        areaFormulaSelections,
+        materials,
+        options,
+        memos,
+      })
 
       if (result.ok) {
         clearDraft()
@@ -722,13 +633,20 @@ export function QuoteForm({ settings, areas, productServices = [], quoteLineTemp
           />
           <JobberProductServiceEditor
             value={jobberQuoteLines}
-            saveMode="priced_line_items"
             productServices={productServices}
             templates={quoteLineTemplates}
             onChange={changeJobberQuoteLines}
-            onSaveModeChange={() => undefined}
           />
-          <MaterialsPanel materials={materials} areas={areas} onAdd={addMaterial} onChange={changeMaterial} onRemove={removeMaterial} />
+          <MaterialsPanel
+            materials={materials}
+            areas={areas}
+            areaBreakdown={totals.areaBreakdown}
+            areaFormulaSelections={areaFormulaSelections}
+            onAdd={addMaterial}
+            onChange={changeMaterial}
+            onRemove={removeMaterial}
+            onAreaFormulaSelectionChange={changeAreaFormulaSelection}
+          />
           <QuoteOptionsPanel
             options={options}
             optionTotals={optionPanelTotals}
@@ -737,6 +655,7 @@ export function QuoteForm({ settings, areas, productServices = [], quoteLineTemp
             onChangeOption={changeOption}
             onRemoveOption={removeOption}
           />
+          <QuoteMemosPanel memos={memos} onAddMemo={addMemo} onChangeMemo={changeMemo} onRemoveMemo={removeMemo} />
         </div>
 
         <aside className="space-y-6 rounded-lg border border-white bg-white/90 p-5 shadow-[var(--shadow-soft)] xl:sticky xl:top-24 xl:self-start">
@@ -753,7 +672,7 @@ export function QuoteForm({ settings, areas, productServices = [], quoteLineTemp
                 readOnly
               />
               <DecimalInput
-                label="Total Labour"
+                label="Total Labour Days"
                 value={totals.totalLabourPerDay.toFixed(2)}
                 onValueChange={() => undefined}
                 labelClassName="space-y-1 text-sm font-semibold text-slate-600"
@@ -765,12 +684,10 @@ export function QuoteForm({ settings, areas, productServices = [], quoteLineTemp
             {totals.totalWorkingDays.gt(365) ? <p className="text-sm text-amber-600">Over 365 days - double check.</p> : null}
           </section>
 
-          <FormulaResults results={totals.results} selectedMin={selectedMin} selectedMax={selectedMax} onSelectedMinChange={setSelectedMin} onSelectedMaxChange={setSelectedMax} />
           <FinalSummary
             labourTotal={totals.subtotalLabour}
             materialTotal={totals.materialMarket}
-            subtotal={totals.subtotal}
-            finalTotal={totals.finalTotal}
+            areaBreakdown={totals.areaBreakdown}
             jobberFinancialSummary={jobberQuoteDraft && !jobberQuoteDraft.jobExpensesError ? jobberQuoteDraft.financialSummary : null}
           />
           <OptionTotalsSummary options={optionSummaryItems} />

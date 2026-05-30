@@ -58,6 +58,8 @@
 | `docs/WORKFLOW-TASKS.md` | Phase별 작업·Codex 프롬프트 템플릿 |
 | `docs/superpowers/specs/2026-05-19-jobber-write-back-design.md` | Jobber controlled write-back 결정 변경 설계 |
 | `docs/superpowers/plans/2026-05-19-jobber-write-back.md` | Jobber controlled write-back 구현 순서 |
+| `docs/superpowers/specs/2026-05-27-quote-workspace-area-subtotals-design.md` | Quote workspace, Interior/Exterior grouped subtotal, option subtotal display, sidebar collapse design |
+| `docs/superpowers/plans/2026-05-27-quote-workspace-area-subtotals.md` | Quote workspace grouped subtotal implementation plan |
 
 ---
 

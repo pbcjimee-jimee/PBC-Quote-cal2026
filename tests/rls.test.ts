@@ -12,6 +12,7 @@ const migrations = [
   '0010_add_jobber_quote_lines.sql',
   '0011_add_product_services.sql',
   '0012_add_quote_line_templates.sql',
+  '0013_add_quote_memos.sql',
 ].map((file) => {
   const path = join(migrationsDir, file)
 
@@ -32,6 +33,7 @@ const authenticatedCrudTables = [
   'quote_options',
   'quote_option_items',
   'jobber_quote_lines',
+  'quote_memos',
   'product_services',
   'quote_line_templates',
   'quote_line_template_items',

@@ -4,6 +4,8 @@ import type { QuoteRecord } from '@/lib/dev-data'
 import { JobberQuoteSummary } from '@/components/quote-form/customer-panel'
 import { FinalSummary } from '@/components/quote-form/final-summary'
 import { OptionTotalsSummary } from '@/components/quote-form/option-totals-summary'
+import { calculateAreaSubtotalBreakdown } from '@/components/quote-form/quote-calculation-totals'
+import { mapSavedItemsToMaterials } from '@/components/quote-form/quote-record-mappers'
 import { QuoteDeleteButton } from '@/components/quote-list/quote-delete-button'
 
 interface QuoteDetailViewProps {
@@ -26,14 +28,44 @@ function jobberLineTotal(line: QuoteRecord['jobberQuoteLines'][number]): string 
 export function QuoteDetailView({ quote }: QuoteDetailViewProps) {
   const materialTotal = itemMaterialTotal(quote)
   const subtotal = new Decimal(quote.subtotal)
-  const finalTotal = new Decimal(quote.finalTotal)
   const labourTotal = Decimal.max(subtotal.sub(materialTotal), 0)
+  const areaBreakdown = calculateAreaSubtotalBreakdown({
+    materials: mapSavedItemsToMaterials(quote.items),
+    selectedMin: quote.selectedMin,
+    selectedMax: quote.selectedMax,
+    areaFormulaSelections: {
+      interior: {
+        selectedMin: quote.interiorSelectedMin ?? quote.selectedMin,
+        selectedMax: quote.interiorSelectedMax ?? quote.selectedMax,
+      },
+      exterior: {
+        selectedMin: quote.exteriorSelectedMin ?? quote.selectedMin,
+        selectedMax: quote.exteriorSelectedMax ?? quote.selectedMax,
+      },
+    },
+    settings: quote.pricingSettingsSnapshot,
+  })
+  const jobberFinancialSummary = quote.jobberSnapshot && !quote.jobberSnapshot.jobExpensesError
+    ? quote.jobberSnapshot.financialSummary
+    : null
   const creatorName = quote.createdByName ?? quote.createdByEmail ?? 'Unknown user'
-  const optionSummaries = quote.options.map((option) => ({
-    id: option.id,
-    title: option.title,
-    finalTotal: new Decimal(option.finalTotal),
-  }))
+  const optionSummaries = quote.options.map((option) => {
+    const optionAreaBreakdown = calculateAreaSubtotalBreakdown({
+      materials: mapSavedItemsToMaterials(option.items),
+      selectedMin: option.selectedMin,
+      selectedMax: option.selectedMax,
+      settings: quote.pricingSettingsSnapshot,
+    })
+
+    return {
+      id: option.id,
+      title: option.title,
+      subtotal: new Decimal(option.subtotal),
+      finalTotal: new Decimal(option.finalTotal),
+      interiorSubtotal: optionAreaBreakdown.interior.subtotal,
+      exteriorSubtotal: optionAreaBreakdown.exterior.subtotal,
+    }
+  })
 
   return (
     <main className="mx-auto max-w-6xl px-4 py-8 sm:px-6 lg:px-8">
@@ -67,7 +99,20 @@ export function QuoteDetailView({ quote }: QuoteDetailViewProps) {
             <div className="flex justify-between gap-4"><dt className="text-slate-500">Created by</dt><dd className="min-w-0 truncate text-slate-950">{creatorName}</dd></div>
             <div className="flex justify-between"><dt className="text-slate-500">Total Working Days</dt><dd className="font-mono text-slate-950">{quote.workingDays}</dd></div>
             <div className="flex justify-between"><dt className="text-slate-500">Total Labour</dt><dd className="font-mono text-slate-950">{quote.labourPerDay}</dd></div>
-            <div className="rounded-lg bg-[var(--primary-soft)] px-4 py-3"><dt className="text-xs font-bold uppercase text-[var(--primary)]">Final ex GST</dt><dd className="mt-1 font-mono text-3xl font-bold text-slate-950">${quote.subtotal}</dd></div>
+            <div className="rounded-lg bg-[var(--primary-soft)] px-4 py-3">
+              <dt className="text-xs font-bold uppercase text-[var(--primary)]">Final subtotal ex GST</dt>
+              <dd className="mt-1 font-mono text-3xl font-bold text-slate-950">${areaBreakdown.finalSubtotal.toFixed(2)}</dd>
+              <div className="mt-3 grid gap-2 text-xs sm:grid-cols-2">
+                <div className="flex justify-between gap-2">
+                  <span className="text-slate-500">Interior</span>
+                  <span className="font-mono font-semibold text-slate-900">${areaBreakdown.interior.subtotal.toFixed(2)}</span>
+                </div>
+                <div className="flex justify-between gap-2">
+                  <span className="text-slate-500">Exterior</span>
+                  <span className="font-mono font-semibold text-slate-900">${areaBreakdown.exterior.subtotal.toFixed(2)}</span>
+                </div>
+              </div>
+            </div>
           </dl>
         </section>
 
@@ -99,6 +144,19 @@ export function QuoteDetailView({ quote }: QuoteDetailViewProps) {
             <JobberQuoteSummary quote={quote.jobberSnapshot} />
           </section>
         ) : null}
+
+        <section className="rounded-lg border border-white bg-white/90 p-5 shadow-[var(--shadow-soft)] lg:col-span-2">
+          <h2 className="text-sm font-bold uppercase text-slate-400">Internal Memos</h2>
+          <div className="mt-4 space-y-3">
+            {quote.memos.length === 0 ? <p className="text-sm text-slate-500">No internal memos saved.</p> : null}
+            {quote.memos.map((memo, index) => (
+              <article key={memo.id} className="rounded-lg border border-slate-100 bg-slate-50 px-4 py-3">
+                <h3 className="text-xs font-bold uppercase text-slate-400">Memo {index + 1}</h3>
+                <p className="mt-2 whitespace-pre-line text-sm leading-6 text-slate-700">{memo.body}</p>
+              </article>
+            ))}
+          </div>
+        </section>
 
         <section className="rounded-lg border border-white bg-white/90 p-5 shadow-[var(--shadow-soft)] lg:col-span-2">
           <h2 className="text-sm font-bold uppercase text-slate-400">App Product / Service</h2>
@@ -156,9 +214,8 @@ export function QuoteDetailView({ quote }: QuoteDetailViewProps) {
           <FinalSummary
             labourTotal={labourTotal}
             materialTotal={materialTotal}
-            subtotal={subtotal}
-            finalTotal={finalTotal}
-            jobberFinancialSummary={quote.jobberSnapshot?.financialSummary ?? null}
+            areaBreakdown={areaBreakdown}
+            jobberFinancialSummary={jobberFinancialSummary}
           />
           <OptionTotalsSummary options={optionSummaries} />
         </section>
