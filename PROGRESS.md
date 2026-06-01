@@ -269,6 +269,7 @@
 | 날짜 | 작업 | 담당 |
 |---|---|---|
 | 2026-05-29 | Materials active-area summary now shows Interior/Exterior Labour Days beside the material/subtotal prices instead of repeating Final subtotal. | Codex |
+| 2026-06-01 | Production Supabase `0013_add_quote_memos` and `0014_add_quote_area_formula_selections` applied after explicit user approval. Verified migration history, `quote_memos` table with RLS + `authenticated_all` policy, required `quotes.interior_selected_*`/`quotes.exterior_selected_*` columns, and zero existing quotes missing area formula selections. | Codex |
 | 2026-05-29 | Main quote formula selection split by Interior/Exterior. Materials now shows only the active area's Formula Results selector, and the final subtotal is the selected Interior subtotal plus selected Exterior subtotal. | Codex |
 | 2026-05-29 | Materials labour display narrowed to the active Interior/Exterior section only, with active section subtotal price shown in Materials and the separate right-side Area labour block removed from Calculation. | Codex |
 | 2026-05-29 | Materials panel now filters visible rows by the Interior/Exterior toggle, assigns newly added materials to the active section's default area when available, shows active section material/subtotal plus combined Final subtotal, and can collapse/expand like Options. | Codex |
