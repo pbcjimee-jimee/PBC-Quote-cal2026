@@ -1,12 +1,14 @@
 import Decimal from 'decimal.js'
 import Link from 'next/link'
+import type { ReactNode } from 'react'
 import type { QuoteRecord } from '@/lib/dev-data'
-import { getFormulaDescriptions } from '@/lib/calculator'
 import { JobberQuoteSummary } from '@/components/quote-form/customer-panel'
 import { FinalSummary } from '@/components/quote-form/final-summary'
 import { OptionTotalsSummary } from '@/components/quote-form/option-totals-summary'
 import { calculateAreaSubtotalBreakdown } from '@/components/quote-form/quote-calculation-totals'
+import type { AreaSubtotalGroup } from '@/components/quote-form/quote-calculation-totals'
 import { mapSavedItemsToMaterials } from '@/components/quote-form/quote-record-mappers'
+import type { AreaScope } from '@/components/quote-form/types'
 import { QuoteDeleteButton } from '@/components/quote-list/quote-delete-button'
 import { Card, SectionLabel } from '@/components/ui/card'
 import { Icons } from '@/components/ui/icons'
@@ -14,6 +16,8 @@ import { Icons } from '@/components/ui/icons'
 interface QuoteDetailViewProps {
   quote: QuoteRecord
 }
+
+const DETAIL_PREVIEW_LIMIT = 8
 
 function itemMaterialTotal(quote: QuoteRecord): Decimal {
   return quote.items.reduce(
@@ -51,6 +55,84 @@ function DRow({ label, mono, children }: { label: string; mono?: boolean; childr
       <dd className={mono ? 'mono' : ''}>{children}</dd>
     </div>
   )
+}
+
+function DetailMore({ count, children }: { count: number; children: ReactNode }) {
+  if (count <= 0) return null
+
+  return (
+    <details className="pbc-detailmore">
+      <summary>Show remaining {count} rows</summary>
+      <div className="pbc-detailmore__body">
+        {children}
+      </div>
+    </details>
+  )
+}
+
+function JobberLineDetail({ line }: { line: QuoteRecord['jobberQuoteLines'][number] }) {
+  const total = jobberLineTotal(line)
+
+  return (
+    <div className="pbc-dline" key={line.id}>
+      <div className="min-w-0">
+        <span className="pbc-dline__name">
+          {line.name}
+          <span className={`pbc-titem__tag ${line.kind === 'text' ? 'pbc-titem__tag--text' : ''}`}>
+            {line.kind === 'text' ? 'TEXT' : 'LINE'}
+          </span>
+        </span>
+        {line.description ? <p className="pbc-dline__desc">{line.description}</p> : null}
+      </div>
+      <div className="pbc-dline__price mono">
+        {line.kind === 'line_item' && total ? (
+          <>
+            <span>{line.quantity ?? '1'} x ${line.unitPrice ?? '0.00'}</span>
+            <b>${total}</b>
+          </>
+        ) : (
+          <i>Description only</i>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function MaterialDetail({ item }: { item: QuoteRecord['items'][number] }) {
+  return (
+    <div className="pbc-dmat" key={item.id}>
+      <span className="pbc-swatch pbc-swatch--sm" data-base={item.productNameSnapshot} />
+      <span className="pbc-dmat__main">
+        <span className="pbc-dmat__name">{item.productNameSnapshot}</span>
+        <span className="pbc-dmat__meta">
+          {item.areaNameSnapshot ?? 'No area'}
+          {item.workingDays && item.labourPerDay ? ` - ${item.workingDays} days x ${item.labourPerDay} labour` : ''}
+        </span>
+      </span>
+      <span className="pbc-dmat__qty mono">{item.quantity} x ${item.marketPriceSnapshot}</span>
+      <span className="pbc-dmat__line mono">${new Decimal(item.marketPriceSnapshot).mul(item.quantity).toFixed(2)}</span>
+    </div>
+  )
+}
+
+function getPreferredFormulaScopes(
+  quote: QuoteRecord,
+  areaBreakdown: { interior: AreaSubtotalGroup; exterior: AreaSubtotalGroup }
+): AreaScope[] {
+  const workType = quote.workType?.toLowerCase()
+  const scopesWithRows = new Set(
+    quote.items
+      .map((item) => item.areaScopeSnapshot)
+      .filter((scope): scope is AreaScope => scope === 'interior' || scope === 'exterior')
+  )
+
+  if (workType === 'interior' && scopesWithRows.has('interior')) return ['interior']
+  if (workType === 'exterior' && scopesWithRows.has('exterior')) return ['exterior']
+
+  const scopes: AreaScope[] = []
+  if (scopesWithRows.has('interior') || !areaBreakdown.interior.subtotal.isZero()) scopes.push('interior')
+  if (scopesWithRows.has('exterior') || !areaBreakdown.exterior.subtotal.isZero()) scopes.push('exterior')
+  return scopes.length ? scopes : ['interior', 'exterior']
 }
 
 export function QuoteDetailView({ quote }: QuoteDetailViewProps) {
@@ -96,16 +178,12 @@ export function QuoteDetailView({ quote }: QuoteDetailViewProps) {
   })
 
   const finalSubtotal = areaBreakdown.finalSubtotal
-  const formulaDescriptions = getFormulaDescriptions(quote.pricingSettingsSnapshot)
   const lineItemsTotal = quoteLineItemsTotal(quote.jobberQuoteLines)
-
-  const formulaRows = [
-    { num: 1, label: 'F1', name: formulaDescriptions.formula1Name, total: quote.formula1Total },
-    { num: 2, label: 'F2', name: formulaDescriptions.formula2Name, total: quote.formula2Total },
-    { num: 3, label: 'F3', name: formulaDescriptions.formula3Name, total: quote.formula3Total },
-    { num: 4, label: 'F4', name: formulaDescriptions.formula4Name, total: quote.formula4Total },
-    { num: 5, label: 'F5', name: formulaDescriptions.formula5Name, total: quote.formula5Total },
-  ]
+  const visibleJobberLines = quote.jobberQuoteLines.slice(0, DETAIL_PREVIEW_LIMIT)
+  const hiddenJobberLines = quote.jobberQuoteLines.slice(DETAIL_PREVIEW_LIMIT)
+  const visibleItems = quote.items.slice(0, DETAIL_PREVIEW_LIMIT)
+  const hiddenItems = quote.items.slice(DETAIL_PREVIEW_LIMIT)
+  const formulaScopes = getPreferredFormulaScopes(quote, areaBreakdown)
 
   return (
     <main>
@@ -170,23 +248,48 @@ export function QuoteDetailView({ quote }: QuoteDetailViewProps) {
           <Card>
             <SectionLabel
               icon={Icons.layers({ size: 16 })}
-              aside={<span className="pbc-chip">Range F{quote.selectedMin}–F{quote.selectedMax}</span>}
+              aside={formulaScopes.length === 1 ? (
+                <span className="pbc-chip">
+                  Range F{areaBreakdown[formulaScopes[0]].selectedMin}-F{areaBreakdown[formulaScopes[0]].selectedMax}
+                </span>
+              ) : undefined}
             >
               Formula results
             </SectionLabel>
             <div className="pbc-dformulas">
-              {formulaRows.map((row) => {
-                const mark = quote.selectedMin === row.num ? 'lo' : quote.selectedMax === row.num ? 'hi' : ''
+              {formulaScopes.map((scope, scopeIndex) => {
+                const group = areaBreakdown[scope]
+                const label = scope === 'interior' ? 'Interior' : 'Exterior'
+
                 return (
-                  <div key={row.label} className={`pbc-dformula ${mark ? 'pbc-dformula--' + mark : ''}`}>
-                    <span className="pbc-dformula__code">{row.label}</span>
-                    <span className="pbc-dformula__short">{row.name}</span>
-                    {mark ? (
-                      <span className={`pbc-dformula__mark pbc-dformula__mark--${mark}`}>{mark === 'lo' ? 'LOW' : 'HIGH'}</span>
-                    ) : (
-                      <span />
-                    )}
-                    <span className="mono pbc-dformula__amt">${row.total}</span>
+                  <div key={scope} className={scopeIndex > 0 ? 'pbc-divider' : ''}>
+                    {formulaScopes.length > 1 ? (
+                      <div className="mb-3 flex items-center justify-between gap-3">
+                        <h3 className="pbc-paneltitle">{label}</h3>
+                        <span className="pbc-chip">Range F{group.selectedMin}-F{group.selectedMax}</span>
+                      </div>
+                    ) : null}
+                    <div className="pbc-dformulas">
+                      {group.results.map((row) => {
+                        const mark = group.selectedMin === row.formulaNum ? 'lo' : group.selectedMax === row.formulaNum ? 'hi' : ''
+                        return (
+                          <div key={`${scope}-${row.formulaNum}`} className={`pbc-dformula ${mark ? 'pbc-dformula--' + mark : ''}`}>
+                            <span className="pbc-dformula__code">F{row.formulaNum}</span>
+                            <span className="pbc-dformula__short">{row.name}</span>
+                            {mark ? (
+                              <span className={`pbc-dformula__mark pbc-dformula__mark--${mark}`}>{mark === 'lo' ? 'LOW' : 'HIGH'}</span>
+                            ) : (
+                              <span />
+                            )}
+                            <span className="mono pbc-dformula__amt">${row.total.toFixed(2)}</span>
+                          </div>
+                        )
+                      })}
+                      <div className="pbc-dlines__total">
+                        <span>{label} selected subtotal</span>
+                        <b className="mono">${group.subtotal.toFixed(2)}</b>
+                      </div>
+                    </div>
                   </div>
                 )
               })}
@@ -198,6 +301,14 @@ export function QuoteDetailView({ quote }: QuoteDetailViewProps) {
               ) : null}
             </div>
           </Card>
+
+          <FinalSummary
+            labourTotal={labourTotal}
+            materialTotal={materialTotal}
+            areaBreakdown={areaBreakdown}
+            jobberFinancialSummary={jobberFinancialSummary}
+            className="pbc-dspan"
+          />
 
           {/* Jobber data */}
           {quote.jobberSnapshot ? (
@@ -236,32 +347,10 @@ export function QuoteDetailView({ quote }: QuoteDetailViewProps) {
             </SectionLabel>
             <div className="pbc-dlines">
               {quote.jobberQuoteLines.length === 0 ? <p className="pbc-empty">No product or service lines saved.</p> : null}
-              {quote.jobberQuoteLines.map((line) => {
-                const total = jobberLineTotal(line)
-                return (
-                  <div className="pbc-dline" key={line.id}>
-                    <div className="min-w-0">
-                      <span className="pbc-dline__name">
-                        {line.name}
-                        <span className={`pbc-titem__tag ${line.kind === 'text' ? 'pbc-titem__tag--text' : ''}`}>
-                          {line.kind === 'text' ? 'TEXT' : 'LINE'}
-                        </span>
-                      </span>
-                      {line.description ? <p className="pbc-dline__desc">{line.description}</p> : null}
-                    </div>
-                    <div className="pbc-dline__price mono">
-                      {line.kind === 'line_item' && total ? (
-                        <>
-                          <span>{line.quantity ?? '1'} x ${line.unitPrice ?? '0.00'}</span>
-                          <b>${total}</b>
-                        </>
-                      ) : (
-                        <i>Description only</i>
-                      )}
-                    </div>
-                  </div>
-                )
-              })}
+              {visibleJobberLines.map((line) => <JobberLineDetail key={line.id} line={line} />)}
+              <DetailMore count={hiddenJobberLines.length}>
+                {hiddenJobberLines.map((line) => <JobberLineDetail key={line.id} line={line} />)}
+              </DetailMore>
             </div>
           </Card>
 
@@ -275,35 +364,16 @@ export function QuoteDetailView({ quote }: QuoteDetailViewProps) {
             </SectionLabel>
             <div className="pbc-dmats">
               {quote.items.length === 0 ? <p className="pbc-empty">No materials saved.</p> : null}
-              {quote.items.map((item) => (
-                <div className="pbc-dmat" key={item.id}>
-                  <span className="pbc-swatch pbc-swatch--sm" data-base={item.productNameSnapshot} />
-                  <span className="pbc-dmat__main">
-                    <span className="pbc-dmat__name">{item.productNameSnapshot}</span>
-                    <span className="pbc-dmat__meta">
-                      {item.areaNameSnapshot ?? 'No area'}
-                      {item.workingDays && item.labourPerDay ? ` - ${item.workingDays} days x ${item.labourPerDay} labour` : ''}
-                    </span>
-                  </span>
-                  <span className="pbc-dmat__qty mono">{item.quantity} x ${item.marketPriceSnapshot}</span>
-                  <span className="pbc-dmat__line mono">${new Decimal(item.marketPriceSnapshot).mul(item.quantity).toFixed(2)}</span>
-                </div>
-              ))}
+              {visibleItems.map((item) => <MaterialDetail key={item.id} item={item} />)}
+              <DetailMore count={hiddenItems.length}>
+                {hiddenItems.map((item) => <MaterialDetail key={item.id} item={item} />)}
+              </DetailMore>
               <div className="pbc-dlines__total">
                 <span>Material total (RRP)</span>
                 <b className="mono">${materialTotal.toFixed(2)}</b>
               </div>
             </div>
           </Card>
-
-          {/* Final summary */}
-          <FinalSummary
-            labourTotal={labourTotal}
-            materialTotal={materialTotal}
-            areaBreakdown={areaBreakdown}
-            jobberFinancialSummary={jobberFinancialSummary}
-            className="pbc-dspan"
-          />
 
           {optionSummaries.length ? (
             <Card className="pbc-dspan">

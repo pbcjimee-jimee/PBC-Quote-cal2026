@@ -1,6 +1,7 @@
 'use server'
 
 import { revalidatePath } from 'next/cache'
+import { after } from 'next/server'
 import {
   type QuoteRecord,
 } from '@/lib/dev-data'
@@ -444,6 +445,31 @@ async function deleteCreatedQuote(
   await supabase.from('quotes').delete().eq('id', quoteId)
 }
 
+async function scheduleSavedQuoteToJobber(
+  params: Parameters<typeof syncSavedQuoteToJobber>[0],
+  revalidatePaths: string[]
+): Promise<void> {
+  if (!params.jobberQuoteId || (params.lines.length === 0 && params.deletedJobberLineItemIds.length === 0)) return
+
+  const runSync = async () => {
+    await syncSavedQuoteToJobber(params)
+    for (const path of revalidatePaths) {
+      revalidatePath(path)
+    }
+  }
+
+  if (process.env.NODE_ENV === 'test') {
+    await runSync()
+    return
+  }
+
+  try {
+    after(runSync)
+  } catch {
+    await runSync()
+  }
+}
+
 export async function createQuote(input: unknown): Promise<ActionResult<{ id: string }>> {
   const parsed = quoteSchema.safeParse(input)
   if (!parsed.success) {
@@ -558,7 +584,7 @@ export async function createQuote(input: unknown): Promise<ActionResult<{ id: st
     return { ok: false, error: memosResult.error }
   }
 
-  await syncSavedQuoteToJobber({
+  await scheduleSavedQuoteToJobber({
     supabase,
     quoteId: quote.id,
     userId: userData.user.id,
@@ -567,7 +593,7 @@ export async function createQuote(input: unknown): Promise<ActionResult<{ id: st
     lines: parsed.data.jobberQuoteLines,
     deletedJobberLineItemIds: parsed.data.deletedJobberLineItemIds,
     finalTotal,
-  })
+  }, ['/quotes', `/quotes/${quote.id}`])
 
   revalidatePath('/quotes')
   return { ok: true, data: { id: quote.id } }
@@ -697,7 +723,7 @@ export async function updateQuote(input: unknown): Promise<ActionResult<{ id: st
   const memosError = await replaceQuoteMemos(supabase, id, parsed.data.memos, userData.user.id)
   if (memosError) return { ok: false, error: memosError }
 
-  await syncSavedQuoteToJobber({
+  await scheduleSavedQuoteToJobber({
     supabase,
     quoteId: id,
     userId: userData.user.id,
@@ -706,7 +732,7 @@ export async function updateQuote(input: unknown): Promise<ActionResult<{ id: st
     lines: parsed.data.jobberQuoteLines,
     deletedJobberLineItemIds: parsed.data.deletedJobberLineItemIds,
     finalTotal,
-  })
+  }, ['/quotes', `/quotes/${id}`])
 
   revalidatePath('/quotes')
   revalidatePath(`/quotes/${id}`)

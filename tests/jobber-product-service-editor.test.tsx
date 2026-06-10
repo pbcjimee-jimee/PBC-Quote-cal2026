@@ -67,14 +67,15 @@ describe('JobberProductServiceEditor', () => {
     expect(markup).not.toContain('aria-label="Text unit price"')
   })
 
-  it('keeps only the Product Service row list as an internal scroll area', () => {
+  it('keeps the Product Service row list scrollable for long saved Jobber quotes', () => {
     const markup = renderToStaticMarkup(createElement(JobberProductServiceEditor, {
       value: lines,
       onChange: () => undefined,
     }))
 
     expect(markup).toContain('product-service-scroll-list')
-    expect(markup).toContain('max-h-[30rem]')
+    expect(markup).toContain('pbc-product-service-scroll')
+    expect(markup).not.toContain('max-h-[30rem]')
     expect(markup).toContain('overflow-y-auto')
   })
 
@@ -148,7 +149,8 @@ describe('JobberProductServiceEditor', () => {
     expect(markup).toContain('aria-label="Delete Exterior repaint"')
     expect(markup).toContain('aria-label="Delete Access notes"')
     expect(markup).toContain('pbc-iconbtn--compact')
-    expect(markup).toContain('>X</button>')
+    expect(markup).toContain('d="M4.5 5.5h11')
+    expect(markup).not.toContain('>X</button>')
     expect(markup).not.toContain('aria-label="Move Exterior repaint')
     expect(markup).not.toContain('aria-label="Move Access notes')
     expect(markup).not.toContain('>Delete</button>')

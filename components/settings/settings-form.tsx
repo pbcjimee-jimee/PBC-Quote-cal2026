@@ -180,6 +180,46 @@ const PRODUCT_SERVICE_CSV_TEMPLATE_ROWS = [
   ['Touch up', 'Patch and repaint visible marks', 'Service', '120.00', '80.00', 'false', '60', 'false', '', '', 'true', 'true'],
 ]
 
+const SETTINGS_TABLE_PAGE_SIZE = 25
+
+function getPageCount(total: number): number {
+  return Math.max(Math.ceil(total / SETTINGS_TABLE_PAGE_SIZE), 1)
+}
+
+function getSafePage(page: number, total: number): number {
+  return Math.min(Math.max(page, 1), getPageCount(total))
+}
+
+function SettingsTablePager({
+  page,
+  total,
+  onPageChange,
+}: {
+  page: number
+  total: number
+  onPageChange: (page: number) => void
+}) {
+  const safePage = getSafePage(page, total)
+  const pageCount = getPageCount(total)
+  const start = total === 0 ? 0 : (safePage - 1) * SETTINGS_TABLE_PAGE_SIZE + 1
+  const end = Math.min(safePage * SETTINGS_TABLE_PAGE_SIZE, total)
+
+  return (
+    <div className="pbc-tablepager">
+      <span>Showing {start}-{end} of {total}</span>
+      <div>
+        <button type="button" onClick={() => onPageChange(safePage - 1)} disabled={safePage <= 1} className="pbc-btn pbc-btn--ghost pbc-btn--sm">
+          Previous
+        </button>
+        <span className="mono">{safePage} / {pageCount}</span>
+        <button type="button" onClick={() => onPageChange(safePage + 1)} disabled={safePage >= pageCount} className="pbc-btn pbc-btn--ghost pbc-btn--sm">
+          Next
+        </button>
+      </div>
+    </div>
+  )
+}
+
 function buildMaterialCsv(products: ProductRecord[]): string {
   const lines = products.map((product) => {
     const price = product.rrpPrice ?? product.marketPrice
@@ -820,10 +860,12 @@ export function SettingsForm({
   const [isPending, startTransition] = useTransition()
   const [activeTab, setActiveTab] = useState<'labour' | 'material' | 'productService' | 'template' | 'area'>('labour')
   const [materialQuery, setMaterialQuery] = useState('')
+  const [materialPage, setMaterialPage] = useState(1)
   const [materialProducts, setMaterialProducts] = useState(initialProducts)
   const [editingProductId, setEditingProductId] = useState<string | null>(null)
   const [materialMessage, setMaterialMessage] = useState<string | null>(null)
   const [productServiceQuery, setProductServiceQuery] = useState('')
+  const [productServicePage, setProductServicePage] = useState(1)
   const [productServices, setProductServices] = useState(initialProductServices)
   const [quoteLineTemplates, setQuoteLineTemplates] = useState(initialQuoteLineTemplates)
   const [editingProductServiceId, setEditingProductServiceId] = useState<string | null>(null)
@@ -977,6 +1019,7 @@ export function SettingsForm({
 
         setMaterialProducts((current) => [result.data, ...current])
         setMaterialQuery('')
+        setMaterialPage(1)
         resetNewMaterialForm()
         setMaterialMessage('Material item added.')
       } else {
@@ -1082,6 +1125,7 @@ export function SettingsForm({
       if (result.ok) {
         setProductServices((current) => [result.data, ...current])
         setProductServiceQuery('')
+        setProductServicePage(1)
         resetNewProductServiceForm()
         setProductServiceMessage('Product & Service item added.')
       } else {
@@ -1324,6 +1368,13 @@ export function SettingsForm({
       .includes(needle)
   })
 
+  const safeMaterialPage = getSafePage(materialPage, filteredProducts.length)
+  const materialPageStart = (safeMaterialPage - 1) * SETTINGS_TABLE_PAGE_SIZE
+  const pagedProducts = filteredProducts.slice(materialPageStart, materialPageStart + SETTINGS_TABLE_PAGE_SIZE)
+  const safeProductServicePage = getSafePage(productServicePage, filteredProductServices.length)
+  const productServicePageStart = (safeProductServicePage - 1) * SETTINGS_TABLE_PAGE_SIZE
+  const pagedProductServices = filteredProductServices.slice(productServicePageStart, productServicePageStart + SETTINGS_TABLE_PAGE_SIZE)
+
   const tabs: Array<{ key: typeof activeTab; label: string; icon: React.ReactNode }> = [
     { key: 'labour', label: 'Labour Rates', icon: Icons.dollar({ size: 16 }) },
     { key: 'material', label: 'Material', icon: Icons.palette({ size: 16 }) },
@@ -1347,7 +1398,7 @@ export function SettingsForm({
         ))}
       </div>
 
-      <div className="pbc-card overflow-hidden">
+      <div className="pbc-card">
       {activeTab === 'labour' ? (
         <div className="pbc-formsection pbc-formsection--center pbc-formsection--narrow">
           <section className="pbc-formgroup">
@@ -1419,7 +1470,15 @@ export function SettingsForm({
               <p className="pbc-panelsub">{filteredProducts.length} materials</p>
             </div>
             <div className="pbc-panelhead__actions w-full sm:w-auto">
-              <input value={materialQuery} onChange={(event) => setMaterialQuery(event.target.value)} className="pbc-input sm:max-w-xs" placeholder="Search material..." />
+              <input
+                value={materialQuery}
+                onChange={(event) => {
+                  setMaterialQuery(event.target.value)
+                  setMaterialPage(1)
+                }}
+                className="pbc-input sm:max-w-xs"
+                placeholder="Search material..."
+              />
               <input
                 ref={fileInputRef}
                 type="file"
@@ -1463,7 +1522,7 @@ export function SettingsForm({
             disabled={isPending}
           />
           <MaterialProductsTable
-            products={filteredProducts}
+            products={pagedProducts}
             editingProductId={editingProductId}
             editForm={editForm}
             onEdit={startEdit}
@@ -1473,6 +1532,7 @@ export function SettingsForm({
             onFieldChange={setEditField}
             disabled={isPending}
           />
+          <SettingsTablePager page={safeMaterialPage} total={filteredProducts.length} onPageChange={setMaterialPage} />
           {materialMessage ? <p className="pbc-alert pbc-alert--success mt-3">{materialMessage}</p> : null}
           {materialImportError ? <p className="pbc-alert pbc-alert--danger mt-3">{materialImportError}</p> : null}
         </div>
@@ -1484,7 +1544,15 @@ export function SettingsForm({
               <p className="pbc-panelsub">{filteredProductServices.length} Product & Service items</p>
             </div>
             <div className="pbc-panelhead__actions w-full sm:w-auto">
-              <input value={productServiceQuery} onChange={(event) => setProductServiceQuery(event.target.value)} className="pbc-input sm:max-w-xs" placeholder="Search product or service..." />
+              <input
+                value={productServiceQuery}
+                onChange={(event) => {
+                  setProductServiceQuery(event.target.value)
+                  setProductServicePage(1)
+                }}
+                className="pbc-input sm:max-w-xs"
+                placeholder="Search product or service..."
+              />
               <input
                 ref={productServiceFileInputRef}
                 type="file"
@@ -1514,7 +1582,7 @@ export function SettingsForm({
             disabled={isPending}
           />
           <ProductServicesTable
-            productServices={filteredProductServices}
+            productServices={pagedProductServices}
             editingProductServiceId={editingProductServiceId}
             editForm={productServiceEditForm}
             onEdit={startProductServiceEdit}
@@ -1524,6 +1592,7 @@ export function SettingsForm({
             onFieldChange={setProductServiceEditField}
             disabled={isPending}
           />
+          <SettingsTablePager page={safeProductServicePage} total={filteredProductServices.length} onPageChange={setProductServicePage} />
           {productServiceMessage ? <p className="pbc-alert pbc-alert--success mt-3">{productServiceMessage}</p> : null}
           {productServiceImportError ? <p className="pbc-alert pbc-alert--danger mt-3">{productServiceImportError}</p> : null}
         </div>

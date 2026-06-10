@@ -21,14 +21,14 @@ export function MaterialRow({ item, areas, onChange, onRemove }: MaterialRowProp
   }
 
   return (
-    <div className="pbc-softpanel">
-      <div className="flex items-start justify-between gap-3">
+    <div className="pbc-softpanel pbc-materialrow">
+      <div className="pbc-materialrow__head">
         <input
           type="text"
           value={item.name}
           onChange={(event) => onChange({ ...item, name: event.target.value })}
           aria-label="Material name"
-          className="pbc-input min-w-0 flex-1 font-bold"
+          className="pbc-input pbc-materialrow__name min-w-0 flex-1 font-bold"
         />
         <button
           type="button"
@@ -41,7 +41,7 @@ export function MaterialRow({ item, areas, onChange, onRemove }: MaterialRowProp
           </svg>
         </button>
       </div>
-      <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-[4.25rem_5.25rem_minmax(8rem,1fr)_6.25rem_6.25rem] xl:items-end">
+      <div className="pbc-materialrow__fields pbc-materialrow__fields--pricing">
         <DecimalInput
           label="Qty"
           value={item.quantity}
@@ -58,7 +58,7 @@ export function MaterialRow({ item, areas, onChange, onRemove }: MaterialRowProp
           inputClassName="pbc-input min-w-0 font-semibold"
           warningClassName="block text-[11px] font-normal text-amber-600"
         />
-        <label className="pbc-field min-w-0 sm:col-span-2 xl:col-span-1">
+        <label className="pbc-field pbc-materialrow__area min-w-0">
           <span className="pbc-field__label">Area</span>
           <select
             value={item.areaId ?? ''}

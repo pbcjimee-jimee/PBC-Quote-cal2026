@@ -1,5 +1,6 @@
 import Link from 'next/link'
 import type { QuoteRecord } from '@/lib/dev-data'
+import { buttonClassName } from '@/components/ui/card'
 import { Icons } from '@/components/ui/icons'
 import { QuoteDeleteButton } from './quote-delete-button'
 
@@ -66,7 +67,7 @@ export function QuoteCard({ quote }: { quote: QuoteRecord }) {
           <div className="mono text-lg font-bold text-[var(--foreground)]">${quote.subtotal}</div>
           <div className="text-xs font-semibold text-[var(--muted-2)]">ex GST</div>
           <div className="mt-3 flex flex-wrap items-center justify-end gap-2">
-            <Link href={`/quotes/${quote.id}`} className="pbc-btn pbc-btn--sm" style={{ background: 'var(--primary-soft)', color: 'var(--primary)' }}>
+            <Link href={`/quotes/${quote.id}`} className={buttonClassName({ variant: 'soft', size: 'sm' })}>
               View
             </Link>
             <Link href={`/quotes/${quote.id}/edit`} className="pbc-btn pbc-btn--ghost pbc-btn--sm">

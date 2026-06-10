@@ -1,5 +1,7 @@
 import type { FormulaResult } from '@/lib/calculator'
 import type { AreaRecord } from '@/lib/areas/types'
+import { Button } from '@/components/ui/card'
+import { Icons } from '@/components/ui/icons'
 import { FormulaResults } from './formula-results'
 import { MaterialsPanel } from './materials-panel'
 import type { AreaSubtotalBreakdown } from './quote-calculation-totals'
@@ -39,13 +41,13 @@ export function QuoteOptionsPanel({
           <h2 className="pbc-paneltitle">Options</h2>
           <p className="pbc-panelsub">Optional add-ons are priced separately from the main quote.</p>
         </div>
-        <button
+        <Button
           type="button"
           onClick={onAddOption}
-          className="pbc-btn pbc-btn--ghost"
+          variant="ghost"
         >
-          + Add Option
-        </button>
+          {Icons.plus({ size: 15 })} Add Option
+        </Button>
       </div>
 
       {options.length === 0 ? (
@@ -56,8 +58,8 @@ export function QuoteOptionsPanel({
         {options.map((option, index) => {
           const totals = optionTotals[option.id]
           return (
-            <div key={option.id} className="pbc-softpanel">
-              <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--border-soft)] bg-white p-3">
+            <div key={option.id} className="pbc-softpanel pbc-optioncard">
+              <div className="pbc-optioncard__head">
                 <div className="min-w-0 flex-1">
                   <label className="sr-only" htmlFor={`${option.id}-title`}>Option title</label>
                   <input
@@ -68,32 +70,34 @@ export function QuoteOptionsPanel({
                     placeholder={`Option ${index + 1}`}
                   />
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                   {totals ? (
                     <span className="flex items-baseline gap-1">
                       <span className="pbc-moneytext text-sm">${totals.subtotal}</span>
                       <span className="pbc-listitem__meta">Ex GST</span>
                     </span>
                   ) : null}
-                  <button
+                  <Button
                     type="button"
                     onClick={() => onChangeOption({ ...option, isExpanded: !option.isExpanded })}
-                    className="pbc-btn pbc-btn--ghost pbc-btn--sm"
+                    variant="ghost"
+                    size="sm"
                   >
                     {option.isExpanded ? 'Collapse' : 'Expand'}
-                  </button>
+                  </Button>
                   <button
                     type="button"
                     onClick={() => onRemoveOption(option.id)}
-                    className="pbc-btn pbc-btn--danger pbc-btn--sm"
+                    className="pbc-iconbtn pbc-iconbtn--danger"
+                    aria-label={`Delete ${option.title || `Option ${index + 1}`}`}
                   >
-                    Delete
+                    {Icons.trash({ size: 14 })}
                   </button>
                 </div>
               </div>
 
               {option.isExpanded ? (
-                <div className="space-y-5 p-4">
+                <div className="pbc-optioncard__body space-y-5">
                   <MaterialsPanel
                     materials={option.materials}
                     areas={areas}

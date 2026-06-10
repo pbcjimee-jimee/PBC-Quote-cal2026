@@ -17,7 +17,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   }
 
   return (
-    <div className="min-h-screen text-[var(--foreground)] transition-[padding-left] duration-200 lg:pl-[var(--app-sidebar-width,15.5rem)]">
+    <div className="pbc-appshell min-h-screen text-[var(--foreground)] transition-[padding-left] duration-200 lg:pl-[var(--app-sidebar-width,15.5rem)]">
       <AppHeader userProfile={getAuthUserProfile(user)} />
       {children}
     </div>

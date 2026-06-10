@@ -7,6 +7,7 @@ import { PaintSearch } from './paint-search'
 import type { AreaFormulaSelections, FormulaNumber, MaterialItem } from './types'
 import type { AreaSubtotalBreakdown } from './quote-calculation-totals'
 import type { AreaRecord, AreaScope } from '@/lib/areas/types'
+import { Icons } from '@/components/ui/icons'
 
 interface MaterialsPanelProps {
   materials: MaterialItem[]
@@ -65,7 +66,7 @@ function getAreasForMaterial(item: MaterialItem, visibleAreas: AreaRecord[], all
 
 function LabourSummaryRow({ label, totals }: { label: string; totals: LabourTotals }) {
   return (
-    <div className="grid grid-cols-[minmax(6.5rem,1fr)_repeat(3,minmax(4.75rem,auto))] items-center gap-2 py-2 text-xs">
+    <div className="pbc-laboursummary grid grid-cols-[minmax(6.5rem,1fr)_repeat(3,minmax(4.75rem,auto))] items-center gap-2 py-2 text-xs">
       <span className="font-bold text-[var(--foreground)]">{label}</span>
       <span className="text-right">
         <span className="block text-[10px] font-bold uppercase text-[var(--muted-2)]">Working Days</span>
@@ -80,6 +81,38 @@ function LabourSummaryRow({ label, totals }: { label: string; totals: LabourTota
         <span className="mono font-semibold text-[var(--foreground)]">{totals.labourDays.toFixed(2)}</span>
       </span>
     </div>
+  )
+}
+
+function HiddenMaterialSummary({ item, onRemove }: { item: MaterialItem; onRemove: () => void }) {
+  const total = lineTotal(item.marketPrice, item.quantity)
+  const scopeLabel = item.areaScope === 'interior'
+    ? 'Interior'
+    : item.areaScope === 'exterior'
+      ? 'Exterior'
+      : 'No area'
+  const areaLabel = item.areaName ? `${scopeLabel} - ${item.areaName}` : scopeLabel
+
+  return (
+    <li className="pbc-hiddenmat">
+      <span className="min-w-0">
+        <span className="pbc-titletext block truncate">{item.name}</span>
+        <span className="pbc-listitem__meta">{areaLabel}</span>
+      </span>
+      <span className="mono shrink-0 text-right text-xs font-bold text-[var(--foreground)]">
+        {item.quantity} x ${new Decimal(item.marketPrice || 0).toFixed(2)}
+        <b className="block text-sm">${total.toFixed(2)}</b>
+      </span>
+      <button
+        type="button"
+        className="pbc-iconbtn pbc-iconbtn--danger pbc-iconbtn--compact shrink-0"
+        aria-label={`Remove hidden material ${item.name}`}
+        onClick={onRemove}
+        title="Remove material"
+      >
+        {Icons.trash({ size: 13 })}
+      </button>
+    </li>
   )
 }
 
@@ -101,15 +134,20 @@ export function MaterialsPanel({
     () => hasAreaSections ? materials.filter((item) => item.areaScope === areaScope) : materials,
     [areaScope, hasAreaSections, materials]
   )
+  const hiddenMaterials = useMemo(
+    () => hasAreaSections ? materials.filter((item) => item.areaScope !== areaScope) : [],
+    [areaScope, hasAreaSections, materials]
+  )
   const visibleMaterialTotal = visibleMaterials.reduce((total, item) => total.add(lineTotal(item.marketPrice, item.quantity)), new Decimal(0))
   const labourByArea = useMemo(() => ({
     interior: calculateLabourTotals(materials.filter((item) => item.areaScope === 'interior')),
     exterior: calculateLabourTotals(materials.filter((item) => item.areaScope === 'exterior')),
   }), [materials])
   const activeLabourTotals = labourByArea[areaScope]
-  const hiddenMaterialCount = materials.length - visibleMaterials.length
+  const hiddenMaterialCount = hiddenMaterials.length
   const activeScopeLabel = areaScope === 'interior' ? 'Interior' : 'Exterior'
   const activeAreaSubtotal = areaBreakdown?.[areaScope].subtotal
+  const hasVisibleMaterials = visibleMaterials.length > 0
 
   function changeAreaScope(nextScope: AreaScope) {
     setAreaScope(nextScope)
@@ -182,27 +220,36 @@ export function MaterialsPanel({
               No {areaScope} materials in this section.
             </p>
           ) : (
-            <div className="space-y-2">
+            <div className="pbc-materiallist">
               {visibleMaterials.map((item) => (
                 <MaterialRow key={item.id} item={item} areas={getAreasForMaterial(item, filteredAreas, areas)} onChange={onChange} onRemove={() => onRemove(item.id)} />
               ))}
             </div>
           )}
           {hiddenMaterialCount > 0 ? (
-            <p className="pbc-empty">
-              {hiddenMaterialCount} material {hiddenMaterialCount === 1 ? 'row is' : 'rows are'} hidden by the {activeScopeLabel} filter.
-            </p>
+            <div className="pbc-empty pbc-materialhiddennotice">
+              <p className="m-0">
+                {hiddenMaterialCount} material {hiddenMaterialCount === 1 ? 'row is' : 'rows are'} hidden by the {activeScopeLabel} filter.
+              </p>
+              <ul className="pbc-hiddenmatlist">
+                {hiddenMaterials.map((item) => (
+                  <HiddenMaterialSummary key={item.id} item={item} onRemove={() => onRemove(item.id)} />
+                ))}
+              </ul>
+            </div>
           ) : null}
-          {hasAreaSections && areaBreakdown && areaFormulaSelections && onAreaFormulaSelectionChange ? (
-            <FormulaResults
-              title={`${activeScopeLabel} Formula Results`}
-              results={areaBreakdown[areaScope].results}
-              selectedMin={areaFormulaSelections[areaScope].selectedMin}
-              selectedMax={areaFormulaSelections[areaScope].selectedMax}
-              onSelectedMinChange={(value) => onAreaFormulaSelectionChange(areaScope, 'selectedMin', value)}
-              onSelectedMaxChange={(value) => onAreaFormulaSelectionChange(areaScope, 'selectedMax', value)}
-              namePrefix={`materials-${areaScope}`}
-            />
+          {hasVisibleMaterials && hasAreaSections && areaBreakdown && areaFormulaSelections && onAreaFormulaSelectionChange ? (
+            <div className="pbc-materialformula">
+              <FormulaResults
+                title={`${activeScopeLabel} Formula Results`}
+                results={areaBreakdown[areaScope].results}
+                selectedMin={areaFormulaSelections[areaScope].selectedMin}
+                selectedMax={areaFormulaSelections[areaScope].selectedMax}
+                onSelectedMinChange={(value) => onAreaFormulaSelectionChange(areaScope, 'selectedMin', value)}
+                onSelectedMaxChange={(value) => onAreaFormulaSelectionChange(areaScope, 'selectedMax', value)}
+                namePrefix={`materials-${areaScope}`}
+              />
+            </div>
           ) : null}
         </>
       ) : (
@@ -222,6 +269,7 @@ export function MaterialsPanel({
         </div>
       )}
 
+      {hasVisibleMaterials ? (
       <div className="pbc-divider mt-4 text-sm">
         <div className="flex justify-between">
           <span className="text-[var(--muted)]">{activeScopeLabel} material total</span>
@@ -243,6 +291,7 @@ export function MaterialsPanel({
           </div>
         </div>
       </div>
+      ) : null}
     </section>
   )
 }

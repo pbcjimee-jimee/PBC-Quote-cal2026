@@ -116,3 +116,12 @@ Desktop app navigation uses a left sidebar with Overview, New Quote, and Setting
 The quote form workspace should use the freed horizontal space when the sidebar is collapsed. Main layout padding should therefore be driven by the current sidebar width instead of a hard-coded `lg:pl-64` value.
 
 Related plan: `docs/superpowers/plans/2026-05-27-quote-workspace-area-subtotals.md`.
+
+---
+
+## Current Styling Source
+
+> Legacy overview. Current visual styling source of truth is
+> `docs/UI-DESIGN-SYSTEM.md`. Use this file for page inventory and historical
+> context only; when token, radius, shadow, component class, or responsive
+> guidance conflicts, follow `docs/UI-DESIGN-SYSTEM.md`.

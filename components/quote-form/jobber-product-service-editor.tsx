@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState, type ChangeEvent, type DragEvent } from 'react'
+import { Icons } from '@/components/ui/icons'
 import type { JobberQuoteLineItemDraft } from './types'
 import type { ProductServiceRecord } from '@/lib/product-services/types'
 import type { QuoteLineTemplateRecord } from '@/lib/quote-line-templates/types'
@@ -319,7 +320,7 @@ export function JobberProductServiceEditor({
             stopProductServiceDragScroll()
           }
         }}
-        className="product-service-scroll-list max-h-[30rem] space-y-3 overflow-y-auto pr-1"
+        className="product-service-scroll-list pbc-product-service-scroll space-y-3 overflow-y-auto pr-2"
       >
         {value.map((line) => {
           const isDropTarget = dropTarget?.id === line.id
@@ -464,14 +465,14 @@ function PricedLineRow({
               placeholder="Line item name"
             />
             {isLookupActive && filteredProductServices.length > 0 ? (
-              <div className="pbc-list absolute z-20 mt-1 max-h-56 w-full overflow-auto py-1 shadow-[var(--shadow-pop)]" aria-label="Product / Service dropdown">
+              <div className="pbc-dropdown" aria-label="Product / Service dropdown">
                 {filteredProductServices.map((productService) => (
                   <button
                     key={productService.id}
                     type="button"
                     onMouseDown={(event) => event.preventDefault()}
                     onClick={() => onApplyProductService(productService)}
-                    className="block w-full px-3 py-2 text-left text-sm hover:bg-[var(--surface-soft)]"
+                    className="pbc-dropdownitem"
                   >
                     <span className="pbc-titletext block">{productService.name}</span>
                     <span className="pbc-listitem__meta block truncate">
@@ -541,7 +542,7 @@ function PricedLineRow({
           title="Delete"
           className="pbc-iconbtn pbc-iconbtn--compact pbc-iconbtn--danger mt-1 shrink-0"
         >
-          X
+          {Icons.trash({ size: 13 })}
         </button>
       </div>
     </div>
@@ -619,14 +620,14 @@ function TextLineRow({
               placeholder="Text title"
             />
             {isLookupActive && filteredProductServices.length > 0 ? (
-              <div className="pbc-list absolute z-20 mt-1 max-h-56 w-full overflow-auto py-1 shadow-[var(--shadow-pop)]" aria-label="Product / Service dropdown">
+              <div className="pbc-dropdown" aria-label="Product / Service dropdown">
                 {filteredProductServices.map((productService) => (
                   <button
                     key={productService.id}
                     type="button"
                     onMouseDown={(event) => event.preventDefault()}
                     onClick={() => onApplyProductService(productService)}
-                    className="block w-full px-3 py-2 text-left text-sm hover:bg-[var(--surface-soft)]"
+                    className="pbc-dropdownitem"
                   >
                     <span className="pbc-titletext block">{productService.name}</span>
                     <span className="pbc-listitem__meta block truncate">
@@ -665,7 +666,7 @@ function TextLineRow({
           title="Delete"
           className="pbc-iconbtn pbc-iconbtn--compact pbc-iconbtn--danger mt-1 shrink-0"
         >
-          X
+          {Icons.trash({ size: 13 })}
         </button>
       </div>
     </div>

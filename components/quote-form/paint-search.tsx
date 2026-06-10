@@ -51,7 +51,7 @@ export function PaintSearch({ onAdd }: PaintSearchProps) {
   }
 
   return (
-    <div className="relative mt-4">
+    <div className="pbc-materialsearch relative mt-4">
       <input
         value={query}
         onChange={(event) => setQuery(event.target.value)}
@@ -66,15 +66,15 @@ export function PaintSearch({ onAdd }: PaintSearchProps) {
       />
       {error ? <p className="pbc-alert pbc-alert--danger mt-2">{error}</p> : null}
       {query.trim() ? (
-        <div className="absolute z-20 mt-2 w-full overflow-hidden rounded-[var(--r-md)] border border-[var(--border)] bg-white shadow-[var(--shadow-soft)]">
+        <div className="pbc-dropdown">
           {results.map((product) => (
-            <button key={product.id} type="button" onClick={() => addProduct(product)} className="block w-full px-3 py-2 text-left hover:bg-[var(--surface-soft)]">
-              <span className="block text-sm font-semibold text-[var(--foreground)]">{product.name}</span>
-              <span className="block text-xs font-semibold text-[var(--muted)]">RRP ${product.marketPrice}</span>
+            <button key={product.id} type="button" onClick={() => addProduct(product)} className="pbc-dropdownitem">
+              <span className="pbc-titletext block">{product.name}</span>
+              <span className="pbc-listitem__meta block">RRP ${product.marketPrice}</span>
             </button>
           ))}
           {results.length === 0 ? (
-            <button type="button" onClick={addCustom} className="block w-full px-3 py-2 text-left text-sm font-semibold text-[var(--primary)] hover:bg-[var(--primary-soft)]">
+            <button type="button" onClick={addCustom} className="pbc-dropdownitem font-semibold text-[var(--primary)]">
               Add &quot;{query.trim()}&quot; as custom item
             </button>
           ) : null}

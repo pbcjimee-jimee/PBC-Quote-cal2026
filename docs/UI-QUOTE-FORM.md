@@ -311,3 +311,12 @@ The quote form supports multiple internal memo rows per quote.
 - Empty memo rows are ignored when saving.
 - Saved memo rows are restored on `/quotes/[id]/edit` and displayed on quote detail.
 - Memos are app-only and must not be sent to Jobber as notes, text line items, or Product / Service rows.
+
+---
+
+## Current Styling Source
+
+> Current visual styling source of truth is `docs/UI-DESIGN-SYSTEM.md`.
+> Use this file for quote-form behavior and layout history; when token,
+> component class, radius, shadow, or responsive guidance conflicts, follow
+> `docs/UI-DESIGN-SYSTEM.md`.

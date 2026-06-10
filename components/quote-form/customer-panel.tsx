@@ -167,7 +167,7 @@ export function JobberQuoteSummary({ quote }: { quote: JobberQuoteDraft }) {
       <div className="mt-4">
         <p className="pbc-paneltitle">Product / Service</p>
         {quote.productsAndServices.length > 0 ? (
-          <ul className="pbc-list mt-3 max-h-80 overflow-y-auto p-3">
+          <ul className="pbc-list pbc-jobber-original-scroll mt-3 overflow-y-auto p-3">
             {quote.productsAndServices.map((item) => (
               <ProductServiceRow key={item.id} item={item} />
             ))}

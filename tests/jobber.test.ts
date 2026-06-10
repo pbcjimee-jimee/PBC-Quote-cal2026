@@ -1103,6 +1103,38 @@ describe('jobber mapper', () => {
     })
   })
 
+  it('maps Jobber address parts when the API returns non-string values', () => {
+    const draft = mapJobberQuoteToDraft({
+      id: 'encoded-quote-id',
+      quoteNumber: '3556',
+      title: 'Interior repaint',
+      createdAt: '2026-06-09T01:23:45Z',
+      message: '',
+      jobberWebUri: 'https://secure.getjobber.com/quotes/3556',
+      client: {
+        id: 'client-1',
+        name: 'Jane Customer',
+        companyName: null,
+        firstName: 'Jane',
+        lastName: 'Customer',
+      },
+      property: {
+        id: 'property-1',
+        jobberWebUri: 'https://secure.getjobber.com/properties/1',
+        address: {
+          street1: '1 Paint St',
+          street2: null,
+          city: 'Sydney',
+          province: 'NSW',
+          postalCode: 2085,
+        } as unknown as NonNullable<Parameters<typeof mapJobberQuoteToDraft>[0]['property']>['address'],
+      },
+      lineItems: { nodes: [] },
+    })
+
+    expect(draft.customerAddress).toBe('1 Paint St, Sydney, NSW, 2085')
+  })
+
   it('uses Jobber Job Type custom field for the displayed customer type', () => {
     const draft = mapJobberQuoteToDraft({
       id: 'encoded-quote-id',

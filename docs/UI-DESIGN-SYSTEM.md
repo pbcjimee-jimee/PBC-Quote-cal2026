@@ -1,6 +1,12 @@
 # UI-DESIGN-SYSTEM.md — PBC UI handoff analysis
 
 This document is the current implementation guide for shared UI components.
+Current UI source of truth: shared visual styling must come from this file,
+`app/styles/tokens.css`, `app/styles/components.css`, and `components/ui/`.
+When this file conflicts with older UI docs (`UI-DESIGN.md`, `UI-QUOTE-FORM.md`,
+`UI-PAGES.md`, or historic implementation plans), follow this file for visual
+styling, shared component classes, radius, shadow, spacing, and responsive
+behavior.
 
 ## Source status
 
@@ -88,11 +94,15 @@ Prefer these primitives before recreating card/header markup in page components.
 - New cards must use `pbc-card` and `pbc-card--pad`, or the `Card` primitive.
 - New labels/section headers must use `SectionLabel`, `pbc-panelhead`, or `pbc-paneltitle`.
 - Inputs must use `pbc-input`, `pbc-textarea`, or a specialized wrapper such as `pbc-rate__money`.
+- Inline panels must use `pbc-softpanel`, `pbc-inlinepanel`, or a named component class built on those tokens.
+- Dropdowns must use `pbc-dropdown` and `pbc-dropdownitem` instead of rebuilding border/radius/shadow recipes.
 - Tables must use `pbc-tablewrap`, `pbc-table`, and `pbc-tableinput`.
 - Notices must use `pbc-alert` variants.
 - Dialogs must use `pbc-dialogbackdrop` and `pbc-dialog`.
 - Tailwind utility classes are allowed for layout only: grid columns, flex, spacing, responsive visibility, and one-off alignment.
 - Avoid raw visual Tailwind recipes such as `rounded-lg border border-slate-200 bg-white shadow-sm` in app components.
+- Do not use inline `style` for standard component states such as soft buttons; add a shared `pbc-*` class instead.
+- After visual changes, validate desktop and one mobile viewport for `/quotes/new`, `/quotes/[id]/edit`, `/quotes/[id]`, `/quotes`, or `/settings`, depending on the touched surface.
 
 ## Current cleanup outcome
 

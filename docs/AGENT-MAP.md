@@ -43,6 +43,11 @@
 
 ### UI
 
+Latest visual styling source of truth: `docs/UI-DESIGN-SYSTEM.md`.
+Older UI files remain useful for page behavior and historical context, but
+shared tokens, component classes, radius, shadow, and responsive rules come
+from `docs/UI-DESIGN-SYSTEM.md`.
+
 | 파일 | 용도 |
 |---|---|
 | `docs/UI-DESIGN.md` | UI 개요·페이지 목록·디자인 토큰·구현 순서 |

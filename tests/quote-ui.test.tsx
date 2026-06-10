@@ -3,12 +3,18 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { readFileSync } from 'node:fs'
 import Decimal from 'decimal.js'
 import { describe, expect, it, vi } from 'vitest'
-import { CustomerPanel } from '@/components/quote-form/customer-panel'
+import { CustomerPanel, JobberQuoteSummary } from '@/components/quote-form/customer-panel'
 import { FinalSummary } from '@/components/quote-form/final-summary'
 import { MaterialRow } from '@/components/quote-form/material-row'
 import { MaterialsPanel, assignMaterialToActiveArea } from '@/components/quote-form/materials-panel'
 import { OptionTotalsSummary } from '@/components/quote-form/option-totals-summary'
-import { QuoteForm, saveQuoteFormPayload, shouldRunDraftGuard } from '@/components/quote-form/quote-form'
+import {
+  getQuoteUnexpectedSaveErrorMessage,
+  getQuoteNavigationGuardTarget,
+  QuoteForm,
+  saveQuoteFormPayload,
+  shouldRunDraftGuard,
+} from '@/components/quote-form/quote-form'
 import type { AreaSubtotalBreakdown } from '@/components/quote-form/quote-calculation-totals'
 import { QuoteDetailView } from '@/components/quote-detail/quote-detail-view'
 import { QuoteCard } from '@/components/quote-list/quote-card'
@@ -150,6 +156,19 @@ describe('quote form pricing UI', () => {
     expect(markup).toContain('Delete')
   })
 
+  it('does not use structural overflow hidden on shared page containers', () => {
+    const pageSource = readFileSync('app/(app)/quotes/page.tsx', 'utf8')
+    const css = readFileSync('app/styles/components.css', 'utf8')
+
+    expect(pageSource).not.toContain('pbc-listcard--overview')
+    expect(css).not.toContain('.pbc-optioncard { overflow: hidden;')
+    expect(css).not.toContain('.pbc-list { border: 1px solid var(--border); border-radius: 11px; overflow: hidden;')
+    expect(css).not.toContain('.pbc-materialrow { min-width: 0; overflow: hidden;')
+    expect(css).not.toContain('.pbc-listcard { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-lg); box-shadow: var(--shadow); overflow: hidden;')
+    expect(css).not.toContain('.pbc-summary { overflow: hidden;')
+    expect(css).not.toContain('.pbc-settings .pbc-card { overflow: hidden;')
+  })
+
   it('keeps the quote save action sticky while editing long forms', () => {
     const markup = renderToStaticMarkup(
       createElement(QuoteForm, {
@@ -205,6 +224,50 @@ describe('quote form pricing UI', () => {
     expect(shouldRunDraftGuard(true, false)).toBe(true)
     expect(shouldRunDraftGuard(true, true)).toBe(false)
     expect(shouldRunDraftGuard(false, false)).toBe(false)
+  })
+
+  it('blocks dirty same-origin quote navigation while allowing current and external links', () => {
+    const currentHref = 'http://localhost:3000/quotes/quote-id-1/edit'
+
+    expect(getQuoteNavigationGuardTarget({
+      isDirty: true,
+      isNavigating: false,
+      currentHref,
+      targetHref: 'http://localhost:3000/quotes/quote-id-1',
+    })).toBe('/quotes/quote-id-1')
+    expect(getQuoteNavigationGuardTarget({
+      isDirty: true,
+      isNavigating: false,
+      currentHref,
+      targetHref: currentHref,
+    })).toBeNull()
+    expect(getQuoteNavigationGuardTarget({
+      isDirty: true,
+      isNavigating: false,
+      currentHref,
+      targetHref: 'https://secure.getjobber.com/quotes/3535',
+    })).toBeNull()
+    expect(getQuoteNavigationGuardTarget({
+      isDirty: false,
+      isNavigating: false,
+      currentHref,
+      targetHref: 'http://localhost:3000/quotes',
+    })).toBeNull()
+  })
+
+  it('renders a cancel action on quote edit so leaving can use the unsaved-change guard', () => {
+    const markup = renderToStaticMarkup(
+      createElement(QuoteForm, {
+        settings: quoteRecord.pricingSettingsSnapshot,
+        areas: [],
+        productServices: [],
+        quoteLineTemplates: [],
+        initialQuote: quoteRecord,
+      })
+    )
+
+    expect(markup).toContain('Cancel')
+    expect(markup).toContain('Update Quote')
   })
 
   it('shows total labour as the sum of material row working days times labour', () => {
@@ -456,6 +519,11 @@ describe('quote form pricing UI', () => {
     expect(markup).toContain('Standard terms')
   })
 
+  it('shows a stable save error message when quote save rejects without an Error', () => {
+    expect(getQuoteUnexpectedSaveErrorMessage(undefined)).toBe('Unable to save quote.')
+    expect(getQuoteUnexpectedSaveErrorMessage(new Error('Jobber sync failed'))).toBe('Jobber sync failed')
+  })
+
   it('shows the app final total as the GST-exclusive subtotal with GST at the end', () => {
     const markup = renderToStaticMarkup(
       createElement(FinalSummary, {
@@ -648,13 +716,99 @@ describe('quote form pricing UI', () => {
     expect(markup).toContain('Labour / Day')
     expect(markup).toContain('Eaves')
     expect(markup).toContain('Fascia')
-    expect(markup).toContain('sm:grid-cols-2')
-    expect(markup).toContain('xl:grid-cols-[4.25rem_5.25rem_minmax(8rem,1fr)_6.25rem_6.25rem]')
-    expect(markup).toContain('sm:col-span-2 xl:col-span-1')
+    expect(markup).toContain('pbc-materialrow')
+    expect(markup).toContain('pbc-materialrow__head')
+    expect(markup).toContain('pbc-materialrow__fields')
+    expect(markup).toContain('pbc-materialrow__fields--pricing')
+    expect(markup).toContain('pbc-materialrow__area')
+    expect(markup).not.toContain('xl:grid-cols-[4.25rem_5.25rem_minmax(8rem,1fr)_6.25rem_6.25rem]')
     expect(markup).toContain('pbc-field min-w-0')
     expect(markup).toContain('pbc-input min-w-0')
     expect(markup).not.toContain('Market')
     expect(markup).not.toContain('Actual')
+  })
+
+  it('uses container-based responsive material row CSS instead of viewport-only grid widths', () => {
+    const css = readFileSync('app/styles/components.css', 'utf8')
+    const rowCssIndex = css.indexOf('.pbc-materialrow {')
+    const listCssIndex = css.indexOf('.pbc-materiallist {')
+    const searchCssIndex = css.indexOf('.pbc-materialsearch {')
+    const hiddenNoticeCssIndex = css.indexOf('.pbc-materialhiddennotice {')
+    const formulaCssIndex = css.indexOf('.pbc-materialformula {')
+
+    expect(rowCssIndex).toBeGreaterThan(-1)
+    expect(css.slice(rowCssIndex, rowCssIndex + 260)).toContain('container-type: inline-size')
+    expect(css).toContain('@container (min-width: 420px)')
+    expect(css).toContain('@container (min-width: 680px)')
+    expect(css).toContain('.pbc-materialrow__fields')
+    expect(listCssIndex).toBeGreaterThan(-1)
+    expect(css.slice(listCssIndex, listCssIndex + 120)).toContain('gap: 14px')
+    expect(searchCssIndex).toBeGreaterThan(-1)
+    expect(css.slice(searchCssIndex, searchCssIndex + 120)).toContain('margin-bottom: 16px')
+    expect(hiddenNoticeCssIndex).toBeGreaterThan(-1)
+    expect(css.slice(hiddenNoticeCssIndex, hiddenNoticeCssIndex + 120)).toContain('margin-top: 14px')
+    expect(formulaCssIndex).toBeGreaterThan(-1)
+    expect(css.slice(formulaCssIndex, formulaCssIndex + 120)).toContain('margin-top: 18px')
+  })
+
+  it('keeps material search and hidden filter notices spaced away from material rows', () => {
+    const markup = renderToStaticMarkup(
+      createElement(MaterialsPanel, {
+        materials: [
+          {
+            id: 'item-1',
+            name: 'Interior paint',
+            marketPrice: '82',
+            actualPrice: '82',
+            quantity: '1',
+            workingDays: '1',
+            labourPerDay: '1',
+            areaId: 'area-bedroom',
+            areaName: 'Bedroom',
+            areaScope: 'interior',
+            isCustom: false,
+          },
+          {
+            id: 'item-2',
+            name: 'Exterior paint',
+            marketPrice: '90',
+            actualPrice: '90',
+            quantity: '1',
+            workingDays: '1',
+            labourPerDay: '1',
+            areaId: 'area-eaves',
+            areaName: 'Eaves',
+            areaScope: 'exterior',
+            isCustom: false,
+          },
+        ],
+        areas: [
+          { id: 'area-bedroom', scope: 'interior', name: 'Bedroom', active: true, position: 0 },
+          { id: 'area-eaves', scope: 'exterior', name: 'Eaves', active: true, position: 0 },
+        ],
+        areaBreakdown: createAreaBreakdown(new Decimal('100')),
+        areaFormulaSelections: {
+          interior: { selectedMin: 1, selectedMax: 1 },
+          exterior: { selectedMin: 1, selectedMax: 1 },
+        },
+        onAdd: () => undefined,
+        onChange: () => undefined,
+        onRemove: () => undefined,
+        onAreaFormulaSelectionChange: () => undefined,
+      })
+    )
+
+    expect(markup).toContain('pbc-materialsearch')
+    expect(markup).toContain('pbc-materiallist')
+    expect(markup).toContain('pbc-materialhiddennotice')
+    expect(markup).toContain('pbc-materialformula')
+    expect(markup).toContain('Interior Formula Results')
+    expect(markup).toContain('1 material row is hidden by the Interior filter')
+    expect(markup).toContain('pbc-hiddenmatlist')
+    expect(markup).toContain('Exterior paint')
+    expect(markup).toContain('Exterior - Eaves')
+    expect(markup).toContain('$90.00')
+    expect(markup).toContain('aria-label="Remove hidden material Exterior paint"')
   })
 
   it('filters quote area dropdowns by the selected interior or exterior scope', () => {
@@ -733,7 +887,7 @@ describe('quote form pricing UI', () => {
     )
 
     expect(markup).toContain('Interior - Bedroom')
-    expect(markup).not.toContain('Exterior - Eaves')
+    expect(markup).toContain('Exterior - Eaves')
     expect(markup).toContain('1 material row is hidden by the Interior filter')
   })
 
@@ -780,7 +934,11 @@ describe('quote form pricing UI', () => {
     )
 
     expect(markup).toContain('Interior paint')
-    expect(markup).not.toContain('Exterior paint')
+    expect(markup).toContain('Exterior paint')
+    expect(markup).toContain('pbc-hiddenmatlist')
+    expect(markup).toContain('Exterior - Eaves')
+    expect(markup).toContain('aria-label="Remove hidden material Exterior paint"')
+    expect(markup).not.toContain('aria-label="Remove Exterior paint"')
     expect(markup).toContain('Interior material')
     expect(markup).toContain('$82.00')
     expect(markup).toContain('Interior subtotal')
@@ -1225,6 +1383,56 @@ describe('quote form pricing UI', () => {
     expect(markup).toContain('90.2%')
   })
 
+  it('keeps Jobber original Product Service items scrollable in the quote summary', () => {
+    const markup = renderToStaticMarkup(
+      createElement(JobberQuoteSummary, {
+        quote: {
+          jobberQuoteId: 'encoded-quote-id',
+          sourceType: 'quote',
+          quoteNumber: '2345',
+          createdAt: '2026-05-13T01:23:45Z',
+          customerName: 'Jane Customer',
+          customerAddress: '10 Main St',
+          workType: 'Exterior',
+          areaSqft: null,
+          customerType: 'Real Estate',
+          sourceUrl: 'https://secure.getjobber.com/quotes/2345',
+          productsAndServices: [
+            {
+              id: 'line-item-1',
+              name: 'Exterior repaint',
+              category: 'SERVICE',
+              description: 'Walls and trim',
+              quantity: 1,
+              unitPrice: 2500,
+              totalPrice: 2500,
+              linkedName: null,
+            },
+          ],
+          jobExpenses: [],
+          jobExpensesError: null,
+          financialSummary: {
+            quoteTotal: 2500,
+            expensesTotal: 0,
+            profit: 2500,
+            profitMarginPercent: 100,
+          },
+        },
+      })
+    )
+
+    expect(markup).toContain('pbc-jobber-original-scroll')
+    expect(markup).not.toContain('max-h-80')
+  })
+
+  it('lets the Jobber original scroll class override the shared list overflow rule', () => {
+    const css = readFileSync('app/styles/components.css', 'utf8')
+    const listScrollIndex = css.indexOf('.pbc-list.pbc-jobber-original-scroll {')
+
+    expect(listScrollIndex).toBeGreaterThan(-1)
+    expect(css.slice(listScrollIndex, listScrollIndex + 180)).toContain('overflow-y: auto')
+  })
+
   it('hides Jobber profit on quote detail pages when job expenses are unavailable', () => {
     const markup = renderToStaticMarkup(
       createElement(QuoteDetailView, {
@@ -1417,6 +1625,45 @@ describe('quote form pricing UI', () => {
     expect(markup).not.toContain('Final quote - inc GST')
     expect(markup).toContain('pbc-summary__heroLabel">Final subtotal')
     expect(markup).toContain('pbc-card pbc-summary')
+  })
+
+  it('shows the saved area formula selection on quote detail pages', () => {
+    const markup = renderToStaticMarkup(
+      createElement(QuoteDetailView, {
+        quote: {
+          ...quoteRecord,
+          workType: 'Exterior',
+          selectedMin: 4,
+          selectedMax: 1,
+          interiorSelectedMin: 4,
+          interiorSelectedMax: 1,
+          exteriorSelectedMin: 2,
+          exteriorSelectedMax: 3,
+          items: [
+            {
+              id: 'item-exterior',
+              quoteId: quoteRecord.id,
+              productId: null,
+              productNameSnapshot: 'Exterior assigned row',
+              marketPriceSnapshot: '100.00',
+              actualPriceSnapshot: '100.00',
+              quantity: '1.00',
+              workingDays: '2.00',
+              labourPerDay: '1.00',
+              areaId: null,
+              areaNameSnapshot: 'Fence',
+              areaScopeSnapshot: 'exterior',
+              isCustom: true,
+              position: 0,
+            },
+          ],
+        },
+      })
+    )
+
+    expect(markup).toContain('Range F2-F3')
+    expect(markup).toContain('Exterior selected subtotal')
+    expect(markup).not.toContain('Range F4-F1')
   })
 
   it('uses grouped area subtotal as the detail final subtotal when unassigned rows exist', () => {

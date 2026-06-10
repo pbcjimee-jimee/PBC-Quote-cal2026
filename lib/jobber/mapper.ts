@@ -57,8 +57,11 @@ export interface JobberQuoteDraftExpense {
   reimbursableTo: string | null
 }
 
-function compact(parts: Array<string | null | undefined>): string[] {
-  return parts.map((part) => part?.trim() ?? '').filter(Boolean)
+function compact(parts: unknown[]): string[] {
+  return parts.map((part) => {
+    if (part === null || part === undefined) return ''
+    return String(part).trim()
+  }).filter(Boolean)
 }
 
 function formatCustomerName(quote: JobberQuote): string {

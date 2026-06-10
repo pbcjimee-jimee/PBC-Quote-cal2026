@@ -181,3 +181,12 @@ F5 margin   [30] %
 ```
 
 Settings also includes Material, Product & Service, Template, and Area tabs. The Template tab stores reusable Product / Service line item and text item sets. Those templates appear in `/quotes/new` and quote edit Product / Service sections and copy their saved rows into the current quote when selected.
+
+---
+
+## Current Styling Source
+
+> Current visual styling source of truth is `docs/UI-DESIGN-SYSTEM.md`.
+> Use this file for page behavior and layout history; when token, component
+> class, radius, shadow, or responsive guidance conflicts, follow
+> `docs/UI-DESIGN-SYSTEM.md`.

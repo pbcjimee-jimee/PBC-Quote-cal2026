@@ -67,6 +67,39 @@ export function shouldRunDraftGuard(isDirty: boolean, isNavigating: boolean): bo
   return isDirty && !isNavigating
 }
 
+export function getQuoteNavigationGuardTarget({
+  isDirty,
+  isNavigating,
+  targetHref,
+  currentHref,
+}: {
+  isDirty: boolean
+  isNavigating: boolean
+  targetHref: string
+  currentHref: string
+}): string | null {
+  if (!shouldRunDraftGuard(isDirty, isNavigating)) return null
+
+  let targetUrl: URL
+  let currentUrl: URL
+  try {
+    targetUrl = new URL(targetHref, currentHref)
+    currentUrl = new URL(currentHref)
+  } catch {
+    return null
+  }
+
+  if (targetUrl.origin !== currentUrl.origin) return null
+
+  const targetPath = `${targetUrl.pathname}${targetUrl.search}${targetUrl.hash}`
+  const currentPath = `${currentUrl.pathname}${currentUrl.search}${currentUrl.hash}`
+  return targetPath === currentPath ? null : targetPath
+}
+
+export function getQuoteUnexpectedSaveErrorMessage(error: unknown): string {
+  return error instanceof Error && error.message.trim() ? error.message : 'Unable to save quote.'
+}
+
 function isJobberQuoteResponse(value: unknown): value is JobberQuoteResponse {
   if (typeof value !== 'object' || value === null) return false
   const record = value as Record<string, unknown>
@@ -200,6 +233,8 @@ export function QuoteForm({ settings, areas, productServices = [], quoteLineTemp
   const isNavigatingRef = useRef(false)
 
   const draftStorageKey = useMemo(() => getQuoteDraftStorageKey(initialQuote?.id), [initialQuote?.id])
+  const quoteTargetPath = initialQuote ? `/quotes/${initialQuote.id}` : '/quotes'
+  const cancelTargetPath = quoteTargetPath
 
   const currentDraft = useMemo<QuoteFormDraft>(() => ({
     ...createEmptyQuoteFormDraft(),
@@ -323,12 +358,16 @@ export function QuoteForm({ settings, areas, productServices = [], quoteLineTemp
       const target = event.target instanceof Element ? event.target.closest('a[href]') : null
       if (!(target instanceof HTMLAnchorElement)) return
 
-      const targetUrl = new URL(target.href)
-      if (targetUrl.origin !== window.location.origin) return
-      if (`${targetUrl.pathname}${targetUrl.search}${targetUrl.hash}` === `${window.location.pathname}${window.location.search}${window.location.hash}`) return
+      const guardedTarget = getQuoteNavigationGuardTarget({
+        isDirty,
+        isNavigating: isNavigatingRef.current,
+        targetHref: target.href,
+        currentHref: window.location.href,
+      })
+      if (guardedTarget === null) return
 
       event.preventDefault()
-      setPendingNavigation(`${targetUrl.pathname}${targetUrl.search}${targetUrl.hash}`)
+      setPendingNavigation(guardedTarget)
     }
 
     document.addEventListener('click', handleDocumentClick, true)
@@ -343,12 +382,12 @@ export function QuoteForm({ settings, areas, productServices = [], quoteLineTemp
     function handlePopState() {
       if (isNavigatingRef.current) return
       window.history.pushState({ quoteDraftGuard: true }, '', window.location.href)
-      setPendingNavigation('/quotes')
+      setPendingNavigation(cancelTargetPath)
     }
 
     window.addEventListener('popstate', handlePopState)
     return () => window.removeEventListener('popstate', handlePopState)
-  }, [isDirty])
+  }, [cancelTargetPath, isDirty])
 
   function restoreDraft(draft: QuoteFormDraft) {
     setCustomerName(draft.customerName)
@@ -555,31 +594,35 @@ export function QuoteForm({ settings, areas, productServices = [], quoteLineTemp
   function saveQuote() {
     setSaveError(null)
     startTransition(async () => {
-      const result = await saveQuoteFormPayload({
-        settings,
-        initialQuoteId: initialQuote?.id,
-        customerName,
-        customerAddress,
-        jobberQuoteId,
-        jobberQuoteLookup,
-        jobberQuoteDraft,
-        deletedJobberLineItemIds,
-        jobberQuoteLines,
-        workType,
-        selectedMin,
-        selectedMax,
-        areaFormulaSelections,
-        materials,
-        options,
-        memos,
-      })
+      try {
+        const result = await saveQuoteFormPayload({
+          settings,
+          initialQuoteId: initialQuote?.id,
+          customerName,
+          customerAddress,
+          jobberQuoteId,
+          jobberQuoteLookup,
+          jobberQuoteDraft,
+          deletedJobberLineItemIds,
+          jobberQuoteLines,
+          workType,
+          selectedMin,
+          selectedMax,
+          areaFormulaSelections,
+          materials,
+          options,
+          memos,
+        })
 
-      if (result.ok) {
-        clearDraft()
-        isNavigatingRef.current = true
-        router.push(initialQuote ? `/quotes/${initialQuote.id}` : '/quotes')
-      } else {
-        setSaveError(result.error)
+        if (result.ok) {
+          clearDraft()
+          isNavigatingRef.current = true
+          router.push(quoteTargetPath)
+        } else {
+          setSaveError(result.error)
+        }
+      } catch (error) {
+        setSaveError(getQuoteUnexpectedSaveErrorMessage(error))
       }
     })
   }
@@ -593,8 +636,11 @@ export function QuoteForm({ settings, areas, productServices = [], quoteLineTemp
           <b>{initialQuote ? 'Edit Quote' : 'New Quote'}</b>
         </div>
         <div className="pbc-topbar__right">
+          <button type="button" onClick={() => requestNavigation(cancelTargetPath)} disabled={isPending} className="pbc-btn pbc-btn--ghost">
+            Cancel
+          </button>
           <button type="button" onClick={saveQuote} disabled={isPending} className="pbc-btn pbc-btn--primary">
-            {Icons.check({ size: 15 })} {isPending ? 'Saving…' : initialQuote ? 'Update Quote' : 'Save Quote'}
+            {Icons.check({ size: 15 })} {isPending ? 'Saving...' : initialQuote ? 'Update Quote' : 'Save Quote'}
           </button>
         </div>
       </header>
@@ -701,6 +747,19 @@ export function QuoteForm({ settings, areas, productServices = [], quoteLineTemp
           />
           <OptionTotalsSummary options={optionSummaryItems} />
         </aside>
+      </div>
+      <div className="pbc-mobile-totalbar">
+        <div className="min-w-0">
+          <span>Final subtotal</span>
+          <b className="mono">${totals.areaBreakdown.finalSubtotal.toFixed(2)}</b>
+        </div>
+        <div className="min-w-0">
+          <span>Inc GST</span>
+          <b className="mono">${totals.areaBreakdown.finalTotal.toFixed(2)}</b>
+        </div>
+        <button type="button" onClick={saveQuote} disabled={isPending} className="pbc-btn pbc-btn--primary pbc-btn--sm">
+          {Icons.check({ size: 14 })} {isPending ? 'Saving...' : 'Save'}
+        </button>
       </div>
       {pendingNavigation ? (
         <div className="pbc-dialogbackdrop">

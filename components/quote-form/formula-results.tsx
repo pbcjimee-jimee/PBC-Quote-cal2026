@@ -56,11 +56,11 @@ export function FormulaResults({
                 </div>
               </div>
               <div className="mt-3 flex gap-2 text-xs">
-                <label className={`pbc-chip cursor-pointer border ${isMin ? '' : 'bg-white text-[var(--muted)] hover:text-[var(--primary)]'}`}>
+                <label className={`pbc-chip cursor-pointer border ${isMin ? '' : 'pbc-chip--muted'}`}>
                   <input className="sr-only" type="radio" name={`${namePrefix}-selectedMin`} checked={selectedMin === formulaNum} onChange={() => onSelectedMinChange(formulaNum)} />
                   Low
                 </label>
-                <label className={`pbc-chip cursor-pointer border ${isMax ? '' : 'bg-white text-[var(--muted)] hover:text-[var(--primary)]'}`}>
+                <label className={`pbc-chip cursor-pointer border ${isMax ? '' : 'pbc-chip--muted'}`}>
                   <input className="sr-only" type="radio" name={`${namePrefix}-selectedMax`} checked={selectedMax === formulaNum} onChange={() => onSelectedMaxChange(formulaNum)} />
                   High
                 </label>
