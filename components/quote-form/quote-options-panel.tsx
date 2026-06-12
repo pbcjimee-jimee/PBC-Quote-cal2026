@@ -5,7 +5,7 @@ import { Icons } from '@/components/ui/icons'
 import { FormulaResults } from './formula-results'
 import { MaterialsPanel } from './materials-panel'
 import type { AreaSubtotalBreakdown } from './quote-calculation-totals'
-import type { FormulaNumber, MaterialItem, QuoteOptionItem } from './types'
+import type { AreaCreateResult, AreaScope, FormulaNumber, MaterialItem, QuoteOptionItem } from './types'
 
 interface QuoteOptionTotals {
   results: FormulaResult[]
@@ -24,6 +24,7 @@ interface QuoteOptionsPanelProps {
   onAddOption: () => void
   onChangeOption: (option: QuoteOptionItem) => void
   onRemoveOption: (id: string) => void
+  onCreateArea?: (scope: AreaScope, name: string) => Promise<AreaCreateResult>
 }
 
 export function QuoteOptionsPanel({
@@ -33,6 +34,7 @@ export function QuoteOptionsPanel({
   onAddOption,
   onChangeOption,
   onRemoveOption,
+  onCreateArea,
 }: QuoteOptionsPanelProps) {
   return (
     <section className="mt-6 space-y-4 border-t border-[var(--border-soft)] pt-6">
@@ -102,6 +104,7 @@ export function QuoteOptionsPanel({
                     materials={option.materials}
                     areas={areas}
                     areaBreakdown={totals?.areaBreakdown}
+                    onCreateArea={onCreateArea}
                     onAdd={(item) => onChangeOption({ ...option, materials: [...option.materials, item] })}
                     onChange={(item: MaterialItem) => onChangeOption({
                       ...option,

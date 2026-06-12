@@ -28,8 +28,9 @@ body {
 .mono,
 .font-mono {
   font-family: var(--mono);
-  font-feature-settings: 'tnum' 1;
-  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums lining-nums;
+  font-feature-settings: 'tnum' 1, 'lnum' 1, 'zero' 1;
+  letter-spacing: -0.01em;
 }
 
 a {

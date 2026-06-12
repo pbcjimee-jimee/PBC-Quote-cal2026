@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from
 import { useRouter } from 'next/navigation'
 import type { PricingSettings } from '@/lib/calculator'
 import type { QuoteRecord } from '@/lib/dev-data'
+import { createArea } from '@/lib/actions/areas'
 import { Icons } from '@/components/ui/icons'
 import { CustomerPanel } from './customer-panel'
 import { MaterialsPanel } from './materials-panel'
@@ -19,7 +20,7 @@ import {
 import { QuoteOptionsPanel } from './quote-options-panel'
 import { OptionTotalsSummary } from './option-totals-summary'
 import { calculateMainQuoteTotals } from './quote-calculation-totals'
-import type { AreaFormulaSelections, AreaScope, FormulaNumber, JobberQuoteLineItemDraft, MaterialItem, QuoteMemoItem, QuoteOptionItem } from './types'
+import type { AreaCreateResult, AreaFormulaSelections, AreaScope, FormulaNumber, JobberQuoteLineItemDraft, MaterialItem, QuoteMemoItem, QuoteOptionItem } from './types'
 import { JobberProductServiceEditor } from './jobber-product-service-editor'
 import { mapJobberDraftLineItemsToState } from './jobber-line-state'
 import { QuoteMemosPanel } from './quote-memos-panel'
@@ -186,6 +187,20 @@ function createClientId(prefix: string): string {
   return `${prefix}-${globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`}`
 }
 
+const areaScopeSortOrder: Record<AreaScope, number> = {
+  interior: 0,
+  exterior: 1,
+}
+
+function sortQuoteAreas(nextAreas: AreaRecord[]): AreaRecord[] {
+  return [...nextAreas].sort((left, right) => {
+    const scopeDifference = areaScopeSortOrder[left.scope] - areaScopeSortOrder[right.scope]
+    if (scopeDifference !== 0) return scopeDifference
+    if (left.position !== right.position) return left.position - right.position
+    return left.name.localeCompare(right.name)
+  })
+}
+
 function getInitialAreaFormulaSelections(initialQuote: QuoteRecord | undefined): AreaFormulaSelections {
   const fallbackMin = initialQuote?.selectedMin ?? 4
   const fallbackMax = initialQuote?.selectedMax ?? 1
@@ -205,6 +220,7 @@ function getInitialAreaFormulaSelections(initialQuote: QuoteRecord | undefined):
 export function QuoteForm({ settings, areas, productServices = [], quoteLineTemplates = [], initialQuote }: QuoteFormProps) {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
+  const [quoteAreas, setQuoteAreas] = useState(() => sortQuoteAreas(areas))
   const [customerName, setCustomerName] = useState(initialQuote?.customerName ?? '')
   const [customerAddress, setCustomerAddress] = useState(initialQuote?.customerAddress ?? '')
   const [jobberLookupType, setJobberLookupType] = useState<JobberLookupType>(initialQuote?.jobberSnapshot?.sourceType ?? 'quote')
@@ -484,6 +500,19 @@ export function QuoteForm({ settings, areas, productServices = [], quoteLineTemp
     setMaterials((current) => current.filter((item) => item.id !== id))
   }
 
+  async function createQuoteArea(scope: AreaScope, name: string): Promise<AreaCreateResult> {
+    const result = await createArea({ scope, name })
+    if (result.ok) {
+      setQuoteAreas((current) => {
+        const nextAreas = current.some((area) => area.id === result.data.id)
+          ? current.map((area) => area.id === result.data.id ? result.data : area)
+          : [...current, result.data]
+        return sortQuoteAreas(nextAreas)
+      })
+    }
+    return result
+  }
+
   function addOption() {
     setOptions((current) => [
       ...current,
@@ -694,21 +723,23 @@ export function QuoteForm({ settings, areas, productServices = [], quoteLineTemp
           />
           <MaterialsPanel
             materials={materials}
-            areas={areas}
+            areas={quoteAreas}
             areaBreakdown={totals.areaBreakdown}
             areaFormulaSelections={areaFormulaSelections}
             onAdd={addMaterial}
             onChange={changeMaterial}
             onRemove={removeMaterial}
+            onCreateArea={createQuoteArea}
             onAreaFormulaSelectionChange={changeAreaFormulaSelection}
           />
           <QuoteOptionsPanel
             options={options}
             optionTotals={optionPanelTotals}
-            areas={areas}
+            areas={quoteAreas}
             onAddOption={addOption}
             onChangeOption={changeOption}
             onRemoveOption={removeOption}
+            onCreateArea={createQuoteArea}
           />
           <QuoteMemosPanel memos={memos} onAddMemo={addMemo} onChangeMemo={changeMemo} onRemoveMemo={removeMemo} />
         </div>

@@ -5,7 +5,7 @@ import Decimal from 'decimal.js'
 import { describe, expect, it, vi } from 'vitest'
 import { CustomerPanel, JobberQuoteSummary } from '@/components/quote-form/customer-panel'
 import { FinalSummary } from '@/components/quote-form/final-summary'
-import { MaterialRow } from '@/components/quote-form/material-row'
+import { AreaPickerDropdown, MaterialRow } from '@/components/quote-form/material-row'
 import { MaterialsPanel, assignMaterialToActiveArea } from '@/components/quote-form/materials-panel'
 import { OptionTotalsSummary } from '@/components/quote-form/option-totals-summary'
 import {
@@ -715,17 +715,77 @@ describe('quote form pricing UI', () => {
     expect(markup).toContain('Working Days')
     expect(markup).toContain('Labour / Day')
     expect(markup).toContain('Eaves')
-    expect(markup).toContain('Fascia')
+    expect(markup).toContain('value="Exterior - Eaves"')
     expect(markup).toContain('pbc-materialrow')
     expect(markup).toContain('pbc-materialrow__head')
     expect(markup).toContain('pbc-materialrow__fields')
     expect(markup).toContain('pbc-materialrow__fields--pricing')
     expect(markup).toContain('pbc-materialrow__area')
+    expect(markup).toContain('pbc-areapicker')
     expect(markup).not.toContain('xl:grid-cols-[4.25rem_5.25rem_minmax(8rem,1fr)_6.25rem_6.25rem]')
     expect(markup).toContain('pbc-field min-w-0')
     expect(markup).toContain('pbc-input min-w-0')
     expect(markup).not.toContain('Market')
     expect(markup).not.toContain('Actual')
+  })
+
+  it('uses a material-style area picker instead of the native select menu', () => {
+    const props: Parameters<typeof MaterialRow>[0] & {
+      onCreateArea: (scope: 'interior' | 'exterior', name: string) => Promise<unknown>
+    } = {
+      item: {
+        id: 'item-1',
+        name: 'Dulux Ceiling White 15L',
+        marketPrice: '231.53',
+        actualPrice: '231.53',
+        quantity: '1',
+        workingDays: '0',
+        labourPerDay: '0',
+        areaId: 'area-ceiling',
+        areaName: 'Ceiling',
+        areaScope: 'interior',
+        isCustom: false,
+      },
+      areas: [
+        { id: 'area-ceiling', scope: 'interior', name: 'Ceiling', active: true, position: 0 },
+      ],
+      areaScope: 'interior',
+      onCreateArea: async () => ({
+        ok: true,
+        data: { id: 'area-trim', scope: 'interior', name: 'Trim', active: true, position: 1 },
+      }),
+      onChange: () => undefined,
+      onRemove: () => undefined,
+    }
+    const markup = renderToStaticMarkup(createElement(MaterialRow, props))
+
+    expect(markup).toContain('pbc-areapicker')
+    expect(markup).toContain('value="Interior - Ceiling"')
+    expect(markup).not.toContain('<select')
+    expect(markup).not.toContain('value="__add_area__"')
+    expect(markup).not.toContain('>Add area</button>')
+    expect(markup).not.toContain('pbc-addrow')
+  })
+
+  it('matches the material search dropdown UI when adding a custom area', () => {
+    const markup = renderToStaticMarkup(
+      createElement(AreaPickerDropdown, {
+        query: 'Trim',
+        areas: [],
+        canCreate: true,
+        isCreating: false,
+        onSelect: () => undefined,
+        onClear: () => undefined,
+        onCreate: () => undefined,
+      })
+    )
+
+    expect(markup).toContain('pbc-areapicker__dropdown')
+    expect(markup).toContain('pbc-dropdown')
+    expect(markup).toContain('pbc-dropdownitem font-semibold text-[var(--primary)]')
+    expect(markup).toContain('Add &quot;Trim&quot; as custom area')
+    expect(markup).not.toContain('pbc-btn--primary')
+    expect(markup).not.toContain('<select')
   })
 
   it('uses container-based responsive material row CSS instead of viewport-only grid widths', () => {

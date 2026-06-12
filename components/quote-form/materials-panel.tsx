@@ -4,7 +4,7 @@ import { calculateLabourTotals, type LabourTotals } from '@/lib/quote-labour'
 import { FormulaResults } from './formula-results'
 import { MaterialRow } from './material-row'
 import { PaintSearch } from './paint-search'
-import type { AreaFormulaSelections, FormulaNumber, MaterialItem } from './types'
+import type { AreaCreateResult, AreaFormulaSelections, FormulaNumber, MaterialItem } from './types'
 import type { AreaSubtotalBreakdown } from './quote-calculation-totals'
 import type { AreaRecord, AreaScope } from '@/lib/areas/types'
 import { Icons } from '@/components/ui/icons'
@@ -17,6 +17,7 @@ interface MaterialsPanelProps {
   onAdd: (item: MaterialItem) => void
   onChange: (item: MaterialItem) => void
   onRemove: (id: string) => void
+  onCreateArea?: (scope: AreaScope, name: string) => Promise<AreaCreateResult>
   onAreaFormulaSelectionChange?: (scope: AreaScope, field: 'selectedMin' | 'selectedMax', value: FormulaNumber) => void
 }
 
@@ -124,6 +125,7 @@ export function MaterialsPanel({
   onAdd,
   onChange,
   onRemove,
+  onCreateArea,
   onAreaFormulaSelectionChange,
 }: MaterialsPanelProps) {
   const [areaScope, setAreaScope] = useState<AreaScope>(() => getInitialAreaScope(materials, areas))
@@ -210,7 +212,7 @@ export function MaterialsPanel({
           <PaintSearch onAdd={addMaterialToActiveArea} />
           {areas.length > 0 && filteredAreas.length === 0 ? (
             <p className="pbc-alert pbc-alert--warning">
-              No {areaScope} areas yet. Add them in Settings.
+              No {areaScope} areas yet. {onCreateArea ? 'Add one from an area field.' : 'Add them in Settings.'}
             </p>
           ) : null}
           {materials.length === 0 ? (
@@ -222,7 +224,15 @@ export function MaterialsPanel({
           ) : (
             <div className="pbc-materiallist">
               {visibleMaterials.map((item) => (
-                <MaterialRow key={item.id} item={item} areas={getAreasForMaterial(item, filteredAreas, areas)} onChange={onChange} onRemove={() => onRemove(item.id)} />
+                <MaterialRow
+                  key={item.id}
+                  item={item}
+                  areas={getAreasForMaterial(item, filteredAreas, areas)}
+                  areaScope={areaScope}
+                  onCreateArea={onCreateArea}
+                  onChange={onChange}
+                  onRemove={() => onRemove(item.id)}
+                />
               ))}
             </div>
           )}

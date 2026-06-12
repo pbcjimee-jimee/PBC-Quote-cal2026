@@ -56,6 +56,6 @@
   --shadow-pop: 0 12px 38px -8px rgb(15 36 64 / 26%);
 
   /* ── 폰트 ────────────────────────────────────────────── */
-  --font-body: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
-  --mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace;
+  --font-body: 'Aptos', 'Inter', 'Segoe UI Variable', 'Segoe UI', system-ui, -apple-system, sans-serif;
+  --mono: 'Cascadia Mono', 'Roboto Mono', 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace;
 }

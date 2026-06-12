@@ -39,6 +39,26 @@ describe('UI design system regression', () => {
     expect(css).not.toContain('linear-gradient(145deg, #0b66d8, #0a4fad)')
   })
 
+  it('keeps the quote editor calculation column compact on desktop', () => {
+    const css = readFileSync('app/styles/components.css', 'utf8')
+
+    expect(css).toContain('grid-template-columns: minmax(0, 1fr) minmax(320px, 420px)')
+  })
+
+  it('uses build-safe shared app font stacks', () => {
+    const layout = readFileSync('app/layout.tsx', 'utf8')
+    const globals = readFileSync('app/globals.css', 'utf8')
+    const tokens = readFileSync('app/styles/tokens.css', 'utf8')
+    const base = readFileSync('app/styles/base.css', 'utf8')
+
+    expect(layout).not.toContain('next/font/google')
+    expect(globals).not.toContain('fonts.googleapis.com')
+    expect(tokens).toContain("'Aptos'")
+    expect(tokens).toContain("'Segoe UI Variable'")
+    expect(tokens).toContain("'Cascadia Mono'")
+    expect(base).toContain('font-variant-numeric: tabular-nums lining-nums')
+  })
+
   it('uses shared primitives and classes in high-traffic quote components', () => {
     const primitiveSource = readFileSync('components/ui/card.tsx', 'utf8')
     const quoteCard = readFileSync('components/quote-list/quote-card.tsx', 'utf8')
