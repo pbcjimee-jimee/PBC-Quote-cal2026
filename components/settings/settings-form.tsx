@@ -19,6 +19,7 @@ import { Icons } from '@/components/ui/icons'
 import { JobberProductServiceEditor } from '@/components/quote-form/jobber-product-service-editor'
 import type { JobberQuoteLineItemDraft } from '@/components/quote-form/types'
 import type { AreaRecord, AreaScope } from '@/lib/areas/types'
+import { AREA_SCOPE_LABELS, AREA_SCOPES } from '@/lib/areas/constants'
 import type { PricingSettings } from '@/lib/calculator'
 import type { ProductRecord } from '@/lib/products/types'
 import type { ProductServiceRecord } from '@/lib/product-services/types'
@@ -923,6 +924,7 @@ export function SettingsForm({
     f3LabourRate: String(initialSettings.f3LabourRate),
     f4LabourRate: String(initialSettings.f4LabourRate),
     f5LabourRate: String(initialSettings.f5LabourRate),
+    roofLabourRate: String(initialSettings.roofLabourRate),
     f2Margin: toPercent(initialSettings.f2Margin),
     f3Margin: toPercent(initialSettings.f3Margin),
     f4Margin: toPercent(initialSettings.f4Margin),
@@ -942,6 +944,7 @@ export function SettingsForm({
         f3LabourRate: toRate(settings.f3LabourRate),
         f4LabourRate: toRate(settings.f4LabourRate),
         f5LabourRate: toRate(settings.f5LabourRate),
+        roofLabourRate: toRate(settings.roofLabourRate),
         f2Margin: fromPercent(settings.f2Margin),
         f3Margin: fromPercent(settings.f3Margin),
         f4Margin: fromPercent(settings.f4Margin),
@@ -1410,6 +1413,7 @@ export function SettingsForm({
               ['f3LabourRate', 'F3', 'Labor Rate', '$/day'],
               ['f4LabourRate', 'F4', 'Labor Rate', '$/day'],
               ['f5LabourRate', 'F5', 'Labor Rate', '$/day'],
+              ['roofLabourRate', 'Roof', 'Labor Rate', '$/day'],
             ].map(([field, code, label, sub]) => (
               <label key={field} className="pbc-rate">
                 <span className="pbc-rate__code">{code}</span>
@@ -1610,7 +1614,7 @@ export function SettingsForm({
           <div className="pbc-panelhead mb-4">
             <div className="pbc-panelhead__copy">
               <h2 className="pbc-paneltitle">Areas</h2>
-              <p className="pbc-panelsub">Manage reusable interior and exterior area labels for quote items.</p>
+              <p className="pbc-panelsub">Manage reusable interior, exterior, and roof area labels for quote items.</p>
             </div>
           </div>
           <form
@@ -1623,8 +1627,9 @@ export function SettingsForm({
             <label className="pbc-field">
               <span className="pbc-field__label">Scope</span>
               <select value={areaScope} onChange={(event) => setAreaScope(event.target.value as AreaScope)} className="pbc-input">
-                <option value="interior">Interior</option>
-                <option value="exterior">Exterior</option>
+                {AREA_SCOPES.map((scope) => (
+                  <option key={scope} value={scope}>{AREA_SCOPE_LABELS[scope]}</option>
+                ))}
               </select>
             </label>
             <label className="pbc-field">
@@ -1637,12 +1642,12 @@ export function SettingsForm({
           </form>
           {areaMessage ? <p className="pbc-alert pbc-alert--success mt-3">{areaMessage}</p> : null}
 
-          <div className="mt-6 grid gap-6 sm:grid-cols-2">
-            {(['interior', 'exterior'] as AreaScope[]).map((scope) => (
+          <div className="mt-6 grid gap-6 lg:grid-cols-3">
+            {AREA_SCOPES.map((scope) => (
               <section key={scope}>
                 <div className="pbc-panelhead mb-3">
                   <div className="pbc-panelhead__copy">
-                    <h3 className="pbc-paneltitle">{scope === 'interior' ? 'Interior' : 'Exterior'}</h3>
+                    <h3 className="pbc-paneltitle">{AREA_SCOPE_LABELS[scope]}</h3>
                     <p className="pbc-panelsub">{areas.filter((area) => area.scope === scope).length} areas</p>
                   </div>
                 </div>
@@ -1667,8 +1672,9 @@ export function SettingsForm({
                                   onChange={(event) => setAreaEditForm((current) => ({ ...current, scope: event.target.value as AreaScope }))}
                                   className="pbc-input"
                                 >
-                                  <option value="interior">Interior</option>
-                                  <option value="exterior">Exterior</option>
+                                  {AREA_SCOPES.map((scopeOption) => (
+                                    <option key={scopeOption} value={scopeOption}>{AREA_SCOPE_LABELS[scopeOption]}</option>
+                                  ))}
                                 </select>
                               </label>
                               <label className="pbc-field">
@@ -1684,7 +1690,7 @@ export function SettingsForm({
                           ) : (
                             <div className="pbc-listitem__main">
                               <p className="pbc-listitem__title">{area.name}</p>
-                              <p className="pbc-listitem__meta">{scope === 'interior' ? 'Interior' : 'Exterior'}</p>
+                              <p className="pbc-listitem__meta">{AREA_SCOPE_LABELS[scope]}</p>
                             </div>
                           )}
                           {isEditing ? (

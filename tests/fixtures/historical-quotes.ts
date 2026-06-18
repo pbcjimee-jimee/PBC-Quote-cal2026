@@ -29,6 +29,7 @@ export const HISTORICAL_FIXTURES: Array<{
       f3LabourRate: 460,
       f4LabourRate: 380,
       f5LabourRate: 380,
+      roofLabourRate: 700,
       f2Margin: 0.30,
       f3Margin: 0.30,
       f4Margin: 0.25,

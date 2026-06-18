@@ -20,6 +20,7 @@ export interface PricingSettings {
   f3LabourRate: Decimal | number
   f4LabourRate: Decimal | number
   f5LabourRate: Decimal | number
+  roofLabourRate: Decimal | number
   f2Margin: Decimal | number
   f3Margin: Decimal | number
   f4Margin: Decimal | number
@@ -139,12 +140,51 @@ export function calculateFinal(subtotal: Decimal): Decimal {
   return subtotal.mul(1.10)
 }
 
+export function calculateRoofFormulaResults(
+  input: { labourDays: Decimal | number; materialMarket: Decimal | number },
+  settings: PricingSettings
+): FormulaResult[] {
+  const labourDays = toDecimal(input.labourDays)
+  const materialMarket = toDecimal(input.materialMarket)
+
+  if (labourDays.lt(0)) throw new ValidationError('Roof labour days cannot be negative')
+  if (materialMarket.lt(0)) throw new ValidationError('Roof material price cannot be negative')
+
+  return calculateAllFormulas(
+    {
+      workingDays: labourDays,
+      labourPerDay: 1,
+      materialMarket,
+      materialActual: materialMarket,
+    },
+    {
+      ...settings,
+      f1LabourRate: settings.roofLabourRate,
+      f2LabourRate: settings.roofLabourRate,
+      f3LabourRate: settings.roofLabourRate,
+      f4LabourRate: settings.roofLabourRate,
+      f5LabourRate: settings.roofLabourRate,
+    }
+  )
+}
+
+export function calculateRoofSubtotal(
+  input: { labourDays: Decimal | number; materialMarket: Decimal | number },
+  settings: PricingSettings,
+  selectedMin: 1 | 2 | 3 | 4 | 5 = 1,
+  selectedMax: 1 | 2 | 3 | 4 | 5 = 1
+): Decimal {
+  const results = calculateRoofFormulaResults(input, settings)
+  return calculateSubtotal(results, selectedMin, selectedMax)
+}
+
 export const DEFAULT_PRICING_SETTINGS: PricingSettings = {
   f1LabourRate: 500,
   f2LabourRate: 460,
   f3LabourRate: 460,
   f4LabourRate: 380,
   f5LabourRate: 380,
+  roofLabourRate: 700,
   f2Margin: 0.30,
   f3Margin: 0.30,
   f4Margin: 0.25,

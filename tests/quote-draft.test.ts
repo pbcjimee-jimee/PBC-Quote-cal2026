@@ -40,6 +40,7 @@ describe('quote form draft persistence', () => {
       areaFormulaSelections: {
         interior: { selectedMin: 5, selectedMax: 5 },
         exterior: { selectedMin: 4, selectedMax: 1 },
+        roof: { selectedMin: 4, selectedMax: 1 },
       },
     })).toBe(true)
   })
@@ -89,6 +90,7 @@ describe('quote form draft persistence', () => {
       areaFormulaSelections: {
         interior: { selectedMin: 5 as const, selectedMax: 5 as const },
         exterior: { selectedMin: 1 as const, selectedMax: 1 as const },
+        roof: { selectedMin: 4 as const, selectedMax: 1 as const },
       },
       updatedAt: '2026-05-15T00:00:00.000Z',
     }

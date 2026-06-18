@@ -8,6 +8,8 @@ import {
 import {
   calculateAllFormulas,
   calculateFinal,
+  calculateRoofFormulaResults,
+  calculateRoofSubtotal,
   calculateSubtotal,
   type PricingSettings,
 } from '@/lib/calculator'
@@ -89,18 +91,19 @@ function formulaNumber(value: unknown, fallback: 1 | 2 | 3 | 4 | 5): 1 | 2 | 3 |
   return value === 1 || value === 2 || value === 3 || value === 4 || value === 5 ? value : fallback
 }
 
-function getAreaFormulaSelections(input: QuoteInput): { interior: FormulaSelection; exterior: FormulaSelection } {
+function getAreaFormulaSelections(input: QuoteInput): { interior: FormulaSelection; exterior: FormulaSelection; roof: FormulaSelection } {
   const fallback = { selectedMin: input.selectedMin, selectedMax: input.selectedMax }
   return {
     interior: input.areaFormulaSelections?.interior ?? fallback,
     exterior: input.areaFormulaSelections?.exterior ?? fallback,
+    roof: input.areaFormulaSelections?.roof ?? fallback,
   }
 }
 
 function calculateAreaSubtotalFromInputItems(
   items: QuoteInput['items'],
   selection: FormulaSelection,
-  scope: 'interior' | 'exterior',
+  scope: 'interior' | 'exterior' | 'roof',
   settings: PricingSettings
 ): Decimal {
   const scopedItems = items.filter((item) => item.areaScopeSnapshot === scope)
@@ -109,6 +112,10 @@ function calculateAreaSubtotalFromInputItems(
     (total, item) => total.add(new Decimal(item.marketPriceSnapshot).mul(item.quantity)),
     new Decimal(0)
   )
+  if (scope === 'roof') {
+    return calculateRoofSubtotal({ labourDays: labour.labourDays, materialMarket }, settings, selection.selectedMin, selection.selectedMax)
+  }
+
   const formulaResults = calculateAllFormulas(
     {
       workingDays: labour.labourDays,
@@ -123,11 +130,14 @@ function calculateAreaSubtotalFromInputItems(
 
 function calculateMainQuoteSubtotal(input: QuoteInput, formulaResults: ReturnType<typeof calculateAllFormulas>, settings: PricingSettings): Decimal {
   const selections = getAreaFormulaSelections(input)
-  const hasAssignedAreaRows = input.items.some((item) => item.areaScopeSnapshot === 'interior' || item.areaScopeSnapshot === 'exterior')
+  const hasAssignedAreaRows = input.items.some((item) =>
+    item.areaScopeSnapshot === 'interior' || item.areaScopeSnapshot === 'exterior' || item.areaScopeSnapshot === 'roof'
+  )
   if (!hasAssignedAreaRows) return calculateSubtotal(formulaResults, input.selectedMin, input.selectedMax)
 
   return calculateAreaSubtotalFromInputItems(input.items, selections.interior, 'interior', settings)
     .add(calculateAreaSubtotalFromInputItems(input.items, selections.exterior, 'exterior', settings))
+    .add(calculateAreaSubtotalFromInputItems(input.items, selections.roof, 'roof', settings))
 }
 
 function optionalDecimalText(value: unknown): string | null {
@@ -317,14 +327,24 @@ function calculateOption(option: QuoteInput['options'][number], settings: Pricin
     },
     settings
   )
-  const subtotal = calculateSubtotal(formulas, option.selectedMin, option.selectedMax)
+  const hasAssignedAreaRows = option.items.some((item) =>
+    item.areaScopeSnapshot === 'interior' || item.areaScopeSnapshot === 'exterior' || item.areaScopeSnapshot === 'roof'
+  )
+  const roofFormulas = calculateRoofFormulaResults({ labourDays: labour.labourDays, materialMarket }, settings)
+  const subtotal = hasAssignedAreaRows
+    ? calculateAreaSubtotalFromInputItems(option.items, { selectedMin: option.selectedMin, selectedMax: option.selectedMax }, 'interior', settings)
+      .add(calculateAreaSubtotalFromInputItems(option.items, { selectedMin: option.selectedMin, selectedMax: option.selectedMax }, 'exterior', settings))
+      .add(calculateAreaSubtotalFromInputItems(option.items, { selectedMin: option.selectedMin, selectedMax: option.selectedMax }, 'roof', settings))
+    : calculateSubtotal(formulas, option.selectedMin, option.selectedMax)
   const finalTotal = calculateFinal(subtotal)
 
   return {
     labour,
     materialMarket,
     materialActual,
-    formulas,
+    formulas: option.items.some((item) => item.areaScopeSnapshot === 'roof') && !option.items.some((item) => item.areaScopeSnapshot === 'interior' || item.areaScopeSnapshot === 'exterior')
+      ? roofFormulas
+      : formulas,
     subtotal,
     finalTotal,
   }

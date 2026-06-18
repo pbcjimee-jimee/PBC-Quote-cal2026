@@ -41,6 +41,18 @@ const areaSubtotalMaterials = [
   },
 ]
 
+const roofMaterial = {
+  id: 'roof-row',
+  name: 'Roof membrane',
+  marketPrice: '100',
+  actualPrice: '80',
+  quantity: '1',
+  workingDays: '2',
+  labourPerDay: '1',
+  areaScope: 'roof' as const,
+  isCustom: true,
+}
+
 describe('quote calculation totals', () => {
   it('calculates interior and exterior subtotals separately and excludes unassigned rows', () => {
     const breakdown = calculateAreaSubtotalBreakdown({
@@ -57,6 +69,29 @@ describe('quote calculation totals', () => {
     expect(breakdown.unassigned.count).toBe(1)
   })
 
+  it('adds roof subtotal using roof labour rate, shared margins, and roof formula selections', () => {
+    const breakdown = calculateAreaSubtotalBreakdown({
+      materials: [...areaSubtotalMaterials, roofMaterial],
+      selectedMin: 1,
+      selectedMax: 1,
+      areaFormulaSelections: {
+        interior: { selectedMin: 1, selectedMax: 1 },
+        exterior: { selectedMin: 1, selectedMax: 1 },
+        roof: { selectedMin: 1, selectedMax: 3 },
+      },
+      settings: DEFAULT_PRICING_SETTINGS,
+    })
+
+    expect(breakdown.interior.subtotal.toFixed(2)).toBe('1100.00')
+    expect(breakdown.exterior.subtotal.toFixed(2)).toBe('1700.00')
+    expect(breakdown.roof.results).toHaveLength(5)
+    expect(breakdown.roof.selectedMin).toBe(1)
+    expect(breakdown.roof.selectedMax).toBe(3)
+    expect(breakdown.roof.subtotal.toFixed(2)).toBe('1725.00')
+    expect(breakdown.finalSubtotal.toFixed(2)).toBe('4525.00')
+    expect(breakdown.unassigned.count).toBe(1)
+  })
+
   it('uses separate formula selections for interior and exterior subtotals', () => {
     const totals = calculateMainQuoteTotals({
       materials: areaSubtotalMaterials,
@@ -65,6 +100,7 @@ describe('quote calculation totals', () => {
       areaFormulaSelections: {
         interior: { selectedMin: 5, selectedMax: 5 },
         exterior: { selectedMin: 1, selectedMax: 1 },
+        roof: { selectedMin: 1, selectedMax: 1 },
       },
       settings: DEFAULT_PRICING_SETTINGS,
     })

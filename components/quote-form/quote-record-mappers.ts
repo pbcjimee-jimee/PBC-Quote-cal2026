@@ -12,7 +12,7 @@ type SavedMaterialItem = {
   labourPerDay: string | null
   areaId: string | null
   areaNameSnapshot: string | null
-  areaScopeSnapshot: 'interior' | 'exterior' | null
+  areaScopeSnapshot: 'interior' | 'exterior' | 'roof' | null
   isCustom: boolean
 }
 

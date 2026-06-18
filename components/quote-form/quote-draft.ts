@@ -55,6 +55,7 @@ export function createEmptyQuoteFormDraft(): QuoteFormDraft {
     areaFormulaSelections: {
       interior: { selectedMin: 4, selectedMax: 1 },
       exterior: { selectedMin: 4, selectedMax: 1 },
+      roof: { selectedMin: 4, selectedMax: 1 },
     },
     jobberQuoteDraft: null,
     updatedAt: new Date(0).toISOString(),
@@ -110,7 +111,9 @@ function parseMaterial(value: unknown): MaterialItem | null {
     return null
   }
 
-  const areaScope = value.areaScope === 'interior' || value.areaScope === 'exterior' ? value.areaScope : undefined
+  const areaScope = value.areaScope === 'interior' || value.areaScope === 'exterior' || value.areaScope === 'roof'
+    ? value.areaScope
+    : undefined
 
   return {
     id,
@@ -183,8 +186,9 @@ function parseAreaFormulaSelections(value: unknown): AreaFormulaSelections | nul
   if (!isRecord(value)) return null
   const interior = parseFormulaSelection(value.interior)
   const exterior = parseFormulaSelection(value.exterior)
+  const roof = parseFormulaSelection(value.roof)
   if (interior === null || exterior === null) return null
-  return { interior, exterior }
+  return { interior, exterior, roof: roof ?? { selectedMin: 4, selectedMax: 1 } }
 }
 
 function parseMemo(value: unknown): QuoteMemoItem | null {
@@ -302,6 +306,7 @@ export function parseQuoteFormDraft(value: string | null): QuoteFormDraft | null
   const areaFormulaSelections = parsedAreaFormulaSelections ?? {
     interior: { selectedMin, selectedMax },
     exterior: { selectedMin, selectedMax },
+    roof: { selectedMin, selectedMax },
   }
 
   return {
@@ -349,6 +354,8 @@ export function hasMeaningfulQuoteDraft(draft: QuoteFormDraft): boolean {
     draft.areaFormulaSelections.interior.selectedMax !== 1 ||
     draft.areaFormulaSelections.exterior.selectedMin !== 4 ||
     draft.areaFormulaSelections.exterior.selectedMax !== 1 ||
+    draft.areaFormulaSelections.roof.selectedMin !== 4 ||
+    draft.areaFormulaSelections.roof.selectedMax !== 1 ||
     draft.jobberQuoteDraft
   )
 }

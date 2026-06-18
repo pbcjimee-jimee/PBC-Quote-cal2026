@@ -31,6 +31,7 @@ const settingsRow = {
   f3_labour_rate: '460.00',
   f4_labour_rate: '380.00',
   f5_labour_rate: '380.00',
+  roof_labour_rate: '700.00',
   f2_margin: '0.300',
   f3_margin: '0.300',
   f4_margin: '0.250',

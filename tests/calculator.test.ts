@@ -4,6 +4,8 @@ import {
   calculateAllFormulas,
   calculateSubtotal,
   calculateFinal,
+  calculateRoofFormulaResults,
+  calculateRoofSubtotal,
   ValidationError,
   DEFAULT_PRICING_SETTINGS,
   formatFormulaRate,
@@ -173,6 +175,50 @@ describe('calculateFinal', () => {
     const subtotal = new Decimal('2761.88')
     const final = calculateFinal(subtotal)
     expect(final.toFixed(2)).toBe('3038.07')
+  })
+})
+
+describe('calculateRoofSubtotal', () => {
+  it('uses roof labour rate with the shared formula margins', () => {
+    const results = calculateRoofFormulaResults({
+      labourDays: new Decimal(2),
+      materialMarket: new Decimal(100),
+    }, {
+      ...DEFAULT_PRICING_SETTINGS,
+      roofLabourRate: 700,
+      f2Margin: 0.30,
+      f3Margin: 0.30,
+      f4Margin: 0.25,
+      f5Margin: 0.30,
+    })
+
+    expect(results.map((result) => result.total.toFixed(2))).toEqual([
+      '1500.00',
+      '1920.00',
+      '1950.00',
+      '1850.00',
+      '1950.00',
+    ])
+  })
+
+  it('uses selected roof formulas for subtotal', () => {
+    const subtotal = calculateRoofSubtotal({
+      labourDays: new Decimal(2),
+      materialMarket: new Decimal(100),
+    }, {
+      ...DEFAULT_PRICING_SETTINGS,
+      roofLabourRate: 700,
+    }, 1, 3)
+
+    expect(subtotal.toFixed(2)).toBe('1725.00')
+  })
+
+  it('throws ValidationError for negative roof labour days', () => {
+    expect(() => calculateRoofSubtotal({ labourDays: -1, materialMarket: 0 }, s)).toThrow(ValidationError)
+  })
+
+  it('throws ValidationError for negative roof material price', () => {
+    expect(() => calculateRoofSubtotal({ labourDays: 1, materialMarket: -1 }, s)).toThrow(ValidationError)
   })
 })
 

@@ -116,6 +116,7 @@ describe('quote actions', () => {
       areaFormulaSelections: {
         interior: { selectedMin: 5, selectedMax: 5 },
         exterior: { selectedMin: 1, selectedMax: 1 },
+        roof: { selectedMin: 1, selectedMax: 1 },
       },
       items: [
         {

@@ -45,13 +45,18 @@ export function calculateQuoteOptionTotals(
       },
       settings
     )
-    const subtotal = calculateSubtotal(results, option.selectedMin, option.selectedMax)
     const areaBreakdown = calculateAreaSubtotalBreakdown({
       materials: option.materials,
       selectedMin: option.selectedMin,
       selectedMax: option.selectedMax,
       settings,
     })
+    const hasAssignedAreaRows = option.materials.some((item) =>
+      item.areaScope === 'interior' || item.areaScope === 'exterior' || item.areaScope === 'roof'
+    )
+    const subtotal = hasAssignedAreaRows
+      ? areaBreakdown.finalSubtotal
+      : calculateSubtotal(results, option.selectedMin, option.selectedMax)
 
     calculated[option.id] = {
       materialMarket,

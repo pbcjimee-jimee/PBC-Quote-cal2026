@@ -13,6 +13,7 @@ function rowToSettings(row: {
   f3_labour_rate: string
   f4_labour_rate: string
   f5_labour_rate: string
+  roof_labour_rate: string
   f2_margin: string
   f3_margin: string
   f4_margin: string
@@ -24,6 +25,7 @@ function rowToSettings(row: {
     f3LabourRate: Number(row.f3_labour_rate),
     f4LabourRate: Number(row.f4_labour_rate),
     f5LabourRate: Number(row.f5_labour_rate),
+    roofLabourRate: Number(row.roof_labour_rate),
     f2Margin: Number(row.f2_margin),
     f3Margin: Number(row.f3_margin),
     f4Margin: Number(row.f4_margin),
@@ -38,6 +40,7 @@ function settingsToRow(settings: PricingSettingsInput) {
     f3_labour_rate: settings.f3LabourRate.toFixed(2),
     f4_labour_rate: settings.f4LabourRate.toFixed(2),
     f5_labour_rate: settings.f5LabourRate.toFixed(2),
+    roof_labour_rate: settings.roofLabourRate.toFixed(2),
     f2_margin: settings.f2Margin.toFixed(3),
     f3_margin: settings.f3Margin.toFixed(3),
     f4_margin: settings.f4Margin.toFixed(3),

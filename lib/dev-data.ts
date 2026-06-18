@@ -3,6 +3,7 @@ import {
   DEFAULT_PRICING_SETTINGS,
   calculateAllFormulas,
   calculateFinal,
+  calculateRoofSubtotal,
   calculateSubtotal,
   type PricingSettings,
 } from './calculator'
@@ -75,7 +76,7 @@ export interface QuoteItemRecord {
   labourPerDay: string | null
   areaId: string | null
   areaNameSnapshot: string | null
-  areaScopeSnapshot: 'interior' | 'exterior' | null
+  areaScopeSnapshot: 'interior' | 'exterior' | 'roof' | null
   isCustom: boolean
   position: number
 }
@@ -175,18 +176,19 @@ type FormulaSelection = {
 
 type AreaFormulaInput = Pick<QuoteInput, 'selectedMin' | 'selectedMax' | 'areaFormulaSelections' | 'items'>
 
-function getAreaFormulaSelections(input: AreaFormulaInput): { interior: FormulaSelection; exterior: FormulaSelection } {
+function getAreaFormulaSelections(input: AreaFormulaInput): { interior: FormulaSelection; exterior: FormulaSelection; roof: FormulaSelection } {
   const fallback = { selectedMin: input.selectedMin, selectedMax: input.selectedMax }
   return {
     interior: input.areaFormulaSelections?.interior ?? fallback,
     exterior: input.areaFormulaSelections?.exterior ?? fallback,
+    roof: input.areaFormulaSelections?.roof ?? fallback,
   }
 }
 
 function calculateAreaSubtotalFromInputItems(
   items: QuoteInput['items'],
   selection: FormulaSelection,
-  scope: 'interior' | 'exterior',
+  scope: 'interior' | 'exterior' | 'roof',
   settings: PricingSettings
 ): Decimal {
   const scopedItems = items.filter((item) => item.areaScopeSnapshot === scope)
@@ -195,6 +197,10 @@ function calculateAreaSubtotalFromInputItems(
     (total, item) => total.add(new Decimal(item.marketPriceSnapshot).mul(item.quantity)),
     new Decimal(0)
   )
+  if (scope === 'roof') {
+    return calculateRoofSubtotal({ labourDays: labour.labourDays, materialMarket }, settings, selection.selectedMin, selection.selectedMax)
+  }
+
   const formulaResults = calculateAllFormulas(
     {
       workingDays: labour.labourDays,
@@ -209,11 +215,14 @@ function calculateAreaSubtotalFromInputItems(
 
 function calculateMainQuoteSubtotal(input: AreaFormulaInput, formulaResults: ReturnType<typeof calculateAllFormulas>, settings: PricingSettings): Decimal {
   const selections = getAreaFormulaSelections(input)
-  const hasAssignedAreaRows = input.items.some((item) => item.areaScopeSnapshot === 'interior' || item.areaScopeSnapshot === 'exterior')
+  const hasAssignedAreaRows = input.items.some((item) =>
+    item.areaScopeSnapshot === 'interior' || item.areaScopeSnapshot === 'exterior' || item.areaScopeSnapshot === 'roof'
+  )
   if (!hasAssignedAreaRows) return calculateSubtotal(formulaResults, input.selectedMin, input.selectedMax)
 
   return calculateAreaSubtotalFromInputItems(input.items, selections.interior, 'interior', settings)
     .add(calculateAreaSubtotalFromInputItems(input.items, selections.exterior, 'exterior', settings))
+    .add(calculateAreaSubtotalFromInputItems(input.items, selections.roof, 'roof', settings))
 }
 
 function searchTokens(query: string): string[] {
@@ -772,7 +781,14 @@ function buildDevQuoteOptionRecord(
     },
     settings
   )
-  const subtotal = calculateSubtotal(formulaResults, option.selectedMin, option.selectedMax)
+  const hasAssignedAreaRows = option.items.some((item) =>
+    item.areaScopeSnapshot === 'interior' || item.areaScopeSnapshot === 'exterior' || item.areaScopeSnapshot === 'roof'
+  )
+  const subtotal = hasAssignedAreaRows
+    ? calculateAreaSubtotalFromInputItems(option.items, { selectedMin: option.selectedMin, selectedMax: option.selectedMax }, 'interior', settings)
+      .add(calculateAreaSubtotalFromInputItems(option.items, { selectedMin: option.selectedMin, selectedMax: option.selectedMax }, 'exterior', settings))
+      .add(calculateAreaSubtotalFromInputItems(option.items, { selectedMin: option.selectedMin, selectedMax: option.selectedMax }, 'roof', settings))
+    : calculateSubtotal(formulaResults, option.selectedMin, option.selectedMax)
   const finalTotal = calculateFinal(subtotal)
 
   return {

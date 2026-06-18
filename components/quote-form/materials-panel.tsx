@@ -7,6 +7,7 @@ import { PaintSearch } from './paint-search'
 import type { AreaCreateResult, AreaFormulaSelections, FormulaNumber, MaterialItem } from './types'
 import type { AreaSubtotalBreakdown } from './quote-calculation-totals'
 import type { AreaRecord, AreaScope } from '@/lib/areas/types'
+import { AREA_SCOPE_LABELS, AREA_SCOPES } from '@/lib/areas/constants'
 import { Icons } from '@/components/ui/icons'
 
 interface MaterialsPanelProps {
@@ -18,7 +19,7 @@ interface MaterialsPanelProps {
   onChange: (item: MaterialItem) => void
   onRemove: (id: string) => void
   onCreateArea?: (scope: AreaScope, name: string) => Promise<AreaCreateResult>
-  onAreaFormulaSelectionChange?: (scope: AreaScope, field: 'selectedMin' | 'selectedMax', value: FormulaNumber) => void
+  onAreaFormulaSelectionChange?: (scope: keyof AreaFormulaSelections, field: 'selectedMin' | 'selectedMax', value: FormulaNumber) => void
 }
 
 function lineTotal(price: string, quantity: string): Decimal {
@@ -28,7 +29,7 @@ function lineTotal(price: string, quantity: string): Decimal {
 function getInitialAreaScope(materials: MaterialItem[], areas: AreaRecord[]): AreaScope {
   const selectedScope = materials.find((item) => item.areaScope)?.areaScope
   if (selectedScope) return selectedScope
-  return areas.some((area) => area.scope === 'interior') ? 'interior' : 'exterior'
+  return areas[0]?.scope ?? 'interior'
 }
 
 export function assignMaterialToActiveArea(
@@ -87,11 +88,7 @@ function LabourSummaryRow({ label, totals }: { label: string; totals: LabourTota
 
 function HiddenMaterialSummary({ item, onRemove }: { item: MaterialItem; onRemove: () => void }) {
   const total = lineTotal(item.marketPrice, item.quantity)
-  const scopeLabel = item.areaScope === 'interior'
-    ? 'Interior'
-    : item.areaScope === 'exterior'
-      ? 'Exterior'
-      : 'No area'
+  const scopeLabel = item.areaScope ? AREA_SCOPE_LABELS[item.areaScope] : 'No area'
   const areaLabel = item.areaName ? `${scopeLabel} - ${item.areaName}` : scopeLabel
 
   return (
@@ -130,7 +127,7 @@ export function MaterialsPanel({
 }: MaterialsPanelProps) {
   const [areaScope, setAreaScope] = useState<AreaScope>(() => getInitialAreaScope(materials, areas))
   const [isExpanded, setIsExpanded] = useState(true)
-  const hasAreaSections = areas.length > 0 || materials.some((item) => item.areaScope === 'interior' || item.areaScope === 'exterior')
+  const hasAreaSections = areas.length > 0 || materials.some((item) => item.areaScope && AREA_SCOPES.includes(item.areaScope))
   const filteredAreas = useMemo(() => areas.filter((area) => area.scope === areaScope), [areaScope, areas])
   const visibleMaterials = useMemo(
     () => hasAreaSections ? materials.filter((item) => item.areaScope === areaScope) : materials,
@@ -144,10 +141,11 @@ export function MaterialsPanel({
   const labourByArea = useMemo(() => ({
     interior: calculateLabourTotals(materials.filter((item) => item.areaScope === 'interior')),
     exterior: calculateLabourTotals(materials.filter((item) => item.areaScope === 'exterior')),
+    roof: calculateLabourTotals(materials.filter((item) => item.areaScope === 'roof')),
   }), [materials])
   const activeLabourTotals = labourByArea[areaScope]
   const hiddenMaterialCount = hiddenMaterials.length
-  const activeScopeLabel = areaScope === 'interior' ? 'Interior' : 'Exterior'
+  const activeScopeLabel = AREA_SCOPE_LABELS[areaScope]
   const activeAreaSubtotal = areaBreakdown?.[areaScope].subtotal
   const hasVisibleMaterials = visibleMaterials.length > 0
 
@@ -168,7 +166,7 @@ export function MaterialsPanel({
         <div className="pbc-panelhead__actions">
           {hasAreaSections ? (
             <div className="pbc-toggle">
-              {(['interior', 'exterior'] as AreaScope[]).map((scope) => (
+              {AREA_SCOPES.map((scope) => (
                 <button
                   key={scope}
                   type="button"
@@ -176,7 +174,7 @@ export function MaterialsPanel({
                   className={areaScope === scope ? 'is-on' : ''}
                   aria-pressed={areaScope === scope}
                 >
-                  {scope === 'interior' ? 'Interior' : 'Exterior'}
+                  {AREA_SCOPE_LABELS[scope]}
                 </button>
               ))}
             </div>

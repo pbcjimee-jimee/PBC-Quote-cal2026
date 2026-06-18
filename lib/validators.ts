@@ -58,7 +58,7 @@ const quoteItemSchema = z.object({
   labourPerDay: z.number().nonnegative().optional(),
   areaId: z.string().min(1).optional(),
   areaNameSnapshot: z.string().min(1).optional(),
-  areaScopeSnapshot: z.enum(['interior', 'exterior']).optional(),
+  areaScopeSnapshot: z.enum(['interior', 'exterior', 'roof']).optional(),
   isCustom: z.boolean().default(false),
   position: z.number().int().nonnegative().default(0),
 })
@@ -79,6 +79,7 @@ const formulaSelectionSchema = z.object({
 const areaFormulaSelectionsSchema = z.object({
   interior: formulaSelectionSchema,
   exterior: formulaSelectionSchema,
+  roof: formulaSelectionSchema.optional(),
 })
 
 const quoteMemoSchema = z.object({
@@ -199,6 +200,7 @@ export const pricingSettingsSchema = z.object({
   f3LabourRate: z.number().nonnegative(),
   f4LabourRate: z.number().nonnegative(),
   f5LabourRate: z.number().nonnegative(),
+  roofLabourRate: z.number().nonnegative(),
   f2Margin: z.number().nonnegative(),
   f3Margin: z.number().nonnegative(),
   f4Margin: z.number().nonnegative(),
@@ -290,7 +292,7 @@ export const productServiceImportSchema = z.object({
 })
 
 export const areaSchema = z.object({
-  scope: z.enum(['interior', 'exterior']),
+  scope: z.enum(['interior', 'exterior', 'roof']),
   name: z.string().trim().min(1).max(80),
 })
 

@@ -2,6 +2,8 @@ import Decimal from 'decimal.js'
 import {
   calculateAllFormulas,
   calculateFinal,
+  calculateRoofFormulaResults,
+  calculateRoofSubtotal,
   calculateSubtotal,
   type FormulaResult,
   type PricingSettings,
@@ -46,6 +48,7 @@ export interface UnassignedSubtotalGroup {
 export interface AreaSubtotalBreakdown {
   interior: AreaSubtotalGroup
   exterior: AreaSubtotalGroup
+  roof: AreaSubtotalGroup
   finalSubtotal: Decimal
   finalTotal: Decimal
   unassigned: UnassignedSubtotalGroup
@@ -82,6 +85,27 @@ function calculateScopedGroup(
   const materialMarket = calculateMaterialMarketTotal(scopedMaterials)
   const materialActual = materialMarket
   const labour = calculateLabourTotals(scopedMaterials)
+  if (scope === 'roof') {
+    const results = calculateRoofFormulaResults({ labourDays: labour.labourDays, materialMarket }, settings)
+    const subtotal = calculateRoofSubtotal(
+      { labourDays: labour.labourDays, materialMarket },
+      settings,
+      selection.selectedMin,
+      selection.selectedMax
+    )
+    return {
+      scope,
+      selectedMin: selection.selectedMin,
+      selectedMax: selection.selectedMax,
+      materialMarket,
+      materialActual,
+      labour,
+      results,
+      subtotal,
+      finalTotal: calculateFinal(subtotal),
+    }
+  }
+
   const results = calculateAllFormulas(
     {
       workingDays: labour.labourDays,
@@ -116,13 +140,15 @@ export function calculateAreaSubtotalBreakdown({
   const fallbackSelection = { selectedMin, selectedMax }
   const interior = calculateScopedGroup('interior', materials, areaFormulaSelections?.interior ?? fallbackSelection, settings)
   const exterior = calculateScopedGroup('exterior', materials, areaFormulaSelections?.exterior ?? fallbackSelection, settings)
-  const unassignedMaterials = materials.filter((item) => item.areaScope !== 'interior' && item.areaScope !== 'exterior')
+  const roof = calculateScopedGroup('roof', materials, areaFormulaSelections?.roof ?? fallbackSelection, settings)
+  const unassignedMaterials = materials.filter((item) => item.areaScope !== 'interior' && item.areaScope !== 'exterior' && item.areaScope !== 'roof')
   const unassignedLabour = calculateLabourTotals(unassignedMaterials)
-  const finalSubtotal = interior.subtotal.add(exterior.subtotal)
+  const finalSubtotal = interior.subtotal.add(exterior.subtotal).add(roof.subtotal)
 
   return {
     interior,
     exterior,
+    roof,
     finalSubtotal,
     finalTotal: calculateFinal(finalSubtotal),
     unassigned: {

@@ -117,6 +117,7 @@ export interface Database {
           f3_labour_rate: string
           f4_labour_rate: string
           f5_labour_rate: string
+          roof_labour_rate: string
           f2_margin: string
           f3_margin: string
           f4_margin: string
@@ -131,7 +132,7 @@ export interface Database {
       quote_areas: {
         Row: {
           id: string
-          scope: 'interior' | 'exterior'
+          scope: 'interior' | 'exterior' | 'roof'
           name: string
           active: boolean
           position: number
@@ -201,7 +202,7 @@ export interface Database {
           labour_per_day: string | null
           area_id: string | null
           area_name_snapshot: string | null
-          area_scope_snapshot: 'interior' | 'exterior' | null
+          area_scope_snapshot: 'interior' | 'exterior' | 'roof' | null
           is_custom: boolean
           position: number
         }
@@ -250,7 +251,7 @@ export interface Database {
           labour_per_day: string | null
           area_id: string | null
           area_name_snapshot: string | null
-          area_scope_snapshot: 'interior' | 'exterior' | null
+          area_scope_snapshot: 'interior' | 'exterior' | 'roof' | null
           is_custom: boolean
           position: number
         }

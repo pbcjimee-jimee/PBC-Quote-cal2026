@@ -8,6 +8,7 @@ interface OptionTotalsSummaryProps {
     finalTotal?: Decimal
     interiorSubtotal?: Decimal
     exteriorSubtotal?: Decimal
+    roofSubtotal?: Decimal
   }>
 }
 
@@ -25,9 +26,9 @@ export function OptionTotalsSummary({ options }: OptionTotalsSummaryProps) {
           <div key={option.id} className="flex justify-between gap-3 rounded-[10px] border border-[var(--primary-soft)] bg-[var(--primary-soft)] px-3 py-2">
             <span className="min-w-0 text-[var(--foreground)]">
               <span className="block truncate font-semibold">{option.title.trim() || `Option ${index + 1}`}</span>
-              {option.interiorSubtotal || option.exteriorSubtotal ? (
+              {option.interiorSubtotal || option.exteriorSubtotal || option.roofSubtotal ? (
                 <span className="mt-1 block text-xs text-[var(--muted)]">
-                  Interior ${option.interiorSubtotal?.toFixed(2) ?? '0.00'} / Exterior ${option.exteriorSubtotal?.toFixed(2) ?? '0.00'}
+                  Interior ${option.interiorSubtotal?.toFixed(2) ?? '0.00'} / Exterior ${option.exteriorSubtotal?.toFixed(2) ?? '0.00'} / Roof ${option.roofSubtotal?.toFixed(2) ?? '0.00'}
                 </span>
               ) : null}
             </span>

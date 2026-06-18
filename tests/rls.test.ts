@@ -13,6 +13,7 @@ const migrations = [
   '0011_add_product_services.sql',
   '0012_add_quote_line_templates.sql',
   '0013_add_quote_memos.sql',
+  '0015_add_roof_scope_and_pricing.sql',
 ].map((file) => {
   const path = join(migrationsDir, file)
 

@@ -33,6 +33,7 @@ import {
 } from './quote-record-mappers'
 import { saveQuoteFormPayload } from './quote-save-payload'
 import type { AreaRecord } from '@/lib/areas/types'
+import { AREA_SCOPE_SORT_ORDER } from '@/lib/areas/constants'
 import type {
   JobberQuoteDraft,
   JobberQuoteDraftExpense,
@@ -187,14 +188,9 @@ function createClientId(prefix: string): string {
   return `${prefix}-${globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`}`
 }
 
-const areaScopeSortOrder: Record<AreaScope, number> = {
-  interior: 0,
-  exterior: 1,
-}
-
 function sortQuoteAreas(nextAreas: AreaRecord[]): AreaRecord[] {
   return [...nextAreas].sort((left, right) => {
-    const scopeDifference = areaScopeSortOrder[left.scope] - areaScopeSortOrder[right.scope]
+    const scopeDifference = AREA_SCOPE_SORT_ORDER[left.scope] - AREA_SCOPE_SORT_ORDER[right.scope]
     if (scopeDifference !== 0) return scopeDifference
     if (left.position !== right.position) return left.position - right.position
     return left.name.localeCompare(right.name)
@@ -213,6 +209,10 @@ function getInitialAreaFormulaSelections(initialQuote: QuoteRecord | undefined):
     exterior: {
       selectedMin: initialQuote?.exteriorSelectedMin ?? fallbackMin,
       selectedMax: initialQuote?.exteriorSelectedMax ?? fallbackMax,
+    },
+    roof: {
+      selectedMin: fallbackMin,
+      selectedMax: fallbackMax,
     },
   }
 }
@@ -486,6 +486,7 @@ export function QuoteForm({ settings, areas, productServices = [], quoteLineTemp
     finalTotal: optionTotals[option.id].finalTotal,
     interiorSubtotal: optionTotals[option.id].areaBreakdown.interior.subtotal,
     exteriorSubtotal: optionTotals[option.id].areaBreakdown.exterior.subtotal,
+    roofSubtotal: optionTotals[option.id].areaBreakdown.roof.subtotal,
   })), [optionTotals, options])
 
   function addMaterial(item: MaterialItem) {
@@ -547,7 +548,7 @@ export function QuoteForm({ settings, areas, productServices = [], quoteLineTemp
     setMemos((current) => current.filter((memo) => memo.id !== id))
   }
 
-  function changeAreaFormulaSelection(scope: AreaScope, field: 'selectedMin' | 'selectedMax', value: FormulaNumber) {
+  function changeAreaFormulaSelection(scope: keyof AreaFormulaSelections, field: 'selectedMin' | 'selectedMax', value: FormulaNumber) {
     setAreaFormulaSelections((current) => ({
       ...current,
       [scope]: {

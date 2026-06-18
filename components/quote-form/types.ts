@@ -1,7 +1,7 @@
 import type { AreaRecord } from '@/lib/areas/types'
 
 export type FormulaNumber = 1 | 2 | 3 | 4 | 5
-export type AreaScope = 'interior' | 'exterior'
+export type AreaScope = 'interior' | 'exterior' | 'roof'
 export type JobberSaveMode = 'priced_line_items' | 'description_total'
 export type JobberQuoteLineKind = 'line_item' | 'text'
 export type AreaCreateResult = { ok: true; data: AreaRecord } | { ok: false; error: string }
@@ -14,6 +14,7 @@ export interface FormulaSelection {
 export interface AreaFormulaSelections {
   interior: FormulaSelection
   exterior: FormulaSelection
+  roof: FormulaSelection
 }
 
 export interface JobberQuoteLineItemDraft {

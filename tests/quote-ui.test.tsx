@@ -63,6 +63,7 @@ describe('quote form pricing UI', () => {
       f3LabourRate: 460,
       f4LabourRate: 380,
       f5LabourRate: 380,
+      roofLabourRate: 700,
       f2Margin: 0.3,
       f3Margin: 0.3,
       f4Margin: 0.25,
@@ -128,6 +129,17 @@ describe('quote form pricing UI', () => {
       },
       exterior: {
         scope: 'exterior',
+        selectedMin: 1,
+        selectedMax: 1,
+        materialMarket: zero,
+        materialActual: zero,
+        labour: { workingDays: zero, labourPerDay: zero, labourDays: zero },
+        results: [],
+        subtotal: zero,
+        finalTotal: zero,
+      },
+      roof: {
+        scope: 'roof',
         selectedMin: 1,
         selectedMax: 1,
         materialMarket: zero,
@@ -574,6 +586,7 @@ describe('quote form pricing UI', () => {
         areaFormulaSelections: {
           interior: { selectedMin: 1, selectedMax: 1 },
           exterior: { selectedMin: 1, selectedMax: 1 },
+          roof: { selectedMin: 1, selectedMax: 1 },
         },
         onAdd: () => undefined,
         onChange: () => undefined,
@@ -617,7 +630,7 @@ describe('quote form pricing UI', () => {
     )
 
     expect(markup).toContain('2 material rows need')
-    expect(markup).toContain('Interior or Exterior area')
+    expect(markup).toContain('Interior, Exterior, or Roof area')
   })
 
   it('shows Jobber quote total, expenses total, and profit margin in the right summary', () => {
@@ -850,6 +863,7 @@ describe('quote form pricing UI', () => {
         areaFormulaSelections: {
           interior: { selectedMin: 1, selectedMax: 1 },
           exterior: { selectedMin: 1, selectedMax: 1 },
+          roof: { selectedMin: 1, selectedMax: 1 },
         },
         onAdd: () => undefined,
         onChange: () => undefined,

@@ -1,6 +1,7 @@
 import { type FocusEvent, type KeyboardEvent, useEffect, useRef, useState } from 'react'
 import type { AreaCreateResult, AreaScope, MaterialItem } from './types'
 import type { AreaRecord } from '@/lib/areas/types'
+import { AREA_SCOPE_LABELS } from '@/lib/areas/constants'
 import { DecimalInput } from './decimal-input'
 
 interface MaterialRowProps {
@@ -13,7 +14,7 @@ interface MaterialRowProps {
 }
 
 function getScopeLabel(scope: AreaScope): string {
-  return scope === 'interior' ? 'Interior' : 'Exterior'
+  return AREA_SCOPE_LABELS[scope]
 }
 
 function formatAreaLabel(area: AreaRecord): string {

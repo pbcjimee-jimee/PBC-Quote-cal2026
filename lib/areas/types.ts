@@ -1,4 +1,4 @@
-export type AreaScope = 'interior' | 'exterior'
+export type AreaScope = 'interior' | 'exterior' | 'roof'
 
 export interface AreaRecord {
   id: string

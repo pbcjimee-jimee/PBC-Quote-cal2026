@@ -44,6 +44,7 @@ export function buildQuoteSavePayload({
   const normalizedAreaFormulaSelections = areaFormulaSelections ?? {
     interior: { selectedMin, selectedMax },
     exterior: { selectedMin, selectedMax },
+    roof: { selectedMin, selectedMax },
   }
   const totals = calculateMainQuoteTotals({
     materials,

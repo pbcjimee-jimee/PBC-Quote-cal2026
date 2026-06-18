@@ -12,6 +12,7 @@ import type { AreaScope } from '@/components/quote-form/types'
 import { QuoteDeleteButton } from '@/components/quote-list/quote-delete-button'
 import { Card, SectionLabel } from '@/components/ui/card'
 import { Icons } from '@/components/ui/icons'
+import { AREA_SCOPE_LABELS } from '@/lib/areas/constants'
 
 interface QuoteDetailViewProps {
   quote: QuoteRecord
@@ -152,6 +153,10 @@ export function QuoteDetailView({ quote }: QuoteDetailViewProps) {
         selectedMin: quote.exteriorSelectedMin ?? quote.selectedMin,
         selectedMax: quote.exteriorSelectedMax ?? quote.selectedMax,
       },
+      roof: {
+        selectedMin: quote.selectedMin,
+        selectedMax: quote.selectedMax,
+      },
     },
     settings: quote.pricingSettingsSnapshot,
   })
@@ -174,6 +179,7 @@ export function QuoteDetailView({ quote }: QuoteDetailViewProps) {
       finalTotal: new Decimal(option.finalTotal),
       interiorSubtotal: optionAreaBreakdown.interior.subtotal,
       exteriorSubtotal: optionAreaBreakdown.exterior.subtotal,
+      roofSubtotal: optionAreaBreakdown.roof.subtotal,
     }
   })
 
@@ -241,6 +247,10 @@ export function QuoteDetailView({ quote }: QuoteDetailViewProps) {
                 <span className="text-[var(--muted)]">Exterior</span>
                 <span className="mono font-semibold">${areaBreakdown.exterior.subtotal.toFixed(2)}</span>
               </div>
+              <div className="flex justify-between gap-2">
+                <span className="text-[var(--muted)]">Roof</span>
+                <span className="mono font-semibold">${areaBreakdown.roof.subtotal.toFixed(2)}</span>
+              </div>
             </div>
           </Card>
 
@@ -259,7 +269,7 @@ export function QuoteDetailView({ quote }: QuoteDetailViewProps) {
             <div className="pbc-dformulas">
               {formulaScopes.map((scope, scopeIndex) => {
                 const group = areaBreakdown[scope]
-                const label = scope === 'interior' ? 'Interior' : 'Exterior'
+                const label = AREA_SCOPE_LABELS[scope]
 
                 return (
                   <div key={scope} className={scopeIndex > 0 ? 'pbc-divider' : ''}>

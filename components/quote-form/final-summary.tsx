@@ -53,7 +53,7 @@ export function FinalSummary({
       <div className="pbc-summary__hero">
         <span className="pbc-summary__heroLabel">Final subtotal</span>
         <div className="pbc-summary__heroValue mono">${visibleSubtotal.toFixed(2)}</div>
-        <p className="pbc-summary__heroSub">Ex GST. Interior and exterior are calculated separately.</p>
+        <p className="pbc-summary__heroSub">Ex GST. Interior, exterior, and roof are calculated separately.</p>
       </div>
       <div className="pbc-summary__rows">
         <div className="pbc-srow pbc-srow--strong"><span>Final subtotal</span><span className="mono">${visibleSubtotal.toFixed(2)}</span></div>
@@ -62,13 +62,14 @@ export function FinalSummary({
         <div className="pbc-srow"><span>GST 10%</span><span className="mono">${gstTotal.toFixed(2)}</span></div>
         {areaBreakdown.unassigned.count > 0 ? (
           <p className="pbc-alert pbc-alert--warning mt-3">
-            {areaBreakdown.unassigned.count} {unassignedLabel} an Interior or Exterior area before being included in grouped subtotals.
+            {areaBreakdown.unassigned.count} {unassignedLabel} an Interior, Exterior, or Roof area before being included in grouped subtotals.
           </p>
         ) : null}
       </div>
       <div className="pbc-summary__chips">
         <span className="pbc-statchip">Interior subtotal <b className="mono">${areaBreakdown.interior.subtotal.toFixed(2)}</b></span>
         <span className="pbc-statchip">Exterior subtotal <b className="mono">${areaBreakdown.exterior.subtotal.toFixed(2)}</b></span>
+        <span className="pbc-statchip">Roof subtotal <b className="mono">${areaBreakdown.roof.subtotal.toFixed(2)}</b></span>
       </div>
       {jobberFinancialSummary ? (
         <div className="border-t border-[var(--border-soft)] px-[22px] pb-5 pt-4">
