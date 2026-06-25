@@ -109,6 +109,10 @@ export function AreaPickerDropdown({
   )
 }
 
+export function updateMaterialRrp(item: MaterialItem, value: string): MaterialItem {
+  return { ...item, marketPrice: value }
+}
+
 export function MaterialRow({ item, areas, areaScope, onCreateArea, onChange, onRemove }: MaterialRowProps) {
   const [isAddingArea, setIsAddingArea] = useState(false)
   const [areaQuery, setAreaQuery] = useState('')
@@ -252,7 +256,7 @@ export function MaterialRow({ item, areas, areaScope, onCreateArea, onChange, on
         <DecimalInput
           label="RRP"
           value={item.marketPrice}
-          onValueChange={(value) => onChange({ ...item, marketPrice: value, actualPrice: value })}
+          onValueChange={(value) => onChange(updateMaterialRrp(item, value))}
           labelClassName="pbc-field min-w-0"
           inputClassName="pbc-input min-w-0 font-semibold"
           warningClassName="block text-[11px] font-normal text-amber-600"

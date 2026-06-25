@@ -95,6 +95,8 @@ const PUBLIC_PRODUCT_COLUMNS = [
   'source_url',
 ].join(', ')
 
+const QUOTE_PRODUCT_COLUMNS = `${PUBLIC_PRODUCT_COLUMNS}, actual_price`
+
 function rowToProduct(row: PublicProductRow): ProductRecord {
   return normalizeRrpProduct({
     id: row.id,
@@ -412,7 +414,7 @@ export async function searchProducts(input: unknown): Promise<ActionResult<Produ
   const supabase = await createClient()
   let request = supabase
     .from('products')
-    .select(PUBLIC_PRODUCT_COLUMNS)
+    .select(QUOTE_PRODUCT_COLUMNS)
     .eq('active', true)
     .order('created_at', { ascending: false })
     .limit(parsed.data.limit)

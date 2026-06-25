@@ -16,7 +16,7 @@ export function createProductMaterialItem(product: ProductRecord): MaterialItem 
     volumeLitres: product.volumeLitres,
     productCode: product.productCode,
     marketPrice: product.marketPrice,
-    actualPrice: product.marketPrice,
+    actualPrice: product.actualPrice,
     quantity: '1',
     workingDays: '0',
     labourPerDay: '0',

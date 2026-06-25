@@ -75,6 +75,13 @@ function calculateMaterialMarketTotal(materials: MaterialItem[]): Decimal {
   )
 }
 
+function calculateMaterialActualTotal(materials: MaterialItem[]): Decimal {
+  return materials.reduce(
+    (total, item) => total.add(decimalFromInput(item.actualPrice).mul(decimalFromInput(item.quantity))),
+    new Decimal(0)
+  )
+}
+
 function calculateScopedGroup(
   scope: AreaScope,
   materials: MaterialItem[],
@@ -83,12 +90,12 @@ function calculateScopedGroup(
 ): AreaSubtotalGroup {
   const scopedMaterials = materials.filter((item) => item.areaScope === scope)
   const materialMarket = calculateMaterialMarketTotal(scopedMaterials)
-  const materialActual = materialMarket
+  const materialActual = calculateMaterialActualTotal(scopedMaterials)
   const labour = calculateLabourTotals(scopedMaterials)
   if (scope === 'roof') {
-    const results = calculateRoofFormulaResults({ labourDays: labour.labourDays, materialMarket }, settings)
+    const results = calculateRoofFormulaResults({ labourDays: labour.labourDays, materialMarket, materialActual }, settings)
     const subtotal = calculateRoofSubtotal(
-      { labourDays: labour.labourDays, materialMarket },
+      { labourDays: labour.labourDays, materialMarket, materialActual },
       settings,
       selection.selectedMin,
       selection.selectedMax
@@ -167,7 +174,7 @@ export function calculateMainQuoteTotals({
   settings,
 }: MainQuoteTotalsInput): MainQuoteTotals {
   const materialMarket = calculateMaterialMarketTotal(materials)
-  const materialActual = materialMarket
+  const materialActual = calculateMaterialActualTotal(materials)
   const materialLabour = calculateLabourTotals(materials)
   const results = calculateAllFormulas(
     {

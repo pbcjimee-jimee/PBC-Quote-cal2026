@@ -87,8 +87,8 @@ describe('quote calculation totals', () => {
     expect(breakdown.roof.results).toHaveLength(5)
     expect(breakdown.roof.selectedMin).toBe(1)
     expect(breakdown.roof.selectedMax).toBe(3)
-    expect(breakdown.roof.subtotal.toFixed(2)).toBe('1821.43')
-    expect(breakdown.finalSubtotal.toFixed(2)).toBe('4621.43')
+    expect(breakdown.roof.subtotal.toFixed(2)).toBe('1807.14')
+    expect(breakdown.finalSubtotal.toFixed(2)).toBe('4607.14')
     expect(breakdown.unassigned.count).toBe(1)
   })
 
@@ -107,9 +107,9 @@ describe('quote calculation totals', () => {
 
     expect(totals.areaBreakdown.interior.selectedMin).toBe(5)
     expect(totals.areaBreakdown.interior.selectedMax).toBe(5)
-    expect(totals.areaBreakdown.interior.subtotal.toFixed(2)).toBe('1228.57')
+    expect(totals.areaBreakdown.interior.subtotal.toFixed(2)).toBe('1200.00')
     expect(totals.areaBreakdown.exterior.subtotal.toFixed(2)).toBe('1700.00')
-    expect(totals.areaBreakdown.finalSubtotal.toFixed(2)).toBe('2928.57')
+    expect(totals.areaBreakdown.finalSubtotal.toFixed(2)).toBe('2900.00')
   })
 
   it('keeps the existing overall main subtotal and includes area breakdown', () => {
@@ -161,6 +161,43 @@ describe('quote calculation totals', () => {
     expect(totals.totalLabourDays.toFixed(2)).toBe('4.00')
     expect(totals.materialMarket.toFixed(2)).toBe('60.00')
     expect(totals.results[0].total.toFixed(2)).toBe('2060.00')
+  })
+
+  it('keeps selected material actual cost separate from editable RRP for total-margin formulas', () => {
+    const totals = calculateMainQuoteTotals({
+      materials: [
+        {
+          id: 'main-1',
+          name: 'Selected prep material',
+          marketPrice: '0',
+          actualPrice: '99',
+          quantity: '1',
+          workingDays: '1',
+          labourPerDay: '1',
+          areaScope: 'interior',
+          isCustom: false,
+        },
+      ],
+      selectedMin: 1,
+      selectedMax: 1,
+      areaFormulaSelections: {
+        interior: { selectedMin: 2, selectedMax: 3 },
+        exterior: { selectedMin: 1, selectedMax: 1 },
+        roof: { selectedMin: 1, selectedMax: 1 },
+      },
+      settings: {
+        ...DEFAULT_PRICING_SETTINGS,
+        f4Margin: 0.25,
+        f5Margin: 0.25,
+      },
+    })
+
+    expect(totals.materialMarket.toFixed(2)).toBe('0.00')
+    expect(totals.materialActual.toFixed(2)).toBe('99.00')
+    expect(totals.areaBreakdown.interior.results[1].total.toFixed(2)).toBe('657.14')
+    expect(totals.areaBreakdown.interior.results[2].total.toFixed(2)).toBe('798.57')
+    expect(totals.areaBreakdown.interior.results[3].total.toFixed(2)).toBe('506.67')
+    expect(totals.areaBreakdown.interior.results[4].total.toFixed(2)).toBe('638.67')
   })
 
   it('reports total labour as the sum of each row working days times labour', () => {

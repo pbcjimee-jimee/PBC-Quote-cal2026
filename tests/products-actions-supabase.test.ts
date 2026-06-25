@@ -155,6 +155,23 @@ describe('product actions against Supabase', () => {
     expect(request.or).toHaveBeenCalledWith(expect.stringContaining('product_line.ilike.%weathershield%'))
   })
 
+  it('searches Supabase products with actual prices for quote material margin calculations', async () => {
+    const request = createThenableProductsRequest({
+      data: [{ ...productRow, actual_price: '180.00' }],
+      error: null,
+    })
+    mocks.createClient.mockResolvedValueOnce({ from: vi.fn(() => request) })
+
+    const result = await searchProducts({ query: 'weathershield', limit: 8 })
+
+    expect(result.ok).toBe(true)
+    expect(request.select).toHaveBeenCalledWith(expect.stringContaining('actual_price'))
+    if (result.ok) {
+      expect(result.data[0].marketPrice).toBe('199.50')
+      expect(result.data[0].actualPrice).toBe('180.00')
+    }
+  })
+
   it('imports parsed CSV rows through Supabase', async () => {
     const builder = createImportBuilder({ data: [productRow], error: null })
     mocks.createClient.mockResolvedValueOnce({ from: vi.fn(() => builder) })

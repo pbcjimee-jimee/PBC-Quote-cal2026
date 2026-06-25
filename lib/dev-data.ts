@@ -219,8 +219,12 @@ function calculateAreaSubtotalFromInputItems(
     (total, item) => total.add(new Decimal(item.marketPriceSnapshot).mul(item.quantity)),
     new Decimal(0)
   )
+  const materialActual = scopedItems.reduce(
+    (total, item) => total.add(new Decimal(item.actualPriceSnapshot).mul(item.quantity)),
+    new Decimal(0)
+  )
   if (scope === 'roof') {
-    return calculateRoofSubtotal({ labourDays: labour.labourDays, materialMarket }, settings, selection.selectedMin, selection.selectedMax)
+    return calculateRoofSubtotal({ labourDays: labour.labourDays, materialMarket, materialActual }, settings, selection.selectedMin, selection.selectedMax)
   }
 
   const formulaResults = calculateAllFormulas(
@@ -228,7 +232,7 @@ function calculateAreaSubtotalFromInputItems(
       workingDays: labour.labourDays,
       labourPerDay: 1,
       materialMarket,
-      materialActual: materialMarket,
+      materialActual,
     },
     settings
   )
@@ -349,7 +353,10 @@ export function searchDevProducts(query: string, limit = 8): ProductRecord[] {
 }
 
 export function listDevProducts(query = '', limit = 200): ProductRecord[] {
-  return searchDevProducts(query, limit)
+  return searchDevProducts(query, limit).map((product) => ({
+    ...product,
+    actualPrice: product.marketPrice,
+  }))
 }
 
 function rowToDevProductService(

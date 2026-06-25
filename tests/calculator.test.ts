@@ -58,7 +58,7 @@ describe('calculateAllFormulas', () => {
   it('formula3: (f3_rate × D + material_market) / 0.70', () => {
     const results = calculateAllFormulas(base, s)
     const f3 = results[2]
-    expect(f3.total.toFixed(2)).toBe('3775.00')
+    expect(f3.total.toFixed(2)).toBe('3635.71')
   })
 
   it('formula4: (f4_rate × D / 0.75) + material_market', () => {
@@ -70,7 +70,25 @@ describe('calculateAllFormulas', () => {
   it('formula5: (f5_rate × D + material_market) / 0.70', () => {
     const results = calculateAllFormulas(base, s)
     const f5 = results[4]
-    expect(f5.total.toFixed(2)).toBe('3203.57')
+    expect(f5.total.toFixed(2)).toBe('3064.29')
+  })
+
+  it('keeps labour-only and total-margin formulas different when RRP is zero but material actual cost exists', () => {
+    const results = calculateAllFormulas({
+      workingDays: 1,
+      labourPerDay: 1,
+      materialMarket: 0,
+      materialActual: 99,
+    }, {
+      ...s,
+      f4Margin: 0.25,
+      f5Margin: 0.25,
+    })
+
+    expect(results[1].total.toFixed(2)).toBe('657.14')
+    expect(results[2].total.toFixed(2)).toBe('798.57')
+    expect(results[3].total.toFixed(2)).toBe('506.67')
+    expect(results[4].total.toFixed(2)).toBe('638.67')
   })
 
   it('accepts Decimal inputs', () => {
@@ -223,6 +241,12 @@ describe('calculateRoofSubtotal', () => {
 
   it('throws ValidationError for negative roof material price', () => {
     expect(() => calculateRoofSubtotal({ labourDays: 1, materialMarket: -1 }, s)).toThrow(ValidationError)
+  })
+
+  it('throws ValidationError for negative roof material actual price', () => {
+    expect(() => calculateRoofFormulaResults({ labourDays: 1, materialMarket: 0, materialActual: -1 }, s)).toThrow(
+      ValidationError
+    )
   })
 })
 

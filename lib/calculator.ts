@@ -56,9 +56,9 @@ export function getFormulaDescriptions(settings: PricingSettings) {
   return {
     formula1Name: `${formatFormulaRate(settings.f1LabourRate)} / Market / No Margin`,
     formula2Name: `${formatFormulaRate(settings.f2LabourRate)} / Labour ${formatPercent(settings.f2Margin)} / Market`,
-    formula3Name: `${formatFormulaRate(settings.f3LabourRate)} / Market / Total ${formatPercent(settings.f3Margin)}`,
+    formula3Name: `${formatFormulaRate(settings.f3LabourRate)} / Material / Total ${formatPercent(settings.f3Margin)}`,
     formula4Name: `${formatFormulaRate(settings.f4LabourRate)} / Labour ${formatPercent(settings.f4Margin)} / Market`,
-    formula5Name: `${formatFormulaRate(settings.f5LabourRate)} / Market / Total ${formatPercent(settings.f5Margin)}`,
+    formula5Name: `${formatFormulaRate(settings.f5LabourRate)} / Material / Total ${formatPercent(settings.f5Margin)}`,
   }
 }
 
@@ -92,8 +92,8 @@ function formula2(D: Decimal, mm: Decimal, s: PricingSettings): Decimal {
 }
 
 // formula_3 = (f3_labour_rate × D + material_market) / (1 - f3_margin)
-function formula3(D: Decimal, mm: Decimal, s: PricingSettings): Decimal {
-  return applyMargin(toDecimal(s.f3LabourRate).mul(D).add(mm), s.f3Margin)
+function formula3(D: Decimal, ma: Decimal, s: PricingSettings): Decimal {
+  return applyMargin(toDecimal(s.f3LabourRate).mul(D).add(ma), s.f3Margin)
 }
 
 // formula_4 = (f4_labour_rate × D / (1 - f4_margin)) + material_market
@@ -103,8 +103,8 @@ function formula4(D: Decimal, mm: Decimal, s: PricingSettings): Decimal {
 }
 
 // formula_5 = (f5_labour_rate × D + material_market) / (1 - f5_margin)
-function formula5(D: Decimal, mm: Decimal, s: PricingSettings): Decimal {
-  return applyMargin(toDecimal(s.f5LabourRate).mul(D).add(mm), s.f5Margin)
+function formula5(D: Decimal, ma: Decimal, s: PricingSettings): Decimal {
+  return applyMargin(toDecimal(s.f5LabourRate).mul(D).add(ma), s.f5Margin)
 }
 
 export function calculateAllFormulas(
@@ -115,14 +115,15 @@ export function calculateAllFormulas(
 
   const D = toDecimal(input.workingDays).mul(toDecimal(input.labourPerDay))
   const mm = toDecimal(input.materialMarket)
+  const ma = toDecimal(input.materialActual)
   const names = getFormulaDescriptions(settings)
 
   return [
     { formulaNum: 1, name: names.formula1Name, total: formula1(D, mm, settings) },
     { formulaNum: 2, name: names.formula2Name, total: formula2(D, mm, settings) },
-    { formulaNum: 3, name: names.formula3Name, total: formula3(D, mm, settings) },
+    { formulaNum: 3, name: names.formula3Name, total: formula3(D, ma, settings) },
     { formulaNum: 4, name: names.formula4Name, total: formula4(D, mm, settings) },
-    { formulaNum: 5, name: names.formula5Name, total: formula5(D, mm, settings) },
+    { formulaNum: 5, name: names.formula5Name, total: formula5(D, ma, settings) },
   ]
 }
 
@@ -147,21 +148,23 @@ export function calculateFinal(subtotal: Decimal): Decimal {
 }
 
 export function calculateRoofFormulaResults(
-  input: { labourDays: Decimal | number; materialMarket: Decimal | number },
+  input: { labourDays: Decimal | number; materialMarket: Decimal | number; materialActual?: Decimal | number },
   settings: PricingSettings
 ): FormulaResult[] {
   const labourDays = toDecimal(input.labourDays)
   const materialMarket = toDecimal(input.materialMarket)
+  const materialActual = input.materialActual === undefined ? materialMarket : toDecimal(input.materialActual)
 
   if (labourDays.lt(0)) throw new ValidationError('Roof labour days cannot be negative')
   if (materialMarket.lt(0)) throw new ValidationError('Roof material price cannot be negative')
+  if (materialActual.lt(0)) throw new ValidationError('Roof material actual price cannot be negative')
 
   return calculateAllFormulas(
     {
       workingDays: labourDays,
       labourPerDay: 1,
       materialMarket,
-      materialActual: materialMarket,
+      materialActual,
     },
     {
       ...settings,
@@ -175,7 +178,7 @@ export function calculateRoofFormulaResults(
 }
 
 export function calculateRoofSubtotal(
-  input: { labourDays: Decimal | number; materialMarket: Decimal | number },
+  input: { labourDays: Decimal | number; materialMarket: Decimal | number; materialActual?: Decimal | number },
   settings: PricingSettings,
   selectedMin: 1 | 2 | 3 | 4 | 5 = 1,
   selectedMax: 1 | 2 | 3 | 4 | 5 = 1

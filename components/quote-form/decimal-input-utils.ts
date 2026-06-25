@@ -9,12 +9,13 @@ export function isCompleteDecimalInputValue(value: string): boolean {
 }
 
 export function getNextDecimalInputValue(
-  currentValue: string,
+  currentValue: unknown,
   insertedValue: string,
   selectionStart: number | null,
   selectionEnd: number | null
 ): string {
-  const start = selectionStart ?? currentValue.length
+  const normalizedCurrentValue = String(currentValue ?? '')
+  const start = selectionStart ?? normalizedCurrentValue.length
   const end = selectionEnd ?? start
-  return `${currentValue.slice(0, start)}${insertedValue}${currentValue.slice(end)}`
+  return `${normalizedCurrentValue.slice(0, start)}${insertedValue}${normalizedCurrentValue.slice(end)}`
 }

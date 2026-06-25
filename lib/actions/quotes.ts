@@ -129,8 +129,12 @@ function calculateAreaSubtotalFromInputItems(
     (total, item) => total.add(new Decimal(item.marketPriceSnapshot).mul(item.quantity)),
     new Decimal(0)
   )
+  const materialActual = scopedItems.reduce(
+    (total, item) => total.add(new Decimal(item.actualPriceSnapshot).mul(item.quantity)),
+    new Decimal(0)
+  )
   if (scope === 'roof') {
-    return calculateRoofSubtotal({ labourDays: labour.labourDays, materialMarket }, settings, selection.selectedMin, selection.selectedMax)
+    return calculateRoofSubtotal({ labourDays: labour.labourDays, materialMarket, materialActual }, settings, selection.selectedMin, selection.selectedMax)
   }
 
   const formulaResults = calculateAllFormulas(
@@ -138,7 +142,7 @@ function calculateAreaSubtotalFromInputItems(
       workingDays: labour.labourDays,
       labourPerDay: 1,
       materialMarket,
-      materialActual: materialMarket,
+      materialActual,
     },
     settings
   )
@@ -457,7 +461,7 @@ function calculateOption(option: QuoteInput['options'][number], settings: Pricin
   const hasAssignedAreaRows = option.items.some((item) =>
     item.areaScopeSnapshot === 'interior' || item.areaScopeSnapshot === 'exterior' || item.areaScopeSnapshot === 'roof'
   )
-  const roofFormulas = calculateRoofFormulaResults({ labourDays: labour.labourDays, materialMarket }, settings)
+  const roofFormulas = calculateRoofFormulaResults({ labourDays: labour.labourDays, materialMarket, materialActual }, settings)
   const subtotal = hasAssignedAreaRows
     ? calculateAreaSubtotalFromInputItems(option.items, { selectedMin: option.selectedMin, selectedMax: option.selectedMax }, 'interior', settings)
       .add(calculateAreaSubtotalFromInputItems(option.items, { selectedMin: option.selectedMin, selectedMax: option.selectedMax }, 'exterior', settings))

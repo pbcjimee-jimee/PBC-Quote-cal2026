@@ -21,11 +21,12 @@ export interface ProductRecord {
 
 export function normalizeRrpProduct(product: ProductRecord): ProductRecord {
   const rrpPrice = product.rrpPrice ?? product.marketPrice ?? product.price ?? '0'
+  const actualPrice = product.actualPrice ?? product.price ?? rrpPrice
 
   return {
     ...product,
     marketPrice: rrpPrice,
-    actualPrice: rrpPrice,
+    actualPrice,
     rrpPrice,
   }
 }

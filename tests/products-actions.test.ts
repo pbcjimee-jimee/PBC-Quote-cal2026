@@ -28,6 +28,17 @@ describe('product actions', () => {
     }
   })
 
+  it('returns actual material cost for quote material search in dev mode', async () => {
+    const result = await searchProducts({ query: 'ceiling white 15l', limit: 8 })
+
+    expect(result.ok).toBe(true)
+    if (result.ok) {
+      const product = result.data.find((item) => item.productCode === '162615')
+      expect(product?.marketPrice).toBe('231.53')
+      expect(product?.actualPrice).toBe('219.95')
+    }
+  })
+
   it('imports materials from csv text in dev mode', async () => {
     const csvText = [
       'Brand,Kind,Base,Sheen/Finish,Volume (L),RRP',

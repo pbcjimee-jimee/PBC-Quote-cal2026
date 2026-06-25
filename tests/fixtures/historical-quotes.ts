@@ -38,9 +38,9 @@ export const HISTORICAL_FIXTURES: Array<{
     expected: {
       formula1: 2842.50,   // 500×5 + 342.50
       formula2: 3628.21,
-      formula3: 3775.00,
+      formula3: 3635.71,
       formula4: 2875.83,
-      formula5: 3203.57,
+      formula5: 3064.29,
     },
   },
   // TODO: 2번째 실제 견적

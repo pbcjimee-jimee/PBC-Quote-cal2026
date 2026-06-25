@@ -5,7 +5,7 @@ import Decimal from 'decimal.js'
 import { describe, expect, it, vi } from 'vitest'
 import { CustomerPanel, JobberQuoteSummary } from '@/components/quote-form/customer-panel'
 import { FinalSummary } from '@/components/quote-form/final-summary'
-import { AreaPickerDropdown, MaterialRow } from '@/components/quote-form/material-row'
+import { AreaPickerDropdown, MaterialRow, updateMaterialRrp } from '@/components/quote-form/material-row'
 import { MaterialsPanel, assignMaterialToActiveArea } from '@/components/quote-form/materials-panel'
 import { OptionTotalsSummary } from '@/components/quote-form/option-totals-summary'
 import {
@@ -854,6 +854,22 @@ describe('quote form pricing UI', () => {
     expect(markup).toContain('pbc-input min-w-0')
     expect(markup).not.toContain('Market')
     expect(markup).not.toContain('Actual')
+  })
+
+  it('does not overwrite selected material actual cost when editing visible RRP', () => {
+    const item = updateMaterialRrp({
+      id: 'item-1',
+      name: 'Selected material',
+      marketPrice: '99.00',
+      actualPrice: '80.00',
+      quantity: '1',
+      workingDays: '1',
+      labourPerDay: '1',
+      isCustom: false,
+    }, '0')
+
+    expect(item.marketPrice).toBe('0')
+    expect(item.actualPrice).toBe('80.00')
   })
 
   it('uses a material-style area picker instead of the native select menu', () => {

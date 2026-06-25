@@ -28,4 +28,8 @@ describe('decimal input validation', () => {
     expect(getNextDecimalInputValue('12', '.5', 2, 2)).toBe('12.5')
     expect(getNextDecimalInputValue('12.5', '8', 3, 4)).toBe('12.8')
   })
+
+  it('handles runtime numeric values when validating replacement input', () => {
+    expect(getNextDecimalInputValue(99, '0', 0, 2)).toBe('0')
+  })
 })
