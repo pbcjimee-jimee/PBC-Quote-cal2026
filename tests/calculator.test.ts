@@ -91,6 +91,12 @@ describe('calculateAllFormulas', () => {
     expect(results[4].total.toFixed(2)).toBe('638.67')
   })
 
+  it('falls back to defaults when pricing settings are undefined in main formulas', () => {
+    const results = calculateAllFormulas(base, undefined)
+    expect(results.map((item) => item.formulaNum)).toEqual([1, 2, 3, 4, 5])
+    expect(results[0].name).toBe('L500 / Market / No Margin')
+  })
+
   it('accepts Decimal inputs', () => {
     const results = calculateAllFormulas({
       workingDays: new Decimal(5),
@@ -201,6 +207,17 @@ describe('calculateFinal', () => {
 })
 
 describe('calculateRoofSubtotal', () => {
+  it('falls back to defaults when pricing settings are undefined in roof formulas', () => {
+    const results = calculateRoofFormulaResults({
+      labourDays: 2,
+      materialMarket: 100,
+      materialActual: 100,
+    }, undefined)
+
+    expect(results.map((item) => item.formulaNum)).toEqual([1, 2, 3, 4, 5])
+    expect(results[0].total.toFixed(2)).toBe('1500.00')
+  })
+
   it('uses roof labour rate with the shared formula margins', () => {
     const results = calculateRoofFormulaResults({
       labourDays: new Decimal(2),
@@ -221,6 +238,21 @@ describe('calculateRoofSubtotal', () => {
       '1966.67',
       '2142.86',
     ])
+  })
+
+  it('calculates a 30% roof margin by dividing by 0.70, not multiplying by 1.30', () => {
+    const results = calculateRoofFormulaResults({
+      labourDays: 2,
+      materialMarket: 100,
+      materialActual: 100,
+    }, {
+      ...DEFAULT_PRICING_SETTINGS,
+      roofLabourRate: 700,
+      f3Margin: 0.30,
+    })
+
+    expect(results[2].total.toFixed(2)).toBe('2142.86')
+    expect(results[2].total.toFixed(2)).not.toBe('1950.00')
   })
 
   it('uses selected roof formulas for subtotal', () => {

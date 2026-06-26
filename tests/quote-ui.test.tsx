@@ -256,20 +256,25 @@ describe('quote form pricing UI', () => {
 
   it('renders quote month filtering as a dropdown select', () => {
     const markup = renderToStaticMarkup(createElement(MonthFilterSelect, {
+      currentYear: '2026',
       currentMonth: '2026-06',
-      currentSearch: 'q=Daniel&month=2026-06',
+      currentSearch: 'q=Daniel&year=2026&month=2026-06',
       totalCount: 30,
+      yearOptions: [{ year: '2026', count: 30 }],
       options: [
-        { key: '2026-06', label: 'June', year: '2026', count: 21 },
-        { key: '2026-05', label: 'May', year: '2026', count: 9 },
+        { key: '2026-06', month: '06', label: 'June', year: '2026', count: 21 },
+        { key: '2026-05', month: '05', label: 'May', year: '2026', count: 9 },
       ],
     }))
 
+    expect(markup).toContain('pbc-filtergroup')
     expect(markup).toContain('<select')
+    expect(markup).toContain('Filter quotes by year')
+    expect(markup).toContain('Filter quotes by month')
     expect(markup).toContain('value="2026-06"')
     expect(markup).toContain('All months (30)')
-    expect(markup).toContain('2026 - June (21)')
-    expect(markup).toContain('2026 - May (9)')
+    expect(markup).toContain('June (21)')
+    expect(markup).toContain('May (9)')
     expect(markup).not.toContain('pbc-monthfilter ')
   })
 

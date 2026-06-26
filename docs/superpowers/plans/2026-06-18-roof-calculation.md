@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Add Roof as a third quote material scope beside Interior and Exterior, calculated with a configurable roof labour rate defaulting to 700 and a fixed/default 30% roof margin.
+**Goal:** Add Roof as a third quote material scope beside Interior and Exterior, calculated with a configurable roof labour rate defaulting to 700 and the same five formula margin rules used by Interior/Exterior.
 
-**Architecture:** Keep the existing five-formula calculator intact for Interior and Exterior. Add Roof as a scoped subtotal group that uses a roof-specific formula: `(roof_labour_rate * roof_labour_days + roof_material_market) * (1 + roof_margin)`. Extend persisted area scopes and quote totals so the main quote subtotal becomes `interior + exterior + roof`.
+**Architecture:** Keep the existing five-formula calculator intact. Add Roof as a scoped subtotal group that uses `roof_labour_rate` as the labour rate for F1-F5, then applies the shared F2-F5 margin settings with the existing margin formula: divide by `(1 - margin)`, not multiply by `(1 + margin)`. Extend persisted area scopes and quote totals so the main quote subtotal becomes `interior + exterior + roof`.
 
 **Tech Stack:** Next.js 16 App Router, TypeScript strict, decimal.js, Supabase migrations/RLS, Zod, Vitest.
 
@@ -13,17 +13,17 @@
 ## Assumptions To Confirm Before Execution
 
 - Roof is a separate third scope, not Formula 6.
-- Roof does not use min/max formula selection because the requested rule is a single formula.
+- Roof uses min/max formula selection like Interior/Exterior.
 - Roof subtotal is GST-exclusive; final total still applies GST through existing `calculateFinal`.
 - Roof material price means the existing material market total for rows assigned to Roof.
-- Roof margin should be stored in pricing settings with default `0.30`, even if the UI starts at 30%.
+- Roof does not store a separate margin. It uses shared F2-F5 margin settings.
 
 ---
 
 ## File Structure
 
 - Modify `supabase/migrations/0015_add_roof_scope_and_pricing.sql`: add roof pricing columns and widen scope checks.
-- Modify `lib/calculator.ts`: extend `PricingSettings` and defaults with `roofLabourRate` and `roofMargin`; add a pure roof subtotal helper.
+- Modify `lib/calculator.ts`: extend `PricingSettings` and defaults with `roofLabourRate`; add roof formula/subtotal helpers that reuse the five existing formula rules.
 - Modify `lib/validators.ts`: allow `roof` scope and validate roof pricing settings.
 - Modify `lib/supabase/types.ts`: update manual Supabase types for the new columns and scope union.
 - Modify `lib/actions/settings.ts`: read/write roof settings.
@@ -32,7 +32,7 @@
 - Modify `components/quote-form/materials-panel.tsx` and `components/quote-form/material-row.tsx`: add Roof toggle/dropdown labels.
 - Modify `components/quote-form/final-summary.tsx`: show Roof subtotal.
 - Modify `components/quote-form/quote-form.tsx`, `quote-save-payload.ts`, `quote-record-mappers.ts`, `quote-draft.ts`, and option helpers where scope assumptions exist.
-- Modify `components/settings/settings-form.tsx`: add Roof labour/margin fields and Roof area management.
+- Modify `components/settings/settings-form.tsx`: add Roof labour field and Roof area management.
 - Modify `components/quote-detail/quote-detail-view.tsx`: show saved Roof subtotal/details.
 - Modify tests under `tests/`: calculator, quote totals, settings actions/UI, area actions, quote actions, draft, UI, RLS migration checks.
 
@@ -49,7 +49,7 @@
 
 - [ ] **Step 1: Add failing schema/type tests**
 
-Add tests that expect `roof` to be valid in `areaSchema`, `quoteSchema.items[].areaScopeSnapshot`, and option item scopes. Add settings validation expectations for `roofLabourRate` and `roofMargin`.
+Add tests that expect `roof` to be valid in `areaSchema`, `quoteSchema.items[].areaScopeSnapshot`, and option item scopes. Add settings validation expectations for `roofLabourRate`.
 
 - [ ] **Step 2: Add migration**
 
@@ -57,8 +57,7 @@ Migration should:
 
 ```sql
 ALTER TABLE pricing_settings
-  ADD COLUMN roof_labour_rate NUMERIC(10,2) NOT NULL DEFAULT 700 CHECK (roof_labour_rate >= 0),
-  ADD COLUMN roof_margin NUMERIC(4,3) NOT NULL DEFAULT 0.30 CHECK (roof_margin >= 0);
+  ADD COLUMN roof_labour_rate NUMERIC(10,2) NOT NULL DEFAULT 700 CHECK (roof_labour_rate >= 0);
 
 ALTER TABLE quote_areas
   DROP CONSTRAINT IF EXISTS quote_areas_scope_check,
@@ -123,13 +122,12 @@ const subtotal = calculateRoofSubtotal({
 }, {
   ...DEFAULT_PRICING_SETTINGS,
   roofLabourRate: 700,
-  roofMargin: 0.30,
-})
+}, 1, 3)
 
-expect(subtotal.toFixed(2)).toBe('1950.00')
+expect(subtotal.toFixed(2)).toBe('1821.43')
 ```
 
-Calculation: `(700 * 2 + 100) * 1.30 = 1950`.
+Calculation: average of F1 `700 * 2 + 100 = 1500` and F3 `(700 * 2 + 100) / 0.70 = 2142.86`, so subtotal is `1821.43`. A 30% margin is calculated by dividing by `0.70`, not multiplying by `1.30`.
 
 - [ ] **Step 2: Implement calculator helper**
 
@@ -137,31 +135,25 @@ Add to `PricingSettings`:
 
 ```typescript
 roofLabourRate: Decimal | number
-roofMargin: Decimal | number
 ```
 
 Add default:
 
 ```typescript
 roofLabourRate: 700,
-roofMargin: 0.30,
 ```
 
 Add pure helper:
 
 ```typescript
 export function calculateRoofSubtotal(
-  input: { labourDays: Decimal | number; materialMarket: Decimal | number },
-  settings: PricingSettings
+  input: { labourDays: Decimal | number; materialMarket: Decimal | number; materialActual?: Decimal | number },
+  settings: PricingSettings,
+  selectedMin: 1 | 2 | 3 | 4 | 5 = 1,
+  selectedMax: 1 | 2 | 3 | 4 | 5 = 1
 ): Decimal {
-  const labourDays = toDecimal(input.labourDays)
-  const materialMarket = toDecimal(input.materialMarket)
-  if (labourDays.lt(0)) throw new ValidationError('Roof labour days cannot be negative')
-  if (materialMarket.lt(0)) throw new ValidationError('Roof material price cannot be negative')
-  return toDecimal(settings.roofLabourRate)
-    .mul(labourDays)
-    .add(materialMarket)
-    .mul(toDecimal(settings.roofMargin).add(1))
+  const results = calculateRoofFormulaResults(input, settings)
+  return calculateSubtotal(results, selectedMin, selectedMax)
 }
 ```
 
@@ -171,17 +163,15 @@ Map Supabase row fields:
 
 ```typescript
 roof_labour_rate <-> roofLabourRate
-roof_margin <-> roofMargin
 ```
 
-Use `.toFixed(2)` for rate and `.toFixed(3)` for margin.
+Use `.toFixed(2)` for rate.
 
 - [ ] **Step 4: Add Settings UI controls**
 
 In Labour Rates tab, add Roof fields:
 
 - Roof Labour Rate, default `$700/day`
-- Roof Margin, default `30%`
 
 - [ ] **Step 5: Run focused tests**
 
@@ -204,7 +194,7 @@ Expected: calculator and settings tests pass.
 
 - [ ] **Step 1: Write failing grouped subtotal test**
 
-Add a test with Interior subtotal `1100`, Exterior subtotal `1700`, Roof subtotal `1950`, expecting final subtotal `4750`.
+Add a test with Interior subtotal `1100`, Exterior subtotal `1700`, Roof subtotal based on shared F1-F5 margin rules, expecting final subtotal to include all three scopes.
 
 - [ ] **Step 2: Extend `AreaSubtotalBreakdown`**
 
@@ -214,7 +204,7 @@ Add:
 roof: AreaSubtotalGroup
 ```
 
-Roof group should use `calculateRoofSubtotal`, not `calculateAllFormulas`.
+Roof group should use `calculateRoofSubtotal`, which internally reuses `calculateRoofFormulaResults` and the shared F1-F5 margin rules.
 
 - [ ] **Step 3: Include roof in final subtotal**
 
@@ -419,4 +409,4 @@ Expected: all pass.
 - Do not add external dependencies.
 - Do not apply the migration to production Supabase without explicit user approval.
 - Existing quotes without roof rows should keep their previous totals.
-- Existing Interior/Exterior min/max selection columns remain unchanged; Roof uses its own fixed formula and does not need new quote-level min/max columns.
+- Existing Interior/Exterior min/max selection columns remain unchanged; Roof stores its own min/max formula selection columns in the later persistence upgrade.

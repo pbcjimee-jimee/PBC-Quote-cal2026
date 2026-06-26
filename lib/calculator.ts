@@ -27,6 +27,25 @@ export interface PricingSettings {
   f5Margin: Decimal | number
 }
 
+function toPricingSettings(value: PricingSettings | null | undefined): PricingSettings {
+  const fallback = DEFAULT_PRICING_SETTINGS
+
+  if (!value) return fallback
+
+  return {
+    f1LabourRate: value.f1LabourRate ?? fallback.f1LabourRate,
+    f2LabourRate: value.f2LabourRate ?? fallback.f2LabourRate,
+    f3LabourRate: value.f3LabourRate ?? fallback.f3LabourRate,
+    f4LabourRate: value.f4LabourRate ?? fallback.f4LabourRate,
+    f5LabourRate: value.f5LabourRate ?? fallback.f5LabourRate,
+    roofLabourRate: value.roofLabourRate ?? fallback.roofLabourRate,
+    f2Margin: value.f2Margin ?? fallback.f2Margin,
+    f3Margin: value.f3Margin ?? fallback.f3Margin,
+    f4Margin: value.f4Margin ?? fallback.f4Margin,
+    f5Margin: value.f5Margin ?? fallback.f5Margin,
+  }
+}
+
 export interface FormulaResult {
   formulaNum: 1 | 2 | 3 | 4 | 5
   name: string
@@ -53,12 +72,14 @@ function formatPercent(value: Decimal | number): string {
 }
 
 export function getFormulaDescriptions(settings: PricingSettings) {
+  const normalized = toPricingSettings(settings)
+
   return {
-    formula1Name: `${formatFormulaRate(settings.f1LabourRate)} / Market / No Margin`,
-    formula2Name: `${formatFormulaRate(settings.f2LabourRate)} / Labour ${formatPercent(settings.f2Margin)} / Market`,
-    formula3Name: `${formatFormulaRate(settings.f3LabourRate)} / Material / Total ${formatPercent(settings.f3Margin)}`,
-    formula4Name: `${formatFormulaRate(settings.f4LabourRate)} / Labour ${formatPercent(settings.f4Margin)} / Market`,
-    formula5Name: `${formatFormulaRate(settings.f5LabourRate)} / Material / Total ${formatPercent(settings.f5Margin)}`,
+    formula1Name: `${formatFormulaRate(normalized.f1LabourRate)} / Market / No Margin`,
+    formula2Name: `${formatFormulaRate(normalized.f2LabourRate)} / Labour ${formatPercent(normalized.f2Margin)} / Market`,
+    formula3Name: `${formatFormulaRate(normalized.f3LabourRate)} / Material / Total ${formatPercent(normalized.f3Margin)}`,
+    formula4Name: `${formatFormulaRate(normalized.f4LabourRate)} / Labour ${formatPercent(normalized.f4Margin)} / Market`,
+    formula5Name: `${formatFormulaRate(normalized.f5LabourRate)} / Material / Total ${formatPercent(normalized.f5Margin)}`,
   }
 }
 
@@ -109,21 +130,23 @@ function formula5(D: Decimal, ma: Decimal, s: PricingSettings): Decimal {
 
 export function calculateAllFormulas(
   input: CalculatorInput,
-  settings: PricingSettings
+  settings: PricingSettings | null | undefined
 ): FormulaResult[] {
+  const normalizedSettings = toPricingSettings(settings)
+
   validateInput(input)
 
   const D = toDecimal(input.workingDays).mul(toDecimal(input.labourPerDay))
   const mm = toDecimal(input.materialMarket)
   const ma = toDecimal(input.materialActual)
-  const names = getFormulaDescriptions(settings)
+  const names = getFormulaDescriptions(normalizedSettings)
 
   return [
-    { formulaNum: 1, name: names.formula1Name, total: formula1(D, mm, settings) },
-    { formulaNum: 2, name: names.formula2Name, total: formula2(D, mm, settings) },
-    { formulaNum: 3, name: names.formula3Name, total: formula3(D, ma, settings) },
-    { formulaNum: 4, name: names.formula4Name, total: formula4(D, mm, settings) },
-    { formulaNum: 5, name: names.formula5Name, total: formula5(D, ma, settings) },
+    { formulaNum: 1, name: names.formula1Name, total: formula1(D, mm, normalizedSettings) },
+    { formulaNum: 2, name: names.formula2Name, total: formula2(D, mm, normalizedSettings) },
+    { formulaNum: 3, name: names.formula3Name, total: formula3(D, ma, normalizedSettings) },
+    { formulaNum: 4, name: names.formula4Name, total: formula4(D, mm, normalizedSettings) },
+    { formulaNum: 5, name: names.formula5Name, total: formula5(D, ma, normalizedSettings) },
   ]
 }
 
@@ -149,8 +172,10 @@ export function calculateFinal(subtotal: Decimal): Decimal {
 
 export function calculateRoofFormulaResults(
   input: { labourDays: Decimal | number; materialMarket: Decimal | number; materialActual?: Decimal | number },
-  settings: PricingSettings
+  settings: PricingSettings | null | undefined
 ): FormulaResult[] {
+  const normalizedSettings = toPricingSettings(settings)
+
   const labourDays = toDecimal(input.labourDays)
   const materialMarket = toDecimal(input.materialMarket)
   const materialActual = input.materialActual === undefined ? materialMarket : toDecimal(input.materialActual)
@@ -167,12 +192,12 @@ export function calculateRoofFormulaResults(
       materialActual,
     },
     {
-      ...settings,
-      f1LabourRate: settings.roofLabourRate,
-      f2LabourRate: settings.roofLabourRate,
-      f3LabourRate: settings.roofLabourRate,
-      f4LabourRate: settings.roofLabourRate,
-      f5LabourRate: settings.roofLabourRate,
+      ...normalizedSettings,
+      f1LabourRate: normalizedSettings.roofLabourRate,
+      f2LabourRate: normalizedSettings.roofLabourRate,
+      f3LabourRate: normalizedSettings.roofLabourRate,
+      f4LabourRate: normalizedSettings.roofLabourRate,
+      f5LabourRate: normalizedSettings.roofLabourRate,
     }
   )
 }

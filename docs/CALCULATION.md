@@ -160,8 +160,10 @@ Grouped subtotals are calculated from material row area snapshots. They do not c
 
 - Interior subtotal: calculate formula results from rows where `area_scope_snapshot = 'interior'`, then apply `interior_selected_min` and `interior_selected_max`.
 - Exterior subtotal: calculate formula results from rows where `area_scope_snapshot = 'exterior'`, then apply `exterior_selected_min` and `exterior_selected_max`.
-- Final subtotal: `interior_subtotal + exterior_subtotal`.
-- Unassigned rows: rows with no Interior/Exterior scope are shown as unassigned and are excluded from grouped subtotals until assigned.
+- Roof subtotal: calculate formula results from rows where `area_scope_snapshot = 'roof'`, using `roof_labour_rate` as the labour rate for F1-F5, then apply `roof_selected_min` and `roof_selected_max`.
+- Roof 30% margin uses the same margin math as other formulas: divide by `0.70` (`1 - 0.30`), not multiply by `1.30`.
+- Final subtotal: `interior_subtotal + exterior_subtotal + roof_subtotal`.
+- Unassigned rows: rows with no Interior/Exterior/Roof scope are shown as unassigned and are excluded from grouped subtotals until assigned.
 
 Stored totals:
 

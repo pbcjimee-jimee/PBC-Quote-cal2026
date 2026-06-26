@@ -17,6 +17,7 @@ function money0(value: number): string {
 interface QuoteMonthGroup {
   key: string
   label: string
+  month: string
   quotes: QuoteRecord[]
 }
 
@@ -25,14 +26,41 @@ interface QuoteYearGroup {
   months: QuoteMonthGroup[]
 }
 
+interface YearFilterOption {
+  year: string
+  count: number
+}
+
 function getQuoteMonthKey(quote: QuoteRecord): string {
   const created = new Date(quote.createdAt)
   return `${created.getFullYear()}-${String(created.getMonth() + 1).padStart(2, '0')}`
 }
 
+function getQuoteYear(quote: QuoteRecord): string {
+  const created = new Date(quote.createdAt)
+  return String(created.getFullYear())
+}
+
+function getQuoteMonth(quote: QuoteRecord): string {
+  const created = new Date(quote.createdAt)
+  return String(created.getMonth() + 1).padStart(2, '0')
+}
+
+export function filterQuotesByYearMonth(
+  quotes: QuoteRecord[],
+  selectedYear: string,
+  selectedMonth: string
+): QuoteRecord[] {
+  if (!selectedYear && !selectedMonth) return quotes
+  if (!selectedMonth && selectedYear) {
+    return quotes.filter((quote) => getQuoteYear(quote) === selectedYear)
+  }
+
+  return quotes.filter((quote) => getQuoteMonthKey(quote) === selectedMonth && (!selectedYear || getQuoteYear(quote) === selectedYear))
+}
+
 export function filterQuotesByMonth(quotes: QuoteRecord[], monthKey: string): QuoteRecord[] {
-  if (!monthKey) return quotes
-  return quotes.filter((quote) => getQuoteMonthKey(quote) === monthKey)
+  return filterQuotesByYearMonth(quotes, '', monthKey)
 }
 
 export function getMonthFilterHref(monthKey: string | null, currentSearch: string): string {
@@ -48,6 +76,13 @@ export function getMonthFilterHref(monthKey: string | null, currentSearch: strin
   return `/quotes${nextSearch ? `?${nextSearch}` : ''}`
 }
 
+function buildQuoteYearOptions(yearGroups: QuoteYearGroup[]): YearFilterOption[] {
+  return yearGroups.map((group) => ({
+    year: group.year,
+    count: group.months.reduce((sum, month) => sum + month.quotes.length, 0),
+  }))
+}
+
 export function groupQuotesByYearMonth(quotes: QuoteRecord[]): QuoteYearGroup[] {
   const groups: QuoteYearGroup[] = []
   const yearGroups = new Map<string, QuoteYearGroup>()
@@ -57,6 +92,7 @@ export function groupQuotesByYearMonth(quotes: QuoteRecord[]): QuoteYearGroup[] 
     const created = new Date(quote.createdAt)
     const year = String(created.getFullYear())
     const monthKey = getQuoteMonthKey(quote)
+    const month = getQuoteMonth(quote)
     const monthLabel = created.toLocaleDateString('en-AU', { month: 'long' })
     let yearGroup = yearGroups.get(year)
 
@@ -69,7 +105,7 @@ export function groupQuotesByYearMonth(quotes: QuoteRecord[]): QuoteYearGroup[] 
     let monthGroup = monthGroups.get(monthKey)
 
     if (!monthGroup) {
-      monthGroup = { key: monthKey, label: monthLabel, quotes: [] }
+      monthGroup = { key: monthKey, label: monthLabel, month, quotes: [] }
       monthGroups.set(monthKey, monthGroup)
       yearGroup.months.push(monthGroup)
     }
@@ -83,24 +119,40 @@ export function groupQuotesByYearMonth(quotes: QuoteRecord[]): QuoteYearGroup[] 
 export default async function QuotesPage({ searchParams }: QuotesPageProps) {
   const params = await searchParams
   const q = typeof params?.q === 'string' ? params.q : ''
-  const selectedMonth = typeof params?.month === 'string' ? params.month : ''
   const currentSearchParams = new URLSearchParams()
   if (q) currentSearchParams.set('q', q)
+
+  const selectedMonth = typeof params?.month === 'string' ? params.month : ''
+  const selectedYear = typeof params?.year === 'string'
+    ? params.year
+    : selectedMonth.startsWith('20') && selectedMonth.length === 7
+      ? selectedMonth.slice(0, 4)
+      : ''
+
+  if (selectedYear) currentSearchParams.set('year', selectedYear)
   if (selectedMonth) currentSearchParams.set('month', selectedMonth)
+
   const currentSearch = currentSearchParams.toString()
   const result = await searchQuotes(q)
   const quotes = result.ok ? result.data : []
   const allQuoteGroups = groupQuotesByYearMonth(quotes)
+  const yearFilterOptions = buildQuoteYearOptions(allQuoteGroups)
   const monthFilterOptions: MonthFilterOption[] = allQuoteGroups.flatMap((yearGroup) =>
     yearGroup.months.map((monthGroup) => ({
       key: monthGroup.key,
+      month: monthGroup.month,
       label: monthGroup.label,
       year: yearGroup.year,
       count: monthGroup.quotes.length,
     }))
   )
-  const visibleQuotes = filterQuotesByMonth(quotes, selectedMonth)
+
+  const visibleQuotes = filterQuotesByYearMonth(quotes, selectedYear, selectedMonth)
   const quoteGroups = groupQuotesByYearMonth(visibleQuotes)
+  const selectedYearCount = quoteGroups.length
+    ? quoteGroups.reduce((sum, yearGroup) => sum + yearGroup.months.reduce((monthSum, monthGroup) => monthSum + monthGroup.quotes.length, 0), 0)
+    : 0
+  const totalCount = selectedYear ? selectedYearCount : quotes.length
 
   const pipeline = visibleQuotes.reduce((sum, quote) => sum + Number(quote.finalTotal || 0), 0)
   const avg = visibleQuotes.length ? pipeline / visibleQuotes.length : 0
@@ -130,7 +182,7 @@ export default async function QuotesPage({ searchParams }: QuotesPageProps) {
           <div className="pbc-stat">
             <span className="pbc-stat__label">Total quotes</span>
             <span className="pbc-stat__value mono">{visibleQuotes.length}</span>
-            <span className="pbc-stat__sub">{selectedMonth ? 'selected month' : 'all time'}</span>
+            <span className="pbc-stat__sub">{selectedMonth || selectedYear ? 'selected range' : 'all time'}</span>
           </div>
           <div className="pbc-stat">
             <span className="pbc-stat__label">Pipeline value</span>
@@ -153,9 +205,11 @@ export default async function QuotesPage({ searchParams }: QuotesPageProps) {
           <div className="pbc-listbar">
             <SearchInput />
             <MonthFilterSelect
+              currentYear={selectedYear}
               currentMonth={selectedMonth}
               currentSearch={currentSearch}
-              totalCount={quotes.length}
+              totalCount={totalCount}
+              yearOptions={yearFilterOptions}
               options={monthFilterOptions}
             />
           </div>
