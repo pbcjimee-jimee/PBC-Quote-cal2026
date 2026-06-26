@@ -25,7 +25,7 @@
 │  - formula1_total .. formula5_total           │
 │  - selected_min, selected_max                 │
 │  - interior/exterior selected_min/max         │
-│  - roof selected_min/max (planned next)       │
+│  - roof selected_min/max                      │
 │  - subtotal, final_total (GST 10% 포함)       │
 │  - pricing_settings_snapshot (JSONB)          │
 │  - created_by/at, updated_by/at               │
@@ -102,7 +102,7 @@
 | `0016_drop_roof_margin_from_pricing_settings.sql` | Roof 전용 margin 제거. Roof는 Interior/Exterior와 같은 F2-F5 margin 사용 |
 | `0017_add_quote_price_revisions.sql` | Quote price revision history |
 | `0018_add_quote_price_revision_option_totals.sql` | Price revision에 option subtotal/final snapshot 추가 |
-| Planned next | `quotes.roof_selected_min`, `quotes.roof_selected_max` 추가 |
+| `0019_add_roof_formula_selections.sql` | Main quote Roof formula min/max selections |
 
 > 아래 DDL은 변경 후 최종 형태 요약. 정확한 SQL은 마이그레이션 파일 자체를 source of truth로 본다.
 
@@ -168,9 +168,8 @@ CREATE TABLE quotes (
   interior_selected_max     INT NOT NULL CHECK (interior_selected_max BETWEEN 1 AND 5),
   exterior_selected_min     INT NOT NULL CHECK (exterior_selected_min BETWEEN 1 AND 5),
   exterior_selected_max     INT NOT NULL CHECK (exterior_selected_max BETWEEN 1 AND 5),
-  -- planned next migration:
-  -- roof_selected_min      INT CHECK (roof_selected_min BETWEEN 1 AND 5),
-  -- roof_selected_max      INT CHECK (roof_selected_max BETWEEN 1 AND 5),
+  roof_selected_min         INT NOT NULL CHECK (roof_selected_min BETWEEN 1 AND 5),
+  roof_selected_max         INT NOT NULL CHECK (roof_selected_max BETWEEN 1 AND 5),
   subtotal                  NUMERIC(10,2) NOT NULL,
   final_total               NUMERIC(10,2) NOT NULL,
   pricing_settings_snapshot JSONB NOT NULL,
@@ -412,16 +411,14 @@ ALTER TABLE quotes
   ADD COLUMN exterior_selected_max INT CHECK (exterior_selected_max BETWEEN 1 AND 5);
 ```
 
-## Roof scope and planned formula selection columns
+## Roof scope and formula selection columns
 
-Exact SQL for the current Roof scope is in `supabase/migrations/0015_add_roof_scope_and_pricing.sql` and `0016_drop_roof_margin_from_pricing_settings.sql`.
+Exact SQL for the current Roof scope is in `supabase/migrations/0015_add_roof_scope_and_pricing.sql` and `0016_drop_roof_margin_from_pricing_settings.sql`. Roof formula selection persistence is in `supabase/migrations/0019_add_roof_formula_selections.sql`.
 
 - `quote_areas.scope`, `quote_items.area_scope_snapshot`, and `quote_option_items.area_scope_snapshot` allow `roof`.
 - `pricing_settings.roof_labour_rate` stores the Roof labour rate.
 - Roof uses the shared F2-F5 margins. There is no separate Roof margin field.
 - Material pricing remains consumer-price based.
-
-Planned next migration:
 
 ```sql
 ALTER TABLE quotes
@@ -429,7 +426,7 @@ ALTER TABLE quotes
   ADD COLUMN roof_selected_max INT CHECK (roof_selected_max BETWEEN 1 AND 5);
 ```
 
-This planned change fixes persistence of the user-selected Roof formula range. It does not change the five formula definitions or GST calculation.
+This change fixes persistence of the user-selected Roof formula range. It does not change the five formula definitions or GST calculation.
 
 ## Quote price revision history
 
@@ -513,4 +510,4 @@ Interior/Exterior grouped totals are derived from saved item area snapshots when
 
 ## 2026-06-26 Upgrade schema direction
 
-Next schema work is limited to Roof formula selection persistence and operational hardening. Do not introduce a separate admin role model, `ADMIN_EMAILS`, or material actual-cost/RRP split for this upgrade. The app is operated by two admin users, and material calculations use consumer price.
+Repo migration work for Roof formula selection persistence is complete in `0019_add_roof_formula_selections.sql`; production Supabase still requires explicit migration apply/verification before the deployed app can save Roof selections. Do not introduce a separate admin role model, `ADMIN_EMAILS`, or material actual-cost/RRP split for this upgrade. The app is operated by two admin users, and material calculations use consumer price.

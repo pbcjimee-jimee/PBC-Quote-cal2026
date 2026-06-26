@@ -11,7 +11,7 @@
 |---|---|
 | **앱** | PBC 견적 계산기 — 페인팅 회사 PBC 사내 도구 |
 | **스택** | Next.js 16 (App Router) + React 19 + TypeScript + Tailwind CSS 4 + Supabase + Vercel |
-| **현재 버전** | v1.0 핵심 플로우 완성, v1.0+ 옵션·Jobber fetch/write-back·QA 완료, 2026-06-26 upgrade direction 문서 선반영 |
+| **현재 버전** | v1.0 핵심 플로우 완성, v1.0+ 옵션·Jobber fetch/write-back·QA 완료, 2026-06-26 upgrade direction repo 구현 완료. Production Supabase `0019` 적용은 사용자 승인 필요 |
 | **배포 URL** | https://pbc-quote-cal2026-v2.vercel.app |
 | **GitHub Repo** | pbcjimee-jimee/PBC-Quote-cal2026 (branch: main) |
 
@@ -267,7 +267,7 @@
 ### UX 잔여 (v1.0 완료 차단 아님, v1.1+로 이관 — `docs/DECISIONS.md` #1 기준)
 
 - [ ] `docs/UI-UX-REVIEW.md` P0 quick win 검토: 전역 focus-visible, 삭제 버튼 아이콘화, contrast 보정, draft 이탈 모달 a11y
-- [ ] 과거 견적 복제(Duplicate) 기능 (`TODOS.md` #4)
+- [x] 과거 견적 복제(Duplicate) 기능 (`TODOS.md` #4)
 - [ ] 페인트 DB 관리 UI 정식판 (`TODOS.md` #3)
 
 ---
@@ -286,6 +286,7 @@
 
 | 날짜 | 작업 | 담당 |
 |---|---|---|
+| 2026-06-27 | Thread `019f013a-6cbb-7d50-ac67-bdbddaf2bbb1` 기준으로 남은 업데이트를 재점검. `0019_add_roof_formula_selections.sql`은 repo에 있으나 production Supabase 미적용 시 `roof_selected_max` 저장 오류가 발생함을 문서화하고, stale Roof planned 문구와 Jobber callback 운영 문서를 갱신. | Codex |
 | 2026-06-27 | GitHub/Vercel 운영 기준을 `pbcjimee-jimee/PBC-Quote-cal2026` 및 Vercel `jimee-s-projects/pbc-quote-cal2026-v2`로 전환. 로컬 `origin` 일치 확인, `.vercel/project.json`을 새 team/project ID로 갱신, production domain health check 통과. | Codex |
 | 2026-06-26 | Upgrade direction revised per user and documented first: no `ADMIN_EMAILS` admin split, no material actual-cost/RRP split, no extra pricing-info panel. Remaining scope is Roof formula persistence, local draft privacy/expiry, Jobber sync preview/retry, duplicate quote, and backup operations. Model routing added for planning/implementation/simple work. | Codex |
 | 2026-06-18 | Roof calculation scope added on `codex/roof-calculation`: Roof material areas, roof labour rate default 700, Roof uses the shared F2-F5 margin selections instead of a separate Roof margin field, roof subtotal included in quote/option grouped totals, Settings/UI/detail/draft/persistence/test coverage updated. Verification: typecheck, lint, test:run, build, diff check passed. | Codex |

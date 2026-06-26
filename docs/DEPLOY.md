@@ -38,6 +38,7 @@
 | `NEXT_PUBLIC_SUPABASE_URL` | All | Supabase 프로젝트 URL |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | All | Supabase anon key (브라우저 OK) |
 | `SUPABASE_SERVICE_ROLE_KEY` | Server only | Supabase service role key (Server Actions 전용) |
+| `JOBBER_REDIRECT_URI` | Server only | Jobber OAuth callback. Production value: `https://pbc-quote-cal2026-v2.vercel.app/api/jobber/callback` |
 
 **주의:** `SERVICE_ROLE_KEY`는 절대 `NEXT_PUBLIC_` prefix 붙이지 말 것 (브라우저 노출 위험).
 
