@@ -9,8 +9,8 @@
 | 항목 | 값 |
 |---|---|
 | **Platform** | Vercel |
-| **Production URL** | https://pbc-quote-cal2026-kjm12081-3858s-projects.vercel.app |
-| **GitHub Repo** | jimeekang/PBC-Quote-cal2026 |
+| **Production URL** | https://pbc-quote-cal2026-v2.vercel.app |
+| **GitHub Repo** | pbcjimee-jimee/PBC-Quote-cal2026 |
 | **Branch** | main |
 | **Deploy workflow** | main 브랜치 push 시 자동 배포 |
 | **Merge method** | merge |
@@ -22,9 +22,9 @@
 
 | 항목 | 값 |
 |---|---|
-| **Team** | kjm12081-3858s-projects |
-| **Team ID** | `team_gBpYYnPhnzKeFz8jqF3wuMIb` |
-| **Project ID** | `prj_siCT5Q0syfY5Cz7EdUrwGuAYDt83` |
+| **Team** | jimee-s-projects |
+| **Team ID** | `team_cO066nzzS97DRZaz03MQWRMD` |
+| **Project ID** | `prj_KMdOHSdwcmSxiypj1yvNqj4zM6Pp` |
 | **Supabase Project ID** | `ojcrfgguhbxhtlgdflzp` |
 
 ---
@@ -60,7 +60,7 @@
 
 배포 후 production URL에 HTTP GET 요청:
 ```
-https://pbc-quote-cal2026-kjm12081-3858s-projects.vercel.app
+https://pbc-quote-cal2026-v2.vercel.app
 ```
 200 OK 응답 확인.
 
