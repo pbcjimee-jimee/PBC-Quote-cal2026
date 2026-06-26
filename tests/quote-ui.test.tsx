@@ -9,12 +9,16 @@ import { AreaPickerDropdown, MaterialRow, updateMaterialRrp } from '@/components
 import { MaterialsPanel, assignMaterialToActiveArea } from '@/components/quote-form/materials-panel'
 import { OptionTotalsSummary } from '@/components/quote-form/option-totals-summary'
 import {
+  buildQuoteSavePayload,
   getQuoteUnexpectedSaveErrorMessage,
   getQuoteNavigationGuardTarget,
+  getNextDeletedJobberLineItemIds,
   QuoteForm,
   saveQuoteFormPayload,
   shouldRunDraftGuard,
 } from '@/components/quote-form/quote-form'
+import { calculateJobberSyncPreview } from '@/components/quote-form/quote-save-payload'
+import { createEmptyQuoteFormDraft, parseQuoteFormDraft, sanitizeQuoteFormDraftForStorage } from '@/components/quote-form/quote-draft'
 import type { AreaSubtotalBreakdown } from '@/components/quote-form/quote-calculation-totals'
 import { QuoteDetailView } from '@/components/quote-detail/quote-detail-view'
 import { QuoteCard } from '@/components/quote-list/quote-card'
@@ -33,6 +37,7 @@ vi.mock('next/navigation', () => ({
 
 vi.mock('@/lib/actions/quotes', () => ({
   createQuote: vi.fn(),
+  retryJobberQuoteSync: vi.fn(),
   updateQuote: vi.fn(),
 }))
 
@@ -168,6 +173,9 @@ describe('quote form pricing UI', () => {
     expect(markup).toContain('View')
     expect(markup).toContain('Edit')
     expect(markup).toContain(`/quotes/${quoteRecord.id}/edit`)
+    expect(markup).toContain('Duplicate')
+    expect(markup).toContain('<form')
+    expect(markup).not.toContain(`/quotes/${quoteRecord.id}/duplicate`)
     expect(markup).toContain('Delete')
   })
 
@@ -396,6 +404,202 @@ describe('quote form pricing UI', () => {
     expect(markup).toContain('Update Quote')
   })
 
+  it('shows a clear local drafts action near quote draft controls', () => {
+    const markup = renderToStaticMarkup(
+      createElement(QuoteForm, {
+        settings: quoteRecord.pricingSettingsSnapshot,
+        areas: [],
+        productServices: [],
+        quoteLineTemplates: [],
+        initialQuote: quoteRecord,
+      })
+    )
+
+    expect(markup).toContain('Clear local drafts')
+  })
+
+  it('calculates the Jobber sync preview from public lines with Decimal precision', () => {
+    const preview = calculateJobberSyncPreview({
+      pbcSubtotal: new Decimal('1000.10'),
+      jobberQuoteLines: [
+        {
+          kind: 'line_item',
+          name: 'Prep',
+          description: '',
+          quantity: '1.20',
+          unitPrice: '100.05',
+          taxable: true,
+          clientVisible: true,
+        },
+        {
+          kind: 'text',
+          name: 'Scope',
+          description: 'Public note',
+          quantity: '',
+          unitPrice: '',
+          taxable: false,
+          clientVisible: true,
+        },
+        {
+          kind: 'line_item',
+          name: 'Paint',
+          description: '',
+          quantity: '2',
+          unitPrice: '125.10',
+          taxable: true,
+          clientVisible: true,
+        },
+        {
+          kind: 'line_item',
+          name: 'Hidden actual cost note',
+          description: '',
+          quantity: '99',
+          unitPrice: '99',
+          taxable: false,
+          clientVisible: false,
+        },
+      ],
+    })
+
+    expect(preview.pbcSubtotal.toFixed(2)).toBe('1000.10')
+    expect(preview.jobberPublicLineTotal.toFixed(2)).toBe('370.26')
+    expect(preview.difference.toFixed(2)).toBe('629.84')
+  })
+
+  it('shows a Jobber sync preview before saving when a Jobber quote is linked', () => {
+    const markup = renderToStaticMarkup(
+      createElement(QuoteForm, {
+        settings: quoteRecord.pricingSettingsSnapshot,
+        areas: [],
+        productServices: [],
+        quoteLineTemplates: [],
+        initialQuote: {
+          ...quoteRecord,
+          subtotal: '1000.00',
+          items: [
+            {
+              id: 'item-1',
+              quoteId: quoteRecord.id,
+              productId: null,
+              productNameSnapshot: 'Interior paint',
+              marketPriceSnapshot: '500.00',
+              actualPriceSnapshot: '500.00',
+              quantity: '1.00',
+              workingDays: '1.00',
+              labourPerDay: '1.00',
+              areaId: null,
+              areaNameSnapshot: 'Living',
+              areaScopeSnapshot: 'interior',
+              isCustom: true,
+              position: 0,
+            },
+          ],
+          jobberQuoteId: 'encoded-quote-id',
+          jobberQuoteLines: [
+            {
+              id: 'line-1',
+              quoteId: quoteRecord.id,
+              kind: 'line_item',
+              name: 'Public painting service',
+              description: 'Visible quote line',
+              quantity: '1.00',
+              unitPrice: '750.00',
+              totalPrice: '750.00',
+              taxable: true,
+              clientVisible: true,
+              jobberLineItemId: null,
+              linkedProductOrServiceId: null,
+              position: 0,
+              createdAt: '2026-06-26T00:00:00.000Z',
+              updatedAt: '2026-06-26T00:00:00.000Z',
+            },
+          ],
+        },
+      })
+    )
+
+    expect(markup).toContain('Jobber sync preview')
+    expect(markup).toContain('PBC subtotal ex GST')
+    expect(markup).toContain('Jobber public line total')
+    expect(markup).toContain('Difference')
+    expect(markup).toContain('$750.00')
+  })
+
+  it('marks hidden persisted Jobber lines for deletion and clears them when visible again', () => {
+    const currentLines = [
+      {
+        id: 'draft-line-1',
+        kind: 'line_item' as const,
+        name: 'Existing public line',
+        description: '',
+        quantity: '1',
+        unitPrice: '750',
+        taxable: true,
+        clientVisible: true,
+        jobberLineItemId: 'jobber-line-1',
+        linkedProductOrServiceId: undefined,
+      },
+    ]
+
+    expect(getNextDeletedJobberLineItemIds([], currentLines, [
+      { ...currentLines[0], clientVisible: false },
+    ])).toEqual(['jobber-line-1'])
+    expect(getNextDeletedJobberLineItemIds(['jobber-line-1'], currentLines, currentLines)).toEqual([])
+  })
+
+  it('does not send sanitized local Jobber drafts as saved Jobber snapshots', () => {
+    const storedDraft = sanitizeQuoteFormDraftForStorage({
+      ...createEmptyQuoteFormDraft(),
+      jobberQuoteId: 'encoded-quote-id',
+      jobberQuoteLookup: '2345',
+      customerName: 'Jane Customer',
+      customerAddress: '10 Main St',
+      workType: 'Exterior',
+      jobberQuoteDraft: {
+        jobberQuoteId: 'encoded-quote-id',
+        sourceType: 'quote' as const,
+        quoteNumber: '2345',
+        createdAt: '2026-05-13T01:23:45Z',
+        customerName: 'Jane Customer',
+        customerAddress: '10 Main St',
+        workType: 'Exterior',
+        areaSqft: null,
+        customerType: 'Real Estate',
+        sourceUrl: 'https://secure.getjobber.com/quotes/2345',
+        productsAndServices: [],
+        jobExpenses: [],
+        jobExpensesError: null,
+        financialSummary: {
+          quoteTotal: 2500,
+          expensesTotal: 200,
+          profit: 2300,
+          profitMarginPercent: 92,
+        },
+      },
+      updatedAt: '2026-06-25T00:00:00.000Z',
+    })
+    const parsedDraft = parseQuoteFormDraft(JSON.stringify(storedDraft), new Date('2026-06-26T00:00:00.000Z'))
+
+    const payload = buildQuoteSavePayload({
+      settings: quoteRecord.pricingSettingsSnapshot,
+      customerName: 'Jane Customer',
+      customerAddress: '10 Main St',
+      jobberQuoteId: 'encoded-quote-id',
+      jobberQuoteLookup: '2345',
+      jobberQuoteDraft: parsedDraft?.jobberQuoteDraft ?? null,
+      deletedJobberLineItemIds: [],
+      jobberQuoteLines: [],
+      workType: 'Exterior',
+      selectedMin: 4,
+      selectedMax: 1,
+      materials: [],
+      options: [],
+      memos: [],
+    })
+
+    expect(payload.jobberSnapshot).toBeUndefined()
+  })
+
   it('shows total labour as the sum of material row working days times labour', () => {
     const markup = renderToStaticMarkup(
       createElement(QuoteForm, {
@@ -578,6 +782,46 @@ describe('quote form pricing UI', () => {
     expect(markup).not.toContain('Exterior Formula Results')
     expect(markup).toContain('$1228.57')
     expect(markup).toContain('$2928.57')
+  })
+
+  it('initializes the roof formula selector from saved roof selections on edit', () => {
+    const markup = renderToStaticMarkup(
+      createElement(QuoteForm, {
+        settings: quoteRecord.pricingSettingsSnapshot,
+        areas: [{ id: 'area-roof', scope: 'roof', name: 'Roof', active: true, position: 0 }],
+        productServices: [],
+        quoteLineTemplates: [],
+        initialQuote: {
+          ...quoteRecord,
+          selectedMin: 4,
+          selectedMax: 1,
+          roofSelectedMin: 2,
+          roofSelectedMax: 5,
+          items: [
+            {
+              id: 'item-roof',
+              quoteId: quoteRecord.id,
+              productId: null,
+              productNameSnapshot: 'Roof membrane',
+              marketPriceSnapshot: '120.00',
+              actualPriceSnapshot: '120.00',
+              quantity: '1.00',
+              workingDays: '2.00',
+              labourPerDay: '1.00',
+              areaId: 'area-roof',
+              areaNameSnapshot: 'Roof',
+              areaScopeSnapshot: 'roof',
+              isCustom: true,
+              position: 0,
+            },
+          ],
+        },
+      })
+    )
+
+    expect(markup).toContain('Roof Formula Results')
+    expect(markup).toContain('Roof subtotal <b class="mono">$2145.71</b>')
+    expect(markup).not.toContain('Roof subtotal <b class="mono">$1753.33</b>')
   })
 
   it('saves material actual price snapshots from actual price, not RRP', async () => {
@@ -1724,6 +1968,42 @@ describe('quote form pricing UI', () => {
     expect(markup).toContain('$3478.93')
   })
 
+  it('shows failed Jobber sync status, error, and retry action on quote detail pages', () => {
+    const markup = renderToStaticMarkup(
+      createElement(QuoteDetailView, {
+        quote: {
+          ...quoteRecord,
+          jobberQuoteId: 'encoded-quote-id',
+          jobberSyncStatus: 'failed',
+          jobberSyncError: 'Jobber rejected the saved line item.',
+          jobberQuoteLines: [
+            {
+              id: 'app-line-1',
+              quoteId: quoteRecord.id,
+              kind: 'line_item',
+              name: 'Total',
+              description: 'Public quote total',
+              quantity: '1.00',
+              unitPrice: '1000.00',
+              totalPrice: '1000.00',
+              taxable: true,
+              clientVisible: true,
+              jobberLineItemId: null,
+              linkedProductOrServiceId: null,
+              position: 0,
+              createdAt: '2026-06-26T00:00:00.000Z',
+              updatedAt: '2026-06-26T00:00:00.000Z',
+            },
+          ],
+        },
+      })
+    )
+
+    expect(markup).toContain('Jobber sync failed')
+    expect(markup).toContain('Jobber rejected the saved line item.')
+    expect(markup).toContain('Retry Jobber sync')
+  })
+
   it('shows saved internal memos on quote detail pages', () => {
     const markup = renderToStaticMarkup(
       createElement(QuoteDetailView, {
@@ -1861,6 +2141,9 @@ describe('quote form pricing UI', () => {
 
     expect(markup).toContain('Edit')
     expect(markup).toContain(`/quotes/${quoteRecord.id}/edit`)
+    expect(markup).toContain('Duplicate')
+    expect(markup).toContain('<form')
+    expect(markup).not.toContain(`/quotes/${quoteRecord.id}/duplicate`)
     expect(markup).toContain('Delete')
   })
 
@@ -1934,6 +2217,44 @@ describe('quote form pricing UI', () => {
     expect(markup).toContain('Range F2-F3')
     expect(markup).toContain('Exterior selected subtotal')
     expect(markup).not.toContain('Range F4-F1')
+  })
+
+  it('shows roof formula results on quote detail pages when roof rows exist', () => {
+    const markup = renderToStaticMarkup(
+      createElement(QuoteDetailView, {
+        quote: {
+          ...quoteRecord,
+          workType: 'Roof',
+          selectedMin: 4,
+          selectedMax: 1,
+          roofSelectedMin: 2,
+          roofSelectedMax: 5,
+          items: [
+            {
+              id: 'item-roof',
+              quoteId: quoteRecord.id,
+              productId: null,
+              productNameSnapshot: 'Roof membrane',
+              marketPriceSnapshot: '120.00',
+              actualPriceSnapshot: '120.00',
+              quantity: '1.00',
+              workingDays: '2.00',
+              labourPerDay: '1.00',
+              areaId: null,
+              areaNameSnapshot: 'Roof',
+              areaScopeSnapshot: 'roof',
+              isCustom: true,
+              position: 0,
+            },
+          ],
+        },
+      })
+    )
+
+    expect(markup).toContain('Roof selected subtotal')
+    expect(markup).toContain('Range F2-F5')
+    expect(markup).not.toContain('Interior selected subtotal')
+    expect(markup).not.toContain('Exterior selected subtotal')
   })
 
   it('uses grouped area subtotal as the detail final subtotal when unassigned rows exist', () => {

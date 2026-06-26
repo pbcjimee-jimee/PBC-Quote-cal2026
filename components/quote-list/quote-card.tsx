@@ -3,6 +3,7 @@ import type { QuoteRecord } from '@/lib/dev-data'
 import { buttonClassName } from '@/components/ui/card'
 import { Icons } from '@/components/ui/icons'
 import { QuoteDeleteButton } from './quote-delete-button'
+import { QuoteDuplicateButton } from './quote-duplicate-button'
 
 const OVERVIEW_DATE_FORMATTER = new Intl.DateTimeFormat('en-AU', { day: '2-digit', month: 'short', year: 'numeric' })
 const CARD_DATE_FORMATTER = new Intl.DateTimeFormat('en-AU', { dateStyle: 'medium' })
@@ -74,6 +75,7 @@ export function QuoteCard({ quote }: { quote: QuoteRecord }) {
             <Link href={`/quotes/${quote.id}/edit`} className="pbc-btn pbc-btn--ghost pbc-btn--sm">
               Edit
             </Link>
+            <QuoteDuplicateButton quoteId={quote.id} />
             <QuoteDeleteButton quoteId={quote.id} />
           </div>
         </div>

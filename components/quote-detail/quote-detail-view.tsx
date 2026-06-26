@@ -10,8 +10,10 @@ import type { AreaSubtotalGroup } from '@/components/quote-form/quote-calculatio
 import { mapSavedItemsToMaterials } from '@/components/quote-form/quote-record-mappers'
 import type { AreaScope } from '@/components/quote-form/types'
 import { QuoteDeleteButton } from '@/components/quote-list/quote-delete-button'
+import { QuoteDuplicateButton } from '@/components/quote-list/quote-duplicate-button'
 import { Card, SectionLabel } from '@/components/ui/card'
 import { Icons } from '@/components/ui/icons'
+import { retryJobberQuoteSync } from '@/lib/actions/quotes'
 import { AREA_SCOPE_LABELS } from '@/lib/areas/constants'
 
 interface QuoteDetailViewProps {
@@ -180,24 +182,47 @@ function MaterialDetail({ item }: { item: QuoteRecord['items'][number] }) {
   )
 }
 
+function JobberSyncFailurePanel({ quote }: { quote: QuoteRecord }) {
+  async function retryJobberSync() {
+    'use server'
+    await retryJobberQuoteSync(quote.id)
+  }
+
+  if (quote.jobberSyncStatus !== 'failed') return null
+
+  return (
+    <form action={retryJobberSync} className="pbc-alert pbc-alert--danger">
+      <span>
+        <b>Jobber sync failed</b>
+        {quote.jobberSyncError ? ` - ${quote.jobberSyncError}` : ''}
+      </span>
+      <button type="submit" className="pbc-btn pbc-btn--ghost pbc-btn--sm">
+        Retry Jobber sync
+      </button>
+    </form>
+  )
+}
+
 function getPreferredFormulaScopes(
   quote: QuoteRecord,
-  areaBreakdown: { interior: AreaSubtotalGroup; exterior: AreaSubtotalGroup }
+  areaBreakdown: { interior: AreaSubtotalGroup; exterior: AreaSubtotalGroup; roof: AreaSubtotalGroup }
 ): AreaScope[] {
   const workType = quote.workType?.toLowerCase()
   const scopesWithRows = new Set(
     quote.items
       .map((item) => item.areaScopeSnapshot)
-      .filter((scope): scope is AreaScope => scope === 'interior' || scope === 'exterior')
+      .filter((scope): scope is AreaScope => scope === 'interior' || scope === 'exterior' || scope === 'roof')
   )
 
   if (workType === 'interior' && scopesWithRows.has('interior')) return ['interior']
   if (workType === 'exterior' && scopesWithRows.has('exterior')) return ['exterior']
+  if (workType === 'roof' && scopesWithRows.has('roof')) return ['roof']
 
   const scopes: AreaScope[] = []
   if (scopesWithRows.has('interior') || !areaBreakdown.interior.subtotal.isZero()) scopes.push('interior')
   if (scopesWithRows.has('exterior') || !areaBreakdown.exterior.subtotal.isZero()) scopes.push('exterior')
-  return scopes.length ? scopes : ['interior', 'exterior']
+  if (scopesWithRows.has('roof') || !areaBreakdown.roof.subtotal.isZero()) scopes.push('roof')
+  return scopes.length ? scopes : ['interior', 'exterior', 'roof']
 }
 
 export function QuoteDetailView({ quote }: QuoteDetailViewProps) {
@@ -218,8 +243,8 @@ export function QuoteDetailView({ quote }: QuoteDetailViewProps) {
         selectedMax: quote.exteriorSelectedMax ?? quote.selectedMax,
       },
       roof: {
-        selectedMin: quote.selectedMin,
-        selectedMax: quote.selectedMax,
+        selectedMin: quote.roofSelectedMin ?? quote.selectedMin,
+        selectedMax: quote.roofSelectedMax ?? quote.selectedMax,
       },
     },
     settings: quote.pricingSettingsSnapshot,
@@ -268,6 +293,9 @@ export function QuoteDetailView({ quote }: QuoteDetailViewProps) {
           <Link href={`/quotes/${quote.id}/edit`} className="pbc-btn pbc-btn--ghost">
             {Icons.edit({ size: 15 })} Edit quote
           </Link>
+          <QuoteDuplicateButton quoteId={quote.id} className="pbc-btn pbc-btn--ghost">
+            {Icons.template({ size: 15 })} Duplicate
+          </QuoteDuplicateButton>
         </div>
       </header>
 
@@ -282,9 +310,14 @@ export function QuoteDetailView({ quote }: QuoteDetailViewProps) {
             <Link href={`/quotes/${quote.id}/edit`} className="pbc-btn pbc-btn--ghost">
               {Icons.edit({ size: 15 })} Edit
             </Link>
+            <QuoteDuplicateButton quoteId={quote.id} className="pbc-btn pbc-btn--ghost">
+              {Icons.template({ size: 15 })} Duplicate
+            </QuoteDuplicateButton>
             <QuoteDeleteButton quoteId={quote.id} redirectToQuotes />
           </div>
         </div>
+
+        <JobberSyncFailurePanel quote={quote} />
 
         <div className="pbc-dgrid">
           {/* Summary */}

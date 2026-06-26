@@ -12,16 +12,16 @@
 
 ### 사용자
 
-- Primary: PBC 견적 담당 직원 (1-3명)
+- Primary: PBC 견적 담당 관리자 2명
 - 환경: 사무실/원격, 노트북·데스크톱 (모바일 우선 아님)
 
 ### 단계별 출시
 
 | 버전 | 범위 |
 |---|---|
-| **v1.0** (현재) | Supabase Auth, 페인트 DB + CSV import, 페인트 검색, 5가지 공식 계산기(GST 10% 포함), 견적 저장·검색·수정·삭제, 작업 영역(area) 마스터, **옵션(add-on) 견적**, settings UI, **Jobber OAuth 읽기 전용 연동**, Vercel 배포. |
-| **v1.1** | Jobber quote controlled write-back(Product / Service line items only), 과거 견적 복제(Duplicate) 기능. |
-| **v1.5** | 페인트 DB 관리 정식 UI. 자동 백업 강화. |
+| **v1.0** (현재) | Supabase Auth, 페인트 DB + CSV import, 페인트 검색, 5가지 공식 계산기(GST 10% 포함), 견적 저장·검색·수정·삭제, Interior/Exterior/Roof 작업 영역, **옵션(add-on) 견적**, settings UI, Product / Service catalog/template, internal memos, price revision history, **Jobber OAuth fetch + controlled write-back(Product / Service line items only)**, Vercel 배포. |
+| **v1.1** | Roof min/max 공식 선택값 저장, local draft 민감 fetch 결과 저장 방지/7일 만료, Jobber sync preview/retry, 과거 견적 복제(Duplicate) 기능, 백업 운영 결정. |
+| **v1.5** | 사용 패턴 확인 후 필요한 경우 페인트 DB 관리 고도화와 자동 백업 강화. material 가격은 소비자가 기준을 유지한다. |
 | **v2** | 자동 견적가 추산 (ML), 분석 대시보드. |
 
 ---
@@ -36,7 +36,7 @@
 | External API | Route Handlers (`app/api/`) | Jobber OAuth callback, quote fetch, Product / Service search, controlled quote write-back |
 | DB | Supabase (Postgres 16+) | RLS 내장, Auth 일체형 |
 | Auth | Supabase Auth (이메일/비밀번호) | 표준, 동료 초대 용이 |
-| 외부 연동 | Jobber GraphQL API (OAuth 2.0, v1.1 controlled write-back) | v1.0 read-only fetch 완료, v1.1에서 같은 quote에 공개 line item write-back |
+| 외부 연동 | Jobber GraphQL API (OAuth 2.0, controlled write-back) | quote fetch와 같은 quote의 공개 Product / Service line item write-back |
 | 금액 계산 | `decimal.js` | 부동소수점 오차 회피 |
 | 입력 검증 | `zod` | Server Actions 표준 |
 | 테스트 | Vitest (단위), Playwright (E2E, v1.1) | Next.js 표준 |
@@ -75,11 +75,12 @@
 │  - quote_areas │
 │  - quote_options
 │  - quote_option_items
-│  - jobber_quote_lines (planned v1.1)
+│  - jobber_quote_lines
 │  - product_services
 │  - quote_line_templates
 │  - quote_line_template_items
 │  - quote_memos (app-only internal notes)
+│  - quote_price_revisions
 │  - pricing_settings (singleton)
 │  - jobber_tokens (user-scoped, encrypted)
 └────────────────┘
@@ -101,16 +102,18 @@
 ```
 
 > 원칙: material 가격과 내부 계산 데이터는 우리 DB에만 저장한다. Jobber에는 사용자가 공개용으로 작성한 Product / Service line item만 저장한다.
+> 2026-06-26 사용자 결정: material 가격은 일반 소비자가 기준으로 계산한다. 별도 실제 원가/판매가 분리와 추가 가격작성 정보 패널은 도입하지 않는다.
 > Internal quote memos are also app-only data. They are stored in `quote_memos` and never synced to Jobber notes or line items.
 > 토큰은 만료 시 자동 refresh, `lib/jobber/token-encryption.ts`로 암호화 저장.
 
-### v1.1 Jobber write-back 경계
+### Jobber write-back 경계
 
 - read query와 write mutation client를 분리한다.
 - write mutation은 확정된 quote line item update mutation만 allowlist한다.
 - UI/Server Action에서 raw GraphQL 문서를 전달하지 않는다.
 - Jobber write 실패 시 local quote 저장은 유지하고 `jobber_sync_status = failed`로 표시한다.
-- 정확한 Jobber mutation/input shape는 구현 전 Jobber GraphiQL에서 확정한다.
+- 저장 전에는 PBC subtotal, Jobber public line total, 차이를 보여주는 sync preview를 제공한다.
+- 실패한 sync는 quote detail에서 retry할 수 있게 한다.
 
 ---
 
@@ -161,6 +164,14 @@ Main quotes also store separate Interior and Exterior formula min/max selections
 The application recalculates grouped totals using saved row snapshots, the quote pricing settings snapshot, and the area-specific formula selections. Stored `quotes.subtotal` is the GST-exclusive sum of the selected Interior subtotal plus the selected Exterior subtotal. Stored `quotes.final_total` remains `quotes.subtotal * 1.10`. Option totals remain option-owned and are not included in the main quote total.
 
 Related design: `docs/superpowers/specs/2026-05-27-quote-workspace-area-subtotals-design.md`.
+
+## 2026-06-26 Roof formula persistence note
+
+Roof calculation is part of the quote workspace and uses the same five formula numbers and shared margin settings as Interior/Exterior. Roof rows are identified through `area_scope_snapshot = 'roof'`.
+
+Current gap: main quotes persist Interior and Exterior formula min/max selections, but Roof selected min/max values still need dedicated persisted columns. The next DB migration should add `quotes.roof_selected_min` and `quotes.roof_selected_max`, then update quote create/update/read, detail UI, draft restore, and regression tests.
+
+This is a persistence fix only. The existing five formulas, GST calculation, and material consumer-price basis do not change.
 
 ## 2026-05-28 Internal quote memo architecture note
 

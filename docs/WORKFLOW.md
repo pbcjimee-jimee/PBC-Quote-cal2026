@@ -20,6 +20,20 @@
 
 ---
 
+## 모델 라우팅
+
+작업을 Claude Code, Codex, 스킬, 하위 에이전트에 넘길 때 다음 모델 등급을 함께 적는다. 실제 런타임에서 모델을 직접 선택할 수 없으면 task 제목이나 프롬프트 첫 줄에 원하는 등급을 표시한다.
+
+| 작업 유형 | 권장 모델 | 적용 예 |
+|---|---|---|
+| 계획·아키텍처·테스트 전략·복잡한 보안 판단 | `gpt 5.5 extra hight` | upgrade plan, DB/RLS 설계, plan review |
+| 일반 기능 구현 | `gpt 5.5 high` | migration, Server Action, UI, test 구현 |
+| 단순 작업·반복 수정 | `gpt 5.3 codex spark` | 문구 수정, import 정리, 기계적 테스트 fixture 보강 |
+
+이 규칙은 비용과 구현 효율을 위한 라우팅 기준이다. 시스템·개발자·사용자 지시, 보안 승인 규칙, 새 의존성 승인 규칙을 대체하지 않는다.
+
+---
+
 ## 핵심 원칙
 
 ### 1. Claude Code는 "결정자(Decider)", Codex는 "실행자(Executor)"

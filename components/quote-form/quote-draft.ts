@@ -1,8 +1,46 @@
-import type { JobberQuoteDraft } from '@/lib/jobber/mapper'
+import Decimal from 'decimal.js'
+import type { JobberQuoteDraft, JobberQuoteDraftLineItem } from '@/lib/jobber/mapper'
 import type { AreaFormulaSelections, FormulaSelection, JobberQuoteLineItemDraft, JobberSaveMode, MaterialItem, QuoteMemoItem, QuoteOptionItem } from './types'
 import { isDecimalInputValue } from './decimal-input-utils'
 
 const QUOTE_DRAFT_VERSION = 1
+const QUOTE_DRAFT_STORAGE_PREFIX = 'pbc-quote-draft:'
+export const QUOTE_DRAFT_EXPIRY_MS = 7 * 24 * 60 * 60 * 1000
+const LOCAL_DRAFT_JOBBER_PRIVATE_FIELDS_MESSAGE = 'Jobber expense and financial details are not stored in local drafts. Fetch Jobber again to refresh them.'
+
+type LocalJobberQuoteDraft = Pick<
+  JobberQuoteDraft,
+  | 'jobberQuoteId'
+  | 'sourceType'
+  | 'quoteNumber'
+  | 'createdAt'
+  | 'customerName'
+  | 'customerAddress'
+  | 'workType'
+  | 'areaSqft'
+  | 'customerType'
+  | 'sourceUrl'
+  | 'productsAndServices'
+>
+
+export type QuoteFormStorageDraft = Omit<QuoteFormDraft, 'jobberQuoteDraft'> & {
+  jobberQuoteDraft: LocalJobberQuoteDraft | null
+}
+
+type RestoredLocalJobberQuoteDraft = JobberQuoteDraft & {
+  localDraftPrivateFieldsOmitted: true
+}
+
+export interface QuoteDraftStorage {
+  length: number
+  key(index: number): string | null
+  removeItem(key: string): void
+}
+
+export interface QuoteDraftReadableStorage {
+  getItem(key: string): string | null
+  removeItem(key: string): void
+}
 
 export interface QuoteFormDraft {
   version: number
@@ -30,7 +68,7 @@ export interface QuoteFormDraft {
 type UnknownRecord = Record<string, unknown>
 
 export function getQuoteDraftStorageKey(quoteId?: string): string {
-  return `pbc-quote-draft:${quoteId ?? 'new'}`
+  return `${QUOTE_DRAFT_STORAGE_PREFIX}${quoteId ?? 'new'}`
 }
 
 export function createEmptyQuoteFormDraft(): QuoteFormDraft {
@@ -79,6 +117,11 @@ function readOptionalString(record: UnknownRecord, key: string): string | undefi
 function readDecimalString(record: UnknownRecord, key: string): string | null {
   const value = readString(record, key)
   return value !== null && isDecimalInputValue(value) ? value : null
+}
+
+function readNumber(record: UnknownRecord, key: string): number | null {
+  const value = record[key]
+  return typeof value === 'number' && Number.isFinite(value) ? value : null
 }
 
 function readFormulaNumber(record: UnknownRecord, key: string): 1 | 2 | 3 | 4 | 5 | null {
@@ -240,7 +283,179 @@ function parseJobberQuoteLine(value: unknown): JobberQuoteLineItemDraft | null {
   }
 }
 
-export function parseQuoteFormDraft(value: string | null): QuoteFormDraft | null {
+function sanitizeJobberQuoteLineForStorage(line: JobberQuoteDraftLineItem): JobberQuoteDraftLineItem {
+  return {
+    id: line.id,
+    name: line.name,
+    category: line.category,
+    description: line.description,
+    quantity: line.quantity,
+    unitPrice: line.unitPrice,
+    totalPrice: line.totalPrice,
+    linkedName: line.linkedName,
+    textOnly: line.textOnly,
+  }
+}
+
+function sanitizeJobberQuoteDraftForStorage(draft: JobberQuoteDraft): LocalJobberQuoteDraft {
+  return {
+    jobberQuoteId: draft.jobberQuoteId,
+    sourceType: draft.sourceType,
+    quoteNumber: draft.quoteNumber,
+    createdAt: draft.createdAt,
+    customerName: draft.customerName,
+    customerAddress: draft.customerAddress,
+    workType: draft.workType,
+    areaSqft: draft.areaSqft,
+    customerType: draft.customerType,
+    sourceUrl: draft.sourceUrl,
+    productsAndServices: draft.productsAndServices.map(sanitizeJobberQuoteLineForStorage),
+  }
+}
+
+export function sanitizeQuoteFormDraftForStorage(draft: QuoteFormDraft): QuoteFormStorageDraft {
+  return {
+    ...draft,
+    jobberQuoteDraft: draft.jobberQuoteDraft
+      ? sanitizeJobberQuoteDraftForStorage(draft.jobberQuoteDraft)
+      : null,
+  }
+}
+
+export function clearLocalQuoteDrafts(storage: QuoteDraftStorage): number {
+  const keysToRemove: string[] = []
+  for (let index = 0; index < storage.length; index += 1) {
+    const key = storage.key(index)
+    if (key?.startsWith(QUOTE_DRAFT_STORAGE_PREFIX)) {
+      keysToRemove.push(key)
+    }
+  }
+
+  for (const key of keysToRemove) {
+    storage.removeItem(key)
+  }
+
+  return keysToRemove.length
+}
+
+function parseJobberQuoteDraftLineItem(value: unknown): JobberQuoteDraftLineItem | null {
+  if (!isRecord(value)) return null
+
+  const id = readString(value, 'id')
+  const name = readString(value, 'name')
+  const category = readString(value, 'category')
+  const description = readString(value, 'description')
+  const quantity = readNumber(value, 'quantity')
+  const unitPrice = readNumber(value, 'unitPrice')
+  const totalPrice = readNumber(value, 'totalPrice')
+  const linkedName = value.linkedName
+  const textOnly = value.textOnly
+
+  if (
+    id === null ||
+    name === null ||
+    category === null ||
+    description === null ||
+    quantity === null ||
+    unitPrice === null ||
+    totalPrice === null ||
+    (linkedName !== null && typeof linkedName !== 'string') ||
+    (textOnly !== undefined && typeof textOnly !== 'boolean')
+  ) {
+    return null
+  }
+
+  return {
+    id,
+    name,
+    category,
+    description,
+    quantity,
+    unitPrice,
+    totalPrice,
+    linkedName,
+    textOnly,
+  }
+}
+
+function parseJobberQuoteDraft(value: unknown): JobberQuoteDraft | null {
+  if (!isRecord(value)) return null
+
+  const jobberQuoteId = readString(value, 'jobberQuoteId')
+  const sourceType = value.sourceType
+  const quoteNumber = readString(value, 'quoteNumber')
+  const createdAt = readString(value, 'createdAt')
+  const customerName = readString(value, 'customerName')
+  const customerAddress = readString(value, 'customerAddress')
+  const workType = readString(value, 'workType')
+  const areaSqft = value.areaSqft
+  const customerType = readString(value, 'customerType')
+  const sourceUrl = readString(value, 'sourceUrl')
+  const productsAndServices = Array.isArray(value.productsAndServices)
+    ? value.productsAndServices.map(parseJobberQuoteDraftLineItem)
+    : null
+
+  if (
+    jobberQuoteId === null ||
+    (sourceType !== 'quote' && sourceType !== 'job') ||
+    quoteNumber === null ||
+    createdAt === null ||
+    customerName === null ||
+    customerAddress === null ||
+    workType === null ||
+    (areaSqft !== null && typeof areaSqft !== 'number') ||
+    customerType === null ||
+    sourceUrl === null ||
+    productsAndServices === null ||
+    productsAndServices.some((item) => item === null)
+  ) {
+    return null
+  }
+
+  const quoteTotal = (productsAndServices as JobberQuoteDraftLineItem[]).reduce(
+    (total, item) => total.add(item.totalPrice),
+    new Decimal(0)
+  ).toDecimalPlaces(2).toNumber()
+
+  const restoredDraft: RestoredLocalJobberQuoteDraft = {
+    jobberQuoteId,
+    sourceType,
+    quoteNumber,
+    createdAt,
+    customerName,
+    customerAddress,
+    workType,
+    areaSqft,
+    customerType,
+    sourceUrl,
+    productsAndServices: productsAndServices as JobberQuoteDraftLineItem[],
+    jobExpenses: [],
+    jobExpensesError: LOCAL_DRAFT_JOBBER_PRIVATE_FIELDS_MESSAGE,
+    financialSummary: {
+      quoteTotal,
+      expensesTotal: 0,
+      profit: quoteTotal,
+      profitMarginPercent: quoteTotal > 0 ? 100 : null,
+    },
+    localDraftPrivateFieldsOmitted: true,
+  }
+  return restoredDraft
+}
+
+function isUpdatedAtFresh(updatedAt: string, now: Date): boolean {
+  const updatedAtTime = Date.parse(updatedAt)
+  const nowTime = now.getTime()
+  if (!Number.isFinite(updatedAtTime) || !Number.isFinite(nowTime)) return false
+  if (updatedAtTime > nowTime) return false
+  return nowTime - updatedAtTime <= QUOTE_DRAFT_EXPIRY_MS
+}
+
+export function isLocalDraftJobberQuoteDraft(draft: JobberQuoteDraft | null): boolean {
+  if (!draft || !isRecord(draft)) return false
+  return draft.localDraftPrivateFieldsOmitted === true
+}
+
+export function parseQuoteFormDraft(value: string | null, now: Date = new Date()): QuoteFormDraft | null {
   if (!value) return null
 
   let parsed: unknown
@@ -266,6 +481,7 @@ export function parseQuoteFormDraft(value: string | null): QuoteFormDraft | null
   const selectedMax = readFormulaNumber(parsed, 'selectedMax')
   const parsedAreaFormulaSelections = parseAreaFormulaSelections(parsed.areaFormulaSelections)
   const updatedAt = readString(parsed, 'updatedAt')
+  const jobberQuoteDraft = parseJobberQuoteDraft(parsed.jobberQuoteDraft)
   const materials = Array.isArray(parsed.materials)
     ? parsed.materials.map(parseMaterial)
     : null
@@ -294,6 +510,8 @@ export function parseQuoteFormDraft(value: string | null): QuoteFormDraft | null
     selectedMax === null ||
     (parsed.areaFormulaSelections !== undefined && parsedAreaFormulaSelections === null) ||
     updatedAt === null ||
+    !isUpdatedAtFresh(updatedAt, now) ||
+    (parsed.jobberQuoteDraft !== null && parsed.jobberQuoteDraft !== undefined && jobberQuoteDraft === null) ||
     materials === null ||
     materials.some((item) => item === null) ||
     options.some((item) => item === null) ||
@@ -328,9 +546,22 @@ export function parseQuoteFormDraft(value: string | null): QuoteFormDraft | null
     selectedMin,
     selectedMax,
     areaFormulaSelections,
-    jobberQuoteDraft: isRecord(parsed.jobberQuoteDraft) ? parsed.jobberQuoteDraft as unknown as JobberQuoteDraft : null,
+    jobberQuoteDraft,
     updatedAt,
   }
+}
+
+export function readQuoteFormDraftFromStorage(
+  storage: QuoteDraftReadableStorage,
+  key: string,
+  now: Date = new Date()
+): QuoteFormDraft | null {
+  const storedValue = storage.getItem(key)
+  const draft = parseQuoteFormDraft(storedValue, now)
+  if (storedValue !== null && draft === null) {
+    storage.removeItem(key)
+  }
+  return draft
 }
 
 export function hasMeaningfulQuoteDraft(draft: QuoteFormDraft): boolean {

@@ -10,7 +10,7 @@
 
 - 허용: 기존 Jobber quote 조회, Jobber Product / Service 검색, 같은 quote number에 대한 Product / Service line item 업데이트
 - 허용: 우리 앱 내부 material 가격 저장과 계산
-- 금지: material 이름, material 원가, material 상세 가격을 Jobber line item에 전송
+- 금지: material 이름, 내부 material 가격 필드, material 상세 가격을 Jobber line item에 전송
 - 금지: Jobber 사진, notes, attachments 동기화
 - 금지: 앱에서 새 Jobber quote 생성, client/job 삭제, 임의 GraphQL mutation 실행
 - 제외: Jobber `Build Option Set`

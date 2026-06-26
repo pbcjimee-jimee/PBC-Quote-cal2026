@@ -25,6 +25,7 @@
 │  - formula1_total .. formula5_total           │
 │  - selected_min, selected_max                 │
 │  - interior/exterior selected_min/max         │
+│  - roof selected_min/max (planned next)       │
 │  - subtotal, final_total (GST 10% 포함)       │
 │  - pricing_settings_snapshot (JSONB)          │
 │  - created_by/at, updated_by/at               │
@@ -51,7 +52,7 @@
 ┌──────────────────────┐   │  - option_id (FK)    │
 │   quote_areas        │◄──┤  - 동일 스냅샷 구조   │
 │  - id, scope         │   │    (quote_items와    │
-│    (interior/exterior)│  │    동일 컬럼셋)      │
+│    (int/ext/roof)    │   │    동일 컬럼셋)      │
 │  - name, position    │   └──────────────────────┘
 │  - active            │
 └──────────────────────┘
@@ -97,6 +98,11 @@
 | `0012_add_quote_line_templates.sql` | Settings에서 저장하는 재사용 Product / Service line/text template |
 | `0013_add_quote_memos.sql` | App-only internal quote memos. Multiple memo rows per quote, not synced to Jobber |
 | `0014_add_quote_area_formula_selections.sql` | Main quote Interior/Exterior formula min/max selections |
+| `0015_add_roof_scope_and_pricing.sql` | Roof area scope, roof material/labour calculation, `pricing_settings.roof_labour_rate` |
+| `0016_drop_roof_margin_from_pricing_settings.sql` | Roof 전용 margin 제거. Roof는 Interior/Exterior와 같은 F2-F5 margin 사용 |
+| `0017_add_quote_price_revisions.sql` | Quote price revision history |
+| `0018_add_quote_price_revision_option_totals.sql` | Price revision에 option subtotal/final snapshot 추가 |
+| Planned next | `quotes.roof_selected_min`, `quotes.roof_selected_max` 추가 |
 
 > 아래 DDL은 변경 후 최종 형태 요약. 정확한 SQL은 마이그레이션 파일 자체를 source of truth로 본다.
 
@@ -133,6 +139,7 @@ CREATE TABLE pricing_settings (
   f3_margin       NUMERIC(4,3)  NOT NULL DEFAULT 0.30 CHECK (f3_margin >= 0),
   f4_margin       NUMERIC(4,3)  NOT NULL DEFAULT 0.25 CHECK (f4_margin >= 0),
   f5_margin       NUMERIC(4,3)  NOT NULL DEFAULT 0.30 CHECK (f5_margin >= 0),
+  roof_labour_rate NUMERIC(10,2) NOT NULL DEFAULT 700 CHECK (roof_labour_rate >= 0), -- 0015
   updated_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_by      UUID REFERENCES auth.users(id)
 );
@@ -161,6 +168,9 @@ CREATE TABLE quotes (
   interior_selected_max     INT NOT NULL CHECK (interior_selected_max BETWEEN 1 AND 5),
   exterior_selected_min     INT NOT NULL CHECK (exterior_selected_min BETWEEN 1 AND 5),
   exterior_selected_max     INT NOT NULL CHECK (exterior_selected_max BETWEEN 1 AND 5),
+  -- planned next migration:
+  -- roof_selected_min      INT CHECK (roof_selected_min BETWEEN 1 AND 5),
+  -- roof_selected_max      INT CHECK (roof_selected_max BETWEEN 1 AND 5),
   subtotal                  NUMERIC(10,2) NOT NULL,
   final_total               NUMERIC(10,2) NOT NULL,
   pricing_settings_snapshot JSONB NOT NULL,
@@ -188,7 +198,7 @@ CREATE TABLE quote_items (
   area_id                 UUID REFERENCES quote_areas(id),            -- 0005
   area_name_snapshot      TEXT,                                       -- 0005
   area_scope_snapshot     TEXT CHECK (
-    area_scope_snapshot IS NULL OR area_scope_snapshot IN ('interior','exterior')
+    area_scope_snapshot IS NULL OR area_scope_snapshot IN ('interior','exterior','roof')
   ),                                                                  -- 0005
   is_custom               BOOLEAN NOT NULL DEFAULT false,
   position                INT NOT NULL DEFAULT 0
@@ -202,10 +212,10 @@ CREATE INDEX idx_quote_items_area ON quote_items(area_id) WHERE area_id IS NOT N
 ## 추가 테이블 (마이그레이션 0005·0007·0009)
 
 ```sql
--- 작업 영역 마스터 (interior/exterior 묶음 라벨)
+-- 작업 영역 마스터 (interior/exterior/roof 묶음 라벨)
 CREATE TABLE quote_areas (
   id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  scope       TEXT NOT NULL CHECK (scope IN ('interior','exterior')),
+  scope       TEXT NOT NULL CHECK (scope IN ('interior','exterior','roof')),
   name        TEXT NOT NULL CHECK (length(btrim(name)) > 0),
   active      BOOLEAN NOT NULL DEFAULT true,
   position    INT NOT NULL DEFAULT 0,
@@ -263,7 +273,7 @@ CREATE TABLE quote_option_items (
   area_id                UUID REFERENCES quote_areas(id),
   area_name_snapshot     TEXT,
   area_scope_snapshot    TEXT CHECK (
-    area_scope_snapshot IS NULL OR area_scope_snapshot IN ('interior','exterior')
+    area_scope_snapshot IS NULL OR area_scope_snapshot IN ('interior','exterior','roof')
   ),
   is_custom              BOOLEAN NOT NULL DEFAULT false,
   position               INT NOT NULL DEFAULT 0
@@ -334,7 +344,7 @@ CREATE TABLE product_services (
 );
 ```
 
-`unit_cost`는 Settings 카탈로그 관리용으로만 보관한다. Quote 저장/Jobber write-back에는 `name`, `description`, `unit_price`, `taxable`, 최소 수량만 자동채우기에 사용하며 material 원가와 별도로 취급한다.
+`unit_cost`는 Jobber export 호환 필드로만 보관한다. Quote 저장/Jobber write-back에는 `name`, `description`, `unit_price`, `taxable`, 최소 수량만 자동채우기에 사용한다. Material 계산은 소비자가 기준을 유지한다.
 
 ## Quote line template schema
 
@@ -402,6 +412,31 @@ ALTER TABLE quotes
   ADD COLUMN exterior_selected_max INT CHECK (exterior_selected_max BETWEEN 1 AND 5);
 ```
 
+## Roof scope and planned formula selection columns
+
+Exact SQL for the current Roof scope is in `supabase/migrations/0015_add_roof_scope_and_pricing.sql` and `0016_drop_roof_margin_from_pricing_settings.sql`.
+
+- `quote_areas.scope`, `quote_items.area_scope_snapshot`, and `quote_option_items.area_scope_snapshot` allow `roof`.
+- `pricing_settings.roof_labour_rate` stores the Roof labour rate.
+- Roof uses the shared F2-F5 margins. There is no separate Roof margin field.
+- Material pricing remains consumer-price based.
+
+Planned next migration:
+
+```sql
+ALTER TABLE quotes
+  ADD COLUMN roof_selected_min INT CHECK (roof_selected_min BETWEEN 1 AND 5),
+  ADD COLUMN roof_selected_max INT CHECK (roof_selected_max BETWEEN 1 AND 5);
+```
+
+This planned change fixes persistence of the user-selected Roof formula range. It does not change the five formula definitions or GST calculation.
+
+## Quote price revision history
+
+Exact SQL is in `supabase/migrations/0017_add_quote_price_revisions.sql` and `0018_add_quote_price_revision_option_totals.sql`.
+
+`quote_price_revisions` stores price-change snapshots for quote totals and option totals so later quote edits can preserve a history of changed sell totals.
+
 ---
 
 ## RLS 정책 (`supabase/migrations/0002_rls_policies.sql`)
@@ -416,10 +451,12 @@ ALTER TABLE pricing_settings    ENABLE ROW LEVEL SECURITY;
 ALTER TABLE quotes              ENABLE ROW LEVEL SECURITY;
 ALTER TABLE quote_items         ENABLE ROW LEVEL SECURITY;
 ALTER TABLE quote_areas         ENABLE ROW LEVEL SECURITY;   -- 0005
+ALTER TABLE jobber_quote_lines  ENABLE ROW LEVEL SECURITY;   -- 0010
 ALTER TABLE jobber_tokens       ENABLE ROW LEVEL SECURITY;   -- 0007 (본인 행만)
 ALTER TABLE quote_options       ENABLE ROW LEVEL SECURITY;   -- 0009
 ALTER TABLE quote_option_items  ENABLE ROW LEVEL SECURITY;   -- 0009
 ALTER TABLE quote_memos         ENABLE ROW LEVEL SECURITY;   -- 0013
+ALTER TABLE quote_price_revisions ENABLE ROW LEVEL SECURITY; -- 0017
 
 -- v1.0 공통 정책: 인증 사용자 = read/write 전부, 미인증 = 거부
 CREATE POLICY "authenticated_all" ON products            FOR ALL TO authenticated USING (true) WITH CHECK (true);
@@ -430,9 +467,11 @@ CREATE POLICY "authenticated_all" ON pricing_settings    FOR ALL TO authenticate
 CREATE POLICY "authenticated_all" ON quotes              FOR ALL TO authenticated USING (true) WITH CHECK (true);
 CREATE POLICY "authenticated_all" ON quote_items         FOR ALL TO authenticated USING (true) WITH CHECK (true);
 CREATE POLICY "authenticated_all" ON quote_areas         FOR ALL TO authenticated USING (true) WITH CHECK (true);
+CREATE POLICY "authenticated_all" ON jobber_quote_lines  FOR ALL TO authenticated USING (true) WITH CHECK (true);
 CREATE POLICY "authenticated_all" ON quote_options       FOR ALL TO authenticated USING (true) WITH CHECK (true);
 CREATE POLICY "authenticated_all" ON quote_option_items  FOR ALL TO authenticated USING (true) WITH CHECK (true);
 CREATE POLICY "authenticated_all" ON quote_memos         FOR ALL TO authenticated USING (true) WITH CHECK (true);
+CREATE POLICY "authenticated_all" ON quote_price_revisions FOR ALL TO authenticated USING (true) WITH CHECK (true);
 
 -- jobber_tokens 만 본인 행 정책 (자세한 SQL은 0007 참조)
 -- 미인증 사용자는 모든 테이블 접근 불가 (정책 없음 = 거부)
@@ -455,7 +494,7 @@ CREATE POLICY "authenticated_all" ON quote_memos         FOR ALL TO authenticate
 |---|---|
 | 인증 | Supabase Auth, 세션 7일 |
 | 인가 | RLS — 모든 테이블, v1.0 동일 권한 |
-| 민감 정보 | `actual_price`는 RLS 보호, 로그 출력 금지 |
+| 민감 정보 | `actual_price`는 내부 가격 스냅샷 필드로 취급, RLS 보호, 로그 출력 금지 |
 
 전체 보안 규칙: `docs/SECURITY.md`.
 
@@ -471,3 +510,7 @@ Interior/Exterior grouped totals are derived from saved item area snapshots when
 - Stored `quotes.subtotal` is the GST-exclusive sum of the selected Interior subtotal plus the selected Exterior subtotal.
 - Stored `quotes.final_total` remains `quotes.subtotal * 1.10`.
 - `quote_options.subtotal` and `quote_options.final_total` remain option-owned totals and are not included in the main quote total.
+
+## 2026-06-26 Upgrade schema direction
+
+Next schema work is limited to Roof formula selection persistence and operational hardening. Do not introduce a separate admin role model, `ADMIN_EMAILS`, or material actual-cost/RRP split for this upgrade. The app is operated by two admin users, and material calculations use consumer price.

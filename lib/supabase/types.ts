@@ -173,6 +173,8 @@ export interface Database {
           interior_selected_max: number
           exterior_selected_min: number
           exterior_selected_max: number
+          roof_selected_min: number
+          roof_selected_max: number
           subtotal: string
           final_total: string
           pricing_settings_snapshot: Json

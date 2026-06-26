@@ -51,6 +51,8 @@ export interface QuoteRecord {
   interiorSelectedMax?: 1 | 2 | 3 | 4 | 5
   exteriorSelectedMin?: 1 | 2 | 3 | 4 | 5
   exteriorSelectedMax?: 1 | 2 | 3 | 4 | 5
+  roofSelectedMin?: 1 | 2 | 3 | 4 | 5
+  roofSelectedMax?: 1 | 2 | 3 | 4 | 5
   subtotal: string
   finalTotal: string
   pricingSettingsSnapshot: PricingSettings
@@ -707,6 +709,8 @@ function buildDevQuoteRecord(id: string, createdAt: string, input: DevQuoteInput
     interiorSelectedMax: areaFormulaSelections.interior.selectedMax,
     exteriorSelectedMin: areaFormulaSelections.exterior.selectedMin,
     exteriorSelectedMax: areaFormulaSelections.exterior.selectedMax,
+    roofSelectedMin: areaFormulaSelections.roof.selectedMin,
+    roofSelectedMax: areaFormulaSelections.roof.selectedMax,
     subtotal: money(subtotal),
     finalTotal: money(finalTotal),
     pricingSettingsSnapshot: settings,

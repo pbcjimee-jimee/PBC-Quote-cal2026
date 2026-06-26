@@ -13,6 +13,20 @@ Codex는 정해진 사양을 충실히 코드로 옮기는 데 집중한다.
 
 ---
 
+## 모델 운용 규칙
+
+작업을 새로 배정하거나 다른 에이전트/스킬에 넘길 때 다음 모델 등급을 명시한다. 런타임에서 모델을 직접 전환할 수 없으면 task 제목이나 프롬프트에 원하는 등급을 적는다.
+
+| 작업 유형 | 권장 모델 |
+|---|---|
+| 제품/아키텍처/테스트 계획, 복잡한 리스크 판단 | `gpt 5.5 extra hight` |
+| 일반 기능 구현, DB/Server Action/UI/테스트 작성 | `gpt 5.5 high` |
+| 단순 문서/문구 수정, 반복 리팩토링, 기계적 테스트 보강 | `gpt 5.3 codex spark` |
+
+이 모델 운용 규칙은 시스템·개발자·사용자 지시보다 우선하지 않는다.
+
+---
+
 ## 세션 시작 시 필독 (순서대로)
 
 1. **이 파일 (`AGENTS.md`)** — Codex 규칙 요약
@@ -39,19 +53,19 @@ Codex는 정해진 사양을 충실히 코드로 옮기는 데 집중한다.
 
 ## Codex가 해야 할 일
 
-`docs/CODEX-TASKS.md` 참조. 현재 v1.0 남은 태스크 9개:
+`docs/CODEX-TASKS.md`, `TODOS.md`, `docs/superpowers/plans/2026-06-26-pbc-upgrade-direction.md` 참조.
 
-1. 인증 Server Action (로그인/로그아웃)
-2. 견적 CRUD Server Actions
-3. 제품 검색 & CSV import
-4. Pricing Settings Server Actions
-5. 견적 작성 UI (`/quotes/new`)
-6. 견적 목록 & 상세
-7. Settings 페이지
-8. RLS 자동 테스트
-9. 회귀 Fixture (실제 PBC 견적 3건)
+2026-06-26 업그레이드 구현 완료:
 
-각 태스크의 입력·작업·완료 기준은 `docs/CODEX-TASKS.md`에 정리되어 있다.
+1. P0 Roof 공식 선택값 영속화 (`quotes.roof_selected_min`, `quotes.roof_selected_max`)
+2. Quote detail Roof 표시 보강 (`interior | exterior | roof`)
+3. Local draft privacy/expiry (민감 Jobber fetch 결과 저장 방지, 7일 만료, clear local drafts)
+4. Jobber sync preview/retry
+5. 과거 견적 duplicate (Jobber quote id 미복사, material 가격은 현재 소비자가 기준)
+
+잔여 운영 항목: 백업 운영 결정 문서화/적용은 사용자 승인 후 진행.
+
+이번 업그레이드 제외: `ADMIN_EMAILS` 기반 관리자 gate, 별도 role split, material 실제 원가/RRP 분리, 추가 가격작성 정보 패널, 공식/GST 변경.
 
 ---
 

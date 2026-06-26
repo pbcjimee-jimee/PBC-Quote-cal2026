@@ -208,7 +208,7 @@ Qty [1.00]   Unit price [$0.00]   Taxable [✓]
 - image upload
 - notes
 - attachments
-- material 원가/상세 가격의 Jobber 전송
+- 내부 material 가격 필드/상세 가격의 Jobber 전송
 
 ---
 

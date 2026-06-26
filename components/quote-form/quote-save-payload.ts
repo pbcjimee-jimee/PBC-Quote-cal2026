@@ -1,8 +1,10 @@
 import { createQuote, updateQuote } from '@/lib/actions/quotes'
 import type { PricingSettings } from '@/lib/calculator'
+import Decimal from 'decimal.js'
 import { decimalFromInput } from '@/lib/quote-labour'
 import type { JobberQuoteDraft } from '@/lib/jobber/mapper'
 import { calculateMainQuoteTotals } from './quote-calculation-totals'
+import { isLocalDraftJobberQuoteDraft } from './quote-draft'
 import type { AreaFormulaSelections, FormulaNumber, JobberQuoteLineItemDraft, MaterialItem, QuoteMemoItem, QuoteOptionItem } from './types'
 
 export interface QuoteFormSavePayloadInput {
@@ -22,6 +24,41 @@ export interface QuoteFormSavePayloadInput {
   materials: MaterialItem[]
   options: QuoteOptionItem[]
   memos: QuoteMemoItem[]
+}
+
+export interface JobberSyncPreviewLine {
+  kind: 'line_item' | 'text'
+  name?: string
+  description?: string | null
+  quantity?: Decimal | number | string | null
+  unitPrice?: Decimal | number | string | null
+  totalPrice?: Decimal | number | string | null
+  taxable?: boolean
+  clientVisible?: boolean
+  jobberLineItemId?: string | null
+  linkedProductOrServiceId?: string | null
+}
+
+export interface JobberSyncPreviewInput {
+  pbcSubtotal: Decimal | number | string
+  jobberQuoteLines: JobberSyncPreviewLine[]
+}
+
+export function calculateJobberSyncPreview({ pbcSubtotal, jobberQuoteLines }: JobberSyncPreviewInput) {
+  const pbcSubtotalDecimal = decimalFromInput(pbcSubtotal)
+  const jobberPublicLineTotal = jobberQuoteLines.reduce((total, line) => {
+    if (line.kind !== 'line_item' || line.clientVisible === false) return total
+    if (line.totalPrice !== null && line.totalPrice !== undefined && String(line.totalPrice).trim() !== '') {
+      return total.add(decimalFromInput(line.totalPrice))
+    }
+    return total.add(decimalFromInput(line.quantity).mul(decimalFromInput(line.unitPrice)))
+  }, new Decimal(0))
+
+  return {
+    pbcSubtotal: pbcSubtotalDecimal,
+    jobberPublicLineTotal,
+    difference: pbcSubtotalDecimal.sub(jobberPublicLineTotal),
+  }
 }
 
 export function buildQuoteSavePayload({
@@ -53,12 +90,15 @@ export function buildQuoteSavePayload({
     areaFormulaSelections: normalizedAreaFormulaSelections,
     settings,
   })
+  const jobberSnapshot = jobberQuoteDraft && !isLocalDraftJobberQuoteDraft(jobberQuoteDraft)
+    ? jobberQuoteDraft
+    : undefined
 
   return {
     customerName,
     customerAddress,
     jobberQuoteId: jobberQuoteId || jobberQuoteLookup,
-    jobberSnapshot: jobberQuoteDraft ?? undefined,
+    jobberSnapshot,
     jobberSaveMode: 'priced_line_items',
     deletedJobberLineItemIds,
     jobberQuoteLines: jobberQuoteLines.map((line, index) => ({

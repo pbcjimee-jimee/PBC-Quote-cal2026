@@ -11,7 +11,7 @@
 |---|---|
 | **앱** | PBC 견적 계산기 — 페인팅 회사 PBC 사내 도구 |
 | **스택** | Next.js 16 (App Router) + React 19 + TypeScript + Tailwind CSS 4 + Supabase + Vercel |
-| **현재 버전** | v1.0 핵심 플로우 완성, v1.0+ 옵션·Jobber 읽기 전용·QA 완료, Jobber controlled write-back 로컬 편집·저장 및 실제 quote line item write-back 1차 구현 |
+| **현재 버전** | v1.0 핵심 플로우 완성, v1.0+ 옵션·Jobber fetch/write-back·QA 완료, 2026-06-26 upgrade direction 문서 선반영 |
 | **배포 URL** | https://pbc-quote-cal2026-kjm12081-3858s-projects.vercel.app |
 | **GitHub Repo** | jimeekang/PBC-Quote-cal2026 (branch: main) |
 
@@ -238,6 +238,24 @@
 - Jobber ProductOrService search query shape 확인 및 import/link UI 연결 필요
 - 백업 방식은 사용자 지시로 진행하지 않음 (2026-05-15)
 
+### 2026-06-26 업데이트 방향 (코드 구현 완료)
+
+- [x] Roof 공식 선택값 저장: `quotes.roof_selected_min`, `quotes.roof_selected_max` migration 추가 후 quote create/update/get/detail/draft/test 반영
+- [x] Quote detail Roof 표시: 상세 화면의 scope 필터를 `interior | exterior | roof` 기준으로 정리
+- [x] Local draft 보안: Jobber expense/financial summary 같은 민감 fetch 결과를 localStorage draft에 저장하지 않고 7일 만료 + clear local drafts 제공
+- [x] Jobber sync preview/retry: 저장 전 PBC subtotal, Jobber public line total, 차이를 보여주고 실패한 sync는 detail에서 retry
+- [x] Duplicate quote: 과거 견적 복제 시 Jobber quote id는 복사하지 않고 material 가격은 현재 소비자가 기준으로 갱신
+- [ ] 백업 운영: Supabase Pro/PITR 우선, cron backup은 restore 검증까지 포함할 때만 선택
+- 제외: `ADMIN_EMAILS` 기반 관리자 gate, 별도 role split, material 실제 원가/RRP 분리, 추가 가격작성 정보 패널, 할인/수수료/공식 변경
+
+2026-06-26 로컬 검증:
+- `npm.cmd run typecheck` 통과
+- `npm.cmd run lint` 통과
+- `npm.cmd run test:run` 통과: 50 files passed / 1 skipped, 380 tests passed / 2 skipped
+- `npm.cmd run build` 통과
+- `npm.cmd audit --audit-level=high` 통과: 0 vulnerabilities
+- `git diff --check` 구현 파일 기준 통과(LF/CRLF warning만 표시)
+
 ### 승인 후 실행 작업
 
 | 승인/입력 | 바로 실행할 작업 |
@@ -268,6 +286,7 @@
 
 | 날짜 | 작업 | 담당 |
 |---|---|---|
+| 2026-06-26 | Upgrade direction revised per user and documented first: no `ADMIN_EMAILS` admin split, no material actual-cost/RRP split, no extra pricing-info panel. Remaining scope is Roof formula persistence, local draft privacy/expiry, Jobber sync preview/retry, duplicate quote, and backup operations. Model routing added for planning/implementation/simple work. | Codex |
 | 2026-06-18 | Roof calculation scope added on `codex/roof-calculation`: Roof material areas, roof labour rate default 700, Roof uses the shared F2-F5 margin selections instead of a separate Roof margin field, roof subtotal included in quote/option grouped totals, Settings/UI/detail/draft/persistence/test coverage updated. Verification: typecheck, lint, test:run, build, diff check passed. | Codex |
 | 2026-05-29 | Materials active-area summary now shows Interior/Exterior Labour Days beside the material/subtotal prices instead of repeating Final subtotal. | Codex |
 | 2026-06-01 | Production Supabase `0013_add_quote_memos` and `0014_add_quote_area_formula_selections` applied after explicit user approval. Verified migration history, `quote_memos` table with RLS + `authenticated_all` policy, required `quotes.interior_selected_*`/`quotes.exterior_selected_*` columns, and zero existing quotes missing area formula selections. | Codex |

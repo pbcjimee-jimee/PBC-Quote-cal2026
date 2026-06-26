@@ -14,6 +14,20 @@
 
 ---
 
+## 모델 라우팅
+
+작업 지시·스킬 호출·에이전트 핸드오프 시 모델 등급을 함께 적는다.
+
+| 작업 유형 | 권장 모델 |
+|---|---|
+| 계획, 아키텍처, 테스트 전략, 복잡한 리스크 판단 | `gpt 5.5 extra hight` |
+| 일반 코드 구현, DB/Server Action/UI/test 작성 | `gpt 5.5 high` |
+| 단순 수정, 반복 작업, 기계적 문서/테스트 보강 | `gpt 5.3 codex spark` |
+
+런타임에서 모델 전환이 불가능하면 프롬프트 첫 줄에 원하는 등급을 표시한다.
+
+---
+
 ## 공용 파일 (양쪽 모두 읽음)
 
 ### 진행·결정·규칙
@@ -65,6 +79,7 @@ from `docs/UI-DESIGN-SYSTEM.md`.
 | `docs/superpowers/plans/2026-05-19-jobber-write-back.md` | Jobber controlled write-back 구현 순서 |
 | `docs/superpowers/specs/2026-05-27-quote-workspace-area-subtotals-design.md` | Quote workspace, Interior/Exterior grouped subtotal, option subtotal display, sidebar collapse design |
 | `docs/superpowers/plans/2026-05-27-quote-workspace-area-subtotals.md` | Quote workspace grouped subtotal implementation plan |
+| `docs/superpowers/plans/2026-06-26-pbc-upgrade-direction.md` | Revised upgrade direction: Roof persistence, local draft privacy, Jobber sync preview/retry, duplicate quote, backup |
 
 ---
 

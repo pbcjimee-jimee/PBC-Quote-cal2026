@@ -11,10 +11,12 @@ import { MaterialsPanel } from './materials-panel'
 import { FinalSummary } from './final-summary'
 import { DecimalInput } from './decimal-input'
 import {
+  clearLocalQuoteDrafts,
   createEmptyQuoteFormDraft,
   getQuoteDraftStorageKey,
   hasMeaningfulQuoteDraft,
-  parseQuoteFormDraft,
+  readQuoteFormDraftFromStorage,
+  sanitizeQuoteFormDraftForStorage,
   type QuoteFormDraft,
 } from './quote-draft'
 import { QuoteOptionsPanel } from './quote-options-panel'
@@ -31,7 +33,7 @@ import {
   mapQuoteMemosToState,
   mapQuoteOptionsToState,
 } from './quote-record-mappers'
-import { saveQuoteFormPayload } from './quote-save-payload'
+import { calculateJobberSyncPreview, saveQuoteFormPayload } from './quote-save-payload'
 import type { AreaRecord } from '@/lib/areas/types'
 import { AREA_SCOPE_SORT_ORDER } from '@/lib/areas/constants'
 import type {
@@ -211,10 +213,74 @@ function getInitialAreaFormulaSelections(initialQuote: QuoteRecord | undefined):
       selectedMax: initialQuote?.exteriorSelectedMax ?? fallbackMax,
     },
     roof: {
-      selectedMin: fallbackMin,
-      selectedMax: fallbackMax,
+      selectedMin: initialQuote?.roofSelectedMin ?? fallbackMin,
+      selectedMax: initialQuote?.roofSelectedMax ?? fallbackMax,
     },
   }
+}
+
+type JobberSyncPreviewValue = ReturnType<typeof calculateJobberSyncPreview>
+
+function JobberSyncPreviewCard({ preview }: { preview: JobberSyncPreviewValue }) {
+  const difference = preview.difference
+  const differenceLabel = difference.isNegative()
+    ? `-$${difference.abs().toFixed(2)}`
+    : `$${difference.toFixed(2)}`
+
+  return (
+    <section className="pbc-card pbc-card--pad">
+      <div className="pbc-panelhead">
+        <div className="pbc-panelhead__copy">
+          <h2 className="pbc-paneltitle">Jobber sync preview</h2>
+        </div>
+      </div>
+      <div className="pbc-summary__rows">
+        <div className="pbc-srow">
+          <span>PBC subtotal ex GST</span>
+          <span className="mono">${preview.pbcSubtotal.toFixed(2)}</span>
+        </div>
+        <div className="pbc-srow">
+          <span>Jobber public line total</span>
+          <span className="mono">${preview.jobberPublicLineTotal.toFixed(2)}</span>
+        </div>
+        <div className="pbc-srow pbc-srow--strong">
+          <span>Difference</span>
+          <span className="mono">{differenceLabel}</span>
+        </div>
+      </div>
+    </section>
+  )
+}
+
+function getSavedJobberLineItemId(line: JobberQuoteLineItemDraft): string | null {
+  return typeof line.jobberLineItemId === 'string' && line.jobberLineItemId.trim().length > 0
+    ? line.jobberLineItemId
+    : null
+}
+
+export function getNextDeletedJobberLineItemIds(
+  currentDeletedIds: string[],
+  currentLines: JobberQuoteLineItemDraft[],
+  nextLines: JobberQuoteLineItemDraft[]
+): string[] {
+  const visibleNextJobberLineIds = new Set(nextLines
+    .filter((line) => line.clientVisible !== false)
+    .map(getSavedJobberLineItemId)
+    .filter((id): id is string => id !== null))
+  const hiddenNextJobberLineIds = nextLines
+    .filter((line) => line.clientVisible === false)
+    .map(getSavedJobberLineItemId)
+    .filter((id): id is string => id !== null)
+  const removedJobberLineIds = currentLines
+    .map(getSavedJobberLineItemId)
+    .filter((id): id is string => id !== null && !visibleNextJobberLineIds.has(id))
+  const merged = new Set([...currentDeletedIds, ...removedJobberLineIds, ...hiddenNextJobberLineIds])
+
+  for (const id of visibleNextJobberLineIds) {
+    merged.delete(id)
+  }
+
+  return Array.from(merged)
 }
 
 export function QuoteForm({ settings, areas, productServices = [], quoteLineTemplates = [], initialQuote }: QuoteFormProps) {
@@ -302,7 +368,7 @@ export function QuoteForm({ settings, areas, productServices = [], quoteLineTemp
   const writeDraftToStorage = useCallback(() => {
     if (typeof window === 'undefined') return
     const draft = { ...currentDraft, updatedAt: new Date().toISOString() }
-    window.localStorage.setItem(draftStorageKey, JSON.stringify(draft))
+    window.localStorage.setItem(draftStorageKey, JSON.stringify(sanitizeQuoteFormDraftForStorage(draft)))
   }, [currentDraft, draftStorageKey])
 
   const persistDraft = useCallback(() => {
@@ -316,6 +382,13 @@ export function QuoteForm({ settings, areas, productServices = [], quoteLineTemp
     setDraftMessage(null)
   }, [draftStorageKey])
 
+  const clearAllLocalDrafts = useCallback(() => {
+    if (typeof window === 'undefined') return
+    const removedCount = clearLocalQuoteDrafts(window.localStorage)
+    setAvailableDraft(null)
+    setDraftMessage(removedCount > 0 ? 'Local drafts cleared.' : 'No local drafts to clear.')
+  }, [])
+
   const totals = useMemo(() => {
     return calculateMainQuoteTotals({
       materials,
@@ -327,7 +400,7 @@ export function QuoteForm({ settings, areas, productServices = [], quoteLineTemp
   }, [areaFormulaSelections, materials, selectedMax, selectedMin, settings])
 
   useEffect(() => {
-    const storedDraft = parseQuoteFormDraft(window.localStorage.getItem(draftStorageKey))
+    const storedDraft = readQuoteFormDraftFromStorage(window.localStorage, draftStorageKey)
     const timeoutId = window.setTimeout(() => {
       if (storedDraft && hasMeaningfulQuoteDraft(storedDraft)) {
         setAvailableDraft(storedDraft)
@@ -460,6 +533,13 @@ export function QuoteForm({ settings, areas, productServices = [], quoteLineTemp
   }
 
   const optionTotals = useMemo(() => calculateQuoteOptionTotals(options, settings), [options, settings])
+  const shouldShowJobberSyncPreview = jobberQuoteId.trim().length > 0 ||
+    jobberQuoteLookup.trim().length > 0 ||
+    jobberQuoteLines.length > 0
+  const jobberSyncPreview = useMemo(() => calculateJobberSyncPreview({
+    pbcSubtotal: totals.areaBreakdown.finalSubtotal,
+    jobberQuoteLines,
+  }), [jobberQuoteLines, totals.areaBreakdown.finalSubtotal])
 
   const optionPanelTotals = useMemo(() => Object.fromEntries(
     options.map((option) => {
@@ -560,23 +640,11 @@ export function QuoteForm({ settings, areas, productServices = [], quoteLineTemp
 
   function changeJobberQuoteLines(nextLines: JobberQuoteLineItemDraft[]) {
     setJobberQuoteLines((currentLines) => {
-      const nextJobberLineIds = new Set(nextLines
-        .map((line) => line.jobberLineItemId)
-        .filter((id): id is string => Boolean(id)))
-      const removedJobberLineIds = currentLines
-        .map((line) => line.jobberLineItemId)
-        .filter((id): id is string => typeof id === 'string' && !nextJobberLineIds.has(id))
-
-      if (removedJobberLineIds.length > 0 || nextJobberLineIds.size > 0) {
-        setDeletedJobberLineItemIds((currentDeletedIds) => {
-          const merged = new Set([...currentDeletedIds, ...removedJobberLineIds])
-          for (const id of nextJobberLineIds) {
-            merged.delete(id)
-          }
-          return Array.from(merged)
-        })
-      }
-
+      setDeletedJobberLineItemIds((currentDeletedIds) => getNextDeletedJobberLineItemIds(
+        currentDeletedIds,
+        currentLines,
+        nextLines
+      ))
       return nextLines
     })
   }
@@ -696,6 +764,11 @@ export function QuoteForm({ settings, areas, productServices = [], quoteLineTemp
         </div>
       ) : null}
       {draftMessage ? <p className="pbc-alert pbc-alert--success">{draftMessage}</p> : null}
+      <div className="mb-4 flex justify-end">
+        <button type="button" onClick={clearAllLocalDrafts} className="pbc-btn pbc-btn--ghost pbc-btn--sm">
+          Clear local drafts
+        </button>
+      </div>
 
       <div className="pbc-editgrid">
         <div className="pbc-workspace">
@@ -777,6 +850,7 @@ export function QuoteForm({ settings, areas, productServices = [], quoteLineTemp
             areaBreakdown={totals.areaBreakdown}
             jobberFinancialSummary={jobberQuoteDraft && !jobberQuoteDraft.jobExpensesError ? jobberQuoteDraft.financialSummary : null}
           />
+          {shouldShowJobberSyncPreview ? <JobberSyncPreviewCard preview={jobberSyncPreview} /> : null}
           <OptionTotalsSummary options={optionSummaryItems} />
         </aside>
       </div>

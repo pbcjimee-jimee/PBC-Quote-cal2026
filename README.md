@@ -4,7 +4,9 @@
 
 Excel 2개 + Jobber를 오가던 견적 작업을 **한 페이지**에서 끝낸다. 페인트 자재 검색, 5가지 견적 공식 동시 계산, min/max 선택, 견적 저장·검색까지.
 
-**상태:** v1.0 핵심 플로우 완성 (Auth · 견적 생성·수정·삭제 · 옵션 견적 · app-only internal memos · Jobber 읽기 연동 · QA/RLS 검증 완료 / 실제 과거 견적 fixture 잔여)
+**상태:** v1.0 핵심 플로우 완성 (Auth · 견적 생성·수정·삭제 · 옵션 견적 · app-only internal memos · Jobber fetch/write-back · QA/RLS 검증 완료 / 실제 과거 견적 fixture 잔여)
+
+**2026-06-26 보완 완료:** Roof 공식 선택값 저장, local draft 민감 fetch 결과 저장 방지/7일 만료, Jobber sync preview/retry, 과거 견적 duplicate 구현 완료. 백업 운영은 Supabase Pro/PITR 우선 권장 상태로 남겨둔다. `ADMIN_EMAILS` 기반 권한 분리, material 실제 원가/RRP 분리, 추가 가격작성 정보 패널은 제외한다. 앱은 관리자 2명이 사용하고 material 계산은 일반 소비자가 기준으로 한다.
 
 ---
 
@@ -44,6 +46,7 @@ npm test
 | **[TODOS.md](./TODOS.md)** | v1.1+ 작업 목록 (Jobber 연동, 자동 백업 등) |
 | **[docs/superpowers/specs/2026-05-27-quote-workspace-area-subtotals-design.md](./docs/superpowers/specs/2026-05-27-quote-workspace-area-subtotals-design.md)** | Quote workspace, Interior/Exterior grouped subtotal, option subtotal display design |
 | **[docs/superpowers/plans/2026-05-27-quote-workspace-area-subtotals.md](./docs/superpowers/plans/2026-05-27-quote-workspace-area-subtotals.md)** | Implementation plan for the quote workspace and grouped subtotal update |
+| **[docs/superpowers/plans/2026-06-26-pbc-upgrade-direction.md](./docs/superpowers/plans/2026-06-26-pbc-upgrade-direction.md)** | Revised upgrade direction after user scope changes |
 
 ---
 
@@ -60,7 +63,7 @@ npm test
 
 - **Frontend:** Next.js 16 (App Router) + React 19 + TypeScript + Tailwind CSS 4
 - **Backend:** Next.js Server Actions + Supabase (Postgres + Auth)
-- **외부 연동:** Jobber GraphQL API (읽기 전용, OAuth 2.0) — v1.0에 포함
+- **외부 연동:** Jobber GraphQL API (OAuth 2.0, quote fetch + controlled Product / Service line item write-back)
 - **금액 계산:** decimal.js (부동소수점 오차 회피), 최종가는 GST 10% 가산
 - **검증:** Zod
 - **테스트:** Vitest (단위), Playwright (E2E, 추후)
@@ -74,9 +77,10 @@ npm test
 
 | 버전 | 범위 | 상태 |
 |---|---|---|
-| v1.0 | Auth, 페인트 DB(Dulux 시드), 5가지 공식 계산기(GST 포함), 견적 CRUD, 작업 영역(area), 옵션 견적, Settings, Jobber 읽기 전용 연동 | 핵심 플로우·QA·RLS 검증 완료, 실제 과거 견적 fixture 3건 대기 |
-| v1.1 | 과거 견적 복제 기능, Jobber 옵션 line item 매핑 | TODOS #4 |
-| v1.5 | 페인트 DB 관리 정식 UI, 자동 백업 강화 | TODOS #2, #3 |
+| v1.0 | Auth, 페인트 DB(Dulux 시드), 5가지 공식 계산기(GST 포함), 견적 CRUD, Interior/Exterior/Roof 작업 영역, 옵션 견적, Settings, Jobber fetch/write-back | 핵심 플로우·QA·RLS 검증 완료, 실제 과거 견적 fixture 3건 대기 |
+| v1.1 | Roof 공식 선택값 저장, local draft 보안, Jobber sync preview/retry, 과거 견적 복제 기능 | 구현/검증 완료 |
+| Ops | 백업 운영 결정: Supabase Pro/PITR 우선, cron backup은 restore 검증 포함 시만 선택 | 사용자 결정 대기 |
+| v1.5 | 사용 패턴 확인 후 페인트 DB 관리 고도화, 자동 백업 강화 | TODOS #2, #3 |
 | v2 | 자동 견적가 추산 (ML), 분석 대시보드 | 데이터 쌓인 후 |
 
 ---
@@ -85,7 +89,7 @@ npm test
 
 - Supabase Auth (이메일/비밀번호 + Magic Link)
 - 모든 테이블 **RLS 켜기**. v1.0은 모든 인증 사용자 동일 권한.
-- `actual_price` (실구매가) 같은 민감 정보는 인증 사용자만.
+- `actual_price`는 내부 가격 스냅샷 필드로 취급하며 인증 사용자만 접근하고 로그에 남기지 않음.
 - API 키는 `.env.local` (gitignore), `service_role_key`는 Server Actions 전용.
 - 자세한 내용은 [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md)의 "보안 모델" 섹션.
 

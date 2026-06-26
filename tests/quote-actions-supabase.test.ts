@@ -61,7 +61,7 @@ vi.mock('@/lib/jobber/mapper', () => ({
   mapJobberQuoteToDraft: mocks.mapJobberQuoteToDraft,
 }))
 
-import { createQuote, deleteQuote, getQuote, searchQuotes, updateQuote } from '@/lib/actions/quotes'
+import { createQuote, deleteQuote, duplicateQuote, getQuote, retryJobberQuoteSync, searchQuotes, updateQuote } from '@/lib/actions/quotes'
 
 const quoteId = '00000000-0000-4000-8000-000000000101'
 
@@ -86,6 +86,12 @@ const quoteRow = {
   formula5_total: '507.00',
   selected_min: 1,
   selected_max: 1,
+  interior_selected_min: 1,
+  interior_selected_max: 1,
+  exterior_selected_min: 1,
+  exterior_selected_max: 1,
+  roof_selected_min: 1,
+  roof_selected_max: 1,
   subtotal: '510.00',
   final_total: '561.00',
   pricing_settings_snapshot: DEFAULT_PRICING_SETTINGS,
@@ -159,6 +165,11 @@ const quoteInput = {
   materialActual: 10,
   selectedMin: 1,
   selectedMax: 1,
+  areaFormulaSelections: {
+    interior: { selectedMin: 1, selectedMax: 1 },
+    exterior: { selectedMin: 1, selectedMax: 1 },
+    roof: { selectedMin: 2, selectedMax: 5 },
+  },
   items: [
     {
       productNameSnapshot: 'Brush',
@@ -244,6 +255,7 @@ function createThenableBuilder(response: unknown) {
     update: vi.fn(() => builder),
     delete: vi.fn(() => builder),
     eq: vi.fn(() => builder),
+    in: vi.fn(() => builder),
     order: vi.fn(() => builder),
     limit: vi.fn(() => builder),
     ilike: vi.fn(() => builder),
@@ -354,6 +366,8 @@ describe('quote actions against Supabase', () => {
       customer_name: 'Supabase Customer',
       created_by: 'user-1',
       final_total: '561.00',
+      roof_selected_min: 2,
+      roof_selected_max: 5,
     }))
     expect(itemInsert.insert).toHaveBeenCalledWith([
       expect.objectContaining({
@@ -699,6 +713,8 @@ describe('quote actions against Supabase', () => {
     expect(quoteUpdate.update).toHaveBeenCalledWith(expect.objectContaining({
       customer_name: 'Updated Customer',
       updated_by: 'user-1',
+      roof_selected_min: 2,
+      roof_selected_max: 5,
     }))
     expect(itemDelete.delete).toHaveBeenCalled()
     expect(optionDelete.delete).toHaveBeenCalled()
@@ -935,6 +951,362 @@ describe('quote actions against Supabase', () => {
     expect(syncStatusUpdate.update).toHaveBeenCalledWith(expect.not.objectContaining({
       jobber_snapshot: expect.anything(),
     }))
+  })
+
+  it('retries a failed Jobber sync from persisted quote lines without deletion candidates', async () => {
+    const retryQuoteSelect = createSelectSingleBuilder({
+      data: {
+        ...quoteRow,
+        jobber_quote_id: 'jobber-quote-id',
+        jobber_save_mode: 'priced_line_items',
+        final_total: '561.00',
+        jobber_quote_lines: quoteRow.jobber_quote_lines,
+      },
+      error: null,
+    })
+    const syncStatusUpdate = createThenableBuilder({ error: null })
+    const builders: Record<string, unknown[]> = {
+      quotes: [retryQuoteSelect, syncStatusUpdate],
+    }
+    const from = vi.fn((table: string) => {
+      const builder = builders[table]?.shift()
+      if (!builder) throw new Error(`unexpected table ${table}`)
+      return builder
+    })
+    mocks.createClient.mockResolvedValueOnce({ auth: createAuthUser(), from })
+
+    const result = await retryJobberQuoteSync(quoteId)
+
+    expect(result).toEqual({ ok: true, data: { id: quoteId } })
+    expect(retryQuoteSelect.select).toHaveBeenCalledWith('id, jobber_quote_id, jobber_save_mode, final_total, jobber_quote_lines(*)')
+    expect(mocks.syncJobberQuoteLineItems).toHaveBeenCalledWith('jobber-quote-id', expect.objectContaining({
+      saveMode: 'priced_line_items',
+      deletedJobberLineItemIds: [],
+      finalTotalIncludesGst: true,
+      lines: [
+        expect.objectContaining({
+          kind: 'line_item',
+          name: 'Public painting service',
+          quantity: 2,
+          unitPrice: 1250,
+          totalPrice: 2500,
+        }),
+      ],
+    }), expect.objectContaining({
+      accessToken: 'access-token',
+      graphqlVersion: '2025-04-16',
+    }))
+    const syncInput = mocks.syncJobberQuoteLineItems.mock.calls[0]?.[1] as { lines?: Array<Record<string, unknown>> } | undefined
+    expect(syncInput?.lines?.[0]).not.toHaveProperty('actualPriceSnapshot')
+    expect(syncStatusUpdate.update).toHaveBeenCalledWith(expect.objectContaining({
+      jobber_sync_status: 'synced',
+      jobber_sync_error: null,
+      jobber_last_synced_at: expect.any(String),
+    }))
+    expect(mocks.revalidatePath).toHaveBeenCalledWith('/quotes')
+    expect(mocks.revalidatePath).toHaveBeenCalledWith(`/quotes/${quoteId}`)
+  })
+
+  it('reconstructs hidden persisted Jobber line deletion candidates during retry', async () => {
+    const retryQuoteSelect = createSelectSingleBuilder({
+      data: {
+        ...quoteRow,
+        jobber_quote_id: 'jobber-quote-id',
+        jobber_save_mode: 'priced_line_items',
+        final_total: '561.00',
+        jobber_quote_lines: [
+          ...quoteRow.jobber_quote_lines,
+          {
+            ...quoteRow.jobber_quote_lines[0],
+            id: '00000000-0000-4000-8000-000000000302',
+            name: 'Hidden old Jobber line',
+            client_visible: false,
+            jobber_line_item_id: 'old-jobber-line-id',
+            position: 1,
+          },
+        ],
+      },
+      error: null,
+    })
+    const syncStatusUpdate = createThenableBuilder({ error: null })
+    const builders: Record<string, unknown[]> = {
+      quotes: [retryQuoteSelect, syncStatusUpdate],
+    }
+    const from = vi.fn((table: string) => {
+      const builder = builders[table]?.shift()
+      if (!builder) throw new Error(`unexpected table ${table}`)
+      return builder
+    })
+    mocks.createClient.mockResolvedValueOnce({ auth: createAuthUser(), from })
+
+    const result = await retryJobberQuoteSync(quoteId)
+
+    expect(result).toEqual({ ok: true, data: { id: quoteId } })
+    expect(mocks.syncJobberQuoteLineItems).toHaveBeenCalledWith('jobber-quote-id', expect.objectContaining({
+      deletedJobberLineItemIds: ['old-jobber-line-id'],
+    }), expect.any(Object))
+  })
+
+  it('returns a failed retry result when Jobber rejects the persisted line sync', async () => {
+    const retryQuoteSelect = createSelectSingleBuilder({
+      data: {
+        ...quoteRow,
+        jobber_quote_id: 'jobber-quote-id',
+        jobber_save_mode: 'priced_line_items',
+        final_total: '561.00',
+        jobber_quote_lines: quoteRow.jobber_quote_lines,
+      },
+      error: null,
+    })
+    const syncStatusUpdate = createThenableBuilder({ error: null })
+    const builders: Record<string, unknown[]> = {
+      quotes: [retryQuoteSelect, syncStatusUpdate],
+    }
+    const from = vi.fn((table: string) => {
+      const builder = builders[table]?.shift()
+      if (!builder) throw new Error(`unexpected table ${table}`)
+      return builder
+    })
+    mocks.syncJobberQuoteLineItems.mockRejectedValueOnce(new Error('Jobber timeout'))
+    mocks.createClient.mockResolvedValueOnce({ auth: createAuthUser(), from })
+
+    const result = await retryJobberQuoteSync(quoteId)
+
+    expect(result).toEqual({ ok: false, error: 'Jobber timeout' })
+    expect(syncStatusUpdate.update).toHaveBeenCalledWith(expect.objectContaining({
+      jobber_sync_status: 'failed',
+      jobber_sync_error: 'Jobber timeout',
+      jobber_last_synced_at: null,
+    }))
+    expect(mocks.fetchJobberQuote).not.toHaveBeenCalled()
+    expect(mocks.revalidatePath).toHaveBeenCalledWith('/quotes')
+    expect(mocks.revalidatePath).toHaveBeenCalledWith(`/quotes/${quoteId}`)
+  })
+
+  it('returns a failed retry result when the synced status update fails', async () => {
+    const retryQuoteSelect = createSelectSingleBuilder({
+      data: {
+        ...quoteRow,
+        jobber_quote_id: 'jobber-quote-id',
+        jobber_save_mode: 'priced_line_items',
+        final_total: '561.00',
+        jobber_quote_lines: quoteRow.jobber_quote_lines,
+      },
+      error: null,
+    })
+    const syncStatusUpdate = createThenableBuilder({ error: new Error('status update failed') })
+    const builders: Record<string, unknown[]> = {
+      quotes: [retryQuoteSelect, syncStatusUpdate],
+    }
+    const from = vi.fn((table: string) => {
+      const builder = builders[table]?.shift()
+      if (!builder) throw new Error(`unexpected table ${table}`)
+      return builder
+    })
+    mocks.createClient.mockResolvedValueOnce({ auth: createAuthUser(), from })
+
+    const result = await retryJobberQuoteSync(quoteId)
+
+    expect(result).toEqual({ ok: false, error: 'status update failed' })
+    expect(syncStatusUpdate.update).toHaveBeenCalledWith(expect.objectContaining({
+      jobber_sync_status: 'synced',
+      jobber_sync_error: null,
+      jobber_last_synced_at: expect.any(String),
+    }))
+    expect(mocks.syncJobberQuoteLineItems).toHaveBeenCalled()
+  })
+
+  it('duplicates a Supabase quote with refreshed product RRP and no copied Jobber identifiers', async () => {
+    const duplicateProductId = '00000000-0000-4000-8000-000000000901'
+    const duplicateQuoteId = '00000000-0000-4000-8000-000000000902'
+    const sourceQuoteSelect = createSelectSingleBuilder({
+      data: {
+        ...quoteRow,
+        jobber_quote_id: 'jobber-quote-id',
+        jobber_snapshot: { jobberQuoteId: 'jobber-quote-id' },
+        jobber_sync_status: 'failed',
+        jobber_sync_error: 'old failure',
+        work_type: 'Roof',
+        selected_min: 4,
+        selected_max: 1,
+        roof_selected_min: 2,
+        roof_selected_max: 5,
+        quote_items: [
+          {
+            ...quoteRow.quote_items[0],
+            product_id: duplicateProductId,
+            product_name_snapshot: 'Old product name',
+            market_price_snapshot: '50.00',
+            actual_price_snapshot: '50.00',
+            quantity: '2.00',
+            working_days: '2.00',
+            labour_per_day: '1.00',
+            area_name_snapshot: 'Roof',
+            area_scope_snapshot: 'roof',
+          },
+        ],
+        jobber_quote_lines: [
+          {
+            ...quoteRow.jobber_quote_lines[0],
+            jobber_line_item_id: 'old-jobber-line-id',
+            linked_product_or_service_id: 'jobber-product-1',
+          },
+          {
+            ...quoteRow.jobber_quote_lines[0],
+            id: '00000000-0000-4000-8000-000000000303',
+            name: 'Hidden old line',
+            client_visible: false,
+            jobber_line_item_id: 'old-hidden-line-id',
+            position: 1,
+          },
+        ],
+        quote_options: [],
+        quote_memos: [],
+      },
+      error: null,
+    })
+    const productQuery = createThenableBuilder({
+      data: [{
+        id: duplicateProductId,
+        name: 'Current RRP paint',
+        market_price: '150.00',
+        actual_price: '120.00',
+        price: null,
+        rrp_price: '150.00',
+      }],
+      error: null,
+    })
+    const quoteInsert = createInsertSingleBuilder({ data: { id: duplicateQuoteId }, error: null })
+    const priceRevisionInsert = createInsertOnlyBuilder({ error: null })
+    const itemInsert = createInsertOnlyBuilder({ error: null })
+    const jobberLineInsert = createInsertOnlyBuilder({ error: null })
+    const duplicateActionFrom = vi.fn((table: string) => {
+      if (table === 'products') return productQuery
+      throw new Error(`unexpected duplicate action table ${table}`)
+    })
+    const getQuoteFrom = vi.fn((table: string) => {
+      if (table === 'quotes') return sourceQuoteSelect
+      throw new Error(`unexpected get quote table ${table}`)
+    })
+    const createQuoteFrom = vi.fn((table: string) => {
+      if (table === 'quotes') return quoteInsert
+      if (table === 'quote_price_revisions') return priceRevisionInsert
+      if (table === 'quote_items') return itemInsert
+      if (table === 'jobber_quote_lines') return jobberLineInsert
+      throw new Error(`unexpected create quote table ${table}`)
+    })
+    mocks.createClient
+      .mockResolvedValueOnce({ auth: createAuthUser(), from: duplicateActionFrom })
+      .mockResolvedValueOnce({ from: getQuoteFrom })
+      .mockResolvedValueOnce({ auth: createAuthUser(), from: createQuoteFrom })
+
+    const result = await duplicateQuote(quoteId)
+
+    expect(result).toEqual({ ok: true, data: { id: duplicateQuoteId } })
+    expect(productQuery.select).toHaveBeenCalledWith('id, name, market_price, actual_price, price, rrp_price')
+    expect(productQuery.in).toHaveBeenCalledWith('id', [duplicateProductId])
+    expect(quoteInsert.insert).toHaveBeenCalledWith(expect.objectContaining({
+      customer_name: 'Supabase Customer',
+      jobber_quote_id: null,
+      jobber_snapshot: null,
+      jobber_sync_status: 'not_synced',
+      roof_selected_min: 2,
+      roof_selected_max: 5,
+    }))
+    expect(itemInsert.insert).toHaveBeenCalledWith([
+      expect.objectContaining({
+        quote_id: duplicateQuoteId,
+        product_id: duplicateProductId,
+        product_name_snapshot: 'Current RRP paint',
+        market_price_snapshot: '150.00',
+        actual_price_snapshot: '150.00',
+        quantity: '2.00',
+        area_name_snapshot: 'Roof',
+        area_scope_snapshot: 'roof',
+      }),
+    ])
+    expect(jobberLineInsert.insert).toHaveBeenCalledWith([
+      expect.objectContaining({
+        quote_id: duplicateQuoteId,
+        name: 'Public painting service',
+        jobber_line_item_id: null,
+        linked_product_or_service_id: 'jobber-product-1',
+      }),
+    ])
+    expect(jobberLineInsert.insert).not.toHaveBeenCalledWith(expect.arrayContaining([
+      expect.objectContaining({ name: 'Hidden old line' }),
+    ]))
+    expect(mocks.revalidatePath).toHaveBeenCalledWith('/quotes')
+    expect(mocks.revalidatePath).toHaveBeenCalledWith(`/quotes/${quoteId}`)
+    expect(mocks.revalidatePath).toHaveBeenCalledWith(`/quotes/${duplicateQuoteId}`)
+  })
+
+  it('returns product lookup errors when duplicating a Supabase quote', async () => {
+    const duplicateProductId = '00000000-0000-4000-8000-000000000901'
+    const sourceQuoteSelect = createSelectSingleBuilder({
+      data: {
+        ...quoteRow,
+        quote_items: [{ ...quoteRow.quote_items[0], product_id: duplicateProductId }],
+      },
+      error: null,
+    })
+    const productQuery = createThenableBuilder({ data: null, error: new Error('product lookup failed') })
+    mocks.createClient
+      .mockResolvedValueOnce({
+        auth: createAuthUser(),
+        from: vi.fn((table: string) => {
+          if (table === 'products') return productQuery
+          throw new Error(`unexpected duplicate action table ${table}`)
+        }),
+      })
+      .mockResolvedValueOnce({
+        from: vi.fn((table: string) => {
+          if (table === 'quotes') return sourceQuoteSelect
+          throw new Error(`unexpected get quote table ${table}`)
+        }),
+      })
+
+    const result = await duplicateQuote(quoteId)
+
+    expect(result).toEqual({ ok: false, error: 'product lookup failed' })
+  })
+
+  it('returns createQuote errors when duplicating a Supabase quote fails at insert', async () => {
+    const duplicateProductId = '00000000-0000-4000-8000-000000000901'
+    const sourceQuoteSelect = createSelectSingleBuilder({
+      data: {
+        ...quoteRow,
+        quote_items: [{ ...quoteRow.quote_items[0], product_id: duplicateProductId }],
+      },
+      error: null,
+    })
+    const productQuery = createThenableBuilder({ data: [], error: null })
+    const quoteInsert = createInsertSingleBuilder({ data: null, error: new Error('duplicate insert failed') })
+    mocks.createClient
+      .mockResolvedValueOnce({
+        auth: createAuthUser(),
+        from: vi.fn((table: string) => {
+          if (table === 'products') return productQuery
+          throw new Error(`unexpected duplicate action table ${table}`)
+        }),
+      })
+      .mockResolvedValueOnce({
+        from: vi.fn((table: string) => {
+          if (table === 'quotes') return sourceQuoteSelect
+          throw new Error(`unexpected get quote table ${table}`)
+        }),
+      })
+      .mockResolvedValueOnce({
+        auth: createAuthUser(),
+        from: vi.fn((table: string) => {
+          if (table === 'quotes') return quoteInsert
+          throw new Error(`unexpected create quote table ${table}`)
+        }),
+      })
+
+    const result = await duplicateQuote(quoteId)
+
+    expect(result).toEqual({ ok: false, error: 'duplicate insert failed' })
   })
 
   it('rejects quote updates without an id before touching Supabase', async () => {

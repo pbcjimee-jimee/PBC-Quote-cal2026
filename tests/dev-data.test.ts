@@ -286,6 +286,43 @@ describe('dev data store', () => {
     expect(getDevQuote(quote.id)?.items[0].productNameSnapshot).toBe('New item')
   })
 
+  it('stores roof formula selections in dev quote records', () => {
+    const quote = createDevQuote({
+      customerName: 'Roof Dev Customer',
+      workingDays: 0,
+      labourPerDay: 0,
+      materialMarket: 120,
+      materialActual: 120,
+      selectedMin: 4,
+      selectedMax: 1,
+      areaFormulaSelections: {
+        interior: { selectedMin: 4, selectedMax: 1 },
+        exterior: { selectedMin: 4, selectedMax: 1 },
+        roof: { selectedMin: 2, selectedMax: 5 },
+      },
+      items: [
+        {
+          productNameSnapshot: 'Roof membrane',
+          marketPriceSnapshot: 120,
+          actualPriceSnapshot: 120,
+          quantity: 1,
+          workingDays: 2,
+          labourPerDay: 1,
+          areaScopeSnapshot: 'roof',
+          isCustom: true,
+          position: 0,
+        },
+      ],
+    })
+
+    expect(quote.selectedMin).toBe(4)
+    expect(quote.selectedMax).toBe(1)
+    expect(quote.roofSelectedMin).toBe(2)
+    expect(quote.roofSelectedMax).toBe(5)
+    expect(getDevQuote(quote.id)?.roofSelectedMin).toBe(2)
+    expect(getDevQuote(quote.id)?.roofSelectedMax).toBe(5)
+  })
+
   it('deletes an existing quote', () => {
     const quote = createDevQuote({
       customerName: 'Delete Me',
