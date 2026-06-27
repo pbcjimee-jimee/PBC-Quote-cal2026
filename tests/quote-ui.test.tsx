@@ -204,6 +204,7 @@ describe('quote form pricing UI', () => {
           {
             key: '2026-06',
             label: 'June',
+            month: '06',
             quotes: [
               expect.objectContaining({ id: 'quote-june-1' }),
               expect.objectContaining({ id: 'quote-june-2' }),
@@ -212,6 +213,7 @@ describe('quote form pricing UI', () => {
           {
             key: '2026-05',
             label: 'May',
+            month: '05',
             quotes: [expect.objectContaining({ id: 'quote-may-1' })],
           },
         ],
@@ -222,6 +224,7 @@ describe('quote form pricing UI', () => {
           {
             key: '2025-12',
             label: 'December',
+            month: '12',
             quotes: [expect.objectContaining({ id: 'quote-previous-year' })],
           },
         ],
