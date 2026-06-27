@@ -144,7 +144,7 @@
 .pbc-search__icon svg { width: 16px; height: 16px; }
 .pbc-search__input { flex: 1; border: none; background: none; font-size: 13.5px; outline: none; }
 .pbc-search__input:focus { box-shadow: none !important; }
-.pbc-search--inline { flex: 1; margin-bottom: 0; }
+.pbc-search--inline { flex: 1 1 520px; min-width: 280px; margin-bottom: 0; }
 .pbc-dropdown { position: absolute; z-index: 20; margin-top: 8px; width: 100%; max-height: 14rem; overflow: auto; border: 1px solid var(--border); border-radius: var(--r-md); background: #fff; box-shadow: var(--shadow-pop); }
 .pbc-dropdownitem { display: block; width: 100%; padding: 9px 12px; text-align: left; font-size: 13px; transition: 0.14s; }
 .pbc-dropdownitem:hover { background: var(--surface-soft); }
@@ -310,10 +310,11 @@
 .pbc-stat__sub { font-size: 11px; color: var(--muted-2); font-weight: 500; }
 
 .pbc-listcard { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-lg); box-shadow: var(--shadow); }
-.pbc-listbar { display: flex; align-items: center; gap: 14px; padding: 16px 18px; border-bottom: 1px solid var(--border-soft); }
-.pbc-monthselect { display: flex; align-items: center; gap: 9px; margin-left: auto; white-space: nowrap; }
-.pbc-monthselect span { font-size: 12px; font-weight: 800; color: var(--muted-2); }
-.pbc-monthselect select { min-width: 190px; height: 46px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--foreground); padding: 0 38px 0 12px; font-size: 13px; font-weight: 750; }
+.pbc-listbar { display: flex; align-items: center; flex-wrap: wrap; gap: 14px; padding: 16px 18px; border-bottom: 1px solid var(--border-soft); }
+.pbc-filtergroup { display: flex; align-items: center; gap: 10px; margin-left: auto; }
+.pbc-monthselect { display: flex; align-items: center; gap: 8px; white-space: nowrap; }
+.pbc-monthselect span { font-size: 11.5px; font-weight: 800; color: var(--muted-2); }
+.pbc-monthselect select { min-width: 150px; height: 42px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); color: var(--foreground); padding: 0 34px 0 12px; font-size: 13px; font-weight: 750; }
 .pbc-monthselect select:focus { outline: 3px solid var(--focus); border-color: color-mix(in srgb, var(--primary) 50%, var(--border)); }
 
 .pbc-qhead, .pbc-qrow { display: grid; grid-template-columns: 40px minmax(0, 1fr) 92px 116px 124px 116px 24px; gap: 14px; align-items: center; }
@@ -599,6 +600,10 @@
   .pbc-card--pad { padding: 16px; }
   .pbc-stats { grid-template-columns: 1fr; }
   .pbc-listbar { padding: 12px; }
+  .pbc-search--inline { flex-basis: 100%; min-width: 0; }
+  .pbc-filtergroup { width: 100%; margin-left: 0; }
+  .pbc-monthselect { flex: 1 1 0; }
+  .pbc-monthselect select { width: 100%; min-width: 0; }
   .pbc-qrow { grid-template-columns: 40px minmax(0, 1fr) 24px; padding: 14px 12px; }
   .pbc-qrow__amt { grid-column: 2 / 3; grid-row: 2; text-align: left; }
   .pbc-rate { grid-template-columns: auto minmax(0, 1fr); }

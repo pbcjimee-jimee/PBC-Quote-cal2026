@@ -149,10 +149,6 @@ export default async function QuotesPage({ searchParams }: QuotesPageProps) {
 
   const visibleQuotes = filterQuotesByYearMonth(quotes, selectedYear, selectedMonth)
   const quoteGroups = groupQuotesByYearMonth(visibleQuotes)
-  const selectedYearCount = quoteGroups.length
-    ? quoteGroups.reduce((sum, yearGroup) => sum + yearGroup.months.reduce((monthSum, monthGroup) => monthSum + monthGroup.quotes.length, 0), 0)
-    : 0
-  const totalCount = selectedYear ? selectedYearCount : quotes.length
 
   const pipeline = visibleQuotes.reduce((sum, quote) => sum + Number(quote.finalTotal || 0), 0)
   const avg = visibleQuotes.length ? pipeline / visibleQuotes.length : 0
@@ -208,7 +204,6 @@ export default async function QuotesPage({ searchParams }: QuotesPageProps) {
               currentYear={selectedYear}
               currentMonth={selectedMonth}
               currentSearch={currentSearch}
-              totalCount={totalCount}
               yearOptions={yearFilterOptions}
               options={monthFilterOptions}
             />

@@ -19,7 +19,6 @@ interface MonthFilterSelectProps {
   currentYear: string
   currentMonth: string
   currentSearch: string
-  totalCount: number
   yearOptions: YearFilterOption[]
   options: MonthFilterOption[]
 }
@@ -47,13 +46,12 @@ export function MonthFilterSelect({
   currentYear,
   currentMonth,
   currentSearch,
-  totalCount,
   yearOptions,
   options,
 }: MonthFilterSelectProps) {
   const router = useRouter()
-  const monthOptions = currentYear ? options.filter((option) => option.year === currentYear) : []
-  const availableMonthsCount = monthOptions.reduce((sum, option) => sum + option.count, 0)
+  const monthOptions = currentYear ? options.filter((option) => option.year === currentYear) : options
+  const hasMultipleYears = yearOptions.length > 1
 
   return (
     <div className="pbc-filtergroup">
@@ -67,10 +65,10 @@ export function MonthFilterSelect({
             router.push(getMonthFilterHref('', nextYear, currentSearch))
           }}
         >
-          <option value="">All years ({totalCount})</option>
+          <option value="">All years</option>
           {yearOptions.map((option) => (
             <option key={option.year} value={option.year}>
-              {option.year} ({option.count})
+              {option.year}
             </option>
           ))}
         </select>
@@ -83,10 +81,10 @@ export function MonthFilterSelect({
           disabled={monthOptions.length === 0}
           onChange={(event) => router.push(getMonthFilterHref(event.target.value, currentYear, currentSearch))}
         >
-          <option value="">{currentYear ? `All months (${availableMonthsCount})` : `All months (${totalCount})`}</option>
+          <option value="">All months</option>
           {monthOptions.map((option) => (
             <option key={option.key} value={option.key}>
-              {option.label} ({option.count})
+              {currentYear || !hasMultipleYears ? option.label : `${option.label} ${option.year}`}
             </option>
           ))}
         </select>
