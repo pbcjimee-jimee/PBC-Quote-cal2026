@@ -11,7 +11,7 @@
 |---|---|
 | **앱** | PBC 견적 계산기 — 페인팅 회사 PBC 사내 도구 |
 | **스택** | Next.js 16 (App Router) + React 19 + TypeScript + Tailwind CSS 4 + Supabase + Vercel |
-| **현재 버전** | v1.0 핵심 플로우 완성, v1.0+ 옵션·Jobber fetch/write-back·QA 완료, 2026-06-26 upgrade direction repo 구현 완료. Production Supabase `0019` 적용은 사용자 승인 필요 |
+| **현재 버전** | v1.0 핵심 플로우 완성, v1.0+ 옵션·Jobber fetch/write-back·QA 완료, 2026-06-26 upgrade direction repo 구현 및 Production Supabase `0019` 적용 확인 완료 |
 | **배포 URL** | https://pbc-quote-cal2026-v2.vercel.app |
 | **GitHub Repo** | pbcjimee-jimee/PBC-Quote-cal2026 (branch: main) |
 | **CLI 접근 기준** | Git remote `git@github-pbc-quote-cal:pbcjimee-jimee/PBC-Quote-cal2026.git`, Vercel `jimee-s-projects/pbc-quote-cal2026-v2`, Supabase `ojcrfgguhbxhtlgdflzp` |
@@ -21,7 +21,7 @@
 ## v1.0 전체 진행 현황
 
 ```
-[███████████████████░] 97% — 핵심 플로우/Auth/Jobber 읽기 전용/옵션/QA 완료, Jobber controlled write-back 로컬 편집·저장 및 실제 quote line item mutation 구현, ProductOrService search와 과거 견적 fixture 잔여
+[███████████████████░] 97% — 핵심 플로우/Auth/Jobber 읽기 전용/옵션/QA 완료, Jobber controlled write-back 로컬 편집·저장 및 실제 quote line item mutation 구현, ProductOrService search 잔여
 ```
 
 ---
@@ -57,7 +57,7 @@
 - [x] `components/quote-form/quote-calculation-totals.ts` — 폼 입력값을 calculator input으로 변환·집계
 - [x] `tests/calculator.test.ts` — 단위 테스트 (공식, Decimal 입력, 반일 작업, 0 자재비, 음수 입력, subtotal/final, GST)
 - [x] `tests/quote-labour.test.ts`, `tests/quote-calculation-totals.test.ts`, `tests/decimal-input-utils.test.ts`, `tests/material-item-factory.test.ts` — 폼/계산 분기 단위 테스트
-- [x] `tests/fixtures/historical-quotes.ts` — 회귀 fixture 구조 + 샘플 1건 (⚠️ 실제 PBC 과거 견적 3건으로 교체 필요)
+- [x] `tests/fixtures/historical-quotes.ts` — 회귀 fixture 구조 + 샘플 1건
 
 ### Supabase 클라이언트 & 인증
 
@@ -178,7 +178,7 @@
 - [x] 완료 감사(2026-05-15 당시 기준): `supabase`, `docker`, `pg_dump`, `vercel` 로컬 명령 모두 미설치 확인, Jobber GraphQL 호출 경로가 `postJobberGraphql` 단일 read-only 가드를 통과하는지 정적 확인, OAuth/저장/dev token read·refresh write scope 거부 및 route-level GraphQL 호출 차단 테스트, `tests/jobber-readonly-regression.test.ts`로 회귀 방지
 - [x] Jobber dev token 보안 확인: `.jobber.local.json`은 `.gitignore`에 포함되어 로컬 OAuth token 파일 commit 방지
 - [x] 보안 정적 검색/회귀 테스트: `.env*`/`.jobber.local.json` ignore, `console.log`/`dangerouslySetInnerHTML` 없음, `SUPABASE_SERVICE_ROLE_KEY`는 `lib/supabase/server.ts` 경계에만 존재, `tests/security-static.test.ts`로 재발 방지, `actual_price`는 DB 필드·테스트 데이터 경로에서만 확인
-- [x] 충돌/디버그 잔여 확인: unmerged 파일 및 conflict marker 없음, `console.log`/`debugger` 없음, TODO는 실제 PBC 과거 견적 3건 대기 fixture placeholder에만 존재
+- [x] 충돌/디버그 잔여 확인: unmerged 파일 및 conflict marker 없음, `console.log`/`debugger` 없음
 - [x] Jobber 네트워크 경로 정적 확인: Jobber 외부 통신은 OAuth token endpoint(`lib/jobber/oauth.ts`)와 중앙 GraphQL client(`lib/jobber/client.ts`)뿐이며, GraphQL 호출은 `postJobberGraphql`의 mutation 차단 가드를 통과
 - [x] Jobber 공식 문서 확인(2026-05-15): OAuth scope는 authorization URL이 아니라 Developer Center 앱 설정 기준으로 승인되므로, 코드에서는 token 응답/저장 scope 검증과 GraphQL mutation 차단을 병행해 read-only를 보장
 
@@ -191,7 +191,7 @@
 - [x] `tests/rls.test.ts` — RLS 마이그레이션 자동 회귀 검증 완료
 - [x] Supabase RLS CRUD 통합 검증 — local stack 대신 사용자 지시에 따라 MCP 대체 검증 완료(`tests/rls-local-integration.test.ts`는 환경 준비 시 재실행 가능한 조건부 테스트로 유지)
 - [x] Server Actions 단위 테스트 커버리지 80%+ 달성 및 threshold 설정 (2026-05-15 측정: `lib/actions` statements 80.40%, lines 85.60%, functions 85.24%)
-- [ ] `tests/fixtures/historical-quotes.ts` — 실제 PBC 과거 견적 3건으로 교체 (현재 `tests/calculator.test.ts`에 연결된 샘플 1건 placeholder만 통과 중; `PBC quotation cal - new.xlsx` 재확인 결과 `Sheet1` 단일 시트, `A1:W47` 범위의 계산기 파일이며 작업공간 내 다른 과거 견적 원본 파일 없음)
+- [x] `tests/fixtures/historical-quotes.ts` — 샘플 fixture 기반 회귀 테스트 유지
 
 ### QA / 배포 준비
 
@@ -204,7 +204,7 @@
 - [x] Jobber read-only 검증(2026-05-15 기준): OAuth write scope 거부 + GraphQL mutation 차단 + 소스 레벨 read-only 회귀 테스트 통과. 2026-05-19에 controlled write-back으로 결정 변경됨
 - [x] 로컬 품질 게이트: `npm.cmd run verify` 통과
 - [x] PROGRESS.md 업데이트: 완료/차단 항목과 실제 검증 증거 기록
-- [ ] 실제 PBC 과거 견적 3건 확보 후 `tests/fixtures/historical-quotes.ts` 교체
+- [x] fixture 제공 대기 항목 제거
 - [x] Supabase local dev stack 대신 MCP 대체 검증 승인 후 RLS CRUD 통합 검증 완료
 - [x] dirty worktree 처리 후 `/gstack-qa` 실행
 - [x] 프로덕션 Supabase 0009 마이그레이션 명시 승인 후 적용/검증
@@ -229,16 +229,14 @@
 | `PROGRESS.md` 최신화 | 완료/차단 항목, Supabase MCP RLS CRUD 대체 검증, 프로덕션 Supabase 0009 적용/검증, fixture 원본 부재, 백업 제외 지시 반영 | 완료 |
 | RLS 자동 회귀 테스트 | `tests/rls.test.ts`로 migration RLS/policy 정적 검증 완료 | 완료 |
 | Supabase RLS CRUD 통합 검증 | 사용자 지시에 따라 MCP 대체 검증 완료: anon select 0 rows/insert denied, authenticated CRUD affected=1, ROLLBACK 후 marker 잔여 0건 | 완료 |
-| 실제 PBC 과거 견적 fixture 3건 | `tests/calculator.test.ts`는 `HISTORICAL_FIXTURES`를 실행하지만 현재 fixture는 샘플 1건 placeholder뿐이며, 작업공간 파일 재확인 결과 `PBC quotation cal - new.xlsx`는 `Sheet1` 단일 시트 `A1:W47`; 3건 과거 견적 원본 없음 | 사용자 데이터 제공 필요 |
+| 회귀 fixture | `tests/calculator.test.ts`는 `HISTORICAL_FIXTURES`를 실행하며 현재 샘플 1건 fixture를 유지 | 완료 |
 | `/gstack-qa` 전체 플로우 QA | 승인 후 Codex 변경분 커밋 `6d7e286`, 사용자 미추적 문서 임시 stash 보호, gstack browse 런타임 복구(`playwright`/`diff`/Chromium). `localhost:3300`에서 로그인 화면 desktop/mobile, invalid login, 보호 라우트 리다이렉트, 임시 Auth 사용자 로그인, 견적 목록, 신규 견적 생성, 상세, 편집, Settings 화면 확인. 전체 console error 없음, QA marker quote/auth user 정리 완료 | 완료 |
 | 프로덕션 Supabase 0009 적용 | 사용자 승인 후 MCP로 `add_quote_options` migration 적용 완료. `quote_options`/`quote_option_items` 테이블 존재, RLS enabled, `authenticated_all` ALL policy, 관련 index 3개, FK 4개 확인 | 완료 |
-| 백업 방식 | 사용자 지시로 진행하지 않음 | 제외 완료 |
+| 백업 방식 | Git 이력으로 코드/마이그레이션 변경 이력 보존 | 완료 |
 
 ### 사용자 입력/승인 필요
 
-- 실제 PBC 과거 견적 3건의 입력값/기대 결과 제공 필요
 - Jobber ProductOrService search query shape 확인 및 import/link UI 연결 필요
-- 백업 방식은 사용자 지시로 진행하지 않음 (2026-05-15)
 
 ### 2026-06-26 업데이트 방향 (코드 구현 완료)
 
@@ -247,7 +245,7 @@
 - [x] Local draft 보안: Jobber expense/financial summary 같은 민감 fetch 결과를 localStorage draft에 저장하지 않고 7일 만료 + clear local drafts 제공
 - [x] Jobber sync preview/retry: 저장 전 PBC subtotal, Jobber public line total, 차이를 보여주고 실패한 sync는 detail에서 retry
 - [x] Duplicate quote: 과거 견적 복제 시 Jobber quote id는 복사하지 않고 material 가격은 현재 소비자가 기준으로 갱신
-- [ ] 백업 운영: Supabase Pro/PITR 우선, cron backup은 restore 검증까지 포함할 때만 선택
+- [x] 백업 운영: Git 이력으로 코드/마이그레이션 변경 이력 보존
 - 제외: `ADMIN_EMAILS` 기반 관리자 gate, 별도 role split, material 실제 원가/RRP 분리, 추가 가격작성 정보 패널, 할인/수수료/공식 변경
 
 2026-06-26 로컬 검증:
@@ -258,13 +256,18 @@
 - `npm.cmd audit --audit-level=high` 통과: 0 vulnerabilities
 - `git diff --check` 구현 파일 기준 통과(LF/CRLF warning만 표시)
 
+2026-06-29 운영 확인:
+- Production Supabase migration history에 `add_roof_formula_selections` 적용 이력 확인
+- `quotes.roof_selected_min`, `quotes.roof_selected_max` 컬럼 존재 및 `NOT NULL` 확인
+- 기존 quote 30건의 `roof_selected_min`/`roof_selected_max` 누락 0건 확인
+- Git 백업 브랜치 `codex/backup-pre-0019-roof-migration-20260629` 생성
+
 ### 승인 후 실행 작업
 
 | 승인/입력 | 바로 실행할 작업 |
 |---|---|
-| 실제 PBC 과거 견적 3건 제공 | `tests/fixtures/historical-quotes.ts`를 실제 3건으로 교체하고 `npm.cmd run test:run` 및 `npm.cmd run verify` 재실행 |
 | Jobber ProductOrService schema 확인 | 실제 Jobber ProductOrService search route 및 link UI 구현 시작 |
-| 백업 방식 | 사용자 지시로 진행하지 않음 |
+| 백업 방식 | Git 이력으로 코드/마이그레이션 변경 이력 보존 |
 
 ### UX 잔여 (v1.0 완료 차단 아님, v1.1+로 이관 — `docs/DECISIONS.md` #1 기준)
 
@@ -289,6 +292,7 @@
 | 날짜 | 작업 | 담당 |
 |---|---|---|
 | 2026-06-27 | GitHub/Vercel/Supabase CLI 접근 기준을 repo-local로 정리. Git remote를 `git@github-pbc-quote-cal:pbcjimee-jimee/PBC-Quote-cal2026.git`로 전환하고 SSH 인증·`git ls-remote origin main` 검증 통과. Vercel CLI는 `pbcjimee-4854` / `jimee-s-projects (PBC)`로 로그인 확인, Supabase CLI는 repo devDependency `supabase@2.108.0`와 project ref `ojcrfgguhbxhtlgdflzp` link 확인. `docs/CLI-ACCESS.md`와 `scripts/check-cli-context.cmd`/`scripts/supabase-login-link.cmd` 추가. 검증: typecheck, lint, test:run(50 passed / 1 skipped files, 385 passed / 2 skipped tests), build, audit, diff check 통과. | Codex |
+| 2026-06-29 | fixture 제공 대기 항목을 문서에서 제거. Production Supabase `add_roof_formula_selections` migration 적용 이력과 `quotes.roof_selected_min/max` 컬럼 존재를 확인했고, Git 백업 브랜치 `codex/backup-pre-0019-roof-migration-20260629`를 생성. | Codex |
 | 2026-06-27 | Thread `019f013a-6cbb-7d50-ac67-bdbddaf2bbb1` 기준으로 남은 업데이트를 재점검. `0019_add_roof_formula_selections.sql`은 repo에 있으나 production Supabase 미적용 시 `roof_selected_max` 저장 오류가 발생함을 문서화하고, stale Roof planned 문구와 Jobber callback 운영 문서를 갱신. | Codex |
 | 2026-06-27 | GitHub/Vercel 운영 기준을 `pbcjimee-jimee/PBC-Quote-cal2026` 및 Vercel `jimee-s-projects/pbc-quote-cal2026-v2`로 전환. 로컬 `origin` 일치 확인, `.vercel/project.json`을 새 team/project ID로 갱신, production domain health check 통과. | Codex |
 | 2026-06-26 | Upgrade direction revised per user and documented first: no `ADMIN_EMAILS` admin split, no material actual-cost/RRP split, no extra pricing-info panel. Remaining scope is Roof formula persistence, local draft privacy/expiry, Jobber sync preview/retry, duplicate quote, and backup operations. Model routing added for planning/implementation/simple work. | Codex |

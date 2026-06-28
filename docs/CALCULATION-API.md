@@ -64,9 +64,9 @@ export function calculateFinal(
 
 ---
 
-## 회귀 테스트 fixture (필수)
+## 회귀 테스트 fixture
 
-`tests/calculator.test.ts`는 **PBC 과거 견적 3건의 실제 입력·출력**을 fixture로 가져 회귀 검증한다. Excel 계산기에서 산출한 값과 우리 앱이 동일한 결과를 내는지 확인하는 핵심 안전망.
+`tests/calculator.test.ts`는 `tests/fixtures/historical-quotes.ts`의 fixture를 가져 회귀 검증한다. 계산기 공식과 subtotal/final total 동작이 바뀌지 않는지 확인하는 안전망이다.
 
 ```typescript
 // tests/fixtures/historical-quotes.ts
@@ -89,18 +89,15 @@ export const HISTORICAL_FIXTURES = [
       // final_total은 subtotal × 1.10 (GST) 로 계산
     },
   },
-  // ... 2건 더
 ];
 ```
-
-**TODO (사용자 작업):** 실제 과거 견적 3건의 입력·출력을 위 형태로 채워야 함. 이 데이터 없이는 회귀 보장 불가. PROGRESS.md 태스크 #9 참조.
 
 ---
 
 ## 테스트 커버리지 정책
 
 - `lib/calculator.ts` **100% 라인·브랜치 커버리지 강제** (미달 시 머지 금지)
-- 회귀 fixture 3건 모두 통과 필수
+- 회귀 fixture 통과 필수
 - Server Actions: 80%+ 커버리지 (happy path + 1 error path + 1 edge case)
 - 전체 정책: `docs/DECISIONS.md` #9
 

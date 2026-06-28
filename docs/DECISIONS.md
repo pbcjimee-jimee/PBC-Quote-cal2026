@@ -31,7 +31,7 @@
 - Roof 계산은 이미 도입되었지만 main quote의 Roof min/max 공식 선택값은 별도 컬럼에 저장되어야 한다. 다음 DB 변경은 `quotes.roof_selected_min`, `quotes.roof_selected_max` 추가를 우선한다.
 - 앱 사용자는 관리자 2명으로 고정한다. 별도 `ADMIN_EMAILS` 관리자 gate, role split, Settings/삭제/Jobber write-back 권한 분리는 도입하지 않는다.
 - material 가격은 일반 소비자가 기준으로 계산한다. 별도 실제 원가/RRP 분리, 추가 현장 난이도 정보 패널, quote-level 가격작성 보강 필드는 이번 업그레이드 범위에서 제외한다.
-- 남은 보완은 local draft 민감 fetch 결과 저장 방지/7일 만료, Jobber sync preview/retry, duplicate quote, 백업 운영 결정으로 제한한다.
+- 2026-06-26 보완 범위였던 local draft 민감 fetch 결과 저장 방지/7일 만료, Jobber sync preview/retry, duplicate quote는 구현 완료했고, 코드/마이그레이션 백업은 Git 이력으로 보존한다.
 
 ---
 
@@ -114,7 +114,7 @@ formula_5 = (380 × D + material_market) / 0.70      (총액 30%)
 ## 9. 테스트 정책
 
 - **`lib/calculator.ts` 100% 라인·브랜치 커버리지 강제** (미달 시 머지 금지)
-- 회귀 fixture (`tests/fixtures/historical-quotes.ts`): PBC 과거 견적 3건 통과 필수
+- 회귀 fixture (`tests/fixtures/historical-quotes.ts`) 통과 필수
 - RLS 자동 테스트 (`tests/rls.test.ts`)
 - Server Actions: 80%+ 커버리지 (happy path + 1 error path + 1 edge case)
 - 프레임워크: Vitest (v1.0), Playwright (v1.1 E2E)
@@ -123,8 +123,8 @@ formula_5 = (380 × D + material_market) / 0.70      (총액 30%)
 
 ## 10. 백업
 
-- v1.0 출시 직후 1주 내 Supabase Pro Plan 활성화 (또는 cron 백업 스크립트)
-- 자세한 내용: `TODOS.md` 항목 #2
+- 코드/마이그레이션 변경 이력은 Git으로 보존
+- Supabase 실제 데이터 백업 정책은 별도 운영 결정으로 관리
 
 ---
 

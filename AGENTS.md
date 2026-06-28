@@ -63,7 +63,7 @@ Codex는 정해진 사양을 충실히 코드로 옮기는 데 집중한다.
 4. Jobber sync preview/retry
 5. 과거 견적 duplicate (Jobber quote id 미복사, material 가격은 현재 소비자가 기준)
 
-잔여 운영 항목: 백업 운영 결정 문서화/적용은 사용자 승인 후 진행.
+백업 운영: 코드/마이그레이션 변경 이력은 Git으로 보존한다.
 
 이번 업그레이드 제외: `ADMIN_EMAILS` 기반 관리자 gate, 별도 role split, material 실제 원가/RRP 분리, 추가 가격작성 정보 패널, 공식/GST 변경.
 

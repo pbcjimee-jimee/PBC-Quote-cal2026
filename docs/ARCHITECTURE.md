@@ -20,7 +20,7 @@
 | 버전 | 범위 |
 |---|---|
 | **v1.0** (현재) | Supabase Auth, 페인트 DB + CSV import, 페인트 검색, 5가지 공식 계산기(GST 10% 포함), 견적 저장·검색·수정·삭제, Interior/Exterior/Roof 작업 영역, **옵션(add-on) 견적**, settings UI, Product / Service catalog/template, internal memos, price revision history, **Jobber OAuth fetch + controlled write-back(Product / Service line items only)**, Vercel 배포. |
-| **v1.1** | Roof min/max 공식 선택값 저장, local draft 민감 fetch 결과 저장 방지/7일 만료, Jobber sync preview/retry, 과거 견적 복제(Duplicate) 기능은 repo 구현 완료. 운영 환경은 Supabase `0019_add_roof_formula_selections.sql` 적용과 백업 방식 결정이 남아 있다. |
+| **v1.1** | Roof min/max 공식 선택값 저장, local draft 민감 fetch 결과 저장 방지/7일 만료, Jobber sync preview/retry, 과거 견적 복제(Duplicate) 기능은 repo 구현 완료. 운영 환경은 Supabase `0019_add_roof_formula_selections.sql` 적용 확인 완료, 코드/마이그레이션 변경 이력은 Git으로 보존한다. |
 | **v1.5** | 사용 패턴 확인 후 필요한 경우 페인트 DB 관리 고도화와 자동 백업 강화. material 가격은 소비자가 기준을 유지한다. |
 | **v2** | 자동 견적가 추산 (ML), 분석 대시보드. |
 
@@ -171,7 +171,7 @@ Roof calculation is part of the quote workspace and uses the same five formula n
 
 Repo status: `supabase/migrations/0019_add_roof_formula_selections.sql` adds `quotes.roof_selected_min` and `quotes.roof_selected_max`, and quote create/update/read, detail UI, draft restore, dev-data, and regression tests use those fields.
 
-Operational note: the connected Supabase project must have migration `0019_add_roof_formula_selections` applied. If the remote database is missing those columns, `/quotes/new` save will fail with a PostgREST schema error for `roof_selected_max`.
+Operational note: the connected Supabase project has migration `add_roof_formula_selections` applied and `quotes.roof_selected_min` / `quotes.roof_selected_max` present as `NOT NULL` columns.
 
 This is a persistence fix only. The existing five formulas, GST calculation, and material consumer-price basis do not change.
 

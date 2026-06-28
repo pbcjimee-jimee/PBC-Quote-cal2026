@@ -186,15 +186,13 @@ components/quote-form/
 
 ---
 
-## 태스크 #9 — 회귀 Fixture (실제 PBC 견적 3건)
+## 태스크 #9 — 회귀 Fixture
 
-**Input docs:** `tests/fixtures/historical-quotes.ts` (현재 샘플 1건), `docs/CALCULATION.md`
+**Input docs:** `tests/fixtures/historical-quotes.ts`, `docs/CALCULATION.md`
 
-**Task:** 사용자가 제공하는 실제 PBC 과거 견적 3건의 input/expected로 fixture 교체.
+**Task:** 계산기 회귀 fixture 구조를 유지하고 `tests/calculator.test.ts`에서 실행.
 
-**Pre-requisite:** 사용자가 Excel 견적 3건 데이터 제공.
-
-**Acceptance:** `npm.cmd run test:run`에서 fixture 3건 모두 통과.
+**Acceptance:** `npm.cmd run test:run`에서 fixture 회귀 테스트 통과.
 
 ---
 

@@ -510,4 +510,4 @@ Interior/Exterior grouped totals are derived from saved item area snapshots when
 
 ## 2026-06-26 Upgrade schema direction
 
-Repo migration work for Roof formula selection persistence is complete in `0019_add_roof_formula_selections.sql`; production Supabase still requires explicit migration apply/verification before the deployed app can save Roof selections. Do not introduce a separate admin role model, `ADMIN_EMAILS`, or material actual-cost/RRP split for this upgrade. The app is operated by two admin users, and material calculations use consumer price.
+Roof formula selection persistence is complete in `0019_add_roof_formula_selections.sql`, and production Supabase migration history includes `add_roof_formula_selections`. Do not introduce a separate admin role model, `ADMIN_EMAILS`, or material actual-cost/RRP split for this upgrade. The app is operated by two admin users, and material calculations use consumer price.
