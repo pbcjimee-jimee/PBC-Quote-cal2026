@@ -2023,8 +2023,11 @@ describe('quote form pricing UI', () => {
       })
     )
 
-    expect(markup).toContain('items-end')
-    expect(markup).toContain('min-h-8')
+    expect(markup).toContain('pbc-customerline')
+    expect(markup).toContain('pbc-customerline__customer')
+    expect(markup).toContain('pbc-customerline__lookup')
+    expect(markup).toContain('pbc-customerline__mode')
+    expect(markup).toContain('pbc-customerline__action')
   })
 
   it('shows expenses from a converted Jobber job in the quote summary', () => {

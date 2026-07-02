@@ -310,49 +310,45 @@ export function CustomerPanel(props: CustomerPanelProps) {
           <h2 className="pbc-paneltitle">Customer Info</h2>
         </div>
       </div>
-      <div className="grid items-end gap-4 sm:grid-cols-[minmax(0,1fr)_minmax(0,1.35fr)]">
-        <label className="pbc-field">
-          <span className="pbc-field__label flex min-h-8 items-center">Customer</span>
+      <div className="pbc-customerline">
+        <label className="pbc-field pbc-customerline__customer">
+          <span className="pbc-field__label">Customer</span>
           <input value={props.customerName} onChange={(event) => props.onCustomerNameChange(event.target.value)} className="pbc-input" />
         </label>
-        <label className="pbc-field">
-          <span className="flex min-h-8 flex-wrap items-center justify-between gap-2">
-            <span className="pbc-field__label min-w-0">{lookupLabel}</span>
-            <span className="pbc-toggle">
-              {(['quote', 'job'] as const).map((type) => (
-                <button
-                  key={type}
-                  type="button"
-                  onClick={() => props.onJobberLookupTypeChange(type)}
-                  className={props.jobberLookupType === type ? 'is-on' : ''}
-                >
-                  {type === 'quote' ? 'Quote' : 'Job'}
-                </button>
-              ))}
-            </span>
-          </span>
-          <div className="flex min-w-0 gap-2">
-            <input value={props.jobberQuoteId} onChange={(event) => props.onJobberQuoteIdChange(event.target.value)} className="pbc-input min-w-0 flex-1" />
-            <button type="button" onClick={props.onFetchJobberQuote} disabled={props.isFetchingJobberQuote} className="pbc-btn pbc-btn--ghost shrink-0">
-              {props.isFetchingJobberQuote ? loadingLabel : actionLabel}
-            </button>
-          </div>
-          {actionMode === 'refresh' ? (
-            <span className="pbc-field__hint mt-1 block">
-              Preview Jobber changes before applying them to this saved quote.
-            </span>
-          ) : null}
-          {props.jobberFetchError ? (
-            <span className="pbc-alert pbc-alert--danger mt-2">
-              {props.jobberFetchError}
-              {props.jobberFetchError.includes('Reconnect Jobber') ? (
-                <a href="/api/jobber/connect" className="ml-2 font-bold text-red-700 underline underline-offset-2">
-                  Reconnect Jobber
-                </a>
-              ) : null}
-            </span>
-          ) : null}
+        <label className="pbc-field pbc-customerline__lookup">
+          <span className="pbc-field__label">{lookupLabel}</span>
+          <input value={props.jobberQuoteId} onChange={(event) => props.onJobberQuoteIdChange(event.target.value)} className="pbc-input" />
         </label>
+        <div className="pbc-toggle pbc-customerline__mode" role="group" aria-label="Jobber lookup type">
+          {(['quote', 'job'] as const).map((type) => (
+            <button
+              key={type}
+              type="button"
+              onClick={() => props.onJobberLookupTypeChange(type)}
+              className={props.jobberLookupType === type ? 'is-on' : ''}
+            >
+              {type === 'quote' ? 'Quote' : 'Job'}
+            </button>
+          ))}
+        </div>
+        <button type="button" onClick={props.onFetchJobberQuote} disabled={props.isFetchingJobberQuote} className="pbc-btn pbc-btn--ghost pbc-customerline__action">
+          {props.isFetchingJobberQuote ? loadingLabel : actionLabel}
+        </button>
+        {actionMode === 'refresh' ? (
+          <span className="pbc-field__hint pbc-customerline__hint">
+            Preview Jobber changes before applying them to this saved quote.
+          </span>
+        ) : null}
+        {props.jobberFetchError ? (
+          <span className="pbc-alert pbc-alert--danger pbc-customerline__error">
+            {props.jobberFetchError}
+            {props.jobberFetchError.includes('Reconnect Jobber') ? (
+              <a href="/api/jobber/connect" className="ml-2 font-bold text-red-700 underline underline-offset-2">
+                Reconnect Jobber
+              </a>
+            ) : null}
+          </span>
+        ) : null}
       </div>
       <label className="pbc-field">
         <span className="pbc-field__label">Address</span>

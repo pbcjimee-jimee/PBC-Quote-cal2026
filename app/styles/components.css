@@ -232,6 +232,37 @@
 .pbc-tablepager { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 12px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 11px; background: var(--surface-soft); font-size: 12.5px; font-weight: 700; color: var(--muted); }
 .pbc-tablepager > div { display: flex; align-items: center; gap: 8px; }
 .pbc-tablepager .mono { color: var(--foreground); font-weight: 800; }
+.pbc-customerline {
+  display: grid;
+  grid-template-columns: minmax(150px, 0.85fr) minmax(170px, 1fr) auto auto;
+  gap: 8px;
+  align-items: end;
+}
+.pbc-customerline__customer,
+.pbc-customerline__lookup {
+  min-width: 0;
+}
+.pbc-customerline__lookup .pbc-field__label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pbc-customerline__mode {
+  min-height: 40px;
+  align-items: center;
+}
+.pbc-customerline__mode button {
+  min-height: 30px;
+}
+.pbc-customerline__action {
+  min-height: 40px;
+  justify-content: center;
+}
+.pbc-customerline__hint,
+.pbc-customerline__error {
+  grid-column: 2 / -1;
+  margin: 0;
+}
 .pbc-list { border: 1px solid var(--border); border-radius: 11px; background: #fff; }
 .pbc-product-service-scroll,
 .pbc-jobber-original-scroll {
@@ -258,6 +289,30 @@
 .pbc-jobbersnapshot summary::-webkit-details-marker { display: none; }
 .pbc-jobbersnapshot summary::after { content: "Show"; flex-shrink: 0; font-size: 11px; font-weight: 800; color: var(--primary); }
 .pbc-jobbersnapshot[open] summary::after { content: "Hide"; }
+
+@media (max-width: 720px) {
+  .pbc-customerline {
+    grid-template-columns: 1fr;
+  }
+
+  .pbc-customerline__mode,
+  .pbc-customerline__action {
+    width: 100%;
+  }
+
+  .pbc-customerline__mode {
+    justify-content: center;
+  }
+
+  .pbc-customerline__action {
+    justify-self: stretch;
+  }
+
+  .pbc-customerline__hint,
+  .pbc-customerline__error {
+    grid-column: auto;
+  }
+}
 
 /* ════════════════════════════════════════════════════════
  * Overview (견적 목록)
