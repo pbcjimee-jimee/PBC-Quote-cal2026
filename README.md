@@ -4,11 +4,9 @@
 
 Excel 2개 + Jobber를 오가던 견적 작업을 **한 페이지**에서 끝낸다. 페인트 자재 검색, 5가지 견적 공식 동시 계산, min/max 선택, 견적 저장·검색, Jobber quote fetch/write-back까지 포함한다.
 
-**상태:** v1.0 핵심 플로우 완료 (Auth · 견적 생성·수정·삭제 · 옵션 견적 · app-only internal memos · Jobber fetch/write-back · QA/RLS 검증 완료).
+**상태:** v1.0 핵심 플로우 + v1.1 보완 완료 (Auth · 견적 CRUD · 옵션 견적 · app-only memos · Jobber fetch/write-back · Roof 공식 선택 저장 · local draft 보안/7일 만료 · Jobber sync preview/retry · 과거 견적 duplicate · QA/RLS 검증 완료).
 
-**2026-06-26 보완 완료:** Roof 공식 선택값 저장, local draft 민감 fetch 결과 저장 방지/7일 만료, Jobber sync preview/retry, 과거 견적 duplicate 구현 완료. Supabase 실제 데이터 백업은 운영 결정 대기 상태로 남겨둔다. 별도 `/products` 관리 페이지는 현재 필요 없고 Settings의 Paint Product 및 Product & Service 관리로 충분하다.
-
-CRUD 화면은 운영량이 Settings 범위를 넘을 때만 재검토한다. `ADMIN_EMAILS` 기반 권한 분리, material 실제 원가/RRP 분리, 추가 가격작성 정보 패널은 제외한다.
+**후속:** 2026-07-06 전면 감사 발견 이슈는 [docs/BACKLOG.md](./docs/BACKLOG.md)에 우선순위별로 등록했다. Supabase 실제 데이터 백업은 운영 결정 대기다. 별도 `/products` 관리 페이지, `ADMIN_EMAILS` 권한 분리, material 실제 원가/RRP 분리는 현재 범위 밖이다.
 
 ---
 
@@ -43,31 +41,30 @@ git ls-remote origin main
 
 ## 문서
 
-이 프로젝트는 현재 **Codex 중심**으로 개발한다. 모든 결정·명세는 문서로 남기고, 문서를 source of truth로 사용한다.
+모든 결정·명세는 문서로 남기고, 문서를 source of truth로 사용한다.
 
 | 문서 | 내용 |
 |---|---|
-| **[AGENTS.md](./AGENTS.md)** | Codex 작업 가이드. 역할, 모델 기준, 코딩 스타일, 금지 사항 |
-| **[CLAUDE.md](./CLAUDE.md)** | Deprecated. 현재 Claude Code는 사용하지 않음 |
-| **[PROGRESS.md](./PROGRESS.md)** | 현재 진행 상태, 완료/차단 항목, 전체 변경 이력 |
-| **[docs/AGENT-MAP.md](./docs/AGENT-MAP.md)** | 작업 유형별 필독 문서 매트릭스 |
+| **[AGENTS.md](./AGENTS.md)** | 작업 가이드. 역할 분업, 모델 라우팅, 코딩 스타일, 금지 사항 |
+| **[PROGRESS.md](./PROGRESS.md)** | 현재 진행 상태, 완료/차단 항목, 변경 이력 |
+| **[docs/AGENT-MAP.md](./docs/AGENT-MAP.md)** | 모델 라우팅 + 작업 유형별 필독 문서 매트릭스 |
+| **[docs/BACKLOG.md](./docs/BACKLOG.md)** | 감사 발견 이슈·우선순위 백로그 |
 | **[docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md)** | 시스템 구조, DB 스키마, RLS 정책, 환경 변수 |
 | **[docs/CALCULATION.md](./docs/CALCULATION.md)** | 5가지 견적 공식 명세, 정밀도 규칙, 검증 |
-| **[docs/CLI-ACCESS.md](./docs/CLI-ACCESS.md)** | 프로젝트별 GitHub SSH, Vercel CLI, Supabase CLI 접근 기준 |
-| **[docs/UI-UX-REVIEW.md](./docs/UI-UX-REVIEW.md)** | v1.0 UI/UX 정적 리뷰, 접근성·시각 위계·quick win 개선안 |
-| **[docs/WORKFLOW.md](./docs/WORKFLOW.md)** | Codex 중심 작업 흐름, 충돌 처리 |
-| **[TODOS.md](./TODOS.md)** | v1.1+ 작업 목록 |
-| **[docs/superpowers/specs/2026-05-27-quote-workspace-area-subtotals-design.md](./docs/superpowers/specs/2026-05-27-quote-workspace-area-subtotals-design.md)** | Quote workspace, Interior/Exterior grouped subtotal, option subtotal display design |
-| **[docs/superpowers/plans/2026-05-27-quote-workspace-area-subtotals.md](./docs/superpowers/plans/2026-05-27-quote-workspace-area-subtotals.md)** | Implementation plan for the quote workspace and grouped subtotal update |
-| **[docs/superpowers/plans/2026-06-26-pbc-upgrade-direction.md](./docs/superpowers/plans/2026-06-26-pbc-upgrade-direction.md)** | Revised upgrade direction after user scope changes |
+| **[docs/CLI-ACCESS.md](./docs/CLI-ACCESS.md)** | GitHub SSH, Vercel CLI, Supabase CLI 접근 기준 |
+| **[docs/UI-UX-REVIEW.md](./docs/UI-UX-REVIEW.md)** | UI/UX 정적 리뷰, 접근성·시각 위계·quick win |
+| **[docs/AUTOMATION-IDEAS.md](./docs/AUTOMATION-IDEAS.md)** | 견적 자동화 아이디어 백로그 (미구현) |
+| **[docs/WORKFLOW.md](./docs/WORKFLOW.md)** | 작업 흐름, 역할 분담, 충돌 처리 |
+| **[TODOS.md](./TODOS.md)** | 운영 결정 대기 목록 |
+
+설계 문서·구현 계획은 `docs/superpowers/specs/`·`docs/superpowers/plans/`에 있다.
 
 ---
 
 ## 개발 워크플로우
 
-- **담당:** Codex가 결정자이자 실행자다.
-- **모델 기준:** 모든 주요 작업은 `codex 5.5 extra high` 기준으로 수행한다.
-- **설계:** 새 기능은 요구사항 확인 → 설계 요약/design doc → 구현 계획 → 구현 순서로 진행한다.
+- **역할 분업:** 설계·기획·QA·디자인은 **Claude Opus 4.8 extra**, 구현·리뷰·보안·git·배포는 **Codex 5.5 high**가 담당한다.
+- **흐름:** 새 기능은 [Opus] 요구사항 확인 → 설계 doc → 구현 계획 → [Codex] 구현 → 검증 순서로 진행한다.
 - **검증:** 변경 후 typecheck, lint, 관련 테스트를 실행한다.
 - **승인 필요:** 프로덕션 DB 적용, Vercel 환경 변수·도메인 변경, 사용자 데이터 영구 삭제, force push/reset, 새 외부 의존성 추가.
 

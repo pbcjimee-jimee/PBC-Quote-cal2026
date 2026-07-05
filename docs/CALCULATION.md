@@ -120,7 +120,9 @@ final_total = subtotal × 1.10   -- GST 10% 가산
 | `selected_min`, `selected_max` ∉ {1,2,3,4,5} | 거부 |
 | `f*_labour_rate < 0` | 거부 |
 | `f*_margin < 0` | 거부 |
-| `f*_margin > 2.0` (200%) | 경고만, 허용 |
+| `f*_margin >= 1` (100% 이상) | **거부해야 함** — 공식이 `÷(1-margin)`이라 margin ≥ 1이면 0/음수 분모로 `applyMargin`이 예외를 던진다 |
+
+> ⚠️ **2026-07-06 감사 발견(`docs/BACKLOG.md` C1):** 현재 `pricingSettingsSchema`의 margin은 `nonnegative()`만 검증하고 상한이 없다. Settings에 "100"(=1.0) 입력 시 저장은 성공하지만 이후 모든 견적 계산이 `applyMargin` 예외로 실패한다. 스키마 `.lt(1)` + 폼 가드 + DB `CHECK(f*_margin < 1)`로 상한을 강제해야 한다.
 
 ---
 

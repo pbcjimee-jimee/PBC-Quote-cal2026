@@ -115,6 +115,8 @@ https://pbc-quote-cal2026-v2.vercel.app
 2. 또는 main 브랜치에서 문제 커밋 revert 후 push
 3. **`git reset --hard`나 `git push --force`는 절대 사용 금지** (사용자 명시 승인 시에만)
 
+> ⚠️ **2026-07-06 감사 발견(`docs/BACKLOG.md` P4):** 마이그레이션은 forward-only(down 없음)라 스키마 변경을 동반한 배포는 코드 롤백만으로 복구되지 않는다. 파괴적 마이그레이션(drop column 등) 전 백업/PITR 시점 확보 필수. 또한 CI 부재로 `verify` 게이트가 자동 강제되지 않고, 프리뷰 배포가 프로덕션 Supabase에 접근할 위험(환경 분리 미문서화)이 있다. 조치 방향은 BACKLOG 참조.
+
 ---
 
 ## 위험 작업 (사용자 승인 필요)

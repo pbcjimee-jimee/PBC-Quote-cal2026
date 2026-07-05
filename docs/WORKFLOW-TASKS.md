@@ -1,32 +1,32 @@
-# WORKFLOW-TASKS.md — Codex 상세 작업 목록
+# WORKFLOW-TASKS.md — Phase별 상세 작업 목록
 
-> Codex의 phase별 작업·작업 프롬프트 템플릿.
-> 작업 원칙과 역할 기준: `docs/WORKFLOW.md`.
+> Phase별 작업·프롬프트 템플릿. 담당 모델을 함께 표기한다.
+> 작업 원칙과 역할 기준: `docs/WORKFLOW.md`, 모델 라우팅: `docs/AGENT-MAP.md`.
 
 ---
 
-## Codex 작업 (Phase별)
+## Phase별 작업 (담당 모델)
 
-### Phase 1: 설계
+### Phase 1: 설계 — Opus 4.8
 
 | 작업 | 사용 스킬 | 산출물 |
 |---|---|---|
 | 문제 정의 + 요구사항 명확화 | `superpowers:brainstorming` 또는 일반 질의 | 설계 요약 또는 design doc |
 | 아키텍처·테스트 설계 | `superpowers:writing-plans`, 필요 시 review 계열 | design doc + test plan |
-| 계산 공식 명세 변경 | 일반 + 테스트 우선 접근 | `docs/CALCULATION.md`, `docs/CALCULATION-API.md` |
+| 계산 공식 명세 변경(설계) | 일반 + 테스트 우선 접근 | `docs/CALCULATION.md`, `docs/CALCULATION-API.md` |
 | 시스템 아키텍처 명세 | 일반 | `docs/ARCHITECTURE.md`, `docs/DB-SCHEMA.md` |
 | 워크플로우 갱신 | 일반 | `docs/WORKFLOW.md`, `docs/AGENT-MAP.md` |
 
-### Phase 2: 구현 전 추가 검증
+### Phase 2: 구현 전 추가 검증 — Opus 4.8 설계 리뷰
 
 | 작업 | 사용 스킬 | 시점 |
 |---|---|---|
 | UI/UX 디자인 시스템 확인 | `design-consultation` 또는 관련 디자인 스킬 | UI 코딩 시작 전 |
 | UI 계획 리뷰 | `plan-design-review` | 복잡한 UI 변경 전 |
-| 보안 검토 | `codex-security:*` 또는 `security-scan` | DB/RLS/OAuth/민감 데이터 변경 전 |
-| 복잡한 리스크 판단 | `superpowers:brainstorming`, `superpowers:writing-plans` | 범위가 큰 기능 전 |
+| 복잡한 리스크·스코프 판단 | `superpowers:brainstorming`, `superpowers:writing-plans` | 범위가 큰 기능 전 |
+| 보안 영향 사전 판단 | 일반 | DB/RLS/OAuth/민감 데이터 변경 전 |
 
-### Phase 3: 구현
+### Phase 3: 구현 — Codex 5.5
 
 | 작업 | 입력 | 출력 |
 |---|---|---|
@@ -40,48 +40,45 @@
 | 버그 수정 | 버그 리포트 + 재현 단계 | 수정 diff + 회귀 테스트 |
 | 리팩토링 | 명확한 목표 | 동일 동작·더 나은 구조 |
 
-### Phase 4: 구현 후 검증
+### Phase 4: 구현 후 검증 — Codex 5.5 (+ QA 설계는 Opus 4.8)
 
-| 작업 | 사용 스킬/명령 | 시점 |
-|---|---|---|
-| 코드 리뷰 | 자체 diff review, 필요 시 `review` 또는 `gstack-review` | 변경 완료 후 |
-| 보안 검토 | 관련 security skill 또는 수동 체크 | DB/RLS/OAuth/민감 데이터 변경 시 |
-| QA 테스트 | `gstack-qa`, `qa`, 브라우저 smoke | 사용자 흐름 변경 시 |
-| 완료 전 검증 | `superpowers:verification-before-completion` | 완료 보고 전 |
-| 문서 업데이트 | 일반 | 사용자·운영 기준 변경 시 |
+| 작업 | 담당 | 사용 스킬/명령 | 시점 |
+|---|---|---|---|
+| 코드 리뷰·보안 검토 | Codex 5.5 | 자체 diff review, `review`/`gstack-review` | 변경 완료 후 |
+| QA 시나리오 설계 | Opus 4.8 | `gstack-qa` 계획 수립 | 사용자 흐름 변경 시 |
+| QA 실행 | Codex 5.5 | `qa`, 브라우저 smoke | QA 설계 확정 후 |
+| 완료 전 검증 | Codex 5.5 | `superpowers:verification-before-completion` | 완료 보고 전 |
+| 문서 업데이트 | Codex 5.5 | 일반 | 사용자·운영 기준 변경 시 |
 
 ---
 
-## Codex가 임의로 하지 말아야 할 일
+## 임의로 하지 말아야 할 일 (모델 공통)
 
 - ❌ 사용자 승인 없이 프로덕션 DB 마이그레이션 적용
 - ❌ 사용자 승인 없이 Vercel 환경 변수·도메인 변경
 - ❌ 사용자 승인 없이 사용자 데이터 영구 삭제
 - ❌ 사용자 승인 없이 `git push --force`, `git reset --hard`
 - ❌ 사용자 승인 없이 새 외부 의존성 추가
-- ❌ 사용자 승인 없이 `TODOS.md` 항목 추가/제거
+- ❌ 사용자 승인 없이 `TODOS.md`·`docs/BACKLOG.md` 항목 추가/제거
 - ❌ 사용자 승인 없이 `docs/DECISIONS.md` 핵심 결정 변경
 
 ---
 
 ## 모델 기준
 
-모든 작업은 기본적으로 `codex 5.5 extra high` 모델 기준으로 수행한다.
-런타임에서 모델 전환이 불가능하면 프롬프트 첫 줄에 다음과 같이 표시한다.
+- **설계·기획·QA 설계·디자인** → `Claude Opus 4.8 extra`
+- **구현·리뷰·보안·git·배포** → `Codex 5.5 high`
 
-```text
-Model: codex 5.5 extra high
-```
+런타임에서 모델 전환이 불가능하면 프롬프트 첫 줄에 `Model: <모델>`을 표시한다.
 
 ---
 
-## Codex 작업 프롬프트 템플릿
+## 작업 프롬프트 템플릿
 
 ```md
 [작업 #X] {짧은 제목}
 
-**Model:**
-codex 5.5 extra high
+**Model:** Opus 4.8 extra (설계) 또는 Codex 5.5 high (구현)
 
 **Input docs to read first:**
 - docs/ARCHITECTURE.md
@@ -95,9 +92,8 @@ codex 5.5 extra high
 {이번에 하지 말 것 명시}
 
 **Acceptance criteria:**
-- TypeScript 컴파일 통과
-- ESLint 통과
-- 관련 테스트 통과
+- (구현) TypeScript 컴파일·ESLint·관련 테스트 통과
+- (설계) 결정·엣지케이스·테스트 범위 문서화
 - {기타 검증 가능한 조건}
 
 **When done:**

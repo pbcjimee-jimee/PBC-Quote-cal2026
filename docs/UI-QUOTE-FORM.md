@@ -59,51 +59,20 @@
 ## 컴포넌트 분해
 
 ```
-QuoteNewPage (Server, /app/(app)/quotes/new/page.tsx)
-│
-├── Header (back 버튼 + Save 버튼)
-│
-└── QuoteForm (Client, 'use client')
-    │
-    ├── CustomerPanel (Left top)
-    │   ├── Input: customer_name
-    │   └── Input: customer_address
-    │
-    ├── QuoteMemosPanel
-    │   ├── Add memo
-    │   ├── Memo textarea × N
-    │   └── Remove memo
-    │
-    ├── JobberProductServiceEditor
-    │   ├── Template dropdown (copies saved line/text item sets from Settings)
-    │   ├── Line item name / text title input with Product & Service title dropdown
-    │   ├── Add Line Item
-    │   └── Add Text
-    │
-    ├── MaterialsPanel (Left bottom)
-    │   ├── PaintSearch (검색 Combobox)
-    │   │   ├── Input [debounce 200ms]
-    │   │   ├── ResultDropdown (최대 8개)
-    │   │   └── CustomItemInline (검색 없을 때)
-    │   └── MaterialList
-    │       └── MaterialRow × N
-    │           ├── 이름, 수량 입력, 가격 표시
-    │           └── [×] 삭제 버튼
-    │
-    ├── CalculationPanel (Right)
-    │   ├── WorkingDaysInput
-    │   ├── TravelFeeInput + MiscFeeInput
-    │   └── FormulaResults
-    │       ├── FormulaRow × 5
-    │       │   ├── 공식 이름, 금액 (font-mono)
-    │       │   └── Min/Max 라디오
-    │       └── FinalSummary
-    │           ├── Subtotal
-    │           ├── Travel + Misc
-    │           └── Final (강조 표시)
-    │
-    └── (SaveAction은 Header 버튼이 trigger)
+QuoteNewPage (Server, app/(app)/quotes/new/page.tsx)
+└── QuoteForm (Client)
+    ├── Header (sticky, back + Save/Update)
+    ├── CustomerPanel — customer_name/address, Jobber fetch, Customer Type(readonly)
+    ├── QuoteMemosPanel — app-only 메모 N행 (add/remove)
+    ├── JobberProductServiceEditor — Template dropdown, Line Item/Text (Product & Service 자동채우기), drag sort
+    ├── MaterialsPanel — Interior/Exterior 토글, PaintSearch(debounce 200ms), MaterialRow × N
+    ├── QuoteOptionsPanel — 옵션별 자체 Materials + Formula (메인에 미합산)
+    └── CalculationPanel (Right, sticky)
+        ├── 활성 섹션 FormulaResults (FormulaRow × 5, min/max 라디오)
+        └── FinalSummary — Interior/Exterior/Final subtotal(ex GST), GST, Final Total
 ```
+
+> `labour_per_day` 모델(0003)로 전환되어 travel_fee/misc_fee 입력은 없다. labour는 MaterialRow의 working_days × labour_per_day로 산출한다.
 
 ---
 
@@ -279,38 +248,23 @@ F2  L460 + Labour 30%
 
 ## 2026-05-27 Workspace update
 
-Source documents:
+설계·계획: `docs/superpowers/specs/2026-05-27-quote-workspace-area-subtotals-design.md`, `docs/superpowers/plans/2026-05-27-quote-workspace-area-subtotals.md`.
 
-- Design: `docs/superpowers/specs/2026-05-27-quote-workspace-area-subtotals-design.md`
-- Implementation plan: `docs/superpowers/plans/2026-05-27-quote-workspace-area-subtotals.md`
+구현된 quote editor 동작:
 
-Implemented quote editor behavior:
-
-- `/quotes/new` and `/quotes/[id]/edit` use the original desktop two-column page layout: the left quote editor panel and the right Calculation panel.
-- The left panel is ordered Customer Info -> Product / Service -> Materials -> Options -> Internal Memos and uses normal page scroll.
-- Only the Product / Service row list uses an internal scroll container for long public line-item lists.
-- The Calculation panel is sticky on desktop and does not use its own scroll container.
-- The summary shows Interior subtotal, Exterior subtotal, and Final subtotal, all ex GST.
-- Materials shows labour totals for the active Interior or Exterior section only: Working Days, Labour / Day, and Labour Days. The Calculation panel keeps only the combined Total Working Days and Total Labour Days.
-- Materials uses an Interior/Exterior toggle to filter the visible material rows to the active area section. New material rows added while a section is active receive that section's default area when one exists.
-- Materials shows only the active area's Formula Results selector. Interior shows Interior Formula Results; Exterior shows Exterior Formula Results. The right Calculation panel does not show both at once.
-- Interior and Exterior each keep their own min/max formula selection, and Final subtotal is the sum of the selected Interior subtotal plus selected Exterior subtotal.
-- Materials can collapse and expand like Options. The expanded and collapsed summaries show the active section material total, the active section subtotal when available, and the active section Labour Days.
-- GST remains visible as a separate row at the end.
-- Optional add-ons display subtotal ex GST and remain separate from the main quote total.
-- Product / Service line items keep drag sorting, auto-scroll the row list while dragging near its top or bottom edge, and add Top / Up / Down / Bottom controls for long line lists.
-- Internal Memos lets a user add multiple app-only notes per quote. These memos save to `quote_memos` and do not sync to Jobber.
-- Unassigned material rows are allowed, but they are excluded from grouped Interior/Exterior subtotals and shown as a warning.
-- The page keeps natural document scrolling on desktop and mobile, except for the Product / Service row list.
+- `/quotes/new`·`/quotes/[id]/edit`는 데스크톱 2단 레이아웃: 좌측 editor(Customer Info → Product / Service → Materials → Options → Internal Memos, 일반 페이지 스크롤), 우측 Calculation(sticky, 자체 스크롤 없음). Product / Service row list만 내부 스크롤.
+- 요약은 Interior/Exterior/Final subtotal을 ex GST로 표시. GST는 마지막 별도 행.
+- Materials는 Interior/Exterior 토글로 활성 섹션 행만 필터링하고, 활성 섹션의 labour(Working Days, Labour/Day, Labour Days)와 Formula Results selector만 보인다. Interior/Exterior가 각자 min/max 선택을 갖고 Final subtotal = 선택 Interior + Exterior subtotal.
+- Materials는 Options처럼 접기/펼치기 가능. 접힘/펼침 요약에 활성 섹션 material total·subtotal·Labour Days 표시.
+- 미배정 material 행은 허용되나 grouped subtotal에서 제외되고 경고로 표시.
+  > ⚠️ 상세 페이지 'Final subtotal'이 미배정 행을 제외해 목록/저장값과 어긋날 수 있음. `docs/BACKLOG.md` P1 참조.
+- Optional add-ons는 ex GST subtotal 표시, 메인 total과 분리.
+- Product / Service line item은 drag sorting + Top/Up/Down/Bottom 컨트롤, 드래그 시 자동 스크롤.
 
 ## 2026-05-28 Internal Memos
 
-The quote form supports multiple internal memo rows per quote.
-
-- Memos are edited in `QuoteMemosPanel` near the customer and Jobber quote context.
-- Empty memo rows are ignored when saving.
-- Saved memo rows are restored on `/quotes/[id]/edit` and displayed on quote detail.
-- Memos are app-only and must not be sent to Jobber as notes, text line items, or Product / Service rows.
+- `QuoteMemosPanel`에서 quote당 여러 app-only 메모 편집. 빈 행은 저장 시 무시.
+- 저장 메모는 `/quotes/[id]/edit` 복원·상세 표시. Jobber에 notes/text/line item으로 절대 전송 안 함(`quote_memos`).
 
 ---
 

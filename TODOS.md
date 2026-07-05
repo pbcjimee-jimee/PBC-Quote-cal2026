@@ -1,8 +1,9 @@
 # TODOS
 
-v1.0+ 구현이 끝난 뒤에도 남아 있는 운영 결정과 후속 작업 목록.
+v1.0+ 구현이 끝난 뒤에도 남아 있는 **운영 결정** 대기 목록.
 
-완료된 Roof 공식 선택값 영속화, local draft privacy/expiry, Jobber sync preview/retry, 과거 견적 복제(Duplicate)는 `PROGRESS.md`와 `docs/CODEX-TASKS.md`의 완료 이력으로 보관한다.
+- 감사에서 나온 코드/보안/아키텍처 이슈는 `docs/BACKLOG.md`에서 우선순위별로 관리한다(이 파일과 별개).
+- 완료된 Roof 공식 선택값 영속화, local draft privacy/expiry, Jobber sync preview/retry, 과거 견적 복제(Duplicate)는 `PROGRESS.md`·`docs/CODEX-TASKS.md`의 완료 이력으로 보관한다.
 
 ---
 

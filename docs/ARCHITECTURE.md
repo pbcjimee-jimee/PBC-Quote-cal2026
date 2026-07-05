@@ -144,6 +144,8 @@
 | Jobber API | 견적 자동 불러오기 실패 | fallback: "수동 입력" 모드, 사용자에게 에러 표시. 캐시(`jobber_snapshot`) 보존 |
 | Jobber API | write-back 실패 | local quote 저장 유지, `jobber_sync_status = failed`, Retry 제공 |
 
+> ⚠️ **저장 원자성·동시성 설계 공백 (2026-07-06 감사):** 견적 저장이 `quotes`+자식 테이블 다중 insert/update인데 서버측 트랜잭션(RPC)이 없어 중간 실패 시 데이터 불일치가 생길 수 있고, 낙관적 잠금이 없어 동시 편집 시 lost update가 발생할 수 있다. Jobber write-back 다중 mutation도 비원자·비가역이다. 상세와 조치 방향은 `docs/BACKLOG.md`(P0/P1) 참조.
+
 ---
 
 ## 관련 문서
@@ -154,6 +156,8 @@
 - 환경 변수·배포: `docs/DEPLOY.md`
 - 계산 공식: `docs/CALCULATION.md`
 - UI 명세: `docs/UI-DESIGN.md`
+- 감사 발견 이슈·우선순위: `docs/BACKLOG.md`
+- 견적 자동화 아이디어(미구현): `docs/AUTOMATION-IDEAS.md`
 
 ---
 

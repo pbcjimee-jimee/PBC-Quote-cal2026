@@ -63,6 +63,8 @@
 - 2026-06-26 기준 실제 사용자는 관리자 2명뿐이므로 별도 관리자 이메일/role gate를 추가하지 않는다. 접근 제한은 Supabase Auth 계정 발급과 기존 allowlist/login 정책으로 관리한다.
 - RLS 자동 테스트 (`tests/rls.test.ts`)로 검증 필수
 
+> ⚠️ **2026-07-06 감사 발견(방어 심화 대상, `docs/BACKLOG.md` P2):** 현재 RLS 정책은 `USING(true)`라 사용자 간 소유권 격리가 없다(관리자 2인 전제로 의도됨). 서버 액션 mutation이 `isAuthenticatedUserAllowed`를 강제하지 않고, `quote_price_revisions.changed_by`가 DB에서 강제되지 않으며, non-prod에서 암호화 키 없으면 Jobber 토큰이 평문 저장될 수 있다. 멀티유저 확장 시 소유권 정책 전환 + allowlist를 앱/DB 방어선으로 승격할 것.
+
 ---
 
 ## 위험 작업 (사용자 명시 승인 필요)

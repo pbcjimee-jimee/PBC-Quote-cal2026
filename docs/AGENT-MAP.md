@@ -1,30 +1,37 @@
-# AGENT-MAP.md — Codex 필독 파일 매트릭스
+# AGENT-MAP.md — 모델 라우팅 & 필독 파일 매트릭스
 
-> Codex가 세션 시작·작업 시 참조해야 할 파일 매핑.
-> 현재 프로젝트는 Claude Code를 사용하지 않으며, Codex가 결정·설계·구현·검증을 모두 담당한다.
+> 세션 시작·작업 시 참조해야 할 모델 라우팅과 파일 매핑.
+> 이 프로젝트는 **설계는 Claude Opus 4.8 extra, 구현은 Codex 5.5 high**로 역할을 나눈다.
 
 ---
 
 ## 진입점 (Entry Point)
 
-| Agent | 진입 파일 | 역할 |
-|---|---|---|
-| **Codex** | `AGENTS.md` | 결정자 + 실행자 — 설계·아키텍처·UI/UX·DB·구현·테스트·리뷰·배포 |
-| **Claude Code** | `CLAUDE.md` | Deprecated — 현재 운영에서 사용하지 않음 |
+| 파일 | 역할 |
+|---|---|
+| `AGENTS.md` | 세션 진입점 — 역할 분업·규칙 요약 |
+| `CLAUDE.md` | Deprecated — 현재 운영에서 사용하지 않음 |
 
 ---
 
-## 모델 라우팅
+## 모델 라우팅 (역할 기반)
 
-작업 지시·스킬 호출·하위 에이전트 핸드오프 시 모델 등급을 함께 적는다.
+작업 지시·스킬 호출·하위 에이전트 핸드오프 시 담당 모델을 함께 적는다.
+런타임에서 모델 전환이 불가능하면 프롬프트 첫 줄에 `Model: <모델>`을 표시한다.
 
-| 작업 유형 | 권장 모델 |
+| 작업 유형 | 담당 모델 |
 |---|---|
-| 계획, 아키텍처, 테스트 전략, 복잡한 리스크 판단 | `codex 5.5 extra high` |
-| 일반 코드 구현, DB/Server Action/UI/test 작성 | `codex 5.5 extra high` |
-| 단순 수정, 반복 작업, 기계적 문서/테스트 보강 | `codex 5.5 extra high` |
+| 계획·아키텍처 설계, 스코프·리스크 판단 | **Claude Opus 4.8 extra** |
+| 아이디어·브레인스토밍, 기능 구상 | **Claude Opus 4.8 extra** |
+| QA 시나리오 설계, 테스트 전략 | **Claude Opus 4.8 extra** |
+| UI/UX 디자인, plan/design 리뷰 | **Claude Opus 4.8 extra** |
+| 코드 구현 (마이그레이션·Server Action·Route·UI) | **Codex 5.5 high** |
+| 코드 리뷰, 보안 점검·수정 | **Codex 5.5 high** |
+| 버그 수정, 테스트 작성, 리팩토링 | **Codex 5.5 high** |
+| git 작업, 배포 실행 | **Codex 5.5 high** |
+| 단순 문구 수정·기계적 반복 작업 | **Codex 5.5 high** |
 
-런타임에서 모델 전환이 불가능하면 프롬프트 첫 줄에 원하는 등급을 표시한다.
+**핸드오프 원칙:** 설계 작업(Opus 4.8)의 산출물은 `docs/superpowers/specs/`(설계) 또는 `docs/superpowers/plans/`(구현 계획)에 남기고, Codex 5.5는 그 문서를 입력으로 구현한다. 이 라우팅은 비용·품질 기준일 뿐 시스템·사용자 지시, 보안·의존성 승인 규칙을 대체하지 않는다.
 
 ---
 
@@ -40,7 +47,8 @@
 | `docs/SECURITY.md` | 보안 규칙·위험 작업 승인 정책 | 보안 정책 변경 시 |
 | `docs/DEPLOY.md` | Vercel 배포 설정 | 환경 변경 시 |
 | `docs/CLI-ACCESS.md` | 프로젝트별 GitHub/Vercel/Supabase CLI 접근 기준 | 계정·remote·CLI 변경 시 |
-| `TODOS.md` | v1.1+ 작업 목록 | 사용자 승인 후 |
+| `docs/BACKLOG.md` | 감사 발견 이슈·우선순위 백로그 | 이슈 추가/해결 시 |
+| `TODOS.md` | v1.1+ 운영 결정 대기 목록 | 사용자 승인 후 |
 
 ### 아키텍처
 
@@ -75,13 +83,13 @@ from `docs/UI-DESIGN-SYSTEM.md`.
 
 | 파일 | 용도 |
 |---|---|
-| `docs/WORKFLOW.md` | Codex 중심 작업 원칙·흐름 |
-| `docs/WORKFLOW-TASKS.md` | Phase별 작업·Codex 프롬프트 템플릿 |
-| `docs/superpowers/specs/2026-05-19-jobber-write-back-design.md` | Jobber controlled write-back 결정 변경 설계 |
-| `docs/superpowers/plans/2026-05-19-jobber-write-back.md` | Jobber controlled write-back 구현 순서 |
-| `docs/superpowers/specs/2026-05-27-quote-workspace-area-subtotals-design.md` | Quote workspace, Interior/Exterior grouped subtotal, option subtotal display, sidebar collapse design |
-| `docs/superpowers/plans/2026-05-27-quote-workspace-area-subtotals.md` | Quote workspace grouped subtotal implementation plan |
-| `docs/superpowers/plans/2026-06-26-pbc-upgrade-direction.md` | Revised upgrade direction: Roof persistence, local draft privacy, Jobber sync preview/retry, duplicate quote, backup |
+| `docs/WORKFLOW.md` | 작업 원칙·흐름·역할 분담 |
+| `docs/WORKFLOW-TASKS.md` | Phase별 작업·태스크 프롬프트 템플릿 |
+| `docs/AUTOMATION-IDEAS.md` | 견적 자동화 아이디어 백로그 (설계 후보, 미구현) |
+| `docs/superpowers/specs/` | 설계 문서 (Jobber write-back, quote workspace 등) |
+| `docs/superpowers/plans/` | 구현 계획 (write-back, area subtotal, roof, upgrade direction 등) |
+
+superpowers 아래 개별 spec/plan 파일 목록은 해당 디렉터리에서 직접 확인한다.
 
 ---
 
@@ -89,23 +97,23 @@ from `docs/UI-DESIGN-SYSTEM.md`.
 
 | 파일 | 상태 |
 |---|---|
-| `CLAUDE.md` | 현재 운영에서 사용하지 않음. 과거 Claude Code 기준 문서였으며, 최신 기준은 `AGENTS.md`와 `docs/WORKFLOW.md`다. |
-| `C:\Users\kjm12\.claude\projects\.../memory/` | 현재 운영에서 사용하지 않음. |
+| `CLAUDE.md` | 현재 운영에서 사용하지 않음. 최신 기준은 `AGENTS.md`와 `docs/WORKFLOW.md`다. |
 
 ---
 
 ## 작업별 필독 파일 매트릭스
 
-| 작업 유형 | 필독 파일 |
-|---|---|
-| **신규 기능 설계** | `AGENTS.md` → `PROGRESS.md` → `docs/DECISIONS.md` → `docs/ARCHITECTURE.md` → `docs/SECURITY.md` |
-| **DB 마이그레이션** | `AGENTS.md` → `docs/DB-SCHEMA.md` → `docs/SECURITY.md` |
-| **계산 로직** | `AGENTS.md` → `docs/CALCULATION.md` → `docs/CALCULATION-API.md` → `docs/CODING-STYLE.md` |
-| **Server Actions** | `AGENTS.md` → `docs/ARCHITECTURE.md` → `docs/DB-SCHEMA.md` → `docs/CODING-STYLE.md` |
-| **UI 컴포넌트** | `AGENTS.md` → `docs/UI-DESIGN-SYSTEM.md` → `docs/UI-DESIGN.md` → (페이지별: `UI-QUOTE-FORM.md` 또는 `UI-PAGES.md`) → `docs/UI-UX-REVIEW.md` → `docs/CODING-STYLE.md` |
-| **테스트 작성** | `AGENTS.md` → `docs/CALCULATION.md` → `docs/CALCULATION-API.md` → `PROGRESS.md` |
-| **코드 리뷰** | `AGENTS.md` → `docs/DECISIONS.md` → `docs/CODING-STYLE.md` → `docs/SECURITY.md` |
-| **배포** | `AGENTS.md` → `docs/DEPLOY.md` → `docs/CLI-ACCESS.md` → `docs/SECURITY.md` |
+| 작업 유형 | 담당 모델 | 필독 파일 |
+|---|---|---|
+| **신규 기능 설계** | Opus 4.8 | `AGENTS.md` → `PROGRESS.md` → `docs/DECISIONS.md` → `docs/ARCHITECTURE.md` → `docs/SECURITY.md` |
+| **UI/UX 디자인 설계** | Opus 4.8 | `AGENTS.md` → `docs/UI-DESIGN-SYSTEM.md` → `docs/UI-DESIGN.md` → `docs/UI-UX-REVIEW.md` |
+| **DB 마이그레이션** | Codex 5.5 | `AGENTS.md` → `docs/DB-SCHEMA.md` → `docs/SECURITY.md` |
+| **계산 로직** | Codex 5.5 | `AGENTS.md` → `docs/CALCULATION.md` → `docs/CALCULATION-API.md` → `docs/CODING-STYLE.md` |
+| **Server Actions** | Codex 5.5 | `AGENTS.md` → `docs/ARCHITECTURE.md` → `docs/DB-SCHEMA.md` → `docs/CODING-STYLE.md` |
+| **UI 컴포넌트 구현** | Codex 5.5 | `AGENTS.md` → `docs/UI-DESIGN-SYSTEM.md` → 페이지별(`UI-QUOTE-FORM.md`/`UI-PAGES.md`) → `docs/CODING-STYLE.md` |
+| **테스트 작성** | Codex 5.5 | `AGENTS.md` → `docs/CALCULATION.md` → `docs/CALCULATION-API.md` → `PROGRESS.md` |
+| **코드 리뷰·보안** | Codex 5.5 | `AGENTS.md` → `docs/DECISIONS.md` → `docs/CODING-STYLE.md` → `docs/SECURITY.md` |
+| **배포** | Codex 5.5 | `AGENTS.md` → `docs/DEPLOY.md` → `docs/CLI-ACCESS.md` → `docs/SECURITY.md` |
 
 ---
 
