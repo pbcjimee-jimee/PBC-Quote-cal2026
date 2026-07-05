@@ -33,6 +33,7 @@
 - CRUD 화면은 향후 운영량이 Settings 범위를 넘을 때만 재검토한다.
 - Supabase 실제 데이터 백업 정책은 별도 운영 결정으로 관리한다.
 - Production Supabase `0020_add_jobber_snapshot_refresh_metadata.sql`은 2026-06-30 사용자 승인 후 적용했고, Jobber snapshot refresh metadata 컬럼/제약조건을 검증했다.
+- Production Supabase `20260705221912_tighten_pricing_margin_checks.sql`는 2026-07-06 사용자 승인 후 적용했고, `pricing_settings` F2-F5 margin CHECK 제약조건 4개와 기존 데이터 위반 0건을 검증했다.
 
 **2026-06-26 업데이트 결과:**
 - Roof 계산은 이미 도입되었고, main quote의 Roof min/max 공식 선택값은 `quotes.roof_selected_min`, `quotes.roof_selected_max`에 저장한다.

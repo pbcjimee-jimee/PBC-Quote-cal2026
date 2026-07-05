@@ -20,7 +20,7 @@
 | 버전 | 범위 |
 |---|---|
 | **v1.0** (현재) | Supabase Auth, 페인트 DB + CSV import, 페인트 검색, 5가지 공식 계산기(GST 10% 포함), 견적 저장·검색·수정·삭제, Interior/Exterior/Roof 작업 영역, **옵션(add-on) 견적**, settings UI, Product / Service catalog/template, internal memos, price revision history, **Jobber OAuth fetch + controlled write-back(Product / Service line items only)**, Vercel 배포. |
-| **v1.1** | Roof min/max 공식 선택값 저장, local draft 민감 fetch 결과 저장 방지/7일 만료, Jobber sync preview/retry, 과거 견적 복제(Duplicate), Jobber snapshot 수동 refresh/변경 감지, Jobber option line preview/manual import 기능은 repo 구현 완료. 운영 환경은 Supabase `0019_add_roof_formula_selections.sql` 및 `0020_add_jobber_snapshot_refresh_metadata.sql` 적용/검증 완료, 코드/마이그레이션 변경 이력은 Git으로 보존한다. |
+| **v1.1** | Roof min/max 공식 선택값 저장, local draft 민감 fetch 결과 저장 방지/7일 만료, Jobber sync preview/retry, 과거 견적 복제(Duplicate), Jobber snapshot 수동 refresh/변경 감지, Jobber option line preview/manual import 기능은 repo 구현 완료. 운영 환경은 Supabase `0019_add_roof_formula_selections.sql`, `0020_add_jobber_snapshot_refresh_metadata.sql`, `20260705221912_tighten_pricing_margin_checks.sql` 적용/검증 완료, 코드/마이그레이션 변경 이력은 Git으로 보존한다. |
 | **v1.5** | Settings 운영량 확인 후 필요한 경우에만 독립 `/products` 관리 페이지를 재검토한다. Supabase 실제 데이터 백업은 별도 운영 결정으로 남겨둔다. material 가격은 소비자가 기준을 유지한다. |
 | **v2** | 자동 견적가 추산 (ML), 분석 대시보드. |
 

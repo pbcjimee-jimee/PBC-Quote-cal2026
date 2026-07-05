@@ -11,7 +11,7 @@
 |---|---|
 | **앱** | PBC 견적 계산기 — 페인팅 회사 PBC 사내 도구 |
 | **스택** | Next.js 16 (App Router) + React 19 + TypeScript + Tailwind CSS 4 + Supabase + Vercel |
-| **현재 버전** | v1.0 핵심 플로우 완성, v1.0+ 옵션·Jobber fetch/write-back·QA 완료, 2026-06-26 upgrade direction repo 구현 및 Production Supabase `0019`/`0020` 적용 확인 완료 |
+| **현재 버전** | v1.0 핵심 플로우 완성, v1.0+ 옵션·Jobber fetch/write-back·QA 완료, 2026-06-26 upgrade direction repo 구현 및 Production Supabase `0019`/`0020`/`20260705221912` 적용 확인 완료 |
 | **배포 URL** | https://pbc-quote-cal2026-v2.vercel.app |
 | **GitHub Repo** | pbcjimee-jimee/PBC-Quote-cal2026 (branch: main) |
 | **CLI 접근 기준** | Git remote `git@github-pbc-quote-cal:pbcjimee-jimee/PBC-Quote-cal2026.git`, Vercel `jimee-s-projects/pbc-quote-cal2026-v2`, Supabase `ojcrfgguhbxhtlgdflzp` |
@@ -270,6 +270,11 @@
 - `quotes.jobber_snapshot_refreshed_at`, `jobber_snapshot_change_status`, `jobber_snapshot_change_summary`, `jobber_snapshot_refresh_error` 컬럼 존재 확인
 - `jobber_snapshot_change_status` CHECK 제약이 `unknown`, `unchanged`, `changed`만 허용함을 확인
 
+2026-07-06 운영 확인:
+- Production Supabase migration history에 `tighten_pricing_margin_checks` version `20260705221912` 적용 이력 확인
+- `pricing_settings_f2_margin_range`, `pricing_settings_f3_margin_range`, `pricing_settings_f4_margin_range`, `pricing_settings_f5_margin_range` CHECK 제약 존재 확인
+- 기존 `pricing_settings` 데이터 1건 중 margin 범위 위반 0건 확인
+
 ### 승인 후 실행 작업
 
 | 승인/입력 | 바로 실행할 작업 |
@@ -298,8 +303,9 @@
 
 | 날짜 | 작업 | 담당 |
 |---|---|---|
+| 2026-07-06 | Production Supabase에 `tighten_pricing_margin_checks` migration 적용 완료. Remote migration history version `20260705221912`에 맞춰 로컬 migration 파일명을 정렬했고, `pricing_settings` F2-F5 margin CHECK 제약 4개와 기존 데이터 위반 0건을 검증했다. | Codex |
 | 2026-07-04 | Release 3.2 Jobber token model alignment completed: Jobber OAuth is documented and named as a shared company-level connection for allowed app users, latest `jobber_tokens` row is the active connection, and `user_id` remains the owner row updated on refresh. Route/action refresh paths now require `token.ownerUserId`, fail clearly when missing, and never fall back to the caller user. Helper names/tests/docs make the shared behavior explicit. Verification: targeted Jobber token/route tests, quote action Supabase tests, and typecheck passed. No DB schema migration or production change was applied. | Codex |
-| 2026-07-04 | Release 3.1 margin validation review findings fixed: pricing margin validator now returns clear negative-margin messaging, Settings save validation blocks invalid margins before update, migration `20260704024229_tighten_pricing_margin_checks.sql` is idempotent with preflight checks, and DB schema docs summarize `< 1` margin constraints. Verification: targeted Settings tests, full `test:run`, typecheck, lint, and diff check passed. Production DB migration was not applied. | Codex |
+| 2026-07-04 | Release 3.1 margin validation review findings fixed: pricing margin validator now returns clear negative-margin messaging, Settings save validation blocks invalid margins before update, migration `20260705221912_tighten_pricing_margin_checks.sql` is idempotent with preflight checks, and DB schema docs summarize `< 1` margin constraints. Verification: targeted Settings tests, full `test:run`, typecheck, lint, and diff check passed. Production DB migration was later applied on 2026-07-06. | Codex |
 | 2026-06-30 | Production Supabase에 `add_jobber_snapshot_refresh_metadata` migration 적용 완료. `quotes`의 Jobber snapshot refresh metadata 4개 컬럼과 change status CHECK 제약조건을 검증했다. | Codex |
 | 2026-06-29 | Jobber 후속 repo 구현 완료. Quote detail에 Jobber snapshot 수동 refresh, 마지막 refresh 시간, refresh 기반 변경 감지 알림을 추가했고, Jobber option line item은 보수적 후보 감지 후 preview/manual import로만 PBC 옵션 state에 반영되도록 구현했다. `0020_add_jobber_snapshot_refresh_metadata.sql`은 repo에 추가했고, 2026-06-30 사용자 승인 후 Production Supabase 적용까지 완료했다. 검증: typecheck, targeted tests, lint 통과. | Codex |
 | 2026-06-29 | 문서 일관성 정리와 UI/UX quick wins 반영. 2026-06-26 보완 항목을 완료 상태로 통일하고, 남은 Jobber 후속을 option line item 자동 매핑, webhook/cache refresh, quote 변경 감지 알림으로 좁혔다. 별도 `/products` 관리 페이지는 현재 불필요하며 Settings 관리로 충분하다는 결정과 Supabase 실제 데이터 백업 운영 결정 대기 상태를 반영했다. focus-visible, 대비/위험 액션 명확성, draft leave dialog a11y를 보강했다. | Codex |

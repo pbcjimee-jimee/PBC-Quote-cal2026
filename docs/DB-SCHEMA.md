@@ -103,7 +103,7 @@
 | `0017_add_quote_price_revisions.sql` | Quote price revision history |
 | `0018_add_quote_price_revision_option_totals.sql` | Price revision에 option subtotal/final snapshot 추가 |
 | `0019_add_roof_formula_selections.sql` | Main quote Roof formula min/max selections |
-| `20260704024229_tighten_pricing_margin_checks.sql` | `pricing_settings` F2-F5 margins must be `>= 0` and `< 1`; migration preflights existing rows before adding idempotent constraints |
+| `20260705221912_tighten_pricing_margin_checks.sql` | `pricing_settings` F2-F5 margins must be `>= 0` and `< 1`; migration preflights existing rows before adding idempotent constraints |
 
 > 아래 DDL은 변경 후 최종 형태 요약. 정확한 SQL은 마이그레이션 파일 자체를 source of truth로 본다.
 
