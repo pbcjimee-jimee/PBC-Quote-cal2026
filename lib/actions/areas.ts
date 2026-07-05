@@ -2,6 +2,7 @@
 
 import { revalidatePath } from 'next/cache'
 import { areaDeleteSchema, areaSchema, areaUpdateSchema } from '@/lib/validators'
+import { requireAllowedUser } from '@/lib/security/require-allowed-user'
 import { createClient } from '@/lib/supabase/server'
 import type { Database } from '@/lib/supabase/types'
 import type { AreaRecord } from '@/lib/areas/types'
@@ -38,6 +39,9 @@ export async function listAreas(): Promise<ActionResult<AreaRecord[]>> {
   }
 
   try {
+    const allowedUser = await requireAllowedUser()
+    if (!allowedUser.ok) return allowedUser
+
     const supabase = await createClient()
     const { data, error } = await supabase
       .from('quote_areas')
@@ -68,6 +72,9 @@ export async function createArea(input: unknown): Promise<ActionResult<AreaRecor
   }
 
   try {
+    const allowedUser = await requireAllowedUser()
+    if (!allowedUser.ok) return allowedUser
+
     const supabase = await createClient()
     const { data, error } = await supabase
       .from('quote_areas')
@@ -103,6 +110,9 @@ export async function updateArea(input: unknown): Promise<ActionResult<AreaRecor
   }
 
   try {
+    const allowedUser = await requireAllowedUser()
+    if (!allowedUser.ok) return allowedUser
+
     const supabase = await createClient()
     const { data, error } = await supabase
       .from('quote_areas')
@@ -139,6 +149,9 @@ export async function deleteArea(input: unknown): Promise<ActionResult<AreaRecor
   }
 
   try {
+    const allowedUser = await requireAllowedUser()
+    if (!allowedUser.ok) return allowedUser
+
     const supabase = await createClient()
     const { data, error } = await supabase
       .from('quote_areas')

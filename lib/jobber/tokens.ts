@@ -22,8 +22,15 @@ function isRefreshUnauthorizedError(error: unknown): boolean {
   return error instanceof Error && error.message.includes('status 401')
 }
 
-export async function getStoredJobberToken(userId: string): Promise<StoredJobberToken | null> {
-  void userId
+export function requireSharedJobberConnectionOwnerId(token: StoredJobberToken): string {
+  if (!token.ownerUserId) {
+    throw new Error('Unable to identify Jobber connection owner')
+  }
+
+  return token.ownerUserId
+}
+
+export async function getSharedJobberConnectionToken(): Promise<StoredJobberToken | null> {
   const service = await createServiceClient()
   const { data, error } = await service
     .from('jobber_tokens')
@@ -47,11 +54,10 @@ export async function getStoredJobberToken(userId: string): Promise<StoredJobber
   }
 }
 
-export async function refreshStoredJobberToken(
-  userId: string,
+export async function refreshSharedJobberConnectionToken(
   currentRefreshToken: string,
   config: JobberConfig,
-  tokenOwnerUserId = userId
+  ownerUserId: string
 ): Promise<StoredJobberToken> {
   assertJobberTokenStorageConfigured()
 
@@ -60,7 +66,7 @@ export async function refreshStoredJobberToken(
     token = await refreshAccessToken(currentRefreshToken, config)
   } catch (error) {
     if (isRefreshUnauthorizedError(error)) {
-      const latestToken = await getStoredJobberToken(userId)
+      const latestToken = await getSharedJobberConnectionToken()
       if (latestToken && latestToken.refreshToken !== currentRefreshToken && !shouldRefresh(latestToken.expiresAt)) {
         return latestToken
       }
@@ -81,28 +87,27 @@ export async function refreshStoredJobberToken(
       expires_at: expiresAt,
       updated_at: new Date().toISOString(),
     })
-    .eq('user_id', tokenOwnerUserId)
+    .eq('user_id', ownerUserId)
 
   if (error) {
     throw new Error('Unable to save refreshed Jobber token')
   }
 
   return {
-    ownerUserId: tokenOwnerUserId,
+    ownerUserId,
     accessToken: token.accessToken,
     refreshToken: token.refreshToken,
     expiresAt,
   }
 }
 
-export async function getUsableJobberToken(
-  userId: string,
+export async function getUsableSharedJobberConnectionToken(
   config: JobberConfig
 ): Promise<StoredJobberToken | null> {
-  const token = await getStoredJobberToken(userId)
+  const token = await getSharedJobberConnectionToken()
   if (!token) return null
 
   if (!shouldRefresh(token.expiresAt)) return token
 
-  return refreshStoredJobberToken(userId, token.refreshToken, config, token.ownerUserId ?? userId)
+  return refreshSharedJobberConnectionToken(token.refreshToken, config, requireSharedJobberConnectionOwnerId(token))
 }

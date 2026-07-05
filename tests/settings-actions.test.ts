@@ -34,4 +34,35 @@ describe('settings actions', () => {
     expect(revalidatePath).toHaveBeenCalledWith('/settings')
     expect(revalidatePath).toHaveBeenCalledWith('/quotes/new')
   })
+
+  it('rejects margins at or above 100% before saving settings', async () => {
+    const result = await updatePricingSettings({
+      ...DEFAULT_PRICING_SETTINGS,
+      f2Margin: 1,
+      f3Margin: 1.25,
+      f4Margin: 0.25,
+      f5Margin: 0.30,
+    })
+
+    expect(result.ok).toBe(false)
+    if (!result.ok) {
+      expect(result.error).toContain('Margins must be less than 100%')
+    }
+
+    expect(revalidatePath).not.toHaveBeenCalled()
+  })
+
+  it('returns a clear validation message for negative margins', async () => {
+    const result = await updatePricingSettings({
+      ...DEFAULT_PRICING_SETTINGS,
+      f2Margin: -0.01,
+    })
+
+    expect(result.ok).toBe(false)
+    if (!result.ok) {
+      expect(result.error).toContain('Margins must be 0% or higher')
+    }
+
+    expect(revalidatePath).not.toHaveBeenCalled()
+  })
 })

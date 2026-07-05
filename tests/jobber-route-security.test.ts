@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
   saveDevJobberToken: vi.fn(),
   createClient: vi.fn(),
   createServiceClient: vi.fn(),
+  requireAllowedUser: vi.fn(),
 }))
 
 vi.mock('@/lib/jobber/oauth', () => ({
@@ -23,7 +24,13 @@ vi.mock('@/lib/supabase/server', () => ({
   createServiceClient: mocks.createServiceClient,
 }))
 
+vi.mock('@/lib/security/require-allowed-user', () => ({
+  requireAllowedUser: mocks.requireAllowedUser,
+}))
+
 import { GET as jobberCallback } from '@/app/api/jobber/callback/route'
+import { GET as jobberConnect } from '@/app/api/jobber/connect/route'
+import { AUTHENTICATION_REQUIRED_ERROR, USER_NOT_ALLOWED_ERROR } from '@/lib/security/auth-policy'
 
 describe('jobber callback security', () => {
   beforeEach(() => {
@@ -147,5 +154,103 @@ describe('jobber callback security', () => {
     expect(response.status).toBe(307)
     expect(response.headers.get('location')).toBe('http://localhost:3000/api/auth/signout?reason=not_allowed')
     expect(mocks.createServiceClient).not.toHaveBeenCalled()
+  })
+})
+
+describe('jobber connect security', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mocks.requireAllowedUser.mockResolvedValue({
+      ok: true,
+      user: { id: 'user-1', email: 'owner@example.com' },
+    })
+    process.env.JOBBER_CLIENT_ID = 'client-id'
+    process.env.JOBBER_CLIENT_SECRET = 'client-secret'
+    process.env.JOBBER_REDIRECT_URI = 'http://localhost:3000/api/jobber/callback'
+    process.env.NEXT_PUBLIC_DEV_NO_AUTH = 'false'
+  })
+
+  it('redirects unauthenticated users to login before generating OAuth state', async () => {
+    mocks.requireAllowedUser.mockResolvedValueOnce({
+      ok: false,
+      error: AUTHENTICATION_REQUIRED_ERROR,
+    })
+    const randomUUID = vi.spyOn(crypto, 'randomUUID')
+    const request = new NextRequest('http://localhost:3000/api/jobber/connect')
+
+    try {
+      const response = await jobberConnect(request)
+
+      expect(response.status).toBe(307)
+      expect(response.headers.get('location')).toBe('http://localhost:3000/login')
+      expect(randomUUID).not.toHaveBeenCalled()
+    } finally {
+      randomUUID.mockRestore()
+    }
+  })
+
+  it('signs out authenticated users outside the allowlist before generating OAuth state', async () => {
+    mocks.requireAllowedUser.mockResolvedValueOnce({
+      ok: false,
+      error: USER_NOT_ALLOWED_ERROR,
+    })
+    const randomUUID = vi.spyOn(crypto, 'randomUUID')
+    const request = new NextRequest('http://localhost:3000/api/jobber/connect')
+
+    try {
+      const response = await jobberConnect(request)
+
+      expect(response.status).toBe(307)
+      expect(response.headers.get('location')).toBe('http://localhost:3000/api/auth/signout?reason=not_allowed')
+      expect(randomUUID).not.toHaveBeenCalled()
+    } finally {
+      randomUUID.mockRestore()
+    }
+  })
+
+  it('generates OAuth state only after the user is allowed', async () => {
+    const request = new NextRequest('http://localhost:3000/api/jobber/connect')
+
+    const response = await jobberConnect(request)
+
+    expect(mocks.requireAllowedUser).toHaveBeenCalledOnce()
+    expect(response.status).toBe(307)
+    expect(response.headers.get('location')).toContain('https://api.getjobber.com/api/oauth/authorize')
+    expect(response.headers.get('set-cookie')).toContain('jobber_oauth_state=')
+  })
+
+  it('skips the auth gate and starts OAuth in dev no-auth mode', async () => {
+    process.env.NEXT_PUBLIC_DEV_NO_AUTH = 'true'
+    const request = new NextRequest('http://localhost:3000/api/jobber/connect')
+
+    const response = await jobberConnect(request)
+    const location = response.headers.get('location')
+    const state = location ? new URL(location).searchParams.get('state') : null
+
+    expect(mocks.requireAllowedUser).not.toHaveBeenCalled()
+    expect(response.status).toBe(307)
+    expect(location).toContain('https://api.getjobber.com/api/oauth/authorize')
+    expect(state).toEqual(expect.any(String))
+    expect(response.headers.get('set-cookie')).toContain(`jobber_oauth_state=${state}`)
+  })
+
+  it('keeps the auth gate in production even if dev no-auth is set', async () => {
+    vi.stubEnv('NODE_ENV', 'production')
+    vi.stubEnv('NEXT_PUBLIC_DEV_NO_AUTH', 'true')
+    mocks.requireAllowedUser.mockResolvedValueOnce({
+      ok: false,
+      error: AUTHENTICATION_REQUIRED_ERROR,
+    })
+    const request = new NextRequest('http://localhost:3000/api/jobber/connect')
+
+    try {
+      const response = await jobberConnect(request)
+
+      expect(mocks.requireAllowedUser).toHaveBeenCalledOnce()
+      expect(response.status).toBe(307)
+      expect(response.headers.get('location')).toBe('http://localhost:3000/login')
+    } finally {
+      vi.unstubAllEnvs()
+    }
   })
 })

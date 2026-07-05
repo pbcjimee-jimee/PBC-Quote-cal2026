@@ -20,7 +20,7 @@
 | 버전 | 범위 |
 |---|---|
 | **v1.0** (현재) | Supabase Auth, 페인트 DB + CSV import, 페인트 검색, 5가지 공식 계산기(GST 10% 포함), 견적 저장·검색·수정·삭제, Interior/Exterior/Roof 작업 영역, **옵션(add-on) 견적**, settings UI, Product / Service catalog/template, internal memos, price revision history, **Jobber OAuth fetch + controlled write-back(Product / Service line items only)**, Vercel 배포. |
-| **v1.1** | Roof min/max 공식 선택값 저장, local draft 민감 fetch 결과 저장 방지/7일 만료, Jobber sync preview/retry, 과거 견적 복제(Duplicate), Jobber snapshot 수동 refresh/변경 감지, Jobber option line preview/manual import 기능은 repo 구현 완료. 운영 환경은 Supabase `0019_add_roof_formula_selections.sql` 및 `0020_add_jobber_snapshot_refresh_metadata.sql` 적용/검증 완료, 코드/마이그레이션 변경 이력은 Git으로 보존한다. |
+| **v1.1** | Roof min/max 공식 선택값 저장, local draft 민감 fetch 결과 저장 방지/7일 만료, Jobber sync preview/retry, 과거 견적 복제(Duplicate), Jobber snapshot 수동 refresh/변경 감지, Jobber option line preview/manual import 기능은 repo 구현 완료. 운영 환경은 Supabase `0019_add_roof_formula_selections.sql`, `0020_add_jobber_snapshot_refresh_metadata.sql`, `20260705221912_tighten_pricing_margin_checks.sql` 적용/검증 완료, 코드/마이그레이션 변경 이력은 Git으로 보존한다. |
 | **v1.5** | Settings 운영량 확인 후 필요한 경우에만 독립 `/products` 관리 페이지를 재검토한다. Supabase 실제 데이터 백업은 별도 운영 결정으로 남겨둔다. material 가격은 소비자가 기준을 유지한다. |
 | **v2** | 자동 견적가 추산 (ML), 분석 대시보드. |
 
@@ -82,7 +82,7 @@
 │  - quote_memos (app-only internal notes)
 │  - quote_price_revisions
 │  - pricing_settings (singleton)
-│  - jobber_tokens (user-scoped, encrypted)
+│  - jobber_tokens (shared company connection, owner row encrypted)
 └────────────────┘
 
 한 페이지 작업 흐름:
@@ -106,7 +106,7 @@
 > 원칙: material 가격과 내부 계산 데이터는 우리 DB에만 저장한다. Jobber에는 사용자가 공개용으로 작성한 Product / Service line item만 저장한다.
 > 2026-06-26 사용자 결정: material 가격은 일반 소비자가 기준으로 계산한다. 별도 실제 원가/판매가 분리와 추가 가격작성 정보 패널은 도입하지 않는다.
 > Internal quote memos are also app-only data. They are stored in `quote_memos` and never synced to Jobber notes or line items.
-> 토큰은 만료 시 자동 refresh, `lib/jobber/token-encryption.ts`로 암호화 저장.
+> Jobber OAuth is a shared company-level connection for allowed app users. The app uses the latest `jobber_tokens` row globally; `jobber_tokens.user_id` identifies the user who connected or reconnected Jobber, and refresh writes back to that owner row. Tokens are encrypted with `lib/jobber/token-encryption.ts`.
 
 ### Jobber write-back 경계
 

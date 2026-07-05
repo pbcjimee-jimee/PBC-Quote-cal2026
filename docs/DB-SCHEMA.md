@@ -9,7 +9,7 @@
 ## 테이블 관계도
 
 ```
-auth.users        pricing_settings(singleton)     jobber_tokens(user-scoped, 암호화)
+auth.users        pricing_settings(singleton)     jobber_tokens(공유 커넥션, 암호화)
     │                     │ snapshot
     │ created_by/updated_by│ (JSONB copy)
     ▼                     ▼
@@ -63,6 +63,7 @@ product_services(Jobber 공개 라인 카탈로그) ── quote_line_templates 
 | `0018_add_quote_price_revision_option_totals.sql` | Revision에 option subtotal/final snapshot |
 | `0019_add_roof_formula_selections.sql` | Roof formula min/max 선택 컬럼 |
 | `0020_add_jobber_snapshot_refresh_metadata.sql` | `quotes` Jobber snapshot refresh metadata 4컬럼 + change status CHECK |
+| `20260705221912_tighten_pricing_margin_checks.sql` | `pricing_settings` F2-F5 margin `>= 0 AND < 1` CHECK 추가(기존 행 preflight, idempotent) |
 
 ---
 
@@ -73,7 +74,7 @@ product_services(Jobber 공개 라인 카탈로그) ── quote_line_templates 
 
 ### pricing_settings (singleton, id=1)
 `f1..f5_labour_rate`(기본 500/460/460/380/380), `f2..f5_margin`(기본 0.30/0.30/0.25/0.30), `roof_labour_rate`(기본 700), `updated_at/by`.
-> ⚠️ margin CHECK은 `>= 0`만 있고 상한이 없다 → 마진 ≥1 입력 시 계산 예외. `docs/BACKLOG.md` C1 참조(상한 CHECK 추가 필요).
+> ✅ margin CHECK은 `>= 0 AND < 1` (2026-07-05 `20260705221912` 적용). 마진 ≥1 저장 차단 — 감사 C1 해결(`docs/BACKLOG.md`).
 
 ### quotes (견적 메인)
 고객·work 정보, `jobber_quote_id`/`jobber_snapshot`, Jobber sync·snapshot refresh 메타, `working_days`/`labour_per_day`, `formula1..5_total`, area별 `interior/exterior/roof_selected_min/max`(+ legacy `selected_min/max`), `subtotal`, `final_total`(=subtotal×1.10), `pricing_settings_snapshot`(JSONB), `created_by/at`·`updated_by/at`. 금액 컬럼은 `NUMERIC(10,2)`.
@@ -88,7 +89,7 @@ product_services(Jobber 공개 라인 카탈로그) ── quote_line_templates 
 ### quote_options / quote_option_items (옵션 견적)
 옵션은 자체 공식 계산 + 자체 subtotal/final을 갖고 **메인 `quotes.final_total`에 합산하지 않는다**. `quote_option_items`는 `quote_items`와 동일 스냅샷 컬럼셋. 규칙: `docs/superpowers/specs/2026-05-15-quote-options-design.md`.
 
-### jobber_tokens (user-scoped, 암호화)
+### jobber_tokens (회사 공유 커넥션, 암호화)
 `user_id` PK, `access_token`/`refresh_token`(AES-256-GCM 암호화), `scope`, `expires_at`. RLS enabled + 정책 없음(service-role only 접근). 실제 접근은 `lib/jobber/tokens.ts`의 `createServiceClient` 경유.
 
 ### jobber_quote_lines (Jobber write-back 로컬 저장)

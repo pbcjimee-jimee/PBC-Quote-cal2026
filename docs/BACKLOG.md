@@ -5,15 +5,22 @@
 >
 > **처리 원칙:** 설계·판단이 필요하면 Opus 4.8이, 실제 수정·테스트는 Codex 5.5가 담당한다.
 > 항목 추가/제거는 사용자 승인 후. 해결 시 체크하고 `PROGRESS.md`에 기록한다.
+>
+> 이 백로그는 2026-07-04 hardening 로드맵(`docs/superpowers/plans/2026-07-04-project-hardening-roadmap.md`)과 상당 부분 겹친다. 트랜잭션 RPC·RLS 강화·CI 등은 그 로드맵의 실행 계획을 따르고, 여기서는 감사 관점의 우선순위 요약으로 관리한다.
+
+---
+
+## ✅ 이미 해결됨 (2026-07-04 project hardening)
+
+- **C1. 마진 100% 이상 입력 → 계산 예외** — zod·폼·DB CHECK로 상한 강제 완료. `20260705221912_tighten_pricing_margin_checks.sql`(`pricing_settings_f*_margin_range`), `lib/validators.ts`, `components/settings/settings-form.tsx`.
+- **서버 액션 allowlist 인가** — `lib/security/require-allowed-user.ts` 추가, mutation 액션(quotes/products/areas/product-services/quote-line-templates/settings)에 적용. `tests/require-allowed-user.test.ts` + 각 supabase 테스트 보강.
+- **Jobber 공유 커넥션 모델 명시** — `lib/jobber/tokens.ts`가 회사 단위 공유 커넥션(latest row, owner=user_id)임을 코드·문서에 명확화.
+
+> 상세 진행은 `docs/superpowers/plans/2026-07-04-project-hardening-roadmap.md` 참조.
 
 ---
 
 ## P0 — 데이터·금액 무결성 (최우선)
-
-- [ ] **C1. 마진 100% 이상 입력 → 이후 모든 견적 계산이 예외로 사망** (검증됨)
-  - `lib/validators.ts:216`, `lib/calculator.ts:100`, `components/settings/settings-form.tsx:132`
-  - `f2Margin~f5Margin`이 `nonnegative()`만 검증(상한 없음). Settings에 "100" 입력 시 `1.0` 저장 → `applyMargin`이 예외 → 견적 저장·상세 렌더 붕괴.
-  - 조치: 스키마 `.min(0).lt(1)` + 폼 가드 + DB `CHECK(f2_margin < 1)`.
 
 - [ ] **C2. Jobber line item id를 전체 sync 성공 후에만 저장 → 부분 실패 시 재시도가 중복 생성** (근거 명확)
   - `lib/actions/quotes.ts:1571`, `lib/jobber/client.ts:1342`
@@ -55,9 +62,7 @@
 
 ## P2 — 보안 (사내 2인 도구 맥락에서 medium/low)
 
-- [ ] **서버 액션 mutation에 allowlist 인가 없음** (검증됨)
-  - `lib/actions/quotes.ts:913` 등 — layout 가드 우회 POST 가능.
-  - 조치: `requireAllowedUser()` 헬퍼로 `isAuthenticatedUserAllowed` 강제. 가능하면 RLS도 email allowlist 반영.
+> 서버 액션 allowlist 인가는 2026-07-04 hardening으로 해결(위 ✅ 섹션). 아래는 남은 항목.
 
 - [ ] **H5. changed_by가 DB에서 강제되지 않아 행위자 위조 가능** (근거 명확)
   - `migration 0017:36` — `WITH CHECK(true)`, `DEFAULT auth.uid()`/트리거 없음.

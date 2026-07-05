@@ -3,6 +3,7 @@
 import { createClient } from '@/lib/supabase/server'
 import type { Database } from '@/lib/supabase/types'
 import { normalizeProductService, type ProductServiceRecord } from '@/lib/product-services/types'
+import { requireAllowedUser } from '@/lib/security/require-allowed-user'
 import {
   productServiceCreateSchema,
   productServiceDeleteSchema,
@@ -291,6 +292,9 @@ export async function createProductService(input: unknown): Promise<ActionResult
     return { ok: true, data: createDevProductService(payload) }
   }
 
+  const allowedUser = await requireAllowedUser()
+  if (!allowedUser.ok) return allowedUser
+
   const supabase = await createClient()
   const { data, error } = await supabase
     .from('product_services')
@@ -313,6 +317,9 @@ export async function searchProductServices(input: unknown): Promise<ActionResul
 
   const tokens = searchTokens(parsed.data.query)
   if (tokens.length === 0) return { ok: true, data: [] }
+
+  const allowedUser = await requireAllowedUser()
+  if (!allowedUser.ok) return allowedUser
 
   const supabase = await createClient()
   let request = supabase
@@ -339,6 +346,9 @@ export async function listProductServices(input: unknown = {}): Promise<ActionRe
     const { listDevProductServices } = await import('@/lib/dev-data')
     return { ok: true, data: listDevProductServices(parsed.data.query, parsed.data.limit) }
   }
+
+  const allowedUser = await requireAllowedUser()
+  if (!allowedUser.ok) return allowedUser
 
   const supabase = await createClient()
   const tokens = searchTokens(parsed.data.query)
@@ -386,6 +396,9 @@ export async function importProductServicesCSV(input: unknown): Promise<ActionRe
     return { ok: true, data: { imported: created.length, productServices: created } }
   }
 
+  const allowedUser = await requireAllowedUser()
+  if (!allowedUser.ok) return allowedUser
+
   const supabase = await createClient()
   const { data, error } = await supabase
     .from('product_services')
@@ -427,6 +440,9 @@ export async function updateProductService(input: unknown): Promise<ActionResult
     return { ok: true, data: updated }
   }
 
+  const allowedUser = await requireAllowedUser()
+  if (!allowedUser.ok) return allowedUser
+
   const supabase = await createClient()
   const { data, error } = await supabase
     .from('product_services')
@@ -449,6 +465,9 @@ export async function deleteProductService(input: unknown): Promise<ActionResult
     if (!deleted) return { ok: false, error: 'Product service not found' }
     return { ok: true, data: deleted }
   }
+
+  const allowedUser = await requireAllowedUser()
+  if (!allowedUser.ok) return allowedUser
 
   const supabase = await createClient()
   const { data, error } = await supabase

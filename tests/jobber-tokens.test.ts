@@ -15,7 +15,11 @@ vi.mock('@/lib/jobber/oauth', () => ({
   getTokenExpiresAt: () => '2026-05-14T01:00:00.000Z',
 }))
 
-import { getStoredJobberToken, getUsableJobberToken, refreshStoredJobberToken } from '@/lib/jobber/tokens'
+import {
+  getSharedJobberConnectionToken,
+  getUsableSharedJobberConnectionToken,
+  refreshSharedJobberConnectionToken,
+} from '@/lib/jobber/tokens'
 import { encryptTokenValue } from '@/lib/jobber/token-encryption'
 
 const config: JobberConfig = {
@@ -91,7 +95,7 @@ describe('jobber tokens', () => {
       from: vi.fn(() => selectBuilder),
     })
 
-    const token = await getStoredJobberToken('current-user')
+    const token = await getSharedJobberConnectionToken()
 
     expect(token).toEqual({
       ownerUserId: 'jobber-owner',
@@ -99,6 +103,7 @@ describe('jobber tokens', () => {
       refreshToken: 'latest-refresh-token',
       expiresAt: '2026-05-14T00:30:00.000Z',
     })
+    expect(selectBuilder.eq).not.toHaveBeenCalled()
     expect(selectBuilder.order).toHaveBeenCalledWith('updated_at', { ascending: false })
     expect(selectBuilder.limit).toHaveBeenCalledWith(1)
   })
@@ -125,7 +130,7 @@ describe('jobber tokens', () => {
       from: vi.fn(() => selectBuilder),
     })
 
-    const token = await getStoredJobberToken('current-user')
+    const token = await getSharedJobberConnectionToken()
 
     expect(token).toMatchObject({
       ownerUserId: 'jobber-owner',
@@ -160,7 +165,7 @@ describe('jobber tokens', () => {
       scope: 'quotes:read',
     })
 
-    const token = await getUsableJobberToken('current-user', config)
+    const token = await getUsableSharedJobberConnectionToken(config)
 
     expect(token).toMatchObject({
       ownerUserId: 'jobber-owner',
@@ -197,7 +202,7 @@ describe('jobber tokens', () => {
       })
     mocks.refreshAccessToken.mockRejectedValueOnce(new Error('Jobber token refresh failed with status 401'))
 
-    const token = await getUsableJobberToken('current-user', config)
+    const token = await getUsableSharedJobberConnectionToken(config)
 
     expect(token).toEqual({
       ownerUserId: 'jobber-owner',
@@ -227,7 +232,7 @@ describe('jobber tokens', () => {
       })
     mocks.refreshAccessToken.mockRejectedValueOnce(new Error('Jobber token refresh failed with status 401'))
 
-    await expect(getUsableJobberToken('current-user', config))
+    await expect(getUsableSharedJobberConnectionToken(config))
       .rejects.toThrow('Jobber connection expired. Reconnect Jobber from Settings.')
   })
 
@@ -236,8 +241,7 @@ describe('jobber tokens', () => {
     vi.stubEnv('JOBBER_TOKEN_ENCRYPTION_KEY', '')
 
     try {
-      await expect(refreshStoredJobberToken(
-        'current-user',
+      await expect(refreshSharedJobberConnectionToken(
         'owner-refresh-token',
         config,
         'jobber-owner'
@@ -253,8 +257,7 @@ describe('jobber tokens', () => {
   it('does not save refreshed Jobber tokens when the refresh response gains write scopes', async () => {
     mocks.refreshAccessToken.mockRejectedValueOnce(new Error('Jobber OAuth scopes must be read-only'))
 
-    await expect(refreshStoredJobberToken(
-      'current-user',
+    await expect(refreshSharedJobberConnectionToken(
       'owner-refresh-token',
       config,
       'jobber-owner'
@@ -277,6 +280,6 @@ describe('jobber tokens', () => {
       from: vi.fn(() => selectBuilder),
     })
 
-    await expect(getStoredJobberToken('current-user')).rejects.toThrow('Jobber OAuth scopes must be read-only')
+    await expect(getSharedJobberConnectionToken()).rejects.toThrow('Jobber OAuth scopes must be read-only')
   })
 })

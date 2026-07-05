@@ -18,6 +18,7 @@
 secrets/
 credentials/
 .jobber.local.json
+/데이터백업/
 
 # ===== Next.js =====
 .next/
