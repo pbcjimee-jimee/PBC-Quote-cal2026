@@ -97,6 +97,49 @@ describe('calculateAllFormulas', () => {
     expect(results[0].name).toBe('L500 / Market / No Margin')
   })
 
+  it('falls back to defaults when pricing settings are null in main formulas', () => {
+    const results = calculateAllFormulas(base, null)
+    expect(results.map((item) => item.total.toFixed(2))).toEqual([
+      '2842.50',
+      '3628.21',
+      '3635.71',
+      '2875.83',
+      '3064.29',
+    ])
+  })
+
+  it('uses default pricing values for null or undefined partial settings', () => {
+    const partialSettings = {
+      f1LabourRate: null,
+      f2LabourRate: undefined,
+      f3LabourRate: null,
+      f4LabourRate: null,
+      f5LabourRate: undefined,
+      roofLabourRate: undefined,
+      f2Margin: null,
+      f3Margin: undefined,
+      f4Margin: null,
+      f5Margin: null,
+    } as unknown as PricingSettings
+
+    const results = calculateAllFormulas(base, partialSettings)
+
+    expect(results.map((item) => item.name)).toEqual([
+      'L500 / Market / No Margin',
+      'L460 / Labour 30% / Market',
+      'L460 / Material / Total 30%',
+      'L380 / Labour 25% / Market',
+      'L380 / Material / Total 30%',
+    ])
+    expect(results.map((item) => item.total.toFixed(2))).toEqual([
+      '2842.50',
+      '3628.21',
+      '3635.71',
+      '2875.83',
+      '3064.29',
+    ])
+  })
+
   it('accepts Decimal inputs', () => {
     const results = calculateAllFormulas({
       workingDays: new Decimal(5),

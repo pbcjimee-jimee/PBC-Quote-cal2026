@@ -15,6 +15,8 @@ type LoginRateLimitResult =
 const loginAttempts = new Map<string, LoginAttemptState>()
 
 export const LOGIN_LOCKED_ERROR = 'Too many login attempts. Try again later.'
+export const AUTHENTICATION_REQUIRED_ERROR = 'Authentication required'
+export const USER_NOT_ALLOWED_ERROR = 'User is not allowed to access this app'
 
 export function normalizeLoginEmail(email: string): string {
   return email.trim().toLowerCase()

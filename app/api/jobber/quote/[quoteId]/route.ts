@@ -11,7 +11,7 @@ import {
 import { getJobberConfig, getMissingGraphqlConfigKeys } from '@/lib/jobber/config'
 import { getUsableDevJobberToken, refreshDevJobberToken } from '@/lib/jobber/dev-tokens'
 import { mapJobberJobToDraft, mapJobberQuoteToDraft } from '@/lib/jobber/mapper'
-import { getUsableJobberToken, refreshStoredJobberToken, type StoredJobberToken } from '@/lib/jobber/tokens'
+import { getUsableSharedJobberConnectionToken, refreshSharedJobberConnectionToken, requireSharedJobberConnectionOwnerId, type StoredJobberToken } from '@/lib/jobber/tokens'
 import { isAuthenticatedUserAllowed } from '@/lib/security/auth-policy'
 import { createClient } from '@/lib/supabase/server'
 import { isDevNoAuthMode } from '@/lib/actions/types'
@@ -43,7 +43,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
   try {
     const userId = await getJobberTokenUserId()
     let token = userId
-      ? await getUsableJobberToken(userId, config)
+      ? await getUsableSharedJobberConnectionToken(config)
       : await getUsableDevJobberToken(config)
     if (!token && !config.accessToken) {
       return NextResponse.json({ ok: false, error: 'Jobber is not connected. Connect Jobber first.' }, { status: 409 })
@@ -260,7 +260,7 @@ async function refreshToken(
   config: ReturnType<typeof getJobberConfig>
 ): Promise<StoredJobberToken> {
   if (userId) {
-    return refreshStoredJobberToken(userId, token.refreshToken, config, token.ownerUserId ?? userId)
+    return refreshSharedJobberConnectionToken(token.refreshToken, config, requireSharedJobberConnectionOwnerId(token))
   }
 
   return refreshDevJobberToken(token.refreshToken, config)

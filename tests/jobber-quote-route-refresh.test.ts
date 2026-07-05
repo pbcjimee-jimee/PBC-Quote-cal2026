@@ -12,8 +12,12 @@ const mocks = vi.hoisted(() => {
   return {
     fetchJobberQuote: vi.fn(),
     fetchJobberQuoteJobs: vi.fn(),
-    refreshStoredJobberToken: vi.fn(),
-    getUsableJobberToken: vi.fn(),
+    refreshSharedJobberConnectionToken: vi.fn(),
+    requireSharedJobberConnectionOwnerId: vi.fn((token: { ownerUserId?: string }) => {
+      if (!token.ownerUserId) throw new Error('Unable to identify Jobber connection owner')
+      return token.ownerUserId
+    }),
+    getUsableSharedJobberConnectionToken: vi.fn(),
     createClient: vi.fn(),
     mapJobberQuoteToDraft: vi.fn(),
     JobberApiError: MockJobberApiError,
@@ -31,8 +35,9 @@ vi.mock('@/lib/jobber/client', () => ({
 }))
 
 vi.mock('@/lib/jobber/tokens', () => ({
-  getUsableJobberToken: mocks.getUsableJobberToken,
-  refreshStoredJobberToken: mocks.refreshStoredJobberToken,
+  getUsableSharedJobberConnectionToken: mocks.getUsableSharedJobberConnectionToken,
+  refreshSharedJobberConnectionToken: mocks.refreshSharedJobberConnectionToken,
+  requireSharedJobberConnectionOwnerId: mocks.requireSharedJobberConnectionOwnerId,
 }))
 
 vi.mock('@/lib/jobber/dev-tokens', () => ({
@@ -65,15 +70,17 @@ describe('jobber quote route token refresh', () => {
         }),
       },
     })
-    mocks.getUsableJobberToken.mockResolvedValue({
+    mocks.getUsableSharedJobberConnectionToken.mockResolvedValue({
       accessToken: 'old-access',
       refreshToken: 'old-refresh',
       expiresAt: '2099-01-01T00:00:00.000Z',
+      ownerUserId: 'jobber-owner',
     })
-    mocks.refreshStoredJobberToken.mockResolvedValue({
+    mocks.refreshSharedJobberConnectionToken.mockResolvedValue({
       accessToken: 'new-access',
       refreshToken: 'new-refresh',
       expiresAt: '2099-01-01T01:00:00.000Z',
+      ownerUserId: 'jobber-owner',
     })
     mocks.fetchJobberQuote
       .mockRejectedValueOnce(new mocks.JobberApiError('expired access token', 401))
@@ -97,7 +104,12 @@ describe('jobber quote route token refresh', () => {
     })
 
     expect(response.status).toBe(200)
-    expect(mocks.refreshStoredJobberToken).toHaveBeenCalledTimes(1)
+    expect(mocks.refreshSharedJobberConnectionToken).toHaveBeenCalledTimes(1)
+    expect(mocks.refreshSharedJobberConnectionToken).toHaveBeenCalledWith(
+      'old-refresh',
+      expect.objectContaining({ graphqlVersion: '2025-04-16' }),
+      'jobber-owner'
+    )
     expect(mocks.fetchJobberQuote).toHaveBeenNthCalledWith(1, 'Z2lkOi8vSm9iYmVyL1F1b3RlLzE=', {
       accessToken: 'old-access',
       graphqlVersion: '2025-04-16',
@@ -113,7 +125,7 @@ describe('jobber quote route token refresh', () => {
   })
 
   it('does not call Jobber GraphQL when the stored token scope is not read-only', async () => {
-    mocks.getUsableJobberToken.mockRejectedValueOnce(new Error('Jobber OAuth scopes must be read-only'))
+    mocks.getUsableSharedJobberConnectionToken.mockRejectedValueOnce(new Error('Jobber OAuth scopes must be read-only'))
     const request = new NextRequest(
       'http://localhost:3000/api/jobber/quote/Z2lkOi8vSm9iYmVyL1F1b3RlLzE='
     )
@@ -126,5 +138,24 @@ describe('jobber quote route token refresh', () => {
     expect(await response.json()).toEqual({ ok: false, error: 'Jobber OAuth scopes must be read-only' })
     expect(mocks.fetchJobberQuote).not.toHaveBeenCalled()
     expect(mocks.fetchJobberQuoteJobs).not.toHaveBeenCalled()
+  })
+
+  it('fails clearly instead of refreshing a shared token without an owner row', async () => {
+    mocks.getUsableSharedJobberConnectionToken.mockResolvedValueOnce({
+      accessToken: 'old-access',
+      refreshToken: 'old-refresh',
+      expiresAt: '2099-01-01T00:00:00.000Z',
+    })
+    const request = new NextRequest(
+      'http://localhost:3000/api/jobber/quote/Z2lkOi8vSm9iYmVyL1F1b3RlLzE='
+    )
+
+    const response = await jobberQuoteRoute(request, {
+      params: Promise.resolve({ quoteId: 'Z2lkOi8vSm9iYmVyL1F1b3RlLzE=' }),
+    })
+
+    expect(response.status).toBe(502)
+    expect(await response.json()).toEqual({ ok: false, error: 'Unable to identify Jobber connection owner' })
+    expect(mocks.refreshSharedJobberConnectionToken).not.toHaveBeenCalled()
   })
 })

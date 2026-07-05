@@ -142,6 +142,60 @@ function fromPercent(value: string): number {
   return numeric
 }
 
+type PricingSettingsFormState = {
+  f1LabourRate: string
+  f2LabourRate: string
+  f3LabourRate: string
+  f4LabourRate: string
+  f5LabourRate: string
+  roofLabourRate: string
+  f2Margin: string
+  f3Margin: string
+  f4Margin: string
+  f5Margin: string
+}
+
+function validateMarginSettings(values: Pick<ReturnType<typeof buildPricingSettingsPayload>, 'f2Margin' | 'f3Margin' | 'f4Margin' | 'f5Margin'>): string | null {
+  const margins = [values.f2Margin, values.f3Margin, values.f4Margin, values.f5Margin]
+  if (margins.some((margin) => Number.isNaN(margin))) return 'Margins must be valid numbers.'
+  if (margins.some((margin) => margin < 0)) return 'Margins must be 0% or higher.'
+  if (margins.some((margin) => margin >= 1)) return 'Margins must be less than 100%.'
+  return null
+}
+
+function buildPricingSettingsPayload(settings: PricingSettingsFormState) {
+  return {
+    f1LabourRate: toRate(settings.f1LabourRate),
+    f2LabourRate: toRate(settings.f2LabourRate),
+    f3LabourRate: toRate(settings.f3LabourRate),
+    f4LabourRate: toRate(settings.f4LabourRate),
+    f5LabourRate: toRate(settings.f5LabourRate),
+    roofLabourRate: toRate(settings.roofLabourRate),
+    f2Margin: fromPercent(settings.f2Margin),
+    f3Margin: fromPercent(settings.f3Margin),
+    f4Margin: fromPercent(settings.f4Margin),
+    f5Margin: fromPercent(settings.f5Margin),
+  }
+}
+
+type PricingSettingsPayload = ReturnType<typeof buildPricingSettingsPayload>
+type PricingSettingsUpdate = (payload: PricingSettingsPayload) => Promise<
+  | { ok: true; data: unknown }
+  | { ok: false; error: string }
+>
+
+export async function savePricingSettingsForm(
+  settings: PricingSettingsFormState,
+  updateSettings: PricingSettingsUpdate = updatePricingSettings
+): Promise<string> {
+  const payload = buildPricingSettingsPayload(settings)
+  const marginError = validateMarginSettings(payload)
+  if (marginError) return marginError
+
+  const result = await updateSettings(payload)
+  return result.ok ? 'Settings saved for future quotes.' : result.error
+}
+
 function toRate(value: string): number {
   return Number((value || '').trim().replace(/,/g, ''))
 }
@@ -938,20 +992,7 @@ export function SettingsForm({
   function save() {
     setMessage(null)
     startTransition(async () => {
-      const result = await updatePricingSettings({
-        f1LabourRate: toRate(settings.f1LabourRate),
-        f2LabourRate: toRate(settings.f2LabourRate),
-        f3LabourRate: toRate(settings.f3LabourRate),
-        f4LabourRate: toRate(settings.f4LabourRate),
-        f5LabourRate: toRate(settings.f5LabourRate),
-        roofLabourRate: toRate(settings.roofLabourRate),
-        f2Margin: fromPercent(settings.f2Margin),
-        f3Margin: fromPercent(settings.f3Margin),
-        f4Margin: fromPercent(settings.f4Margin),
-        f5Margin: fromPercent(settings.f5Margin),
-      })
-
-      setMessage(result.ok ? 'Settings saved for future quotes.' : result.error)
+      setMessage(await savePricingSettingsForm(settings))
     })
   }
 
@@ -1436,10 +1477,10 @@ export function SettingsForm({
             <h2 className="pbc-paneltitle">Margins</h2>
             <div className="pbc-rates">
             {[
-              ['f2Margin', 'F2', 'Margin', 'Use 30, 0.30, or 30%'],
-              ['f3Margin', 'F3', 'Margin', 'Use 30, 0.30, or 30%'],
-              ['f4Margin', 'F4', 'Margin', 'Use 25, 0.25, or 25%'],
-              ['f5Margin', 'F5', 'Margin', 'Use 30, 0.30, or 30%'],
+              ['f2Margin', 'F2', 'Margin', 'Example: 30 or 0.30. Must be less than 100%.'],
+              ['f3Margin', 'F3', 'Margin', 'Example: 30 or 0.30. Must be less than 100%.'],
+              ['f4Margin', 'F4', 'Margin', 'Example: 25 or 0.25. Must be less than 100%.'],
+              ['f5Margin', 'F5', 'Margin', 'Example: 30 or 0.30. Must be less than 100%.'],
             ].map(([field, code, label, sub]) => (
               <label key={field} className="pbc-rate">
                 <span className="pbc-rate__code">{code}</span>

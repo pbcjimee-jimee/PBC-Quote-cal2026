@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const mocks = vi.hoisted(() => ({
   createClient: vi.fn(),
   isDevNoAuthMode: vi.fn(),
+  requireAllowedUser: vi.fn(),
   revalidatePath: vi.fn(),
 }))
 
@@ -17,6 +18,10 @@ vi.mock('@/lib/actions/types', async () => {
     isDevNoAuthMode: mocks.isDevNoAuthMode,
   }
 })
+
+vi.mock('@/lib/security/require-allowed-user', () => ({
+  requireAllowedUser: mocks.requireAllowedUser,
+}))
 
 vi.mock('next/cache', () => ({
   revalidatePath: mocks.revalidatePath,
@@ -67,6 +72,10 @@ describe('area actions against Supabase', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mocks.isDevNoAuthMode.mockReturnValue(false)
+    mocks.requireAllowedUser.mockResolvedValue({
+      ok: true,
+      user: { id: 'user-1', email: 'owner@example.com' },
+    })
   })
 
   it('lists active areas from Supabase in dropdown order', async () => {
@@ -94,6 +103,18 @@ describe('area actions against Supabase', () => {
     const result = await listAreas()
 
     expect(result).toEqual({ ok: false, error: 'area read failed' })
+  })
+
+  it('rejects disallowed users before listing areas', async () => {
+    mocks.requireAllowedUser.mockResolvedValueOnce({
+      ok: false,
+      error: 'User is not allowed to access this app',
+    })
+
+    const result = await listAreas()
+
+    expect(result).toEqual({ ok: false, error: 'User is not allowed to access this app' })
+    expect(mocks.createClient).not.toHaveBeenCalled()
   })
 
   it('creates an area through Supabase and revalidates consumers', async () => {

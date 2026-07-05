@@ -1,6 +1,11 @@
 import { z } from 'zod'
 
 const PUBLIC_LINE_DESCRIPTION_MAX_LENGTH = 4000
+const PRICING_MARGIN_MIN_MESSAGE = 'Margins must be 0% or higher'
+const PRICING_MARGIN_MAX_MESSAGE = 'Margins must be less than 100%'
+const pricingMarginSchema = z.number()
+  .min(0, { message: PRICING_MARGIN_MIN_MESSAGE })
+  .lt(1, { message: PRICING_MARGIN_MAX_MESSAGE })
 
 export const jobberQuoteSnapshotSchema = z.object({
   jobberQuoteId: z.string(),
@@ -213,10 +218,10 @@ export const pricingSettingsSchema = z.object({
   f4LabourRate: z.number().nonnegative(),
   f5LabourRate: z.number().nonnegative(),
   roofLabourRate: z.number().nonnegative(),
-  f2Margin: z.number().nonnegative(),
-  f3Margin: z.number().nonnegative(),
-  f4Margin: z.number().nonnegative(),
-  f5Margin: z.number().nonnegative(),
+  f2Margin: pricingMarginSchema,
+  f3Margin: pricingMarginSchema,
+  f4Margin: pricingMarginSchema,
+  f5Margin: pricingMarginSchema,
 })
 
 export type PricingSettingsInput = z.infer<typeof pricingSettingsSchema>

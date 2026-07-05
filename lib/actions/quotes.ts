@@ -18,6 +18,7 @@ import {
 } from '@/lib/calculator'
 import Decimal from 'decimal.js'
 import { calculateDisplayLabourTotals, calculateFormulaLabourDays, calculateLabourTotals } from '@/lib/quote-labour'
+import { requireAllowedUser } from '@/lib/security/require-allowed-user'
 import { createClient } from '@/lib/supabase/server'
 import type { Database, Json } from '@/lib/supabase/types'
 import { jobberQuoteSnapshotSchema, pricingSettingsSchema, quoteSchema, type QuoteInput } from '@/lib/validators'
@@ -25,7 +26,7 @@ import { mapJobberQuoteToDraft, type JobberQuoteDraft } from '@/lib/jobber/mappe
 import { diffJobberSnapshots } from '@/lib/jobber/snapshot-diff'
 import { fetchJobberQuote, JobberApiError, syncJobberQuoteLineItems } from '@/lib/jobber/client'
 import { getJobberConfig, getMissingGraphqlConfigKeys } from '@/lib/jobber/config'
-import { getUsableJobberToken, refreshStoredJobberToken, type StoredJobberToken } from '@/lib/jobber/tokens'
+import { getUsableSharedJobberConnectionToken, refreshSharedJobberConnectionToken, requireSharedJobberConnectionOwnerId, type StoredJobberToken } from '@/lib/jobber/tokens'
 import { QUOTE_DETAIL_SELECT, QUOTE_DETAIL_WITHOUT_MEMOS_SELECT, QUOTES_LIST_SELECT } from '@/lib/quote-query-shape'
 import { getAuthUserProfilesById, type UserProfile } from '@/lib/user-profiles'
 import { getPricingSettings } from './settings'
@@ -909,11 +910,10 @@ export async function createQuote(input: unknown): Promise<ActionResult<{ id: st
     return { ok: true, data: { id: quote.id } }
   }
 
+  const allowedUser = await requireAllowedUser()
+  if (!allowedUser.ok) return allowedUser
+
   const supabase = await createClient()
-  const { data: userData, error: userError } = await supabase.auth.getUser()
-  if (userError || !userData.user) {
-    return { ok: false, error: 'Authentication required' }
-  }
 
   const existingQuoteIdResult = await findExistingQuoteIdForJobberQuote(supabase, parsed.data)
   if (!existingQuoteIdResult.ok) return existingQuoteIdResult
@@ -969,8 +969,8 @@ export async function createQuote(input: unknown): Promise<ActionResult<{ id: st
       subtotal: money(subtotal),
       final_total: money(finalTotal),
       pricing_settings_snapshot: settingsResult.data as unknown as Json,
-      created_by: userData.user.id,
-      updated_by: userData.user.id,
+      created_by: allowedUser.user.id,
+      updated_by: allowedUser.user.id,
     })
     .select('id')
     .single()
@@ -991,7 +991,7 @@ export async function createQuote(input: unknown): Promise<ActionResult<{ id: st
     new_options_subtotal: optionalMoney(calculateQuoteOptionsTotal(parsed.data.options, settingsResult.data, 'subtotal') ?? undefined),
     previous_options_final_total: null,
     new_options_final_total: optionalMoney(calculateQuoteOptionsTotal(parsed.data.options, settingsResult.data, 'finalTotal') ?? undefined),
-    changed_by: userData.user.id,
+    changed_by: allowedUser.user.id,
   })
   if (createdRevisionError) {
     await deleteCreatedQuote(supabase, quote.id)
@@ -1034,7 +1034,7 @@ export async function createQuote(input: unknown): Promise<ActionResult<{ id: st
     return { ok: false, error: optionsError }
   }
 
-  const memosResult = await insertQuoteMemos(supabase, quote.id, parsed.data.memos, userData.user.id)
+  const memosResult = await insertQuoteMemos(supabase, quote.id, parsed.data.memos, allowedUser.user.id)
   if (!memosResult.ok) {
     await deleteCreatedQuote(supabase, quote.id)
     return { ok: false, error: memosResult.error }
@@ -1043,7 +1043,6 @@ export async function createQuote(input: unknown): Promise<ActionResult<{ id: st
   await scheduleSavedQuoteToJobber({
     supabase,
     quoteId: quote.id,
-    userId: userData.user.id,
     jobberQuoteId: parsed.data.jobberQuoteId || null,
     saveMode: parsed.data.jobberSaveMode,
     lines: parsed.data.jobberQuoteLines,
@@ -1074,11 +1073,10 @@ export async function updateQuote(input: unknown): Promise<ActionResult<{ id: st
     return { ok: true, data: { id } }
   }
 
+  const allowedUser = await requireAllowedUser()
+  if (!allowedUser.ok) return allowedUser
+
   const supabase = await createClient()
-  const { data: userData, error: userError } = await supabase.auth.getUser()
-  if (userError || !userData.user) {
-    return { ok: false, error: 'Authentication required' }
-  }
 
   const { data: existingQuote, error: existingQuoteError } = await supabase
     .from('quotes')
@@ -1149,7 +1147,7 @@ export async function updateQuote(input: unknown): Promise<ActionResult<{ id: st
     subtotal: money(subtotal),
     final_total: money(finalTotal),
     pricing_settings_snapshot: settings as unknown as Json,
-    updated_by: userData.user.id,
+    updated_by: allowedUser.user.id,
   }
 
   if (parsed.data.jobberSnapshot !== undefined) {
@@ -1196,7 +1194,7 @@ export async function updateQuote(input: unknown): Promise<ActionResult<{ id: st
       new_options_subtotal: newOptionsSubtotal,
       previous_options_final_total: previousOptionsFinalTotal,
       new_options_final_total: newOptionsFinalTotal,
-      changed_by: userData.user.id,
+      changed_by: allowedUser.user.id,
     })
     if (revisionError) return { ok: false, error: revisionError }
   }
@@ -1237,13 +1235,12 @@ export async function updateQuote(input: unknown): Promise<ActionResult<{ id: st
   const jobberLinesError = await insertJobberQuoteLines(supabase, id, parsed.data.jobberQuoteLines)
   if (jobberLinesError) return { ok: false, error: jobberLinesError }
 
-  const memosError = await replaceQuoteMemos(supabase, id, parsed.data.memos, userData.user.id)
+  const memosError = await replaceQuoteMemos(supabase, id, parsed.data.memos, allowedUser.user.id)
   if (memosError) return { ok: false, error: memosError }
 
   await scheduleSavedQuoteToJobber({
     supabase,
     quoteId: id,
-    userId: userData.user.id,
     jobberQuoteId: parsed.data.jobberQuoteId || null,
     saveMode: parsed.data.jobberSaveMode,
     lines: parsed.data.jobberQuoteLines,
@@ -1277,11 +1274,10 @@ export async function duplicateQuote(sourceQuoteId: string): Promise<ActionResul
     return { ok: true, data: { id: quote.id } }
   }
 
+  const allowedUser = await requireAllowedUser()
+  if (!allowedUser.ok) return allowedUser
+
   const supabase = await createClient()
-  const { data: userData, error: userError } = await supabase.auth.getUser()
-  if (userError || !userData.user) {
-    return { ok: false, error: 'Authentication required' }
-  }
 
   const sourceQuoteResult = await getQuote(sourceId)
   if (!sourceQuoteResult.ok) return sourceQuoteResult
@@ -1323,11 +1319,10 @@ export async function deleteQuote(id: string): Promise<ActionResult<{ id: string
     return { ok: true, data: { id } }
   }
 
+  const allowedUser = await requireAllowedUser()
+  if (!allowedUser.ok) return allowedUser
+
   const supabase = await createClient()
-  const { data: userData, error: userError } = await supabase.auth.getUser()
-  if (userError || !userData.user) {
-    return { ok: false, error: 'Authentication required' }
-  }
 
   const { error } = await supabase.from('quotes').delete().eq('id', id)
   if (error) return { ok: false, error: error.message }
@@ -1341,6 +1336,9 @@ export async function searchQuotes(query = ''): Promise<ActionResult<QuoteRecord
     const { listDevQuotes } = await import('@/lib/dev-data')
     return { ok: true, data: listDevQuotes(query) }
   }
+
+  const allowedUser = await requireAllowedUser()
+  if (!allowedUser.ok) return allowedUser
 
   const supabase = await createClient()
   let request = supabase
@@ -1472,14 +1470,14 @@ function getSyncErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : 'Unable to sync quote to Jobber'
 }
 
-async function fetchJobberSnapshotForUser(userId: string, jobberQuoteId: string): Promise<JobberQuoteDraft> {
+async function fetchJobberSnapshot(jobberQuoteId: string): Promise<JobberQuoteDraft> {
   const config = getJobberConfig()
   const missing = getMissingGraphqlConfigKeys(config)
   if (missing.length > 0) {
     throw new Error(`Jobber quote sync is not configured: ${missing.join(', ')}`)
   }
 
-  let token = await getUsableJobberToken(userId, config)
+  let token = await getUsableSharedJobberConnectionToken(config)
   let accessToken = token?.accessToken ?? config.accessToken
   if (!accessToken) {
     throw new Error('Jobber is not connected. Connect Jobber first.')
@@ -1495,7 +1493,7 @@ async function fetchJobberSnapshotForUser(userId: string, jobberQuoteId: string)
       throw error
     }
 
-    token = await refreshStoredJobberToken(userId, token.refreshToken, config, token.ownerUserId ?? userId)
+    token = await refreshSharedJobberConnectionToken(token.refreshToken, config, requireSharedJobberConnectionOwnerId(token))
     accessToken = token.accessToken
     return mapJobberQuoteToDraft(await fetchJobberQuote(jobberQuoteId, {
       accessToken,
@@ -1512,7 +1510,6 @@ type JobberSyncAttemptResult =
 async function syncSavedQuoteToJobber(params: {
   supabase: Awaited<ReturnType<typeof createClient>>
   quoteId: string
-  userId: string
   jobberQuoteId: string | null
   saveMode: QuoteInput['jobberSaveMode']
   lines: QuoteInput['jobberQuoteLines']
@@ -1533,7 +1530,7 @@ async function syncSavedQuoteToJobber(params: {
 
   let token: StoredJobberToken | null = null
   try {
-    token = await getUsableJobberToken(params.userId, config)
+    token = await getUsableSharedJobberConnectionToken(config)
     let accessToken = token?.accessToken ?? config.accessToken
     if (!accessToken) {
       const error = 'Jobber is not connected. Connect Jobber first.'
@@ -1560,7 +1557,7 @@ async function syncSavedQuoteToJobber(params: {
         throw error
       }
 
-      token = await refreshStoredJobberToken(params.userId, token.refreshToken, config, token.ownerUserId ?? params.userId)
+      token = await refreshSharedJobberConnectionToken(token.refreshToken, config, requireSharedJobberConnectionOwnerId(token))
       accessToken = token.accessToken
       syncResult = await syncJobberQuoteLineItems(params.jobberQuoteId, syncInput, {
         accessToken,
@@ -1597,11 +1594,10 @@ export async function retryJobberQuoteSync(quoteId: string): Promise<ActionResul
     return { ok: false, error: 'Jobber sync retry requires a saved Supabase quote' }
   }
 
+  const allowedUser = await requireAllowedUser()
+  if (!allowedUser.ok) return allowedUser
+
   const supabase = await createClient()
-  const { data: userData, error: userError } = await supabase.auth.getUser()
-  if (userError || !userData.user) {
-    return { ok: false, error: 'Authentication required' }
-  }
 
   const { data, error } = await supabase
     .from('quotes')
@@ -1628,7 +1624,6 @@ export async function retryJobberQuoteSync(quoteId: string): Promise<ActionResul
   const syncResult = await syncSavedQuoteToJobber({
     supabase,
     quoteId: row.id,
-    userId: userData.user.id,
     jobberQuoteId: row.jobber_quote_id,
     saveMode: row.jobber_save_mode ?? 'priced_line_items',
     lines,
@@ -1658,11 +1653,10 @@ export async function refreshJobberQuoteSnapshot(
     return { ok: false, error: 'Jobber snapshot refresh requires a saved Supabase quote' }
   }
 
+  const allowedUser = await requireAllowedUser()
+  if (!allowedUser.ok) return allowedUser
+
   const supabase = await createClient()
-  const { data: userData, error: userError } = await supabase.auth.getUser()
-  if (userError || !userData.user) {
-    return { ok: false, error: 'Authentication required' }
-  }
 
   const { data, error } = await supabase
     .from('quotes')
@@ -1677,7 +1671,7 @@ export async function refreshJobberQuoteSnapshot(
 
   const previousSnapshot = parseJobberSnapshot(row.jobber_snapshot)
   try {
-    const freshSnapshot = await fetchJobberSnapshotForUser(userData.user.id, row.jobber_quote_id)
+    const freshSnapshot = await fetchJobberSnapshot(row.jobber_quote_id)
     const diff = diffJobberSnapshots(previousSnapshot, freshSnapshot)
     const { error: updateError } = await supabase
       .from('quotes')
@@ -1712,6 +1706,9 @@ export async function getQuote(id: string): Promise<ActionResult<QuoteRecord | n
     const { getDevQuote } = await import('@/lib/dev-data')
     return { ok: true, data: getDevQuote(id) }
   }
+
+  const allowedUser = await requireAllowedUser()
+  if (!allowedUser.ok) return allowedUser
 
   const supabase = await createClient()
   const { data, error } = await supabase

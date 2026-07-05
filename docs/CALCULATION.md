@@ -120,7 +120,7 @@ final_total = subtotal × 1.10   -- GST 10% 가산
 | `selected_min`, `selected_max` ∉ {1,2,3,4,5} | 거부 |
 | `f*_labour_rate < 0` | 거부 |
 | `f*_margin < 0` | 거부 |
-| `f*_margin > 2.0` (200%) | 경고만, 허용 |
+| `f*_margin >= 1.0` (100%) | 거부 |
 
 ---
 

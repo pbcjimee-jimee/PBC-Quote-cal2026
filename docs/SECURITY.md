@@ -39,7 +39,7 @@
 
 ### 6. Jobber API token
 
-- Server-side 저장만 (`jobber_tokens` 테이블 또는 user metadata)
+- Server-side 저장만 (`jobber_tokens` 테이블). Jobber is a shared company-level connection for allowed app users: the app uses the latest token row globally, and `user_id` remains the owner row for the user who connected/reconnected Jobber.
 - 클라이언트에 절대 노출 금지
 - Refresh token 자동 갱신 구현
 - controlled write-back 구현 시 quote line item update에 필요한 최소 write scope만 허용

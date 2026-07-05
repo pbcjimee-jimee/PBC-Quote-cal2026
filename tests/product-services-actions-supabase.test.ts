@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const mocks = vi.hoisted(() => ({
   createClient: vi.fn(),
   isDevNoAuthMode: vi.fn(),
+  requireAllowedUser: vi.fn(),
 }))
 
 vi.mock('@/lib/supabase/server', () => ({
@@ -16,6 +17,10 @@ vi.mock('@/lib/actions/types', async () => {
     isDevNoAuthMode: mocks.isDevNoAuthMode,
   }
 })
+
+vi.mock('@/lib/security/require-allowed-user', () => ({
+  requireAllowedUser: mocks.requireAllowedUser,
+}))
 
 import {
   createProductService,
@@ -73,6 +78,10 @@ describe('product service actions against Supabase', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mocks.isDevNoAuthMode.mockReturnValue(false)
+    mocks.requireAllowedUser.mockResolvedValue({
+      ok: true,
+      user: { id: 'user-1', email: 'owner@example.com' },
+    })
   })
 
   it('creates a product service row through Supabase', async () => {
@@ -136,6 +145,18 @@ describe('product service actions against Supabase', () => {
 
     expect(result.ok).toBe(true)
     expect(request.eq).toHaveBeenCalledWith('active', true)
+  })
+
+  it('rejects disallowed users before reading product services', async () => {
+    mocks.requireAllowedUser.mockResolvedValueOnce({
+      ok: false,
+      error: 'User is not allowed to access this app',
+    })
+
+    const result = await listProductServices({ limit: 20 })
+
+    expect(result).toEqual({ ok: false, error: 'User is not allowed to access this app' })
+    expect(mocks.createClient).not.toHaveBeenCalled()
   })
 
   it('updates product service fields through Supabase', async () => {
