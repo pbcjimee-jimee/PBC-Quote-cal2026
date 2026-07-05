@@ -4,6 +4,7 @@ import { DEFAULT_PRICING_SETTINGS } from '@/lib/calculator'
 const mocks = vi.hoisted(() => ({
   createClient: vi.fn(),
   isDevNoAuthMode: vi.fn(),
+  requireAllowedUser: vi.fn(),
   revalidatePath: vi.fn(),
 }))
 
@@ -18,6 +19,10 @@ vi.mock('@/lib/actions/types', async () => {
     isDevNoAuthMode: mocks.isDevNoAuthMode,
   }
 })
+
+vi.mock('@/lib/security/require-allowed-user', () => ({
+  requireAllowedUser: mocks.requireAllowedUser,
+}))
 
 vi.mock('next/cache', () => ({
   revalidatePath: mocks.revalidatePath,
@@ -61,6 +66,10 @@ describe('settings actions against Supabase', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mocks.isDevNoAuthMode.mockReturnValue(false)
+    mocks.requireAllowedUser.mockResolvedValue({
+      ok: true,
+      user: { id: 'user-1', email: 'owner@example.com' },
+    })
   })
 
   it('reads pricing settings from Supabase', async () => {
@@ -86,24 +95,30 @@ describe('settings actions against Supabase', () => {
     expect(result).toEqual({ ok: false, error: 'settings missing' })
   })
 
-  it('requires authentication before updating pricing settings', async () => {
-    mocks.createClient.mockResolvedValueOnce({
-      auth: {
-        getUser: vi.fn(async () => ({ data: { user: null }, error: null })),
-      },
+  it('rejects disallowed users before reading pricing settings', async () => {
+    mocks.requireAllowedUser.mockResolvedValueOnce({
+      ok: false,
+      error: 'User is not allowed to access this app',
     })
+
+    const result = await getPricingSettings()
+
+    expect(result).toEqual({ ok: false, error: 'User is not allowed to access this app' })
+    expect(mocks.createClient).not.toHaveBeenCalled()
+  })
+
+  it('requires an allowed user before updating pricing settings', async () => {
+    mocks.requireAllowedUser.mockResolvedValueOnce({ ok: false, error: 'Authentication required' })
 
     const result = await updatePricingSettings(DEFAULT_PRICING_SETTINGS)
 
     expect(result).toEqual({ ok: false, error: 'Authentication required' })
+    expect(mocks.createClient).not.toHaveBeenCalled()
   })
 
   it('updates pricing settings and revalidates settings consumers', async () => {
     const builder = createSettingsUpdateBuilder({ data: settingsRow, error: null })
     mocks.createClient.mockResolvedValueOnce({
-      auth: {
-        getUser: vi.fn(async () => ({ data: { user: { id: 'user-1' } }, error: null })),
-      },
       from: vi.fn(() => builder),
     })
 

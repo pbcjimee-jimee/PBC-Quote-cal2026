@@ -10,7 +10,7 @@
 ```
 ┌──────────────────┐    ┌─────────────────┐    ┌──────────────────┐
 │   auth.users     │    │ pricing_settings│    │  jobber_tokens   │
-│  (Supabase Auth) │    │  (singleton)    │    │  (user-scoped)   │
+│  (Supabase Auth) │    │  (singleton)    │    │ (shared company)│
 └────────┬─────────┘    └────────┬────────┘    └──────────────────┘
          │ created_by             │ snapshot
          │ updated_by             │ (JSONB copy)
@@ -90,7 +90,7 @@
 | `0004_seed_dulux_paint_products.sql` | `products` 확장 컬럼(category/product_line/base/sheen/volume_litres/price/rrp_price/product_code/source_url) + Dulux 시드 + 통합 검색 인덱스 |
 | `0005_add_quote_areas.sql` | `quote_areas` 마스터 + `quote_items` area FK/스냅샷 컬럼 |
 | `0006_add_quote_item_labour.sql` | `quote_items.working_days`·`labour_per_day` (라인별 인건비 분해) |
-| `0007_add_jobber_tokens.sql` | `jobber_tokens`(사용자별 access/refresh 토큰, 암호화 저장) + RLS |
+| `0007_add_jobber_tokens.sql` | `jobber_tokens` shared company-level Jobber connection rows. `user_id` is the owner who connected/reconnected Jobber; token values are encrypted and read with the service role. |
 | `0008_add_quote_jobber_snapshot.sql` | `quotes.jobber_snapshot JSONB` (Jobber 원본 응답 캐시) |
 | `0009_add_quote_options.sql` | `quote_options` + `quote_option_items` + RLS |
 | `0010_add_jobber_quote_lines.sql` | Jobber write-back용 공개 Product / Service line item + quote sync 상태 |
@@ -103,6 +103,7 @@
 | `0017_add_quote_price_revisions.sql` | Quote price revision history |
 | `0018_add_quote_price_revision_option_totals.sql` | Price revision에 option subtotal/final snapshot 추가 |
 | `0019_add_roof_formula_selections.sql` | Main quote Roof formula min/max selections |
+| `20260704024229_tighten_pricing_margin_checks.sql` | `pricing_settings` F2-F5 margins must be `>= 0` and `< 1`; migration preflights existing rows before adding idempotent constraints |
 
 > 아래 DDL은 변경 후 최종 형태 요약. 정확한 SQL은 마이그레이션 파일 자체를 source of truth로 본다.
 
@@ -135,10 +136,10 @@ CREATE TABLE pricing_settings (
   f3_labour_rate  NUMERIC(10,2) NOT NULL DEFAULT 460 CHECK (f3_labour_rate >= 0),
   f4_labour_rate  NUMERIC(10,2) NOT NULL DEFAULT 380 CHECK (f4_labour_rate >= 0),
   f5_labour_rate  NUMERIC(10,2) NOT NULL DEFAULT 380 CHECK (f5_labour_rate >= 0),
-  f2_margin       NUMERIC(4,3)  NOT NULL DEFAULT 0.30 CHECK (f2_margin >= 0),
-  f3_margin       NUMERIC(4,3)  NOT NULL DEFAULT 0.30 CHECK (f3_margin >= 0),
-  f4_margin       NUMERIC(4,3)  NOT NULL DEFAULT 0.25 CHECK (f4_margin >= 0),
-  f5_margin       NUMERIC(4,3)  NOT NULL DEFAULT 0.30 CHECK (f5_margin >= 0),
+  f2_margin       NUMERIC(4,3)  NOT NULL DEFAULT 0.30 CHECK (f2_margin >= 0 AND f2_margin < 1),
+  f3_margin       NUMERIC(4,3)  NOT NULL DEFAULT 0.30 CHECK (f3_margin >= 0 AND f3_margin < 1),
+  f4_margin       NUMERIC(4,3)  NOT NULL DEFAULT 0.25 CHECK (f4_margin >= 0 AND f4_margin < 1),
+  f5_margin       NUMERIC(4,3)  NOT NULL DEFAULT 0.30 CHECK (f5_margin >= 0 AND f5_margin < 1),
   roof_labour_rate NUMERIC(10,2) NOT NULL DEFAULT 700 CHECK (roof_labour_rate >= 0), -- 0015
   updated_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_by      UUID REFERENCES auth.users(id)
@@ -223,7 +224,8 @@ CREATE TABLE quote_areas (
   UNIQUE (scope, name)
 );
 
--- Jobber OAuth 토큰 (사용자별, 본문은 암호화 저장)
+-- Jobber OAuth shared company connection.
+-- user_id is the owner row: the user who connected/reconnected Jobber.
 CREATE TABLE jobber_tokens (
   user_id        UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
   access_token   TEXT NOT NULL,
@@ -235,7 +237,8 @@ CREATE TABLE jobber_tokens (
   updated_at     TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 ALTER TABLE jobber_tokens ENABLE ROW LEVEL SECURITY;
--- 정책은 본인 행만 접근 (lib/jobber/tokens.ts 참조)
+-- App code reads the latest row globally through the service role.
+-- Refresh updates the owner row identified by user_id.
 
 -- 옵션 견적 (add-on)
 CREATE TABLE quote_options (
@@ -449,7 +452,7 @@ ALTER TABLE quotes              ENABLE ROW LEVEL SECURITY;
 ALTER TABLE quote_items         ENABLE ROW LEVEL SECURITY;
 ALTER TABLE quote_areas         ENABLE ROW LEVEL SECURITY;   -- 0005
 ALTER TABLE jobber_quote_lines  ENABLE ROW LEVEL SECURITY;   -- 0010
-ALTER TABLE jobber_tokens       ENABLE ROW LEVEL SECURITY;   -- 0007 (본인 행만)
+ALTER TABLE jobber_tokens       ENABLE ROW LEVEL SECURITY;   -- 0007 (service-role app access only)
 ALTER TABLE quote_options       ENABLE ROW LEVEL SECURITY;   -- 0009
 ALTER TABLE quote_option_items  ENABLE ROW LEVEL SECURITY;   -- 0009
 ALTER TABLE quote_memos         ENABLE ROW LEVEL SECURITY;   -- 0013
@@ -470,7 +473,8 @@ CREATE POLICY "authenticated_all" ON quote_option_items  FOR ALL TO authenticate
 CREATE POLICY "authenticated_all" ON quote_memos         FOR ALL TO authenticated USING (true) WITH CHECK (true);
 CREATE POLICY "authenticated_all" ON quote_price_revisions FOR ALL TO authenticated USING (true) WITH CHECK (true);
 
--- jobber_tokens 만 본인 행 정책 (자세한 SQL은 0007 참조)
+-- jobber_tokens has no authenticated-user CRUD policy. App server code uses
+-- service-role access to the latest shared company connection row.
 -- 미인증 사용자는 모든 테이블 접근 불가 (정책 없음 = 거부)
 ```
 

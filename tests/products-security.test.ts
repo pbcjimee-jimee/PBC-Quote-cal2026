@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const mocks = vi.hoisted(() => ({
   createClient: vi.fn(),
   isDevNoAuthMode: vi.fn(),
+  requireAllowedUser: vi.fn(),
 }))
 
 vi.mock('@/lib/supabase/server', () => ({
@@ -16,6 +17,10 @@ vi.mock('@/lib/actions/types', async () => {
     isDevNoAuthMode: mocks.isDevNoAuthMode,
   }
 })
+
+vi.mock('@/lib/security/require-allowed-user', () => ({
+  requireAllowedUser: mocks.requireAllowedUser,
+}))
 
 import { listProducts } from '@/lib/actions/products'
 
@@ -34,6 +39,10 @@ describe('product action security', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mocks.isDevNoAuthMode.mockReturnValue(false)
+    mocks.requireAllowedUser.mockResolvedValue({
+      ok: true,
+      user: { id: 'user-1', email: 'owner@example.com' },
+    })
   })
 
   it('does not request actual product cost when listing products', async () => {

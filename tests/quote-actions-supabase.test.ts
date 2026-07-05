@@ -1,20 +1,35 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { DEFAULT_PRICING_SETTINGS } from '@/lib/calculator'
 
-const mocks = vi.hoisted(() => ({
-  createClient: vi.fn(),
-  createServiceClient: vi.fn(),
-  getPricingSettings: vi.fn(),
-  isDevNoAuthMode: vi.fn(),
-  revalidatePath: vi.fn(),
-  getJobberConfig: vi.fn(),
-  getMissingGraphqlConfigKeys: vi.fn(),
-  getUsableJobberToken: vi.fn(),
-  refreshStoredJobberToken: vi.fn(),
-  fetchJobberQuote: vi.fn(),
-  syncJobberQuoteLineItems: vi.fn(),
-  mapJobberQuoteToDraft: vi.fn(),
-}))
+const mocks = vi.hoisted(() => {
+  class MockJobberApiError extends Error {
+    constructor(message: string, readonly status: number) {
+      super(message)
+      this.name = 'JobberApiError'
+    }
+  }
+
+  return {
+    createClient: vi.fn(),
+    createServiceClient: vi.fn(),
+    getPricingSettings: vi.fn(),
+    isDevNoAuthMode: vi.fn(),
+    requireAllowedUser: vi.fn(),
+    revalidatePath: vi.fn(),
+    getJobberConfig: vi.fn(),
+    getMissingGraphqlConfigKeys: vi.fn(),
+    getUsableSharedJobberConnectionToken: vi.fn(),
+    refreshSharedJobberConnectionToken: vi.fn(),
+    requireSharedJobberConnectionOwnerId: vi.fn((token: { ownerUserId?: string }) => {
+      if (!token.ownerUserId) throw new Error('Unable to identify Jobber connection owner')
+      return token.ownerUserId
+    }),
+    fetchJobberQuote: vi.fn(),
+    syncJobberQuoteLineItems: vi.fn(),
+    mapJobberQuoteToDraft: vi.fn(),
+    JobberApiError: MockJobberApiError,
+  }
+})
 
 vi.mock('@/lib/supabase/server', () => ({
   createClient: mocks.createClient,
@@ -33,6 +48,10 @@ vi.mock('@/lib/actions/types', async () => {
   }
 })
 
+vi.mock('@/lib/security/require-allowed-user', () => ({
+  requireAllowedUser: mocks.requireAllowedUser,
+}))
+
 vi.mock('next/cache', () => ({
   revalidatePath: mocks.revalidatePath,
 }))
@@ -43,18 +62,15 @@ vi.mock('@/lib/jobber/config', () => ({
 }))
 
 vi.mock('@/lib/jobber/tokens', () => ({
-  getUsableJobberToken: mocks.getUsableJobberToken,
-  refreshStoredJobberToken: mocks.refreshStoredJobberToken,
+  getUsableSharedJobberConnectionToken: mocks.getUsableSharedJobberConnectionToken,
+  refreshSharedJobberConnectionToken: mocks.refreshSharedJobberConnectionToken,
+  requireSharedJobberConnectionOwnerId: mocks.requireSharedJobberConnectionOwnerId,
 }))
 
 vi.mock('@/lib/jobber/client', () => ({
   fetchJobberQuote: mocks.fetchJobberQuote,
   syncJobberQuoteLineItems: mocks.syncJobberQuoteLineItems,
-  JobberApiError: class JobberApiError extends Error {
-    constructor(message: string, readonly status: number) {
-      super(message)
-    }
-  },
+  JobberApiError: mocks.JobberApiError,
 }))
 
 vi.mock('@/lib/jobber/mapper', () => ({
@@ -330,6 +346,10 @@ describe('quote actions against Supabase', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mocks.isDevNoAuthMode.mockReturnValue(false)
+    mocks.requireAllowedUser.mockResolvedValue({
+      ok: true,
+      user: { id: 'user-1', email: 'owner@example.com' },
+    })
     mocks.getPricingSettings.mockResolvedValue({ ok: true, data: DEFAULT_PRICING_SETTINGS })
     mocks.getJobberConfig.mockReturnValue({
       clientId: 'client-id',
@@ -339,13 +359,13 @@ describe('quote actions against Supabase', () => {
       accessToken: '',
     })
     mocks.getMissingGraphqlConfigKeys.mockReturnValue([])
-    mocks.getUsableJobberToken.mockResolvedValue({
+    mocks.getUsableSharedJobberConnectionToken.mockResolvedValue({
       accessToken: 'access-token',
       refreshToken: 'refresh-token',
       expiresAt: null,
       ownerUserId: 'user-1',
     })
-    mocks.refreshStoredJobberToken.mockResolvedValue({
+    mocks.refreshSharedJobberConnectionToken.mockResolvedValue({
       accessToken: 'refreshed-access-token',
       refreshToken: 'new-refresh-token',
       expiresAt: null,
@@ -885,12 +905,25 @@ describe('quote actions against Supabase', () => {
     expect(quoteDelete.eq).toHaveBeenCalledWith('id', quoteId)
   })
 
-  it('requires authentication before creating a quote', async () => {
-    mocks.createClient.mockResolvedValueOnce({ auth: createAuthUser(null) })
+  it('requires an allowed user before creating a quote', async () => {
+    mocks.requireAllowedUser.mockResolvedValueOnce({ ok: false, error: 'Authentication required' })
 
     const result = await createQuote(quoteInput)
 
     expect(result).toEqual({ ok: false, error: 'Authentication required' })
+    expect(mocks.createClient).not.toHaveBeenCalled()
+  })
+
+  it('rejects disallowed users before reading quotes', async () => {
+    mocks.requireAllowedUser.mockResolvedValueOnce({
+      ok: false,
+      error: 'User is not allowed to access this app',
+    })
+
+    const result = await getQuote(quoteId)
+
+    expect(result).toEqual({ ok: false, error: 'User is not allowed to access this app' })
+    expect(mocks.createClient).not.toHaveBeenCalled()
   })
 
   it('updates a quote through Supabase and replaces child rows', async () => {
@@ -1280,6 +1313,62 @@ describe('quote actions against Supabase', () => {
     expect(mocks.revalidatePath).toHaveBeenCalledWith(`/quotes/${quoteId}`)
   })
 
+  it('refreshes failed Jobber sync retries against the shared connection owner row', async () => {
+    const retryQuoteSelect = createSelectSingleBuilder({
+      data: {
+        ...quoteRow,
+        jobber_quote_id: 'jobber-quote-id',
+        jobber_save_mode: 'priced_line_items',
+        final_total: '561.00',
+        jobber_quote_lines: quoteRow.jobber_quote_lines,
+      },
+      error: null,
+    })
+    const syncStatusUpdate = createThenableBuilder({ error: null })
+    const builders: Record<string, unknown[]> = {
+      quotes: [retryQuoteSelect, syncStatusUpdate],
+    }
+    const from = vi.fn((table: string) => {
+      const builder = builders[table]?.shift()
+      if (!builder) throw new Error(`unexpected table ${table}`)
+      return builder
+    })
+    mocks.getUsableSharedJobberConnectionToken.mockResolvedValueOnce({
+      accessToken: 'expired-access-token',
+      refreshToken: 'refresh-token',
+      expiresAt: null,
+      ownerUserId: 'jobber-owner',
+    })
+    mocks.refreshSharedJobberConnectionToken.mockResolvedValueOnce({
+      accessToken: 'refreshed-access-token',
+      refreshToken: 'new-refresh-token',
+      expiresAt: null,
+      ownerUserId: 'jobber-owner',
+    })
+    mocks.syncJobberQuoteLineItems
+      .mockRejectedValueOnce(new mocks.JobberApiError('expired access token', 401))
+      .mockResolvedValueOnce({
+        deletedLineItemIds: [],
+        createdLineItemIds: [],
+        editedLineItemIds: [],
+        syncedLineItems: [],
+      })
+    mocks.createClient.mockResolvedValueOnce({ auth: createAuthUser(), from })
+
+    const result = await retryJobberQuoteSync(quoteId)
+
+    expect(result).toEqual({ ok: true, data: { id: quoteId } })
+    expect(mocks.refreshSharedJobberConnectionToken).toHaveBeenCalledWith(
+      'refresh-token',
+      expect.objectContaining({ graphqlVersion: '2025-04-16' }),
+      'jobber-owner'
+    )
+    expect(mocks.syncJobberQuoteLineItems).toHaveBeenNthCalledWith(2, 'jobber-quote-id', expect.any(Object), expect.objectContaining({
+      accessToken: 'refreshed-access-token',
+      graphqlVersion: '2025-04-16',
+    }))
+  })
+
   it('reconstructs hidden persisted Jobber line deletion candidates during retry', async () => {
     const retryQuoteSelect = createSelectSingleBuilder({
       data: {
@@ -1659,6 +1748,83 @@ describe('quote actions against Supabase', () => {
     expect(mocks.revalidatePath).toHaveBeenCalledWith(`/quotes/${quoteId}/edit`)
   })
 
+  it('refreshes linked Jobber quote snapshots against the shared connection owner row', async () => {
+    const quoteSelect = createSelectSingleBuilder({
+      data: { id: quoteId, jobber_quote_id: 'jobber-quote-id', jobber_snapshot: previousJobberSnapshot },
+      error: null,
+    })
+    const quoteUpdate = createThenableBuilder({ error: null })
+    const builders: Record<string, unknown[]> = {
+      quotes: [quoteSelect, quoteUpdate],
+    }
+    const from = vi.fn((table: string) => {
+      const builder = builders[table]?.shift()
+      if (!builder) throw new Error(`unexpected refresh table ${table}`)
+      return builder
+    })
+    mocks.getUsableSharedJobberConnectionToken.mockResolvedValueOnce({
+      accessToken: 'expired-access-token',
+      refreshToken: 'refresh-token',
+      expiresAt: null,
+      ownerUserId: 'jobber-owner',
+    })
+    mocks.refreshSharedJobberConnectionToken.mockResolvedValueOnce({
+      accessToken: 'refreshed-access-token',
+      refreshToken: 'new-refresh-token',
+      expiresAt: null,
+      ownerUserId: 'jobber-owner',
+    })
+    mocks.fetchJobberQuote
+      .mockRejectedValueOnce(new mocks.JobberApiError('expired access token', 401))
+      .mockResolvedValueOnce({ id: 'jobber-quote-id', lineItems: { nodes: [] } })
+    mocks.mapJobberQuoteToDraft.mockReturnValueOnce(changedJobberSnapshot)
+    mocks.createClient.mockResolvedValueOnce({ auth: createAuthUser(), from })
+
+    const result = await refreshJobberQuoteSnapshot(quoteId)
+
+    expect(result).toEqual({ ok: true, data: { id: quoteId, status: 'changed' } })
+    expect(mocks.refreshSharedJobberConnectionToken).toHaveBeenCalledWith(
+      'refresh-token',
+      expect.objectContaining({ graphqlVersion: '2025-04-16' }),
+      'jobber-owner'
+    )
+    expect(mocks.fetchJobberQuote).toHaveBeenNthCalledWith(2, 'jobber-quote-id', {
+      accessToken: 'refreshed-access-token',
+      graphqlVersion: '2025-04-16',
+    })
+  })
+
+  it('fails Jobber snapshot refresh clearly when a shared token has no owner row', async () => {
+    const quoteSelect = createSelectSingleBuilder({
+      data: { id: quoteId, jobber_quote_id: 'jobber-quote-id', jobber_snapshot: previousJobberSnapshot },
+      error: null,
+    })
+    const quoteUpdate = createThenableBuilder({ error: null })
+    const builders: Record<string, unknown[]> = {
+      quotes: [quoteSelect, quoteUpdate],
+    }
+    const from = vi.fn((table: string) => {
+      const builder = builders[table]?.shift()
+      if (!builder) throw new Error(`unexpected refresh table ${table}`)
+      return builder
+    })
+    mocks.getUsableSharedJobberConnectionToken.mockResolvedValueOnce({
+      accessToken: 'expired-access-token',
+      refreshToken: 'refresh-token',
+      expiresAt: null,
+    })
+    mocks.fetchJobberQuote.mockRejectedValueOnce(new mocks.JobberApiError('expired access token', 401))
+    mocks.createClient.mockResolvedValueOnce({ auth: createAuthUser(), from })
+
+    const result = await refreshJobberQuoteSnapshot(quoteId)
+
+    expect(result).toEqual({ ok: false, error: 'Unable to identify Jobber connection owner' })
+    expect(mocks.refreshSharedJobberConnectionToken).not.toHaveBeenCalled()
+    expect(quoteUpdate.update).toHaveBeenCalledWith({
+      jobber_snapshot_refresh_error: 'Unable to identify Jobber connection owner',
+    })
+  })
+
   it('stores unchanged refresh status with an empty summary when the Jobber snapshot matches', async () => {
     const quoteSelect = createSelectSingleBuilder({
       data: { id: quoteId, jobber_quote_id: 'jobber-quote-id', jobber_snapshot: previousJobberSnapshot },
@@ -1730,12 +1896,13 @@ describe('quote actions against Supabase', () => {
     expect(mocks.revalidatePath).toHaveBeenCalledWith('/quotes')
   })
 
-  it('requires authentication before deleting a quote', async () => {
-    mocks.createClient.mockResolvedValueOnce({ auth: createAuthUser(null) })
+  it('requires an allowed user before deleting a quote', async () => {
+    mocks.requireAllowedUser.mockResolvedValueOnce({ ok: false, error: 'Authentication required' })
 
     const result = await deleteQuote(quoteId)
 
     expect(result).toEqual({ ok: false, error: 'Authentication required' })
+    expect(mocks.createClient).not.toHaveBeenCalled()
   })
 
   it('searches quotes using the lightweight overview shape', async () => {

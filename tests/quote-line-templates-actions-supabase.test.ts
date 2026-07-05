@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const mocks = vi.hoisted(() => ({
   createClient: vi.fn(),
   isDevNoAuthMode: vi.fn(),
+  requireAllowedUser: vi.fn(),
   revalidatePath: vi.fn(),
 }))
 
@@ -17,6 +18,10 @@ vi.mock('@/lib/actions/types', async () => {
     isDevNoAuthMode: mocks.isDevNoAuthMode,
   }
 })
+
+vi.mock('@/lib/security/require-allowed-user', () => ({
+  requireAllowedUser: mocks.requireAllowedUser,
+}))
 
 vi.mock('next/cache', () => ({
   revalidatePath: mocks.revalidatePath,
@@ -89,6 +94,10 @@ describe('quote line template actions against Supabase', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mocks.isDevNoAuthMode.mockReturnValue(false)
+    mocks.requireAllowedUser.mockResolvedValue({
+      ok: true,
+      user: { id: 'user-1', email: 'owner@example.com' },
+    })
   })
 
   it('creates a template parent row and child line items', async () => {
@@ -141,6 +150,18 @@ describe('quote line template actions against Supabase', () => {
     if (result.ok) {
       expect(result.data[0].items[0].name).toBe('Dulux Accredited Painting Company')
     }
+  })
+
+  it('rejects disallowed users before reading templates', async () => {
+    mocks.requireAllowedUser.mockResolvedValueOnce({
+      ok: false,
+      error: 'User is not allowed to access this app',
+    })
+
+    const result = await listQuoteLineTemplates()
+
+    expect(result).toEqual({ ok: false, error: 'User is not allowed to access this app' })
+    expect(mocks.createClient).not.toHaveBeenCalled()
   })
 
   it('updates template parent and replaces child line items', async () => {

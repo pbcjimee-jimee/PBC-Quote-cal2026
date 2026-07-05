@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const mocks = vi.hoisted(() => ({
   createClient: vi.fn(),
   isDevNoAuthMode: vi.fn(),
+  requireAllowedUser: vi.fn(),
 }))
 
 vi.mock('@/lib/supabase/server', () => ({
@@ -16,6 +17,10 @@ vi.mock('@/lib/actions/types', async () => {
     isDevNoAuthMode: mocks.isDevNoAuthMode,
   }
 })
+
+vi.mock('@/lib/security/require-allowed-user', () => ({
+  requireAllowedUser: mocks.requireAllowedUser,
+}))
 
 import {
   createProduct,
@@ -89,6 +94,10 @@ describe('product actions against Supabase', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mocks.isDevNoAuthMode.mockReturnValue(false)
+    mocks.requireAllowedUser.mockResolvedValue({
+      ok: true,
+      user: { id: 'user-1', email: 'owner@example.com' },
+    })
   })
 
   it('creates a product row through Supabase', async () => {
@@ -170,6 +179,18 @@ describe('product actions against Supabase', () => {
       expect(result.data[0].marketPrice).toBe('199.50')
       expect(result.data[0].actualPrice).toBe('180.00')
     }
+  })
+
+  it('rejects disallowed users before reading quote product prices', async () => {
+    mocks.requireAllowedUser.mockResolvedValueOnce({
+      ok: false,
+      error: 'User is not allowed to access this app',
+    })
+
+    const result = await searchProducts({ query: 'weathershield', limit: 8 })
+
+    expect(result).toEqual({ ok: false, error: 'User is not allowed to access this app' })
+    expect(mocks.createClient).not.toHaveBeenCalled()
   })
 
   it('imports parsed CSV rows through Supabase', async () => {

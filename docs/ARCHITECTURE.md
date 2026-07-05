@@ -82,7 +82,7 @@
 │  - quote_memos (app-only internal notes)
 │  - quote_price_revisions
 │  - pricing_settings (singleton)
-│  - jobber_tokens (user-scoped, encrypted)
+│  - jobber_tokens (shared company connection, owner row encrypted)
 └────────────────┘
 
 한 페이지 작업 흐름:
@@ -106,7 +106,7 @@
 > 원칙: material 가격과 내부 계산 데이터는 우리 DB에만 저장한다. Jobber에는 사용자가 공개용으로 작성한 Product / Service line item만 저장한다.
 > 2026-06-26 사용자 결정: material 가격은 일반 소비자가 기준으로 계산한다. 별도 실제 원가/판매가 분리와 추가 가격작성 정보 패널은 도입하지 않는다.
 > Internal quote memos are also app-only data. They are stored in `quote_memos` and never synced to Jobber notes or line items.
-> 토큰은 만료 시 자동 refresh, `lib/jobber/token-encryption.ts`로 암호화 저장.
+> Jobber OAuth is a shared company-level connection for allowed app users. The app uses the latest `jobber_tokens` row globally; `jobber_tokens.user_id` identifies the user who connected or reconnected Jobber, and refresh writes back to that owner row. Tokens are encrypted with `lib/jobber/token-encryption.ts`.
 
 ### Jobber write-back 경계
 
