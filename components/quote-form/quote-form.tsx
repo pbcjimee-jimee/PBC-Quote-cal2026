@@ -54,8 +54,6 @@ import { diffJobberSnapshots } from '@/lib/jobber/snapshot-diff'
 import type { ProductServiceRecord } from '@/lib/product-services/types'
 import type { QuoteLineTemplateRecord } from '@/lib/quote-line-templates/types'
 
-export { buildQuoteSavePayload, saveQuoteFormPayload } from './quote-save-payload'
-
 interface QuoteFormProps {
   settings: PricingSettings
   areas: AreaRecord[]
@@ -69,6 +67,7 @@ type JobberQuoteResponse =
   | { ok: false; error: string }
 
 type JobberLookupType = 'quote' | 'job'
+type QuoteSaveAction = 'local' | 'sync'
 
 function getComparableDraftValue(draft: QuoteFormDraft): string {
   return JSON.stringify({ ...draft, updatedAt: '' })
@@ -324,6 +323,7 @@ export function QuoteForm({ settings, areas, productServices = [], quoteLineTemp
   const [selectedMax, setSelectedMax] = useState<FormulaNumber>(initialQuote?.selectedMax ?? 1)
   const [areaFormulaSelections, setAreaFormulaSelections] = useState<AreaFormulaSelections>(() => getInitialAreaFormulaSelections(initialQuote))
   const [saveError, setSaveError] = useState<string | null>(null)
+  const [pendingSaveAction, setPendingSaveAction] = useState<QuoteSaveAction | null>(null)
   const [jobberFetchError, setJobberFetchError] = useState<string | null>(null)
   const [isFetchingJobberQuote, setIsFetchingJobberQuote] = useState(false)
   const [jobberQuoteDraft, setJobberQuoteDraft] = useState<JobberQuoteDraft | null>(initialQuote?.jobberSnapshot ?? null)
@@ -566,6 +566,8 @@ export function QuoteForm({ settings, areas, productServices = [], quoteLineTemp
   const shouldShowJobberSyncPreview = jobberQuoteId.trim().length > 0 ||
     jobberQuoteLookup.trim().length > 0 ||
     jobberQuoteLines.length > 0
+  const canSyncJobberQuote = jobberQuoteId.trim().length > 0 ||
+    deletedJobberLineItemIds.length > 0
   const jobberSyncPreview = useMemo(() => calculateJobberSyncPreview({
     pbcSubtotal: totals.areaBreakdown.finalSubtotal,
     jobberQuoteLines,
@@ -764,13 +766,16 @@ export function QuoteForm({ settings, areas, productServices = [], quoteLineTemp
     }
   }
 
-  function saveQuote() {
+  function saveQuote(action: QuoteSaveAction = 'local') {
     setSaveError(null)
+    setPendingSaveAction(action)
     startTransition(async () => {
       try {
         const result = await saveQuoteFormPayload({
           settings,
           initialQuoteId: initialQuote?.id,
+          initialQuoteVersion: initialQuote?.version,
+          syncJobber: action === 'sync',
           customerName,
           customerAddress,
           jobberQuoteId,
@@ -793,15 +798,25 @@ export function QuoteForm({ settings, areas, productServices = [], quoteLineTemp
         if (result.ok) {
           clearDraft()
           isNavigatingRef.current = true
-          router.push(quoteTargetPath)
+          router.push(initialQuote ? quoteTargetPath : `/quotes/${result.data.id}`)
         } else {
           setSaveError(result.error)
         }
       } catch (error) {
         setSaveError(getQuoteUnexpectedSaveErrorMessage(error))
+      } finally {
+        setPendingSaveAction(null)
       }
     })
   }
+
+  const localSaveLabel = isPending && pendingSaveAction === 'local'
+    ? 'Saving...'
+    : initialQuote ? 'Save changes' : 'Save quote'
+  const jobberSaveLabel = isPending && pendingSaveAction === 'sync'
+    ? 'Saving & syncing...'
+    : 'Save & Sync to Jobber'
+  const mobileSaveLabel = isPending && pendingSaveAction === 'local' ? 'Saving...' : 'Save'
 
   return (
     <main>
@@ -815,9 +830,20 @@ export function QuoteForm({ settings, areas, productServices = [], quoteLineTemp
           <button type="button" onClick={() => requestNavigation(cancelTargetPath)} disabled={isPending} className="pbc-btn pbc-btn--ghost">
             Cancel
           </button>
-          <button type="button" onClick={saveQuote} disabled={isPending} className="pbc-btn pbc-btn--primary">
-            {Icons.check({ size: 15 })} {isPending ? 'Saving...' : initialQuote ? 'Update Quote' : 'Save Quote'}
-          </button>
+          <div className="flex flex-wrap justify-end gap-2">
+            <button type="button" onClick={() => saveQuote('local')} disabled={isPending} className="pbc-btn pbc-btn--primary">
+              {Icons.check({ size: 15 })} {localSaveLabel}
+            </button>
+            <button
+              type="button"
+              onClick={() => saveQuote('sync')}
+              disabled={isPending || !canSyncJobberQuote}
+              title={canSyncJobberQuote ? 'Save app changes and update Jobber' : 'Fetch a Jobber quote before syncing'}
+              className="pbc-btn pbc-btn--ghost"
+            >
+              {Icons.refresh({ size: 15 })} {jobberSaveLabel}
+            </button>
+          </div>
         </div>
       </header>
 
@@ -940,8 +966,8 @@ export function QuoteForm({ settings, areas, productServices = [], quoteLineTemp
           <span>Inc GST</span>
           <b className="mono">${totals.areaBreakdown.finalTotal.toFixed(2)}</b>
         </div>
-        <button type="button" onClick={saveQuote} disabled={isPending} className="pbc-btn pbc-btn--primary pbc-btn--sm">
-          {Icons.check({ size: 14 })} {isPending ? 'Saving...' : 'Save'}
+        <button type="button" onClick={() => saveQuote('local')} disabled={isPending} className="pbc-btn pbc-btn--primary pbc-btn--sm">
+          {Icons.check({ size: 14 })} {mobileSaveLabel}
         </button>
       </div>
       {pendingNavigation ? (

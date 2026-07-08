@@ -186,6 +186,7 @@ export interface Database {
           created_at: string
           updated_by: string | null
           updated_at: string
+          version: number
         }
         Insert: Omit<
           Database['public']['Tables']['quotes']['Row'],
@@ -196,6 +197,7 @@ export interface Database {
           | 'jobber_snapshot_change_status'
           | 'jobber_snapshot_change_summary'
           | 'jobber_snapshot_refresh_error'
+          | 'version'
         > & {
           id?: string
           jobber_snapshot_refreshed_at?: string | null
@@ -204,6 +206,7 @@ export interface Database {
           jobber_snapshot_refresh_error?: string | null
           created_at?: string
           updated_at?: string
+          version?: number
         }
         Update: Partial<Database['public']['Tables']['quotes']['Insert']>
         Relationships: []
@@ -370,7 +373,16 @@ export interface Database {
       }
     }
     Views: Record<string, never>
-    Functions: Record<string, never>
+    Functions: {
+      create_quote_with_children: {
+        Args: { payload: Json }
+        Returns: string
+      }
+      update_quote_with_children: {
+        Args: { payload: Json }
+        Returns: Array<{ id: string; version: number }>
+      }
+    }
     Enums: Record<string, never>
     CompositeTypes: Record<string, never>
   }

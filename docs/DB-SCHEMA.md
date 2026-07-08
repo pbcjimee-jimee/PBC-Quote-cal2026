@@ -24,6 +24,7 @@ auth.users        pricing_settings(singleton)     jobber_tokens(공유 커넥션
 │  interior/exterior/roof selected_min/max       │
 │  subtotal, final_total(GST 10%)                │
 │  pricing_settings_snapshot(JSONB)              │
+│  version (optimistic quote body lock)           │
 └──┬──────────────┬──────────────┬───────────────┘
    │1:N           │1:N           │1:N
    ▼              ▼              ▼
@@ -64,6 +65,7 @@ product_services(Jobber 공개 라인 카탈로그) ── quote_line_templates 
 | `0019_add_roof_formula_selections.sql` | Roof formula min/max 선택 컬럼 |
 | `0020_add_jobber_snapshot_refresh_metadata.sql` | `quotes` Jobber snapshot refresh metadata 4컬럼 + change status CHECK |
 | `20260705221912_tighten_pricing_margin_checks.sql` | `pricing_settings` F2-F5 margin `>= 0 AND < 1` CHECK 추가(기존 행 preflight, idempotent) |
+| `20260707003130_add_quote_version_and_save_rpcs.sql` | `quotes.version` + `create_quote_with_children(jsonb)` / `update_quote_with_children(jsonb)` RPC. 견적 본문/자식 행 저장을 서버 트랜잭션으로 묶고 version 기반 동시 편집 충돌 감지 |
 
 ---
 
@@ -78,6 +80,7 @@ product_services(Jobber 공개 라인 카탈로그) ── quote_line_templates 
 
 ### quotes (견적 메인)
 고객·work 정보, `jobber_quote_id`/`jobber_snapshot`, Jobber sync·snapshot refresh 메타, `working_days`/`labour_per_day`, `formula1..5_total`, area별 `interior/exterior/roof_selected_min/max`(+ legacy `selected_min/max`), `subtotal`, `final_total`(=subtotal×1.10), `pricing_settings_snapshot`(JSONB), `created_by/at`·`updated_by/at`. 금액 컬럼은 `NUMERIC(10,2)`.
+`version`은 견적 본문 저장용 낙관적 잠금 값이며, `update_quote_with_children` 성공 시 1 증가한다. Jobber sync status/snapshot refresh 같은 부가 업데이트는 견적 본문 충돌로 취급하지 않는다.
 > 인덱스: `created_at DESC`, 고객명 gin 검색, `jobber_quote_id` 부분 인덱스.
 
 ### quote_items (자재 라인)
@@ -130,7 +133,7 @@ CREATE POLICY "authenticated_all" ON <table>
 - `quote_items.market_price_snapshot`, `actual_price_snapshot`: 저장 시 `products` 가격 복사.
 - `quotes.pricing_settings_snapshot`(JSONB): 저장 시 `pricing_settings` 전체 복사.
 - **목적:** 가격·설정 변경이 과거 견적 재조회 결과를 바꾸지 않게 함.
-- ⚠️ `updateQuote`가 서버에서 스냅샷을 재고정하지 않고 클라이언트 입력을 신뢰 → 드리프트 위험. `docs/BACKLOG.md` H3 참조.
+- Repo fix: create/update Server Action은 product line 스냅샷을 서버에서 재확정한다. 기존 quote의 product line은 기존 스냅샷을 보존하고, 새 product line은 현재 `products` 가격을 조회한다.
 
 ---
 

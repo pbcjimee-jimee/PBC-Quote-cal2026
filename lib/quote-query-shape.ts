@@ -1,5 +1,6 @@
 export const QUOTES_LIST_SELECT = [
   'id',
+  'version',
   'customer_name',
   'customer_address',
   'jobber_quote_id',

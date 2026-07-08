@@ -136,6 +136,8 @@ export const jobberQuoteLineSchema = z.object({
 })
 
 export const quoteSchema = z.object({
+  expectedVersion: z.number().int().positive().optional(),
+  syncJobber: z.boolean().optional(),
   customerName: z.string().optional(),
   customerAddress: z.string().optional(),
   jobberQuoteId: z.string().optional(),

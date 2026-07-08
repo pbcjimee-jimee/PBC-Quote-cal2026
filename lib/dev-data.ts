@@ -28,6 +28,7 @@ type DevQuoteInput = Omit<QuoteInput, 'deletedJobberLineItemIds' | 'jobberQuoteL
 
 export interface QuoteRecord {
   id: string
+  version: number
   customerName: string | null
   customerAddress: string | null
   jobberQuoteId: string | null
@@ -697,6 +698,7 @@ function buildDevQuoteRecord(id: string, createdAt: string, input: DevQuoteInput
 
   return {
     id,
+    version: input.expectedVersion ? input.expectedVersion + 1 : 1,
     customerName: input.customerName?.trim() || null,
     customerAddress: input.customerAddress?.trim() || null,
     jobberQuoteId: input.jobberQuoteId?.trim() || null,
@@ -936,7 +938,12 @@ export function updateDevQuote(id: string, input: DevQuoteInput): QuoteRecord | 
   if (index === -1) return null
 
   const current = store.quotes[index]
-  const quote = buildDevQuoteRecord(id, current.createdAt, input, current.pricingSettingsSnapshot)
+  if (input.expectedVersion !== undefined && input.expectedVersion !== current.version) return null
+
+  const quote = buildDevQuoteRecord(id, current.createdAt, {
+    ...input,
+    expectedVersion: current.version,
+  }, current.pricingSettingsSnapshot)
   const previousOptionsSubtotal = sumDevQuoteOptionTotals(current.options, 'subtotal')
   const previousOptionsFinalTotal = sumDevQuoteOptionTotals(current.options, 'finalTotal')
   const newOptionsSubtotal = sumDevQuoteOptionTotals(quote.options, 'subtotal')

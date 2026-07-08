@@ -200,6 +200,16 @@ export interface JobberQuoteLineSyncResult {
   }>
 }
 
+export class JobberLineSyncPartialError extends Error {
+  constructor(
+    message: string,
+    readonly syncedLineItems: JobberQuoteLineSyncResult['syncedLineItems']
+  ) {
+    super(message)
+    this.name = 'JobberLineSyncPartialError'
+  }
+}
+
 interface MutationError {
   message?: string
 }
@@ -1264,9 +1274,15 @@ function relinkMutationItemsToCurrentQuote(
 async function postApprovedJobberMutation(
   query: string,
   variables: Record<string, unknown>,
-  options: FetchJobberQuoteOptions
+  options: FetchJobberQuoteOptions,
+  disableThrottleRetries = false
 ): Promise<unknown> {
-  return postJobberGraphql(query, variables, options, true)
+  return postJobberGraphql(
+    query,
+    variables,
+    disableThrottleRetries ? { ...options, maxThrottleRetries: 0 } : options,
+    true
+  )
 }
 
 export async function fetchJobberQuote(
@@ -1315,95 +1331,106 @@ export async function syncJobberQuoteLineItems(
     currentLineItemIds
   ).map((item) => ({ ...item }))
 
-  const editItems = mutationItems.filter((item) => item.jobberLineItemId && currentLineItemIds.has(item.jobberLineItemId))
-  if (editItems.length > 0) {
-    const payload = await postApprovedJobberMutation(
-      JOBBER_QUOTE_EDIT_LINE_ITEMS_MUTATION,
-      {
-        quoteId,
-        lineItems: editItems.map(toQuoteEditLineItemAttributes),
-      },
-      options
-    )
-    assertNoMutationUserErrors(payload, 'quoteEditLineItems')
-    const editedIds = getEditedLineItemIds(payload, 'quoteEditLineItems')
-    editedLineItemIds.push(...editedIds)
-    editItems.forEach((item, index) => {
-      if (typeof item.sourcePosition === 'number' && item.jobberLineItemId) {
-        syncedLineItems.push({
-          sourcePosition: item.sourcePosition,
-          jobberLineItemId: editedIds[index] ?? item.jobberLineItemId,
-        })
-      }
-    })
-  }
-
-  const createItems = mutationItems.filter((item) => !item.jobberLineItemId || !currentLineItemIds.has(item.jobberLineItemId))
-  for (const item of createItems) {
-    const mutationName = item.kind === 'text' ? 'quoteCreateTextLineItems' : 'quoteCreateLineItems'
-    const payload = await postApprovedJobberMutation(
-      item.kind === 'text' ? JOBBER_QUOTE_CREATE_TEXT_LINE_ITEMS_MUTATION : JOBBER_QUOTE_CREATE_LINE_ITEMS_MUTATION,
-      {
-        quoteId,
-        lineItems: [
-          item.kind === 'text'
-            ? toQuoteCreateTextLineItemAttributes(item)
-            : toQuoteCreateLineItemAttributes(item),
-        ],
-      },
-      options
-    )
-    assertNoMutationUserErrors(payload, mutationName)
-    const createdIds = getCreatedLineItemIds(payload, mutationName)
-    createdLineItemIds.push(...createdIds)
-    if (createdIds[0]) {
-      item.jobberLineItemId = createdIds[0]
-    }
-    if (typeof item.sourcePosition === 'number' && createdIds[0]) {
-      syncedLineItems.push({
-        sourcePosition: item.sourcePosition,
-        jobberLineItemId: createdIds[0],
+  try {
+    const editItems = mutationItems.filter((item) => item.jobberLineItemId && currentLineItemIds.has(item.jobberLineItemId))
+    if (editItems.length > 0) {
+      const payload = await postApprovedJobberMutation(
+        JOBBER_QUOTE_EDIT_LINE_ITEMS_MUTATION,
+        {
+          quoteId,
+          lineItems: editItems.map(toQuoteEditLineItemAttributes),
+        },
+        options
+      )
+      assertNoMutationUserErrors(payload, 'quoteEditLineItems')
+      const editedIds = getEditedLineItemIds(payload, 'quoteEditLineItems')
+      editedLineItemIds.push(...editedIds)
+      editItems.forEach((item, index) => {
+        if (typeof item.sourcePosition === 'number' && item.jobberLineItemId) {
+          syncedLineItems.push({
+            sourcePosition: item.sourcePosition,
+            jobberLineItemId: editedIds[index] ?? item.jobberLineItemId,
+          })
+        }
       })
     }
-  }
 
-  const submittedLineItemIds = new Set(mutationItems
-    .map((item) => item.jobberLineItemId)
-    .filter((id): id is string => typeof id === 'string' && id.trim().length > 0))
-  const deleteCandidateIds = (input.deletedJobberLineItemIds ?? [])
-    .filter((id) => currentLineItemIds.has(id) && !submittedLineItemIds.has(id))
-  const lineCountAfterDelete = currentLineItemIds.size + createdLineItemIds.length - deleteCandidateIds.length
+    const createItems = mutationItems.filter((item) => !item.jobberLineItemId || !currentLineItemIds.has(item.jobberLineItemId))
+    for (const item of createItems) {
+      const mutationName = item.kind === 'text' ? 'quoteCreateTextLineItems' : 'quoteCreateLineItems'
+      const payload = await postApprovedJobberMutation(
+        item.kind === 'text' ? JOBBER_QUOTE_CREATE_TEXT_LINE_ITEMS_MUTATION : JOBBER_QUOTE_CREATE_LINE_ITEMS_MUTATION,
+        {
+          quoteId,
+          lineItems: [
+            item.kind === 'text'
+              ? toQuoteCreateTextLineItemAttributes(item)
+              : toQuoteCreateLineItemAttributes(item),
+          ],
+        },
+        options,
+        true
+      )
+      assertNoMutationUserErrors(payload, mutationName)
+      const createdIds = getCreatedLineItemIds(payload, mutationName)
+      createdLineItemIds.push(...createdIds)
+      if (createdIds[0]) {
+        item.jobberLineItemId = createdIds[0]
+      }
+      if (typeof item.sourcePosition === 'number' && createdIds[0]) {
+        syncedLineItems.push({
+          sourcePosition: item.sourcePosition,
+          jobberLineItemId: createdIds[0],
+        })
+      }
+    }
 
-  if (deleteCandidateIds.length > 0 && lineCountAfterDelete > 0) {
-    const payload = await postApprovedJobberMutation(JOBBER_QUOTE_DELETE_LINE_ITEMS_MUTATION, {
-      quoteId,
-      lineItemIds: deleteCandidateIds,
-    }, options)
-    assertNoMutationUserErrors(payload, 'quoteDeleteLineItems')
-    deletedLineItemIds.push(...deleteCandidateIds)
-  }
+    const submittedLineItemIds = new Set(mutationItems
+      .map((item) => item.jobberLineItemId)
+      .filter((id): id is string => typeof id === 'string' && id.trim().length > 0))
+    const deleteCandidateIds = (input.deletedJobberLineItemIds ?? [])
+      .filter((id) => currentLineItemIds.has(id) && !submittedLineItemIds.has(id))
+    const lineCountAfterDelete = currentLineItemIds.size + createdLineItemIds.length - deleteCandidateIds.length
 
-  const finalSortItems = mutationItems
-    .filter((item) => item.jobberLineItemId && typeof item.sortOrder === 'number')
-    .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0))
-
-  if (createItems.length > 0 && finalSortItems.length > 1) {
-    const payload = await postApprovedJobberMutation(
-      JOBBER_QUOTE_EDIT_LINE_ITEMS_MUTATION,
-      {
+    if (deleteCandidateIds.length > 0 && lineCountAfterDelete > 0) {
+      const payload = await postApprovedJobberMutation(JOBBER_QUOTE_DELETE_LINE_ITEMS_MUTATION, {
         quoteId,
-        lineItems: finalSortItems.map(toQuoteEditLineItemAttributes),
-      },
-      options
-    )
-    assertNoMutationUserErrors(payload, 'quoteEditLineItems')
-  }
+        lineItemIds: deleteCandidateIds,
+      }, options)
+      assertNoMutationUserErrors(payload, 'quoteDeleteLineItems')
+      deletedLineItemIds.push(...deleteCandidateIds)
+    }
 
-  return {
-    deletedLineItemIds,
-    createdLineItemIds,
-    editedLineItemIds,
-    syncedLineItems,
+    const finalSortItems = mutationItems
+      .filter((item) => item.jobberLineItemId && typeof item.sortOrder === 'number')
+      .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0))
+
+    if (createItems.length > 0 && finalSortItems.length > 1) {
+      const payload = await postApprovedJobberMutation(
+        JOBBER_QUOTE_EDIT_LINE_ITEMS_MUTATION,
+        {
+          quoteId,
+          lineItems: finalSortItems.map(toQuoteEditLineItemAttributes),
+        },
+        options
+      )
+      assertNoMutationUserErrors(payload, 'quoteEditLineItems')
+    }
+
+    return {
+      deletedLineItemIds,
+      createdLineItemIds,
+      editedLineItemIds,
+      syncedLineItems,
+    }
+  } catch (error) {
+    if (syncedLineItems.length > 0) {
+      throw new JobberLineSyncPartialError(
+        error instanceof Error ? error.message : 'Unable to complete Jobber line item sync',
+        syncedLineItems
+      )
+    }
+    throw error
   }
 }
 

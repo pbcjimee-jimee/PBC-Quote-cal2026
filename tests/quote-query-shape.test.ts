@@ -5,6 +5,7 @@ describe('quote query shape', () => {
   it('keeps the quotes list query lightweight', () => {
     expect(QUOTES_LIST_SELECT).toBe([
       'id',
+      'version',
       'customer_name',
       'customer_address',
       'jobber_quote_id',

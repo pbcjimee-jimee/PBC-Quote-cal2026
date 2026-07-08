@@ -8,6 +8,12 @@ const mocks = vi.hoisted(() => {
       this.name = 'JobberApiError'
     }
   }
+  class MockJobberLineSyncPartialError extends Error {
+    constructor(message: string, readonly syncedLineItems: Array<{ sourcePosition: number; jobberLineItemId: string }>) {
+      super(message)
+      this.name = 'JobberLineSyncPartialError'
+    }
+  }
 
   return {
     createClient: vi.fn(),
@@ -28,6 +34,7 @@ const mocks = vi.hoisted(() => {
     syncJobberQuoteLineItems: vi.fn(),
     mapJobberQuoteToDraft: vi.fn(),
     JobberApiError: MockJobberApiError,
+    JobberLineSyncPartialError: MockJobberLineSyncPartialError,
   }
 })
 
@@ -71,6 +78,7 @@ vi.mock('@/lib/jobber/client', () => ({
   fetchJobberQuote: mocks.fetchJobberQuote,
   syncJobberQuoteLineItems: mocks.syncJobberQuoteLineItems,
   JobberApiError: mocks.JobberApiError,
+  JobberLineSyncPartialError: mocks.JobberLineSyncPartialError,
 }))
 
 vi.mock('@/lib/jobber/mapper', () => ({
@@ -968,6 +976,44 @@ describe('quote actions against Supabase', () => {
     expect(mocks.revalidatePath).toHaveBeenCalledWith(`/quotes/${quoteId}`)
   })
 
+  it('returns a conflict error when the update RPC detects a stale quote version', async () => {
+    const existingQuote = createSelectSingleBuilder({
+      data: {
+        pricing_settings_snapshot: DEFAULT_PRICING_SETTINGS,
+        subtotal: '510.00',
+        final_total: '561.00',
+      },
+      error: null,
+    })
+    const from = vi.fn((table: string) => {
+      if (table === 'quotes') return existingQuote
+      throw new Error(`unexpected table ${table}`)
+    })
+    const rpc = vi.fn(async () => ({
+      data: null,
+      error: { message: 'QUOTE_VERSION_CONFLICT' },
+    }))
+    mocks.createClient.mockResolvedValueOnce({ auth: createAuthUser(), from, rpc })
+
+    const result = await updateQuote({
+      id: quoteId,
+      expectedVersion: 1,
+      ...quoteInput,
+    })
+
+    expect(result).toEqual({
+      ok: false,
+      error: 'Quote was changed by someone else. Refresh and try again.',
+    })
+    expect(rpc).toHaveBeenCalledWith('update_quote_with_children', expect.objectContaining({
+      payload: expect.objectContaining({
+        id: quoteId,
+        expected_version: 1,
+      }),
+    }))
+    expect(mocks.syncJobberQuoteLineItems).not.toHaveBeenCalled()
+  })
+
   it('does not delete existing memos before replacement memo rows insert successfully', async () => {
     const existingQuote = createSelectSingleBuilder({
       data: {
@@ -1068,6 +1114,53 @@ describe('quote actions against Supabase', () => {
         total_price: '2750.00',
       }),
     ])
+    expect(mocks.syncJobberQuoteLineItems).not.toHaveBeenCalled()
+  })
+
+  it('saves linked Jobber quote changes locally without writing back unless sync is requested', async () => {
+    const existingQuote = createSelectSingleBuilder({
+      data: {
+        pricing_settings_snapshot: DEFAULT_PRICING_SETTINGS,
+        subtotal: '510.00',
+        final_total: '561.00',
+      },
+      error: null,
+    })
+    const quoteUpdate = createThenableBuilder({ error: null })
+    const itemDelete = createThenableBuilder({ error: null })
+    const optionDelete = createThenableBuilder({ error: null })
+    const jobberLineDelete = createThenableBuilder({ error: null })
+    const itemInsert = createInsertOnlyBuilder({ error: null })
+    const jobberLineInsert = createInsertOnlyBuilder({ error: null })
+    const builders: Record<string, unknown[]> = {
+      quotes: [existingQuote, quoteUpdate],
+      quote_items: [itemDelete, itemInsert],
+      quote_options: [optionDelete],
+      jobber_quote_lines: [jobberLineDelete, jobberLineInsert],
+      quote_memos: [createThenableBuilder({ error: null })],
+    }
+    const from = vi.fn((table: string) => {
+      const builder = builders[table]?.shift()
+      if (!builder) throw new Error(`unexpected table ${table}`)
+      return builder
+    })
+    mocks.createClient.mockResolvedValueOnce({ auth: createAuthUser(), from })
+
+    const result = await updateQuote({
+      id: quoteId,
+      ...quoteInputWithJobberLines,
+      jobberQuoteId: 'jobber-quote-id',
+      jobberSaveMode: 'priced_line_items',
+    })
+
+    expect(result).toEqual({ ok: true, data: { id: quoteId } })
+    expect(quoteUpdate.update).toHaveBeenCalledWith(expect.objectContaining({
+      jobber_quote_id: 'jobber-quote-id',
+      jobber_sync_status: 'not_synced',
+    }))
+    expect(jobberLineInsert.insert).toHaveBeenCalled()
+    expect(mocks.syncJobberQuoteLineItems).not.toHaveBeenCalled()
+    expect(mocks.fetchJobberQuote).not.toHaveBeenCalled()
   })
 
   it('syncs saved public quote lines to the matching Jobber quote and marks the quote synced', async () => {
@@ -1105,6 +1198,7 @@ describe('quote actions against Supabase', () => {
       ...quoteInputWithJobberLines,
       jobberQuoteId: 'jobber-quote-id',
       jobberSaveMode: 'description_total',
+      syncJobber: true,
     })
 
     expect(result).toEqual({ ok: true, data: { id: quoteId } })
@@ -1240,6 +1334,7 @@ describe('quote actions against Supabase', () => {
       ...quoteInputWithJobberLines,
       jobberQuoteId: 'jobber-quote-id',
       jobberSaveMode: 'priced_line_items',
+      syncJobber: true,
     })
 
     expect(result).toEqual({ ok: true, data: { id: quoteId } })
@@ -1551,6 +1646,7 @@ describe('quote actions against Supabase', () => {
       throw new Error(`unexpected get quote table ${table}`)
     })
     const createQuoteFrom = vi.fn((table: string) => {
+      if (table === 'products') return productQuery
       if (table === 'quotes') return quoteInsert
       if (table === 'quote_price_revisions') return priceRevisionInsert
       if (table === 'quote_items') return itemInsert
@@ -1923,7 +2019,7 @@ describe('quote actions against Supabase', () => {
       expect(result.data[0].createdByEmail).toBeNull()
     }
     expect(searchBuilder.ilike).toHaveBeenCalledWith('customer_name', '%Supabase%')
-    expect(searchBuilder.limit).not.toHaveBeenCalled()
+    expect(searchBuilder.limit).toHaveBeenCalledWith(100)
     expect(mocks.createServiceClient).not.toHaveBeenCalled()
   })
 
@@ -2146,5 +2242,20 @@ describe('quote actions against Supabase', () => {
     const result = await getQuote(quoteId)
 
     expect(result).toEqual({ ok: false, error: 'quote detail failed' })
+  })
+
+  it('returns null data when quote detail lookup finds no rows', async () => {
+    const detailBuilder = createSelectSingleBuilder({
+      data: null,
+      error: {
+        code: 'PGRST116',
+        message: 'JSON object requested, multiple (or no) rows returned',
+      },
+    })
+    mocks.createClient.mockResolvedValueOnce({ from: vi.fn(() => detailBuilder) })
+
+    const result = await getQuote(quoteId)
+
+    expect(result).toEqual({ ok: true, data: null })
   })
 })

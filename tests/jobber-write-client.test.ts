@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { syncJobberQuoteLineItems } from '@/lib/jobber/client'
+import { JobberLineSyncPartialError, syncJobberQuoteLineItems } from '@/lib/jobber/client'
 
 describe('jobber quote write client', () => {
   it('loads only current Jobber line items before writing to avoid heavy quote fetch throttling', async () => {
@@ -1037,5 +1037,63 @@ describe('jobber quote write client', () => {
     const bodies = fetcher.mock.calls.map(([, init]) => JSON.parse(String(init.body)))
     expect(bodies[1].query).toContain('quoteDeleteLineItems')
     expect(bodies[1].variables).toEqual({ quoteId: 'quote-id', lineItemIds: ['removed-line'] })
+  })
+
+  it('does not retry create mutations after a throttled response and preserves prior created line ids', async () => {
+    const fetcher = vi
+      .fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        data: {
+          quote: {
+            id: 'quote-id',
+            lineItems: { nodes: [] },
+          },
+        },
+      }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        data: { quoteCreateLineItems: { createdLineItems: [{ id: 'created-first-line' }], userErrors: [] } },
+      }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ errors: [{ message: 'Throttled' }] }), { status: 429 }))
+
+    await expect(syncJobberQuoteLineItems('quote-id', {
+      saveMode: 'priced_line_items',
+      lines: [
+        {
+          kind: 'line_item',
+          name: 'First line',
+          description: 'Created before throttle',
+          quantity: 1,
+          unitPrice: 100,
+          taxable: true,
+          clientVisible: true,
+          position: 0,
+        },
+        {
+          kind: 'line_item',
+          name: 'Second line',
+          description: 'Should not be retried automatically',
+          quantity: 1,
+          unitPrice: 200,
+          taxable: true,
+          clientVisible: true,
+          position: 1,
+        },
+      ],
+      finalTotal: '300.00',
+      finalTotalIncludesGst: true,
+    }, {
+      accessToken: 'access-token',
+      graphqlVersion: '2025-04-16',
+      fetcher,
+      throttleRetryDelayMs: 0,
+      maxThrottleRetries: 4,
+    })).rejects.toMatchObject({
+      name: 'JobberLineSyncPartialError',
+      syncedLineItems: [{ sourcePosition: 0, jobberLineItemId: 'created-first-line' }],
+    } satisfies Partial<JobberLineSyncPartialError>)
+
+    const bodies = fetcher.mock.calls.map(([, init]) => JSON.parse(String(init.body)))
+    expect(fetcher).toHaveBeenCalledTimes(3)
+    expect(bodies.filter((body) => String(body.query).includes('quoteCreateLineItems'))).toHaveLength(2)
   })
 })

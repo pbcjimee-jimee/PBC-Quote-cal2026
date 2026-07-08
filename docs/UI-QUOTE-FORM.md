@@ -9,7 +9,7 @@
 
 ```
 ┌─ Header ─────────────────────────────────────────────┐
-│  ← Quotes    New Quote             [Save Quote]      │
+│  ← Quotes    New Quote     [Save quote] [Save & Sync]│
 └──────────────────────────────────────────────────────┘
 
 ┌─ Left Panel (50%) ────┬─ Right Panel (50%) ──────────┐
@@ -61,7 +61,7 @@
 ```
 QuoteNewPage (Server, app/(app)/quotes/new/page.tsx)
 └── QuoteForm (Client)
-    ├── Header (sticky, back + Save/Update)
+    ├── Header (sticky, back + local save + optional Jobber sync save)
     ├── CustomerPanel — customer_name/address, Jobber fetch, Customer Type(readonly)
     ├── QuoteMemosPanel — app-only 메모 N행 (add/remove)
     ├── JobberProductServiceEditor — Template dropdown, Line Item/Text (Product & Service 자동채우기), drag sort
@@ -212,13 +212,19 @@ F2  L460 + Labour 30%
 ## 저장 흐름
 
 ```
-[Save Quote] 클릭
+[Save quote] 클릭
   → QuoteForm validation (client-side, Zod)
     → 실패: 인풋 옆 에러 메시지 (toast 아님)
-    → 성공: createQuote() Server Action 호출
-      → isSaving = true, 버튼 disabled + 스피너
-      → 성공: toast "Quote saved!" + router.push('/quotes')
-      → 실패: toast error (red) + isSaving = false
+    → 성공: createQuote()/updateQuote() Server Action 호출(syncJobber=false)
+      → pendingSaveAction = local, 버튼 disabled + "Saving..."
+      → 성공: 새 견적은 `/quotes/{id}`로 이동, 기존 견적은 현재 detail/edit target 유지
+      → 실패: inline saveError(red) + pendingSaveAction reset
+
+[Save & Sync to Jobber] 클릭
+  → 실제 Jobber quote id가 있거나 삭제할 기존 Jobber line id가 있을 때만 활성화
+  → createQuote()/updateQuote() Server Action 호출(syncJobber=true)
+  → DB 저장 성공 후 approved Jobber quote write-back 실행
+  → Jobber write 실패 시 local quote 저장은 유지하고 sync 상태/에러를 남김
 ```
 
 ---
@@ -226,14 +232,15 @@ F2  L460 + Labour 30%
 ## 헤더 영역
 
 ```
-← Quotes    New Quote                    [Save Quote]
+← Quotes    New Quote          [Save quote] [Save & Sync to Jobber]
              (unsaved indicator: 파란 점)
 ```
 
 - "← Quotes": router.back() 또는 Link to /quotes
 - "New Quote": 페이지 타이틀
 - 미저장 변경사항 있으면 타이틀 옆에 파란 점 (·)
-- [Save Quote]: primary action 버튼
+- [Save quote]: primary action 버튼. 앱 DB에만 저장.
+- [Save & Sync to Jobber]: secondary action 버튼. fetch/link된 실제 Jobber quote id가 있을 때만 활성화.
 ## Product & Service catalog import
 
 - Settings > Product & Service tab manages the Jobber `Products and Services Export` CSV format: `Name, Description, Category, Unit Price, Unit Cost, Bookable, Duration Minutes, Quantity Enabled, Minimum Quantity, Maximum Quantity, Taxable, Active`.

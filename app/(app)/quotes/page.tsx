@@ -6,6 +6,8 @@ import { Icons } from '@/components/ui/icons'
 import { searchQuotes } from '@/lib/actions/quotes'
 import type { QuoteRecord } from '@/lib/dev-data'
 
+const QUOTES_OVERVIEW_LIMIT = 100
+
 interface QuotesPageProps {
   searchParams?: Promise<Record<string, string | string[] | undefined>>
 }
@@ -133,7 +135,7 @@ export default async function QuotesPage({ searchParams }: QuotesPageProps) {
   if (selectedMonth) currentSearchParams.set('month', selectedMonth)
 
   const currentSearch = currentSearchParams.toString()
-  const result = await searchQuotes(q)
+  const result = await searchQuotes(q, QUOTES_OVERVIEW_LIMIT)
   const quotes = result.ok ? result.data : []
   const allQuoteGroups = groupQuotesByYearMonth(quotes)
   const yearFilterOptions = buildQuoteYearOptions(allQuoteGroups)
@@ -208,6 +210,11 @@ export default async function QuotesPage({ searchParams }: QuotesPageProps) {
               options={monthFilterOptions}
             />
           </div>
+          {result.ok ? (
+            <p className="px-4 pb-3 text-sm text-[var(--muted)]">
+              Showing latest {QUOTES_OVERVIEW_LIMIT} quotes.
+            </p>
+          ) : null}
 
           <div className="pbc-qhead">
             <span /><span>Customer</span><span>Type</span><span>Labour</span><span>Created</span><span>Total</span><span />
