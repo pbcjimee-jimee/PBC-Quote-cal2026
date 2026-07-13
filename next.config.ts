@@ -9,6 +9,7 @@ const cspHeader = [
   "img-src 'self' data: blob:",
   "font-src 'self' data:",
   "connect-src 'self' https://*.supabase.co https://api.getjobber.com",
+  "worker-src 'self'",
   "form-action 'self'",
   "base-uri 'self'",
   "object-src 'none'",

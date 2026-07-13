@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server'
 import { beforeEach, describe, expect, it } from 'vitest'
-import { proxy } from '@/proxy'
+import { config, proxy } from '@/proxy'
 
 function makeRequest(path: string, cookie = '') {
   return new NextRequest(`http://localhost:3000${path}`, {
@@ -41,5 +41,24 @@ describe('proxy auth routing', () => {
     const response = await proxy(makeRequest('/'))
 
     expect(response.headers.get('x-middleware-rewrite')).toBe('http://localhost:3000/quotes/new')
+  })
+
+  it.each(['/manifest.webmanifest', '/sw.js', '/offline'])(
+    'keeps the PWA public path %s reachable without a session',
+    async (path) => {
+      const response = await proxy(makeRequest(path))
+
+      expect(response.status).toBe(200)
+      expect(response.headers.get('location')).toBeNull()
+    },
+  )
+
+  it('excludes the manifest and service worker from proxy matching', () => {
+    expect(config.matcher).toEqual([
+      expect.stringContaining('manifest\\.webmanifest'),
+    ])
+    expect(config.matcher).toEqual([
+      expect.stringContaining('sw\\.js'),
+    ])
   })
 })

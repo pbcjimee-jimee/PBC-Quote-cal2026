@@ -15,7 +15,12 @@ export async function proxy(request: NextRequest) {
   }
 
   const isAuthPage = pathname === '/login' || pathname.startsWith('/login/')
-  const isPublicPath = isAuthPage || pathname.startsWith('/api/')
+  const isPwaPath =
+    pathname === '/manifest.webmanifest' ||
+    pathname === '/sw.js' ||
+    pathname === '/offline' ||
+    pathname.startsWith('/offline/')
+  const isPublicPath = isAuthPage || isPwaPath || pathname.startsWith('/api/')
 
   // Supabase writes sb-<project-ref>-auth-token when a session exists.
   // Cookie presence is enough to gate routing; server components re-verify.
@@ -33,6 +38,6 @@ export async function proxy(request: NextRequest) {
 
 export const config = {
   matcher: [
-    '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
+    '/((?!_next/static|_next/image|favicon.ico|manifest\\.webmanifest|sw\\.js|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
   ],
 }
