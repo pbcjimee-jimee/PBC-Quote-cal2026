@@ -3,6 +3,7 @@ import { describe, expect, it, vi, beforeEach } from 'vitest'
 const mocks = vi.hoisted(() => ({
   requireAllowedUser: vi.fn(),
   appHeader: vi.fn(() => <header>App header</header>),
+  installGuidance: vi.fn(() => <aside>Install guidance</aside>),
   redirect: vi.fn((path: string) => {
     throw new Error(`redirect:${path}`)
   }),
@@ -18,6 +19,10 @@ vi.mock('next/navigation', () => ({
 
 vi.mock('@/components/layout/app-header', () => ({
   AppHeader: mocks.appHeader,
+}))
+
+vi.mock('@/components/pwa/install-guidance', () => ({
+  InstallGuidance: mocks.installGuidance,
 }))
 
 import AppLayout from '@/app/(app)/layout'
@@ -51,7 +56,8 @@ describe('app layout auth guard', () => {
       AppLayout({ children: <main>Protected content</main> })
     )
 
-    expect(result.props.children[1].props.children).toBe('Protected content')
+    expect(result.props.children[1].type).toBe(mocks.installGuidance)
+    expect(result.props.children[2].props.children).toBe('Protected content')
     expect(result.props.children[0].props).toEqual({
       userProfile: {
         id: 'user-1',

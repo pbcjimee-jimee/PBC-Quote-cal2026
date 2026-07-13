@@ -1,4 +1,5 @@
 import { AppHeader } from '@/components/layout/app-header'
+import { InstallGuidance } from '@/components/pwa/install-guidance'
 import { AUTHENTICATION_REQUIRED_ERROR } from '@/lib/security/auth-policy'
 import { requireAllowedUser } from '@/lib/security/require-allowed-user'
 import { getAuthUserProfile } from '@/lib/user-profiles'
@@ -21,6 +22,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         user_metadata: allowedUser.user.userMetadata,
         app_metadata: allowedUser.user.appMetadata,
       })} />
+      <InstallGuidance />
       {children}
     </div>
   )

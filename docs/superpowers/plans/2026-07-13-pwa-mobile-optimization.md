@@ -65,13 +65,13 @@
 
 담당: 구현 **Codex 5.6-Terra high**, proxy 회귀 테스트 **Codex 5.6-Sol high**
 
-- 1.1 ⬜ `app/layout.tsx`에 `viewport` export 추가 — `width: 'device-width'`, `initialScale: 1`, `viewportFit: 'cover'`(safe-area 전제), `themeColor: '#0b66d8'`(`--primary`). `maximum-scale=1` 같은 줌 차단은 접근성 훼손이므로 **금지**(줌 문제는 R3의 16px로 해결).
-- 1.2 ⬜ 앱 아이콘 자산 제작 — `.pbc-brand__mark` 디자인 기반 마스터 SVG 1개 → `public/icons/icon-192.png`, `icon-512.png`, `icon-512-maskable.png`(중앙 80% safe zone), `app/apple-icon.png`(180×180, Next 파일 컨벤션으로 apple-touch-icon 자동 링크). PNG 생성은 일회성 도구(npx 등)로 처리하고 **산출물 PNG만 커밋**(저장소 의존성 미추가).
-- 1.3 ⬜ `app/manifest.ts` 추가(`MetadataRoute.Manifest`, `/manifest.webmanifest`로 서빙) —
+- 1.1 ✅ `app/layout.tsx`에 `viewport` export 추가 — `width: 'device-width'`, `initialScale: 1`, `viewportFit: 'cover'`(safe-area 전제), `themeColor: '#0b66d8'`(`--primary`). `maximum-scale=1` 같은 줌 차단은 접근성 훼손이므로 **금지**(줌 문제는 R3의 16px로 해결).
+- 1.2 ✅ 앱 아이콘 자산 제작 — `.pbc-brand__mark` 디자인 기반 마스터 SVG 1개 → `public/icons/icon-192.png`, `icon-512.png`, `icon-512-maskable.png`(중앙 80% safe zone), `app/apple-icon.png`(180×180, Next 파일 컨벤션으로 apple-touch-icon 자동 링크). PNG 생성은 일회성 도구(npx 등)로 처리하고 **산출물 PNG만 커밋**(저장소 의존성 미추가).
+- 1.3 ✅ `app/manifest.ts` 추가(`MetadataRoute.Manifest`, `/manifest.webmanifest`로 서빙) —
   `name: 'PBC Quote Calculator'`, `short_name: 'PBC Quotes'`, `start_url: '/'`, `display: 'standalone'`, `theme_color: '#0b66d8'`, `background_color: '#eef3fb'`(`--background`), icons(192/512/maskable). 비로그인 실행 시 `/login` 랜딩은 정상 동작으로 간주(사내 도구).
-- 1.4 ⬜ **`proxy.ts` 공개 경로 예외** — matcher 정규식에 `manifest.webmanifest`·`sw.js` 제외 추가(아이콘 `.png`·`favicon.ico`는 기존 제외로 커버). `/offline`은 `isPublicPath`에 추가(R2에서 사용). **회귀 테스트**: 비인증 요청이 위 경로에서 302가 아닌 200을 받는지 검증.
-- 1.5 ⬜ `next.config.ts` CSP에 `worker-src 'self'` 명시.
-- 1.6 ⬜ `metadata.appleWebApp` 추가(`capable: true`, `statusBarStyle: 'default'`, `title: 'PBC Quotes'`).
+- 1.4 ✅ **`proxy.ts` 공개 경로 예외** — matcher 정규식에 `manifest.webmanifest`·`sw.js` 제외 추가(아이콘 `.png`·`favicon.ico`는 기존 제외로 커버). `/offline`은 `isPublicPath`에 추가(R2에서 사용). **회귀 테스트**: 비인증 요청이 위 경로에서 302가 아닌 200을 받는지 검증.
+- 1.5 ✅ `next.config.ts` CSP에 `worker-src 'self'` 명시.
+- 1.6 ✅ `metadata.appleWebApp` 추가(`capable: true`, `statusBarStyle: 'default'`, `title: 'PBC Quotes'`).
 
 **Acceptance:** Chrome DevTools Application → Manifest 오류 0·installable 판정. 비로그인 `curl -I`로 `/manifest.webmanifest` 200 확인. typecheck/lint/test 통과.
 
@@ -79,10 +79,10 @@
 
 담당: 구현 **Codex 5.6-Terra high**, 보안·캐시 정책 리뷰 **Codex 5.6-Sol high**
 
-- 2.1 ⬜ `/offline` 정적 페이지(공개 경로, 브랜드 마크 + "오프라인 상태" 안내 + 재시도 버튼).
-- 2.2 ⬜ `public/sw.js` 수동 작성 — 원칙: **navigation 요청은 항상 network-first, 실패 시에만 `/offline` 폴백. HTML·API·Supabase 응답은 캐시하지 않는다**(stale 금액 방지). install 시 `/offline`과 그 정적 자산만 프리캐시, activate 시 구버전 캐시 삭제(캐시 이름 버저닝) + `clients.claim()`.
-- 2.3 ⬜ SW 등록 클라이언트 컴포넌트 `components/pwa/service-worker-register.tsx` — 루트 `app/layout.tsx`에 마운트, `navigator.serviceWorker` 지원 시에만 등록, dev 모드에서는 미등록.
-- 2.4 ⬜ `next.config.ts` headers에 `/sw.js` → `Cache-Control: public, max-age=0, must-revalidate` 추가(배포 후 SW 갱신 지연 방지).
+- 2.1 ✅ `/offline` 정적 페이지(공개 경로, 브랜드 마크 + "오프라인 상태" 안내 + 재시도 버튼).
+- 2.2 ✅ `public/sw.js` 수동 작성 — 원칙: **navigation 요청은 항상 network-first, 실패 시에만 `/offline` 폴백. HTML·API·Supabase 응답은 캐시하지 않는다**(stale 금액 방지). install 시 `/offline`과 그 정적 자산만 프리캐시, activate 시 구버전 캐시 삭제(캐시 이름 버저닝) + `clients.claim()`.
+- 2.3 ✅ SW 등록 클라이언트 컴포넌트 `components/pwa/service-worker-register.tsx` — 루트 `app/layout.tsx`에 마운트, `navigator.serviceWorker` 지원 시에만 등록, dev 모드에서는 미등록.
+- 2.4 ✅ `next.config.ts` headers에 `/sw.js` → `Cache-Control: public, max-age=0, must-revalidate` 추가(배포 후 SW 갱신 지연 방지).
 
 **Acceptance:** 배포 환경에서 SW 등록 성공 → 네트워크 차단 후 내비게이션 시 `/offline` 표시 → 네트워크 복구 시 정상 데이터(캐시된 견적 화면이 절대 나오지 않아야 함). 새 배포 후 재방문 2회 내 신규 SW 활성.
 
@@ -90,12 +90,12 @@
 
 담당: 구현 **Codex 5.6-Terra high** (`docs/UI-DESIGN-SYSTEM.md` 규칙 준수, 완료 시 해당 문서에 규칙 추가)
 
-- 3.1 ⬜ **입력 폰트 16px(iOS 줌 방지)** — 모바일 미디어쿼리(`max-width: 1023px`)에서 `.pbc-input`/`.pbc-textarea`/`.pbc-tableinput`/`.pbc-search__input`/`.pbc-statuscontrol`/`.pbc-rate__money input`/`.pbc-ptable__money input`/`.pbc-monthselect select` → `font-size: 16px`. 데스크톱 밀도(13~13.5px)는 유지.
-- 3.2 ⬜ **safe-area 패딩** — 하단 토탈바 `.pbc-mobile-totalbar`에 `padding-bottom: calc(기존 + env(safe-area-inset-bottom))`, 모바일 sticky 헤더에 `padding-top: env(safe-area-inset-top)`, `.pbc-auth`에 좌우·하단 inset 반영(1.1의 `viewportFit: 'cover'` 전제).
-- 3.3 ⬜ `.pbc-auth`의 `min-height: 100vh` → `100dvh`(구형 폴백으로 `100vh` 선언 유지 후 덮어쓰기).
-- 3.4 ⬜ **터치 타깃 44px** — 모바일 쿼리에서 `.pbc-iconbtn`(32px)·`.pbc-iconbtn--compact`(28px)·`.pbc-btn--sm`에 `min-width/min-height: 44px`(시각 크기는 유지하고 hit area만 확대하는 방법 포함 검토). 밀집 테이블 행 액션은 QA로 겹침 확인.
-- 3.5 ⬜ **브레이크포인트 1024px(lg) 통일** — `components.css`의 1080px/1023px 쿼리를 Tailwind `lg`와 같은 경계(`max-width: 1023.98px` 계열)로 정리, 사이드바·모바일 헤더·토탈바 전환점 일치.
-- 3.6 ⬜ 모바일 헤더 내비에 **Overview(견적 목록) 진입점 추가** — 현재 New/Settings/Inventory만 노출, Overview는 로고 탭뿐. 폭이 좁으면 아이콘화 검토.
+- 3.1 ✅ **입력 폰트 16px(iOS 줌 방지)** — 모바일 미디어쿼리(`max-width: 1023px`)에서 `.pbc-input`/`.pbc-textarea`/`.pbc-tableinput`/`.pbc-search__input`/`.pbc-statuscontrol`/`.pbc-rate__money input`/`.pbc-ptable__money input`/`.pbc-monthselect select` → `font-size: 16px`. 데스크톱 밀도(13~13.5px)는 유지.
+- 3.2 ✅ **safe-area 패딩** — 하단 토탈바 `.pbc-mobile-totalbar`에 `padding-bottom: calc(기존 + env(safe-area-inset-bottom))`, 모바일 sticky 헤더에 `padding-top: env(safe-area-inset-top)`, `.pbc-auth`에 좌우·하단 inset 반영(1.1의 `viewportFit: 'cover'` 전제).
+- 3.3 ✅ `.pbc-auth`의 `min-height: 100vh` → `100dvh`(구형 폴백으로 `100vh` 선언 유지 후 덮어쓰기).
+- 3.4 ✅ **터치 타깃 44px** — 모바일 쿼리에서 `.pbc-iconbtn`(32px)·`.pbc-iconbtn--compact`(28px)·`.pbc-btn--sm`에 `min-width/min-height: 44px`(시각 크기는 유지하고 hit area만 확대하는 방법 포함 검토). 밀집 테이블 행 액션은 QA로 겹침 확인.
+- 3.5 ✅ **브레이크포인트 1024px(lg) 통일** — `components.css`의 1080px/1023px 쿼리를 Tailwind `lg`와 같은 경계(`max-width: 1023.98px` 계열)로 정리, 사이드바·모바일 헤더·토탈바 전환점 일치.
+- 3.6 ✅ 모바일 헤더 내비에 **Overview(견적 목록) 진입점 추가** — 현재 New/Settings/Inventory만 노출, Overview는 로고 탭뿐. 폭이 좁으면 아이콘화 검토.
 
 **Acceptance:** iPhone 실기기(또는 시뮬레이터)에서 입력 포커스 시 자동 확대 없음, standalone 실행 시 토탈바·헤더가 시스템 UI와 겹치지 않음. 375px 뷰포트 가로 스크롤 없음(테이블 래퍼 내부 제외). 기존 UI 테스트(`tests/quote-ui.test.tsx` 등) 통과.
 
@@ -103,11 +103,13 @@
 
 담당: 구현 **Codex 5.6-Terra high**, QA 실행 **Codex 5.6-Sol high** + 실기기 확인 사용자
 
-- 4.1 ⬜ 설치 안내 UI — `beforeinstallprompt` 캡처해 Android용 "앱 설치" 버튼(예: Settings 페이지 또는 헤더 배너), iOS는 감지(`navigator.standalone`/UA) 후 "공유 → 홈 화면에 추가" 안내 문구. `display-mode: standalone`에서는 숨김. localStorage로 dismiss 기억.
-- 4.2 ⬜ QA 체크리스트 실행(아래) + `npm.cmd run verify` 통과.
-- 4.3 ⬜ 문서 갱신 — `PROGRESS.md` 이력, `docs/UI-DESIGN-SYSTEM.md`(16px 입력·safe-area·터치 타깃 규칙), `docs/DEPLOY.md`(sw.js 캐시 헤더), `docs/SECURITY.md`(CSP worker-src). `docs/DECISIONS.md`에는 사용자 승인 후 "PWA 지원(홈 화면 설치형, 오프라인 캐싱 제외)" 결정 추가.
+- 4.1 ✅ 설치 안내 UI — `beforeinstallprompt` 캡처해 Android용 "앱 설치" 버튼(예: Settings 페이지 또는 헤더 배너), iOS는 감지(`navigator.standalone`/UA) 후 "공유 → 홈 화면에 추가" 안내 문구. `display-mode: standalone`에서는 숨김. localStorage로 dismiss 기억.
+- 4.2 ✅ 로컬 자동 QA + `npm.cmd run verify` 통과. 배포·실기기 체크리스트는 `docs/PWA-QA.md`에 미실행으로 남김.
+- 4.3 ✅ 문서 갱신 — `PROGRESS.md` 이력, `docs/UI-DESIGN-SYSTEM.md`(16px 입력·safe-area·터치 타깃 규칙), `docs/DEPLOY.md`(sw.js 캐시 헤더), `docs/SECURITY.md`(CSP worker-src). `docs/DECISIONS.md`에는 사용자 승인 후 "PWA 지원(홈 화면 설치형, 오프라인 캐싱 제외)" 결정 추가.
 
 ### QA 체크리스트
+
+2026-07-13 상태는 `docs/PWA-QA.md`에 로컬 자동 검증과 배포·실기기 미실행 항목으로 분리해 기록한다.
 
 - [ ] 비로그인 상태 `/manifest.webmanifest`·`/sw.js`·`/offline` → 200 (302 리다이렉트 아님)
 - [ ] Chrome DevTools Application 탭: Manifest 오류 0, SW activated
@@ -140,6 +142,6 @@
 
 ## Open Approval Items
 
-- [ ] R0 결정 게이트 3건(D1/D2/D3) — 권장안 승인 시 새 의존성 없이 즉시 착수 가능
-- [ ] `docs/DECISIONS.md`에 PWA 결정 추가(구현 완료·검증 후)
-- [ ] (D2-(b) 선택 시에만) Serwist 의존성 추가 승인
+- [x] R0 결정 게이트 3건(D1/D2/D3) — 사용자가 권장안(D1(a)/D2(a)/D3(a)) 승인
+- [x] `docs/DECISIONS.md`에 PWA 결정 추가
+- N/A (D2-(b) 미선택) Serwist 의존성 추가 승인

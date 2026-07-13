@@ -110,6 +110,12 @@
 .pbc-alert--warning { border-color: #f4d79a; background: var(--warning-soft); color: #8a5a14; }
 .pbc-alert--success { border-color: var(--lo-bd); background: var(--success-soft); color: var(--success); }
 .pbc-alert__actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.pbc-installguide-wrap { width: 100%; max-width: 1120px; margin: 12px auto 0; padding: 0 24px; }
+.pbc-installguide { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 12px; }
+.pbc-installguide__copy { display: flex; min-width: 0; flex-direction: column; gap: 2px; font-size: 13px; line-height: 1.4; }
+.pbc-installguide__copy strong { color: var(--foreground); }
+.pbc-installguide__copy span { color: var(--muted); }
+.pbc-installguide__actions { display: flex; flex-shrink: 0; align-items: center; gap: 8px; }
 .pbc-dialogbackdrop { position: fixed; inset: 0; z-index: 50; display: flex; align-items: center; justify-content: center; padding: 16px; background: rgb(15 36 64 / 42%); }
 .pbc-dialog { width: 100%; max-width: 448px; padding: 20px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-lg); box-shadow: var(--shadow-pop); }
 .pbc-dialog h2 { margin: 0; font-size: 18px; line-height: 1.25; font-weight: 800; color: var(--foreground); }
@@ -811,6 +817,7 @@
 }
 
 @media (max-width: 1023.98px) {
+  .pbc-installguide-wrap { margin-top: 8px; padding: 0 12px; }
   .pbc-appshell { padding-left: 0 !important; }
   .pbc-side { display: none !important; }
   .pbc-mobile-header { padding-top: env(safe-area-inset-top); }

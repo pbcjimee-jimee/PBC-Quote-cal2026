@@ -52,6 +52,14 @@
 - `localStorage` draft에는 Jobber expense, financial summary, 원본 fetch 응답 전체처럼 견적 작성에 직접 필요 없는 민감 fetch 결과를 저장하지 않는다.
 - draft는 저장 시각을 함께 저장하고 기본 7일 만료로 정리한다.
 - 사용자가 로컬 draft를 수동 삭제할 수 있는 "clear local drafts" 동선을 제공한다.
+- PWA 설치 안내는 dismiss 선호(`pbc-install-guidance-dismissed`) 외의 데이터를 저장하지 않는다.
+
+### 8. PWA 서비스 워커·캐시
+
+- CSP에 `worker-src 'self'`를 명시해 same-origin 서비스 워커만 허용한다.
+- 서비스 워커는 오프라인 안내를 위한 `/offline`만 프리캐시한다.
+- 인증된 HTML, 견적·가격 데이터, API, Supabase, Server Actions, RSC payload는 절대 캐시하지 않는다. 네비게이션은 network-first로 처리하고 네트워크 실패 시에만 `/offline`을 반환한다.
+- 캐시 범위를 늘리는 변경은 stale 견적·가격 노출 리스크를 보안 리뷰한 뒤 사용자 승인을 받는다.
 
 ---
 
@@ -104,6 +112,7 @@ PR 머지 전 다음을 반드시 확인:
 - [ ] 사용자 입력 → DB 흐름에 SQL injection 가능성 없음
 - [ ] 민감 정보 (`actual_price`, 이메일)가 응답 페이로드에 불필요하게 포함되지 않음
 - [ ] `localStorage` draft에 Jobber expense/financial summary 같은 불필요한 fetch 결과가 저장되지 않음
+- [ ] PWA 서비스 워커가 오프라인 안내 외의 인증·견적·가격 데이터를 캐시하지 않음
 - [ ] `dangerouslySetInnerHTML` 사용 없음
 - [ ] 새 의존성이 사용자 승인을 받았는지
 

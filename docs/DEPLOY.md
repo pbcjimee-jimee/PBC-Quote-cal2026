@@ -88,6 +88,13 @@ https://pbc-quote-cal2026-v2.vercel.app
 ```
 200 OK 응답 확인.
 
+### PWA 배포 확인
+
+- `/sw.js`는 `Cache-Control: public, max-age=0, must-revalidate`로 응답해 새 배포의 worker 확인을 지연시키지 않아야 한다. 이 헤더는 `next.config.ts` 전용 rule이 설정한다.
+- 배포 후 비로그인 상태에서 `/manifest.webmanifest`, `/sw.js`, `/offline`이 redirect 없이 200을 반환하는지 확인한다.
+- Chrome DevTools Application에서 manifest 오류 0건과 service worker activated를 확인한다. 네트워크를 끊은 내비게이션에서는 `/offline`만 보여야 하며, 캐시된 견적·가격 화면이 보이면 배포 실패로 간주한다.
+- Android/iOS 설치, standalone, safe-area, 세션 유지는 실기기 항목이다. 현재 실행 상태는 `docs/PWA-QA.md`에 기록한다.
+
 ---
 
 ## 배포 프로세스 (표준)

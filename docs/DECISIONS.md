@@ -156,4 +156,13 @@ formula_5 = (380 × D + material_market) / 0.70      (총액 30%)
 
 ---
 
+## 12. PWA 지원
+
+- 브라우저에서 홈 화면에 설치하는 PWA를 지원한다. App Store·Play Store wrapper는 현재 범위에 포함하지 않는다.
+- 서비스 워커는 새 런타임 의존성 없는 최소 구현을 사용한다.
+- 오프라인은 안내 페이지만 제공한다. 인증된 HTML, 견적·가격 데이터, API, Supabase, Server Actions, RSC payload는 캐시하지 않는다.
+- Android는 브라우저 설치 프롬프트를 연결하고, iOS Safari는 `공유 → 홈 화면에 추가` 수동 안내를 제공한다. 설치 안내 저장소에는 dismiss 선호만 저장한다.
+
+---
+
 > 문서 변경 이력은 `PROGRESS.md` 참조.
