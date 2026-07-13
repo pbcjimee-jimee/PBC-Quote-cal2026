@@ -1,5 +1,5 @@
 import { existsSync, readFileSync } from 'node:fs'
-import { inflateSync } from 'node:zlib'
+import { deflateSync, inflateSync } from 'node:zlib'
 import { describe, expect, it } from 'vitest'
 import { metadata, viewport } from '@/app/layout'
 import manifest from '@/app/manifest'
@@ -14,24 +14,28 @@ function paethPredictor(left: number, up: number, upperLeft: number): number {
   return upDistance <= upperLeftDistance ? up : upperLeft
 }
 
-function inspectPng(path: string) {
-  const png = readFileSync(path)
+function inspectPng(png: Buffer, label: string) {
   const width = png.readUInt32BE(16)
   const height = png.readUInt32BE(20)
   const bitDepth = png[24]
   const colorType = png[25]
   const interlace = png[28]
   const idatChunks: Buffer[] = []
+  let hasTransparencyChunk = false
 
   for (let offset = 8; offset < png.length;) {
     const length = png.readUInt32BE(offset)
     const type = png.toString('ascii', offset + 4, offset + 8)
     if (type === 'IDAT') idatChunks.push(png.subarray(offset + 8, offset + 8 + length))
+    if (type === 'tRNS') hasTransparencyChunk = true
     offset += length + 12
   }
 
   if (bitDepth !== 8 || (colorType !== 2 && colorType !== 6) || interlace !== 0) {
-    throw new Error(`${path} must be a non-interlaced 8-bit RGB or RGBA PNG`)
+    throw new Error(`${label} must be a non-interlaced 8-bit RGB or RGBA PNG`)
+  }
+  if (colorType === 2 && hasTransparencyChunk) {
+    throw new Error(`${label} must not contain RGB tRNS transparency`)
   }
 
   const inflated = inflateSync(Buffer.concat(idatChunks))
@@ -65,7 +69,7 @@ function inspectPng(path: string) {
                 ? paethPredictor(left, up, upperLeft)
                 : Number.NaN
 
-      if (Number.isNaN(predictor)) throw new Error(`${path} has unsupported PNG filter ${filter}`)
+      if (Number.isNaN(predictor)) throw new Error(`${label} has unsupported PNG filter ${filter}`)
       row[byteIndex] = (encoded + predictor) & 0xff
     }
 
@@ -79,6 +83,43 @@ function inspectPng(path: string) {
   }
 
   return { width, height, translucentPixels }
+}
+
+function crc32(data: Buffer): number {
+  let crc = 0xffffffff
+  for (const byte of data) {
+    crc ^= byte
+    for (let bit = 0; bit < 8; bit += 1) {
+      crc = (crc >>> 1) ^ (crc & 1 ? 0xedb88320 : 0)
+    }
+  }
+  return (crc ^ 0xffffffff) >>> 0
+}
+
+function pngChunk(type: string, data: Buffer): Buffer {
+  const typeBuffer = Buffer.from(type, 'ascii')
+  const chunk = Buffer.alloc(data.length + 12)
+  chunk.writeUInt32BE(data.length, 0)
+  typeBuffer.copy(chunk, 4)
+  data.copy(chunk, 8)
+  chunk.writeUInt32BE(crc32(Buffer.concat([typeBuffer, data])), data.length + 8)
+  return chunk
+}
+
+function createTransparentRgbPng(): Buffer {
+  const ihdr = Buffer.alloc(13)
+  ihdr.writeUInt32BE(1, 0)
+  ihdr.writeUInt32BE(1, 4)
+  ihdr[8] = 8
+  ihdr[9] = 2
+
+  return Buffer.concat([
+    Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]),
+    pngChunk('IHDR', ihdr),
+    pngChunk('tRNS', Buffer.alloc(6)),
+    pngChunk('IDAT', deflateSync(Buffer.from([0, 0, 0, 0]))),
+    pngChunk('IEND', Buffer.alloc(0)),
+  ])
 }
 
 describe('PWA metadata', () => {
@@ -121,12 +162,16 @@ describe('PWA metadata', () => {
 
     for (const [path, size] of icons) {
       expect(existsSync(path), path).toBe(true)
-      expect(inspectPng(path), path).toEqual({
+      expect(inspectPng(readFileSync(path), path), path).toEqual({
         width: size,
         height: size,
         translucentPixels: 0,
       })
     }
+  })
+
+  it('does not treat an RGB PNG with a tRNS chunk as fully opaque', () => {
+    expect(() => inspectPng(createTransparentRgbPng(), 'RGB+tRNS fixture')).toThrow('tRNS')
   })
 
   it('supports safe-area layout without restricting user zoom', () => {

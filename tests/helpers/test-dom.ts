@@ -255,7 +255,31 @@ type InstallTestDomOptions = {
   navigator?: Partial<TestNavigator>
 }
 
-export function installTestDom(options: InstallTestDomOptions = {}): TestDocument {
+const TEST_DOM_GLOBALS = [
+  'window',
+  'document',
+  'navigator',
+  'MouseEvent',
+  'Node',
+  'Element',
+  'HTMLElement',
+  'HTMLInputElement',
+  'HTMLButtonElement',
+  'HTMLIFrameElement',
+  'SVGElement',
+  'IS_REACT_ACT_ENVIRONMENT',
+] as const
+
+type InstalledTestDom = {
+  document: TestDocument
+  cleanup: () => void
+}
+
+export function installTestDom(options: InstallTestDomOptions = {}): InstalledTestDom {
+  const originalDescriptors = new Map(TEST_DOM_GLOBALS.map((key) => [
+    key,
+    Object.getOwnPropertyDescriptor(globalThis, key),
+  ]))
   const testDocument = new TestDocument()
   const testNavigator: TestNavigator = {
     userAgent: 'Mozilla/5.0 (Linux; Android 15) AppleWebKit/537.36 Chrome/140 Mobile Safari/537.36',
@@ -291,6 +315,23 @@ export function installTestDom(options: InstallTestDomOptions = {}): TestDocumen
   Object.defineProperty(globalThis, 'HTMLInputElement', { configurable: true, value: TestElement })
   Object.defineProperty(globalThis, 'HTMLButtonElement', { configurable: true, value: TestElement })
   Object.defineProperty(globalThis, 'HTMLIFrameElement', { configurable: true, value: TestElement })
+  Object.defineProperty(globalThis, 'SVGElement', { configurable: true, value: TestElement })
   Object.defineProperty(globalThis, 'IS_REACT_ACT_ENVIRONMENT', { configurable: true, value: true })
-  return testDocument
+  let cleanedUp = false
+
+  return {
+    document: testDocument,
+    cleanup: () => {
+      if (cleanedUp) return
+      cleanedUp = true
+
+      for (const [key, descriptor] of originalDescriptors) {
+        if (descriptor) {
+          Object.defineProperty(globalThis, key, descriptor)
+        } else {
+          Reflect.deleteProperty(globalThis, key)
+        }
+      }
+    },
+  }
 }

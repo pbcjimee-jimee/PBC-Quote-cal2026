@@ -1,4 +1,5 @@
 import { act, createElement } from 'react'
+import type { Root } from 'react-dom/client'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { readFileSync } from 'node:fs'
 import { describe, expect, it, vi } from 'vitest'
@@ -234,40 +235,51 @@ describe('settings material UI', () => {
       ok: true,
       data: DEFAULT_PRICING_SETTINGS,
     })
-    installTestDom()
-    const { createRoot } = await import('react-dom/client')
-    const container = document.createElement('div')
+    const { cleanup } = installTestDom()
+    let root: Root | null = null
 
-    await act(async () => {
-      createRoot(container).render(createElement(SettingsForm, {
-        initialAreas: [],
-        initialProducts: [],
-        initialQuoteLineTemplates: [],
-        initialSettings: DEFAULT_PRICING_SETTINGS,
-      }))
-    })
+    try {
+      const { createRoot } = await import('react-dom/client')
+      const container = document.createElement('div')
+      root = createRoot(container)
 
-    const inputs = Array.from(container.querySelectorAll('input'))
-    const f2MarginInput = inputs.find((input) => input.value === '30')
-    expect(f2MarginInput).toBeDefined()
+      await act(async () => {
+        root!.render(createElement(SettingsForm, {
+          initialAreas: [],
+          initialProducts: [],
+          initialQuoteLineTemplates: [],
+          initialSettings: DEFAULT_PRICING_SETTINGS,
+        }))
+      })
 
-    await act(async () => {
-      f2MarginInput!.value = '40'
-      f2MarginInput!.dispatchEvent(new Event('input', { bubbles: true }))
-      f2MarginInput!.dispatchEvent(new Event('change', { bubbles: true }))
-    })
+      const inputs = Array.from(container.querySelectorAll('input'))
+      const f2MarginInput = inputs.find((input) => input.value === '30')
+      expect(f2MarginInput).toBeDefined()
 
-    const saveButton = Array.from(container.querySelectorAll('button')).find((button) => button.textContent === 'Save Settings')
-    expect(saveButton).toBeDefined()
+      await act(async () => {
+        f2MarginInput!.value = '40'
+        f2MarginInput!.dispatchEvent(new Event('input', { bubbles: true }))
+        f2MarginInput!.dispatchEvent(new Event('change', { bubbles: true }))
+      })
 
-    await act(async () => {
-      saveButton!.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-    })
+      const saveButton = Array.from(container.querySelectorAll('button')).find((button) => button.textContent === 'Save Settings')
+      expect(saveButton).toBeDefined()
 
-    expect(updatePricingSettings).toHaveBeenCalledTimes(1)
-    expect(vi.mocked(updatePricingSettings).mock.calls[0]?.[0]).toMatchObject({
-      f2Margin: 0.4,
-    })
+      await act(async () => {
+        saveButton!.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      })
+
+      expect(updatePricingSettings).toHaveBeenCalledTimes(1)
+      expect(vi.mocked(updatePricingSettings).mock.calls[0]?.[0]).toMatchObject({
+        f2Margin: 0.4,
+      })
+    } finally {
+      try {
+        if (root) await act(async () => root?.unmount())
+      } finally {
+        cleanup()
+      }
+    }
   })
 
   it('blocks invalid SettingsForm margin input before calling the pricing settings action', async () => {
@@ -276,38 +288,49 @@ describe('settings material UI', () => {
       ok: true,
       data: DEFAULT_PRICING_SETTINGS,
     })
-    installTestDom()
-    const { createRoot } = await import('react-dom/client')
-    const container = document.createElement('div')
+    const { cleanup } = installTestDom()
+    let root: Root | null = null
 
-    await act(async () => {
-      createRoot(container).render(createElement(SettingsForm, {
-        initialAreas: [],
-        initialProducts: [],
-        initialQuoteLineTemplates: [],
-        initialSettings: DEFAULT_PRICING_SETTINGS,
-      }))
-    })
+    try {
+      const { createRoot } = await import('react-dom/client')
+      const container = document.createElement('div')
+      root = createRoot(container)
 
-    const inputs = Array.from(container.querySelectorAll('input'))
-    const f2MarginInput = inputs.find((input) => input.value === '30')
-    expect(f2MarginInput).toBeDefined()
+      await act(async () => {
+        root!.render(createElement(SettingsForm, {
+          initialAreas: [],
+          initialProducts: [],
+          initialQuoteLineTemplates: [],
+          initialSettings: DEFAULT_PRICING_SETTINGS,
+        }))
+      })
 
-    await act(async () => {
-      f2MarginInput!.value = '100'
-      f2MarginInput!.dispatchEvent(new Event('input', { bubbles: true }))
-      f2MarginInput!.dispatchEvent(new Event('change', { bubbles: true }))
-    })
+      const inputs = Array.from(container.querySelectorAll('input'))
+      const f2MarginInput = inputs.find((input) => input.value === '30')
+      expect(f2MarginInput).toBeDefined()
 
-    const saveButton = Array.from(container.querySelectorAll('button')).find((button) => button.textContent === 'Save Settings')
-    expect(saveButton).toBeDefined()
+      await act(async () => {
+        f2MarginInput!.value = '100'
+        f2MarginInput!.dispatchEvent(new Event('input', { bubbles: true }))
+        f2MarginInput!.dispatchEvent(new Event('change', { bubbles: true }))
+      })
 
-    await act(async () => {
-      saveButton!.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-    })
+      const saveButton = Array.from(container.querySelectorAll('button')).find((button) => button.textContent === 'Save Settings')
+      expect(saveButton).toBeDefined()
 
-    expect(updatePricingSettings).not.toHaveBeenCalled()
-    expect(container.textContent).toContain('Margins must be less than 100%.')
+      await act(async () => {
+        saveButton!.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      })
+
+      expect(updatePricingSettings).not.toHaveBeenCalled()
+      expect(container.textContent).toContain('Margins must be less than 100%.')
+    } finally {
+      try {
+        if (root) await act(async () => root?.unmount())
+      } finally {
+        cleanup()
+      }
+    }
   })
 
   it('uses shared compact action buttons in material rows', () => {

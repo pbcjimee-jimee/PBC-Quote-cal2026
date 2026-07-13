@@ -5,7 +5,7 @@
 ## 2026-07-13 로컬 자동 검증
 
 - [x] Android `beforeinstallprompt` 캡처·설치 action 호출, iOS Safari 수동 안내, standalone 숨김, dismiss 재방문 유지 focused test
-- [x] TypeScript, ESLint, 전체 Vitest(65 files, 548 tests 통과; 환경 조건 1 file·2 tests skip), coverage, production build, diff check, high-severity audit(0 vulnerabilities)
+- [x] TypeScript, ESLint, 전체 Vitest(65 files, 550 tests 통과; 환경 조건 1 file·2 tests skip), coverage, production build, diff check, high-severity audit(0 vulnerabilities)
 
 ## 배포 후 브라우저·실기기 QA (미실행)
 
