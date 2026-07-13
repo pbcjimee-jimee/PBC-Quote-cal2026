@@ -12,6 +12,8 @@ import type { AreaFormulaSelections, FormulaNumber, JobberQuoteLineItemDraft, Ma
 export interface QuoteFormSavePayloadInput {
   settings: PricingSettings
   initialQuoteId?: string
+  initialQuoteVersion?: number
+  syncJobber?: boolean
   customerName: string
   customerAddress: string
   jobberQuoteId: string
@@ -71,7 +73,6 @@ export function buildQuoteSavePayload({
   customerName,
   customerAddress,
   jobberQuoteId,
-  jobberQuoteLookup,
   jobberQuoteDraft,
   jobberSnapshotRefreshedAt,
   jobberSnapshotChangeStatus,
@@ -105,7 +106,7 @@ export function buildQuoteSavePayload({
   return {
     customerName,
     customerAddress,
-    jobberQuoteId: jobberQuoteId || jobberQuoteLookup,
+    jobberQuoteId: jobberQuoteId || undefined,
     jobberSnapshot,
     jobberSnapshotRefreshedAt: jobberSnapshot ? jobberSnapshotRefreshedAt ?? undefined : undefined,
     jobberSnapshotChangeStatus: jobberSnapshot ? jobberSnapshotChangeStatus : undefined,
@@ -178,6 +179,11 @@ export function buildQuoteSavePayload({
 export async function saveQuoteFormPayload(input: QuoteFormSavePayloadInput) {
   const payload = buildQuoteSavePayload(input)
   return input.initialQuoteId
-    ? updateQuote({ ...payload, id: input.initialQuoteId })
-    : createQuote(payload)
+    ? updateQuote({
+        ...payload,
+        id: input.initialQuoteId,
+        expectedVersion: input.initialQuoteVersion,
+        syncJobber: input.syncJobber ?? false,
+      })
+    : createQuote({ ...payload, syncJobber: input.syncJobber ?? false })
 }

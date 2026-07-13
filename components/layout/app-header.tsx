@@ -10,13 +10,14 @@ import type { UserProfile } from '@/lib/user-profiles'
 type NavItem = {
   href: string
   label: string
-  icon: 'overview' | 'quote' | 'settings'
+  icon: 'overview' | 'quote' | 'settings' | 'inventory'
 }
 
 const navItems: NavItem[] = [
   { href: '/quotes', label: 'Overview', icon: 'overview' },
   { href: '/quotes/new', label: 'New Quote', icon: 'quote' },
   { href: '/settings', label: 'Settings', icon: 'settings' },
+  { href: '/settings/inventory', label: 'Inventory', icon: 'inventory' },
 ]
 
 const SIDEBAR_STORAGE_KEY = 'pbc-sidebar-collapsed'
@@ -43,10 +44,32 @@ function getServerSidebarPreferenceSnapshot() {
   return false
 }
 
+function subscribeHydrationStatus() {
+  return () => undefined
+}
+
+function getHydratedSnapshot() {
+  return true
+}
+
+function getServerHydratedSnapshot() {
+  return false
+}
+
 function NavIcon({ icon }: { icon: NavItem['icon'] }) {
   if (icon === 'quote') return Icons.quote({ size: 18 })
   if (icon === 'settings') return Icons.settings({ size: 18 })
+  if (icon === 'inventory') return Icons.layers({ size: 18 })
   return Icons.overview({ size: 18 })
+}
+
+function isNavItemActive(href: string, pathname: string | null): boolean {
+  if (!pathname) return false
+  if (href === '/quotes') {
+    return pathname === '/quotes' || (pathname.startsWith('/quotes/') && !pathname.startsWith('/quotes/new'))
+  }
+  if (href === '/settings') return pathname === '/settings'
+  return pathname.startsWith(href)
 }
 
 export function AppHeader({ userProfile }: { userProfile: UserProfile }) {
@@ -56,6 +79,11 @@ export function AppHeader({ userProfile }: { userProfile: UserProfile }) {
     subscribeSidebarPreference,
     getSidebarPreferenceSnapshot,
     getServerSidebarPreferenceSnapshot
+  )
+  const hasHydrated = useSyncExternalStore(
+    subscribeHydrationStatus,
+    getHydratedSnapshot,
+    getServerHydratedSnapshot
   )
 
   useEffect(() => {
@@ -99,9 +127,7 @@ export function AppHeader({ userProfile }: { userProfile: UserProfile }) {
         <nav className="pbc-nav">
           <p className={isSidebarCollapsed ? 'sr-only' : 'pbc-nav__head'}>Admin tools</p>
           {navItems.map((item) => {
-            const isActive = item.href === '/quotes'
-              ? pathname === '/quotes' || (pathname.startsWith('/quotes/') && !pathname.startsWith('/quotes/new'))
-              : pathname.startsWith(item.href)
+            const isActive = isNavItemActive(item.href, hasHydrated ? pathname : null)
 
             return (
               <Link
@@ -159,6 +185,9 @@ export function AppHeader({ userProfile }: { userProfile: UserProfile }) {
             </Link>
             <Link href="/settings" className="pbc-btn pbc-btn--ghost pbc-btn--sm">
               Settings
+            </Link>
+            <Link href="/settings/inventory" className="pbc-btn pbc-btn--ghost pbc-btn--sm">
+              Inventory
             </Link>
           </nav>
         </div>

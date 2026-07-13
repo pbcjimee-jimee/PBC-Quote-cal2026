@@ -9,17 +9,15 @@ import { AreaPickerDropdown, MaterialRow, updateMaterialRrp } from '@/components
 import { MaterialsPanel, assignMaterialToActiveArea } from '@/components/quote-form/materials-panel'
 import { OptionTotalsSummary } from '@/components/quote-form/option-totals-summary'
 import {
-  buildQuoteSavePayload,
   getQuoteUnexpectedSaveErrorMessage,
   getQuoteNavigationGuardTarget,
   importJobberOptionCandidateIntoOptions,
   getNextDeletedJobberLineItemIds,
   QuoteForm,
-  saveQuoteFormPayload,
   shouldRunDraftGuard,
 } from '@/components/quote-form/quote-form'
 import { JobberOptionImport } from '@/components/quote-form/jobber-option-import'
-import { calculateJobberSyncPreview } from '@/components/quote-form/quote-save-payload'
+import { buildQuoteSavePayload, calculateJobberSyncPreview, saveQuoteFormPayload } from '@/components/quote-form/quote-save-payload'
 import { createEmptyQuoteFormDraft, parseQuoteFormDraft, sanitizeQuoteFormDraftForStorage } from '@/components/quote-form/quote-draft'
 import type { AreaSubtotalBreakdown } from '@/components/quote-form/quote-calculation-totals'
 import type { QuoteOptionItem } from '@/components/quote-form/types'
@@ -29,7 +27,7 @@ import { QuoteCard } from '@/components/quote-list/quote-card'
 import { MonthFilterSelect } from '@/components/quote-list/month-filter-select'
 import { getMonthFilterHref, groupQuotesByYearMonth, filterQuotesByMonth } from '@/app/(app)/quotes/page'
 import type { QuoteRecord } from '@/lib/dev-data'
-import { createQuote } from '@/lib/actions/quotes'
+import { createQuote, updateQuote } from '@/lib/actions/quotes'
 
 const routerPushMock = vi.hoisted(() => vi.fn())
 
@@ -49,6 +47,7 @@ vi.mock('@/lib/actions/quotes', () => ({
 describe('quote form pricing UI', () => {
   const quoteRecord: QuoteRecord = {
     id: 'quote-id-1',
+    version: 1,
     customerName: 'Jane Customer',
     customerAddress: '10 Main St',
     jobberQuoteId: 'encoded-quote-id',
@@ -355,9 +354,39 @@ describe('quote form pricing UI', () => {
       })
     )
 
-    expect(markup).toContain('Update Quote')
+    expect(markup).toContain('Save changes')
+    expect(markup).toContain('Save &amp; Sync to Jobber')
     expect(markup).toContain('pbc-topbar')
     expect(markup).toContain('pbc-btn pbc-btn--primary')
+  })
+
+  it('disables Jobber sync until a fetched Jobber quote id is available', () => {
+    const markup = renderToStaticMarkup(
+      createElement(QuoteForm, {
+        settings: quoteRecord.pricingSettingsSnapshot,
+        areas: [],
+        productServices: [],
+        quoteLineTemplates: [],
+      })
+    )
+
+    expect(markup).toContain('disabled="" title="Fetch a Jobber quote before syncing"')
+    expect(markup).toContain('Save &amp; Sync to Jobber')
+  })
+
+  it('enables Jobber sync for saved quotes with a real Jobber quote id', () => {
+    const markup = renderToStaticMarkup(
+      createElement(QuoteForm, {
+        settings: quoteRecord.pricingSettingsSnapshot,
+        areas: [],
+        productServices: [],
+        quoteLineTemplates: [],
+        initialQuote: quoteRecord,
+      })
+    )
+
+    expect(markup).toContain('title="Save app changes and update Jobber"')
+    expect(markup).not.toContain('disabled="" title="Save app changes and update Jobber"')
   })
 
   it('uses a guarded Jobber refresh action instead of Fetch on saved quote edits', () => {
@@ -714,7 +743,7 @@ describe('quote form pricing UI', () => {
     )
 
     expect(markup).toContain('Cancel')
-    expect(markup).toContain('Update Quote')
+    expect(markup).toContain('Save changes')
   })
 
   it('shows a clear local drafts action near quote draft controls', () => {
@@ -1203,6 +1232,13 @@ describe('quote form pricing UI', () => {
     expect(markup).not.toContain('Roof subtotal <b class="mono">$1753.33</b>')
   })
 
+  it('routes newly saved quotes directly to their detail page', () => {
+    const source = readFileSync('components/quote-form/quote-form.tsx', 'utf8')
+
+    expect(source).toContain('router.push(initialQuote ? quoteTargetPath : `/quotes/${result.data.id}`)')
+    expect(source).not.toContain('router.push(quoteTargetPath)')
+  })
+
   it('saves material actual price snapshots from actual price, not RRP', async () => {
     const createQuoteMock = vi.mocked(createQuote)
     createQuoteMock.mockResolvedValueOnce({ ok: true, data: { id: 'created-quote-id' } })
@@ -1236,12 +1272,72 @@ describe('quote form pricing UI', () => {
     })
 
     expect(createQuoteMock).toHaveBeenCalledWith(expect.objectContaining({
+      syncJobber: false,
       items: [
         expect.objectContaining({
           marketPriceSnapshot: 100,
           actualPriceSnapshot: 42.25,
         }),
       ],
+    }))
+  })
+
+  it('passes explicit Jobber sync intent when saving an edited quote', async () => {
+    const updateQuoteMock = vi.mocked(updateQuote)
+    updateQuoteMock.mockResolvedValueOnce({ ok: true, data: { id: quoteRecord.id } })
+
+    await saveQuoteFormPayload({
+      settings: quoteRecord.pricingSettingsSnapshot,
+      initialQuoteId: quoteRecord.id,
+      initialQuoteVersion: quoteRecord.version,
+      syncJobber: true,
+      customerName: 'Jane Customer',
+      customerAddress: '10 Main St',
+      jobberQuoteId: 'encoded-quote-id',
+      jobberQuoteLookup: '3535',
+      jobberQuoteDraft: null,
+      deletedJobberLineItemIds: [],
+      jobberQuoteLines: [],
+      workType: 'Interior',
+      selectedMin: 4,
+      selectedMax: 3,
+      materials: [],
+      options: [],
+      memos: [],
+    })
+
+    expect(updateQuoteMock).toHaveBeenCalledWith(expect.objectContaining({
+      id: quoteRecord.id,
+      expectedVersion: quoteRecord.version,
+      syncJobber: true,
+    }))
+  })
+
+  it('does not promote a Jobber lookup number into the saved Jobber quote id', async () => {
+    const createQuoteMock = vi.mocked(createQuote)
+    createQuoteMock.mockResolvedValueOnce({ ok: true, data: { id: 'created-quote-id' } })
+
+    await saveQuoteFormPayload({
+      settings: quoteRecord.pricingSettingsSnapshot,
+      syncJobber: false,
+      customerName: 'Jane Customer',
+      customerAddress: '10 Main St',
+      jobberQuoteId: '',
+      jobberQuoteLookup: '3535',
+      jobberQuoteDraft: null,
+      deletedJobberLineItemIds: [],
+      jobberQuoteLines: [],
+      workType: 'Interior',
+      selectedMin: 4,
+      selectedMax: 3,
+      materials: [],
+      options: [],
+      memos: [],
+    })
+
+    expect(createQuoteMock).toHaveBeenCalledWith(expect.objectContaining({
+      jobberQuoteId: undefined,
+      syncJobber: false,
     }))
   })
 

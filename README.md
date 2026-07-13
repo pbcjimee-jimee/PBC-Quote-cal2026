@@ -4,7 +4,7 @@
 
 Excel 2개 + Jobber를 오가던 견적 작업을 **한 페이지**에서 끝낸다. 페인트 자재 검색, 5가지 견적 공식 동시 계산, min/max 선택, 견적 저장·검색, Jobber quote fetch/write-back까지 포함한다.
 
-**상태:** v1.0 핵심 플로우 + v1.1 보완 완료 (Auth · 견적 CRUD · 옵션 견적 · app-only memos · Jobber fetch/write-back · Roof 공식 선택 저장 · local draft 보안/7일 만료 · Jobber sync preview/retry · 과거 견적 duplicate · QA/RLS 검증 완료).
+**상태:** v1.0 핵심 플로우 + v1.1 보완 + 저장 충돌 hardening 완료 (Auth · 견적 CRUD · 옵션 견적 · app-only memos · Jobber fetch/write-back · Roof 공식 선택 저장 · local draft 보안/7일 만료 · Jobber sync preview/retry · 과거 견적 duplicate · quote save RPC 트랜잭션 · version 기반 동시 편집 충돌 감지 · QA/RLS 검증 완료).
 
 **후속:** 2026-07-06 전면 감사 발견 이슈는 [docs/BACKLOG.md](./docs/BACKLOG.md)에 우선순위별로 등록했다. Supabase 실제 데이터 백업은 운영 결정 대기다. 별도 `/products` 관리 페이지, `ADMIN_EMAILS` 권한 분리, material 실제 원가/RRP 분리는 현재 범위 밖이다.
 
@@ -91,7 +91,7 @@ git ls-remote origin main
 | 버전 | 범위 | 상태 |
 |---|---|---|
 | v1.0 | Auth, 페인트 DB, 5가지 공식 계산기, 견적 CRUD, Interior/Exterior/Roof 작업 영역, 옵션 견적, Settings, Jobber fetch/write-back | 핵심 플로우·QA·RLS 검증 완료 |
-| v1.1 | Roof 공식 선택값 저장, local draft 보안, Jobber sync preview/retry, 과거 견적 복제 기능 | 구현/검증 완료 |
+| v1.1 | Roof 공식 선택값 저장, local draft 보안, Jobber sync preview/retry, 과거 견적 복제 기능, quote save RPC 트랜잭션, version 기반 충돌 감지, split save UX | 구현/검증 완료 |
 | Ops | 백업 운영 결정: Supabase Pro/PITR 우선, cron backup은 restore 검증 포함 시만 선택 | 사용자 결정 대기 |
 | v1.5 | Settings 운영량 확인 후 필요할 때만 독립 `/products` 관리 페이지 재검토, Supabase 실제 데이터 백업 정책 결정 | TODOS #2, #3 |
 | v2 | 자동 견적가 추산 (ML), 분석 대시보드 | 데이터 쌓인 후 |

@@ -103,9 +103,9 @@
 
 ### 페이지네이션
 
-- 첫 로드: 20건
-- 더 로드: "Load more" 버튼 (무한 스크롤 아님, v1.0)
-- 검색: full-text search (`idx_quotes_customer_search` 인덱스 활용)
+- 첫 로드: 최신 100건
+- 더 로드: 아직 없음. 전체 페이지네이션은 `docs/BACKLOG.md` P5 후속 항목
+- 검색: 현재 서버 액션 검색 결과에 같은 100건 제한 적용
 
 ---
 
@@ -181,6 +181,8 @@ F5 margin   [30] %
 ```
 
 Settings also includes Material, Product & Service, Template, and Area tabs. The Template tab stores reusable Product / Service line item and text item sets. Those templates appear in `/quotes/new` and quote edit Product / Service sections and copy their saved rows into the current quote when selected.
+
+Inventory is managed on a separate Settings child page at `/settings/inventory`, not inside the Settings tab set. It supports warehouse stock search, add, edit, soft delete, CSV import/export, purchase date, used date, used location text, and in-stock/out tracking. Rows are grouped by workbook-style categories such as `Tools`, `Sample`, `Primer`, `Weathershield`, `Acratex`, and `Interior walls`; new manual items use the same category select. Out rows use a checkbox control, stronger background treatment, and line-through item text. Inventory rows are app-only and are not used in quote calculation or Jobber write-back.
 
 ---
 

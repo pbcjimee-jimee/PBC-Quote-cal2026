@@ -22,35 +22,35 @@
 
 ## P0 — 데이터·금액 무결성 (최우선)
 
-- [ ] **C2. Jobber line item id를 전체 sync 성공 후에만 저장 → 부분 실패 시 재시도가 중복 생성** (근거 명확)
+- [x] **C2. Jobber line item id를 전체 sync 성공 후에만 저장 → 부분 실패 시 재시도가 중복 생성** (근거 명확)
   - `lib/actions/quotes.ts:1571`, `lib/jobber/client.ts:1342`
   - 일부 라인 생성 후 실패 시 id 미저장 → Retry가 같은 라인을 Jobber에 재생성(외부 진실 원천 중복 영구화).
-  - 조치: 각 라인 생성 직후 즉시 persist, 또는 예외에 부분 성공분을 실어 `finally`에서 저장.
+  - 해결: `JobberLineSyncPartialError`가 부분 성공 line id를 싣고, Server Action이 실패 상태를 기록하면서 생성된 `jobber_line_item_id`를 보존한다. 회귀 테스트 추가.
 
 - [ ] **H2. Jobber write-back 비원자·비가역 + 429 재시도 중복** (근거 명확)
   - `lib/jobber/client.ts:1318`, `client.ts:1004`
   - create→delete 순서에서 delete 실패 시 중복 계상. throttle 재시도가 idempotency key 없이 create 재전송.
-  - 조치: create는 throttle 재시도 비활성 또는 재조회 후 재전송, 부분 실패 상태를 sync error에 명시.
+  - 부분 완화: create mutation은 throttle 자동 재시도를 비활성화하고, 부분 성공 상태를 sync error와 local line id에 보존한다. Jobber API 다중 mutation 자체의 비원자성은 잔여 리스크로 유지한다.
 
-- [ ] **H3. updateQuote가 가격 스냅샷을 서버에서 재고정하지 않고 클라이언트 입력을 그대로 신뢰** (근거 명확)
+- [x] **H3. updateQuote가 가격 스냅샷을 서버에서 재고정하지 않고 클라이언트 입력을 그대로 신뢰** (근거 명확)
   - `lib/actions/quotes.ts:1204`
   - `DECISIONS.md #6`("가격 변경이 과거 견적에 영향 없음")이 폼 관례에만 의존. RLS `USING(true)`라 컬럼 보호 없음.
-  - 조치: 기존 `productId` 아이템은 서버에서 기존 스냅샷 재조회·고정 또는 스냅샷 컬럼 불변화. 회귀 테스트 추가.
+  - 해결: create/update Server Action이 product line 스냅샷을 서버에서 재확정한다. 기존 quote의 product line은 기존 스냅샷을 보존하고, 새 product line은 현재 `products` 가격을 조회한다. 회귀 테스트 추가.
 
-- [ ] **H1. updateQuote 자식 행 삭제 후 재삽입 → 재삽입 실패 시 데이터 영구 손실** (검증됨)
+- [x] **H1. updateQuote 자식 행 삭제 후 재삽입 → 재삽입 실패 시 데이터 영구 손실** (검증됨)
   - `lib/actions/quotes.ts:1204`
   - 부모 UPDATE 후 `quote_items`/`quote_options` DELETE→재삽입, 실패 시 보상 로직 없음.
-  - 조치: 아래 A1(RPC 트랜잭션)로 근본 해결.
+  - 해결: `update_quote_with_children(jsonb)` RPC가 부모/자식 저장을 단일 서버 트랜잭션으로 처리한다.
 
 ## P1 — 아키텍처 정합성 & 데이터 보존
 
-- [ ] **A1. 견적 다중 테이블 저장에 트랜잭션 부재** (검증됨)
+- [x] **A1. 견적 다중 테이블 저장에 트랜잭션 부재** (검증됨)
   - `lib/actions/quotes.ts:900` — `.rpc()`/`CREATE FUNCTION` 0건. 비원자적 저장.
-  - 조치: `create_quote_with_children(jsonb)` / `update_quote_with_children(jsonb)` plpgsql RPC로 감싸 서버측 트랜잭션 처리(H1 동시 해결).
+  - 해결: `20260707003130_add_quote_version_and_save_rpcs.sql`에 `create_quote_with_children(jsonb)` / `update_quote_with_children(jsonb)`를 추가하고 Server Action 저장 경로를 RPC로 연결했다.
 
-- [ ] **A2. 동시 편집 방지 없음 (낙관적 잠금/updated_at 검사 부재)** (검증됨)
+- [x] **A2. 동시 편집 방지 없음 (낙관적 잠금/updated_at 검사 부재)** (검증됨)
   - `lib/actions/quotes.ts:1165` — version/updated_at 조건 없음, updated_at 갱신 트리거 없음.
-  - 조치: `quotes.version` 또는 트리거 갱신 `updated_at` + 저장 시 `.eq('version', loaded)` 조건, 0행이면 충돌 오류.
+  - 해결: `quotes.version`을 추가하고 edit form이 `expectedVersion`을 전달한다. RPC가 version mismatch를 `QUOTE_VERSION_CONFLICT`로 반환하고 UI는 refresh 안내 에러를 표시한다.
 
 - [ ] **H4. 견적 삭제 시 이력 CASCADE 파기 + 삭제 자체 미기록** (근거 명확)
   - `lib/actions/quotes.ts:1332`, `migration 0017`

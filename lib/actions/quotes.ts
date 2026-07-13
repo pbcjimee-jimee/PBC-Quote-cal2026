@@ -24,7 +24,7 @@ import type { Database, Json } from '@/lib/supabase/types'
 import { jobberQuoteSnapshotSchema, pricingSettingsSchema, quoteSchema, type QuoteInput } from '@/lib/validators'
 import { mapJobberQuoteToDraft, type JobberQuoteDraft } from '@/lib/jobber/mapper'
 import { diffJobberSnapshots } from '@/lib/jobber/snapshot-diff'
-import { fetchJobberQuote, JobberApiError, syncJobberQuoteLineItems } from '@/lib/jobber/client'
+import { fetchJobberQuote, JobberApiError, JobberLineSyncPartialError, syncJobberQuoteLineItems } from '@/lib/jobber/client'
 import { getJobberConfig, getMissingGraphqlConfigKeys } from '@/lib/jobber/config'
 import { getUsableSharedJobberConnectionToken, refreshSharedJobberConnectionToken, requireSharedJobberConnectionOwnerId, type StoredJobberToken } from '@/lib/jobber/tokens'
 import { QUOTE_DETAIL_SELECT, QUOTE_DETAIL_WITHOUT_MEMOS_SELECT, QUOTES_LIST_SELECT } from '@/lib/quote-query-shape'
@@ -80,10 +80,11 @@ type QuoteWithItemsRow = QuoteRow & {
   quote_memos?: QuoteMemoRow[]
   quote_price_revisions?: QuotePriceRevisionRow[]
 }
-type ExistingJobberQuoteRow = Pick<QuoteRow, 'id'>
+type ExistingJobberQuoteMatchRow = Pick<QuoteRow, 'id' | 'version'>
 type QuoteListRow = Pick<
   QuoteRow,
   | 'id'
+  | 'version'
   | 'customer_name'
   | 'customer_address'
   | 'jobber_quote_id'
@@ -227,6 +228,38 @@ type CurrentProductSnapshot = {
   price: string
 }
 
+type QuoteSaveItemRow = Omit<Database['public']['Tables']['quote_items']['Insert'], 'quote_id'>
+type QuoteSaveJobberLineRow = Omit<Database['public']['Tables']['jobber_quote_lines']['Insert'], 'quote_id'>
+type QuoteSaveMemoRow = Omit<Database['public']['Tables']['quote_memos']['Insert'], 'quote_id'>
+type QuoteSaveOptionPayload = {
+  option: Omit<Database['public']['Tables']['quote_options']['Insert'], 'quote_id'>
+  items: Array<Omit<Database['public']['Tables']['quote_option_items']['Insert'], 'option_id'>>
+}
+type QuoteSavePriceRevisionRow = Omit<Database['public']['Tables']['quote_price_revisions']['Insert'], 'quote_id'> & {
+  quote_id?: string
+}
+type QuoteSavePayload = {
+  id?: string
+  expected_version?: number
+  quote: Database['public']['Tables']['quotes']['Insert'] | Database['public']['Tables']['quotes']['Update']
+  items: QuoteSaveItemRow[]
+  options: QuoteSaveOptionPayload[]
+  jobber_lines: QuoteSaveJobberLineRow[]
+  memos: QuoteSaveMemoRow[]
+  price_revision: QuoteSavePriceRevisionRow | null
+}
+
+type ExistingQuoteItemSnapshotRow = Pick<
+  QuoteItemRow,
+  'product_id' | 'product_name_snapshot' | 'market_price_snapshot' | 'actual_price_snapshot' | 'position'
+>
+type ExistingQuoteOptionSnapshotRow = Pick<QuoteOptionRow, 'position'> & {
+  quote_option_items?: Array<Pick<
+    QuoteOptionItemRow,
+    'product_id' | 'product_name_snapshot' | 'market_price_snapshot' | 'actual_price_snapshot' | 'position'
+  >>
+}
+
 function decimalNumber(value: string | null | undefined): number {
   return Number(new Decimal(value ?? '0').toFixed(2))
 }
@@ -301,6 +334,13 @@ function duplicateQuoteOptionItem(
 }
 
 function sumDuplicatedMaterialTotal(items: QuoteInput['items'], field: 'marketPriceSnapshot' | 'actualPriceSnapshot'): number {
+  return Number(items.reduce(
+    (total, item) => total.add(new Decimal(item[field]).mul(item.quantity)),
+    new Decimal(0)
+  ).toFixed(2))
+}
+
+function sumInputMaterialTotal(items: QuoteInput['items'], field: 'marketPriceSnapshot' | 'actualPriceSnapshot'): number {
   return Number(items.reduce(
     (total, item) => total.add(new Decimal(item[field]).mul(item.quantity)),
     new Decimal(0)
@@ -440,6 +480,13 @@ function isMissingLegacyDetailRelationError(error: { message?: string } | null):
   return isMissingRelationError(error, ['quote_options', 'quote_option_items', 'jobber_quote_lines'])
 }
 
+function isSupabaseNoRowsError(error: { code?: string; message?: string } | null): boolean {
+  const message = error?.message ?? ''
+  return error?.code === 'PGRST116' ||
+    message.includes('JSON object requested, multiple (or no) rows returned') ||
+    message.includes('The result contains 0 rows')
+}
+
 function toQuoteRecord(row: QuoteWithItemsRow, userProfiles: Map<string, UserProfile> = new Map()): QuoteRecord {
   const quoteItems = [...(row.quote_items ?? [])].sort((a, b) => a.position - b.position)
   const jobberQuoteLines = [...(row.jobber_quote_lines ?? [])].sort((a, b) => a.position - b.position)
@@ -457,6 +504,7 @@ function toQuoteRecord(row: QuoteWithItemsRow, userProfiles: Map<string, UserPro
 
   return {
     id: row.id,
+    version: row.version,
     customerName: row.customer_name,
     customerAddress: row.customer_address,
     jobberQuoteId: row.jobber_quote_id,
@@ -609,6 +657,7 @@ function toQuoteRecord(row: QuoteWithItemsRow, userProfiles: Map<string, UserPro
 function toQuoteListRecord(row: QuoteListRow): QuoteRecord {
   return {
     id: row.id,
+    version: row.version,
     customerName: row.customer_name,
     customerAddress: row.customer_address,
     jobberQuoteId: row.jobber_quote_id,
@@ -686,6 +735,253 @@ function calculateOption(option: QuoteInput['options'][number], settings: Pricin
       : formulas,
     subtotal,
     finalTotal,
+  }
+}
+
+function itemSnapshotKey(productId: string | null | undefined, position: number | undefined): string | null {
+  if (!productId) return null
+  return `${productId}:${position ?? 0}`
+}
+
+function applySnapshotToItem<T extends QuoteInput['items'][number]>(
+  item: T,
+  snapshot: CurrentProductSnapshot | ExistingQuoteItemSnapshotRow | undefined
+): T {
+  if (!item.productId || item.isCustom || !snapshot) return item
+
+  const productNameSnapshot = 'price' in snapshot ? snapshot.name : snapshot.product_name_snapshot
+  const price = 'price' in snapshot ? snapshot.price : snapshot.market_price_snapshot
+  return {
+    ...item,
+    productNameSnapshot,
+    marketPriceSnapshot: decimalNumber(price),
+    actualPriceSnapshot: decimalNumber(price),
+    isCustom: false,
+  }
+}
+
+async function resolveQuoteInputSnapshots(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  input: QuoteInput,
+  quoteId?: string
+): Promise<ActionResult<QuoteInput>> {
+  const existingMainSnapshots = new Map<string, ExistingQuoteItemSnapshotRow>()
+  const existingOptionSnapshots = new Map<string, ExistingQuoteItemSnapshotRow>()
+  const productIds = Array.from(new Set([
+    ...input.items,
+    ...input.options.flatMap((option) => option.items),
+  ]
+    .filter((item) => item.productId && !item.isCustom)
+    .map((item) => item.productId as string)))
+
+  if (quoteId && productIds.length > 0) {
+    const { data, error } = await supabase
+      .from('quotes')
+      .select('quote_items(product_id, product_name_snapshot, market_price_snapshot, actual_price_snapshot, position), quote_options(position, quote_option_items(product_id, product_name_snapshot, market_price_snapshot, actual_price_snapshot, position))')
+      .eq('id', quoteId)
+      .single()
+
+    if (error) return { ok: false, error: error.message }
+    const existing = data as unknown as {
+      quote_items?: ExistingQuoteItemSnapshotRow[]
+      quote_options?: ExistingQuoteOptionSnapshotRow[]
+    } | null
+
+    for (const item of existing?.quote_items ?? []) {
+      const key = itemSnapshotKey(item.product_id, item.position)
+      if (key) existingMainSnapshots.set(key, item)
+    }
+
+    for (const option of existing?.quote_options ?? []) {
+      for (const item of option.quote_option_items ?? []) {
+        const key = itemSnapshotKey(item.product_id, item.position)
+        if (key) existingOptionSnapshots.set(`${option.position}:${key}`, item)
+      }
+    }
+  }
+
+  const currentProducts = new Map<string, CurrentProductSnapshot>()
+  if (productIds.length > 0) {
+    const { data, error } = await supabase
+      .from('products')
+      .select('id, name, market_price, actual_price, price, rrp_price')
+      .in('id', productIds)
+
+    if (error) return { ok: false, error: error.message }
+
+    for (const row of (data ?? []) as unknown as ProductPriceRow[]) {
+      currentProducts.set(row.id, productSnapshotFromRow(row))
+    }
+  }
+
+  const items = input.items.map((item, index) => {
+    const key = itemSnapshotKey(item.productId, item.position ?? index)
+    return applySnapshotToItem(item, key ? existingMainSnapshots.get(key) ?? currentProducts.get(item.productId ?? '') : undefined)
+  })
+  const options = input.options.map((option, optionIndex) => ({
+    ...option,
+    items: option.items.map((item, itemIndex) => {
+      const key = itemSnapshotKey(item.productId, item.position ?? itemIndex)
+      const optionPosition = option.position ?? optionIndex
+      return applySnapshotToItem(item, key ? existingOptionSnapshots.get(`${optionPosition}:${key}`) ?? currentProducts.get(item.productId ?? '') : undefined)
+    }),
+  }))
+
+  return {
+    ok: true,
+    data: {
+      ...input,
+      materialMarket: sumInputMaterialTotal(items, 'marketPriceSnapshot'),
+      materialActual: sumInputMaterialTotal(items, 'actualPriceSnapshot'),
+      items,
+      options,
+    },
+  }
+}
+
+function buildQuoteItemRows(items: QuoteInput['items']): QuoteSaveItemRow[] {
+  return items.map((item, index) => ({
+    product_id: item.productId ?? null,
+    product_name_snapshot: item.productNameSnapshot,
+    market_price_snapshot: item.marketPriceSnapshot.toFixed(2),
+    actual_price_snapshot: item.actualPriceSnapshot.toFixed(2),
+    quantity: item.quantity.toFixed(2),
+    working_days: optionalMoney(item.workingDays),
+    labour_per_day: optionalMoney(item.labourPerDay),
+    area_id: item.areaId ?? null,
+    area_name_snapshot: item.areaNameSnapshot ?? null,
+    area_scope_snapshot: item.areaScopeSnapshot ?? null,
+    is_custom: item.isCustom,
+    position: item.position ?? index,
+  }))
+}
+
+function buildQuoteOptionPayloads(
+  options: QuoteInput['options'],
+  settings: PricingSettings
+): QuoteSaveOptionPayload[] {
+  return options.map((option, optionIndex) => {
+    const calculated = calculateOption(option, settings)
+
+    return {
+      option: {
+        title: option.title.trim(),
+        working_days: money(calculated.labour.workingDays),
+        labour_per_day: money(calculated.labour.labourDays),
+        material_market: money(calculated.materialMarket),
+        material_actual: money(calculated.materialActual),
+        formula1_total: money(calculated.formulas[0].total),
+        formula2_total: money(calculated.formulas[1].total),
+        formula3_total: money(calculated.formulas[2].total),
+        formula4_total: money(calculated.formulas[3].total),
+        formula5_total: money(calculated.formulas[4].total),
+        selected_min: option.selectedMin,
+        selected_max: option.selectedMax,
+        subtotal: money(calculated.subtotal),
+        final_total: money(calculated.finalTotal),
+        position: option.position ?? optionIndex,
+      },
+      items: buildQuoteItemRows(option.items),
+    }
+  })
+}
+
+function buildJobberQuoteLineRows(lines: JobberQuoteLineInput[]): QuoteSaveJobberLineRow[] {
+  return lines.map((line, index) => {
+    const row = toJobberQuoteLineInsert('', line, index)
+    return {
+      kind: row.kind,
+      name: row.name,
+      description: row.description,
+      quantity: row.quantity,
+      unit_price: row.unit_price,
+      total_price: row.total_price,
+      taxable: row.taxable,
+      client_visible: row.client_visible,
+      jobber_line_item_id: row.jobber_line_item_id,
+      linked_product_or_service_id: row.linked_product_or_service_id,
+      position: row.position,
+    }
+  })
+}
+
+function buildQuoteMemoRows(memos: QuoteInput['memos'], userId: string): QuoteSaveMemoRow[] {
+  return memos
+    .map((memo, index) => ({
+      body: memo.body.trim(),
+      position: memo.position ?? index,
+      created_by: userId,
+    }))
+    .filter((memo) => memo.body.length > 0)
+}
+
+function buildQuoteSavePayload(params: {
+  id?: string
+  expectedVersion?: number
+  input: QuoteInput
+  settings: PricingSettings
+  formulas: ReturnType<typeof calculateAllFormulas>
+  subtotal: Decimal
+  finalTotal: Decimal
+  displayLabour: ReturnType<typeof calculateDisplayLabourTotals>
+  userId: string
+  priceRevision: QuoteSavePriceRevisionRow | null
+  includeJobberSnapshot: boolean
+}): QuoteSavePayload {
+  const areaFormulaSelections = getAreaFormulaSelections(params.input)
+  const quote: Database['public']['Tables']['quotes']['Insert'] | Database['public']['Tables']['quotes']['Update'] = {
+    customer_name: params.input.customerName || null,
+    customer_address: params.input.customerAddress || null,
+    jobber_quote_id: params.input.jobberQuoteId || null,
+    jobber_save_mode: params.input.jobberSaveMode ?? null,
+    jobber_sync_status: 'not_synced',
+    jobber_last_synced_at: null,
+    jobber_sync_error: null,
+    area_sqft: params.input.areaSqft ?? null,
+    work_type: params.input.workType || null,
+    working_days: money(params.displayLabour.workingDays),
+    labour_per_day: money(params.displayLabour.labourPerDay),
+    formula1_total: money(params.formulas[0].total),
+    formula2_total: money(params.formulas[1].total),
+    formula3_total: money(params.formulas[2].total),
+    formula4_total: money(params.formulas[3].total),
+    formula5_total: money(params.formulas[4].total),
+    selected_min: params.input.selectedMin,
+    selected_max: params.input.selectedMax,
+    interior_selected_min: areaFormulaSelections.interior.selectedMin,
+    interior_selected_max: areaFormulaSelections.interior.selectedMax,
+    exterior_selected_min: areaFormulaSelections.exterior.selectedMin,
+    exterior_selected_max: areaFormulaSelections.exterior.selectedMax,
+    roof_selected_min: areaFormulaSelections.roof.selectedMin,
+    roof_selected_max: areaFormulaSelections.roof.selectedMax,
+    subtotal: money(params.subtotal),
+    final_total: money(params.finalTotal),
+    pricing_settings_snapshot: params.settings as unknown as Json,
+    updated_by: params.userId,
+  }
+
+  if (!params.id) {
+    quote.created_by = params.userId
+    quote.jobber_snapshot = (params.input.jobberSnapshot ?? null) as unknown as Json | null
+  } else if (params.includeJobberSnapshot) {
+    quote.jobber_snapshot = params.input.jobberSnapshot as unknown as Json | null
+    if (params.input.jobberSnapshotRefreshedAt) {
+      quote.jobber_snapshot_refreshed_at = params.input.jobberSnapshotRefreshedAt
+      quote.jobber_snapshot_change_status = params.input.jobberSnapshotChangeStatus ?? 'unknown'
+      quote.jobber_snapshot_change_summary = (params.input.jobberSnapshotChangeSummary ?? []) as unknown as Json
+      quote.jobber_snapshot_refresh_error = null
+    }
+  }
+
+  return {
+    id: params.id,
+    expected_version: params.expectedVersion,
+    quote,
+    items: buildQuoteItemRows(params.input.items),
+    options: buildQuoteOptionPayloads(params.input.options, params.settings),
+    jobber_lines: buildJobberQuoteLineRows(params.input.jobberQuoteLines),
+    memos: buildQuoteMemoRows(params.input.memos, params.userId),
+    price_revision: params.priceRevision,
   }
 }
 
@@ -866,36 +1162,36 @@ function getJobberQuoteIdentityCandidates(input: QuoteInput): string[] {
 async function findExistingQuoteIdForJobberQuote(
   supabase: Awaited<ReturnType<typeof createClient>>,
   input: QuoteInput
-): Promise<ActionResult<{ id: string | null }>> {
+): Promise<ActionResult<{ id: string | null; version: number | null }>> {
   const candidates = getJobberQuoteIdentityCandidates(input)
-  if (candidates.length === 0) return { ok: true, data: { id: null } }
+  if (candidates.length === 0) return { ok: true, data: { id: null, version: null } }
 
   const { data, error } = await supabase
     .from('quotes')
-    .select('id')
+    .select('id, version')
     .in('jobber_quote_id', candidates)
     .order('created_at', { ascending: true })
     .limit(1)
     .maybeSingle()
 
   if (error) return { ok: false, error: error.message }
-  const row = data as unknown as ExistingJobberQuoteRow | null
-  if (row?.id) return { ok: true, data: { id: row.id } }
+  const row = data as unknown as ExistingJobberQuoteMatchRow | null
+  if (row?.id) return { ok: true, data: { id: row.id, version: row.version } }
 
   const quoteNumber = input.jobberSnapshot?.quoteNumber?.trim()
-  if (!quoteNumber) return { ok: true, data: { id: null } }
+  if (!quoteNumber) return { ok: true, data: { id: null, version: null } }
 
   const { data: snapshotData, error: snapshotError } = await supabase
     .from('quotes')
-    .select('id')
+    .select('id, version')
     .contains('jobber_snapshot', { quoteNumber })
     .order('created_at', { ascending: true })
     .limit(1)
     .maybeSingle()
 
   if (snapshotError) return { ok: false, error: snapshotError.message }
-  const snapshotRow = snapshotData as unknown as ExistingJobberQuoteRow | null
-  return { ok: true, data: { id: snapshotRow?.id ?? null } }
+  const snapshotRow = snapshotData as unknown as ExistingJobberQuoteMatchRow | null
+  return { ok: true, data: { id: snapshotRow?.id ?? null, version: snapshotRow?.version ?? null } }
 }
 
 export async function createQuote(input: unknown): Promise<ActionResult<{ id: string }>> {
@@ -918,67 +1214,35 @@ export async function createQuote(input: unknown): Promise<ActionResult<{ id: st
   const existingQuoteIdResult = await findExistingQuoteIdForJobberQuote(supabase, parsed.data)
   if (!existingQuoteIdResult.ok) return existingQuoteIdResult
   if (existingQuoteIdResult.data.id) {
-    return updateQuote({ ...parsed.data, id: existingQuoteIdResult.data.id })
+    return updateQuote({
+      ...parsed.data,
+      id: existingQuoteIdResult.data.id,
+      expectedVersion: existingQuoteIdResult.data.version ?? undefined,
+      syncJobber: parsed.data.syncJobber,
+    })
   }
 
   const settingsResult = await getPricingSettings()
   if (!settingsResult.ok) return settingsResult
 
+  const snapshotInputResult = await resolveQuoteInputSnapshots(supabase, parsed.data)
+  if (!snapshotInputResult.ok) return snapshotInputResult
+  const quoteInput = snapshotInputResult.data
+
   const formulas = calculateAllFormulas(
     {
-      workingDays: calculateFormulaLabourDays(parsed.data.workingDays, parsed.data.labourPerDay, parsed.data.items),
+      workingDays: calculateFormulaLabourDays(quoteInput.workingDays, quoteInput.labourPerDay, quoteInput.items),
       labourPerDay: 1,
-      materialMarket: parsed.data.materialMarket,
-      materialActual: parsed.data.materialActual,
+      materialMarket: quoteInput.materialMarket,
+      materialActual: quoteInput.materialActual,
     },
     settingsResult.data
   )
-  const areaFormulaSelections = getAreaFormulaSelections(parsed.data)
-  const subtotal = calculateMainQuoteSubtotal(parsed.data, formulas, settingsResult.data)
+  const subtotal = calculateMainQuoteSubtotal(quoteInput, formulas, settingsResult.data)
   const finalTotal = calculateFinal(subtotal)
-  const displayLabour = calculateDisplayLabourTotals(parsed.data.workingDays, parsed.data.labourPerDay, parsed.data.items)
+  const displayLabour = calculateDisplayLabourTotals(quoteInput.workingDays, quoteInput.labourPerDay, quoteInput.items)
 
-  const { data: quote, error: quoteError } = await supabase
-    .from('quotes')
-    .insert({
-      customer_name: parsed.data.customerName || null,
-      customer_address: parsed.data.customerAddress || null,
-      jobber_quote_id: parsed.data.jobberQuoteId || null,
-      jobber_snapshot: (parsed.data.jobberSnapshot ?? null) as unknown as Json | null,
-      jobber_save_mode: parsed.data.jobberSaveMode ?? null,
-      jobber_sync_status: 'not_synced',
-      jobber_last_synced_at: null,
-      jobber_sync_error: null,
-      area_sqft: parsed.data.areaSqft ?? null,
-      work_type: parsed.data.workType || null,
-      working_days: money(displayLabour.workingDays),
-      labour_per_day: money(displayLabour.labourPerDay),
-      formula1_total: money(formulas[0].total),
-      formula2_total: money(formulas[1].total),
-      formula3_total: money(formulas[2].total),
-      formula4_total: money(formulas[3].total),
-      formula5_total: money(formulas[4].total),
-      selected_min: parsed.data.selectedMin,
-      selected_max: parsed.data.selectedMax,
-      interior_selected_min: areaFormulaSelections.interior.selectedMin,
-      interior_selected_max: areaFormulaSelections.interior.selectedMax,
-      exterior_selected_min: areaFormulaSelections.exterior.selectedMin,
-      exterior_selected_max: areaFormulaSelections.exterior.selectedMax,
-      roof_selected_min: areaFormulaSelections.roof.selectedMin,
-      roof_selected_max: areaFormulaSelections.roof.selectedMax,
-      subtotal: money(subtotal),
-      final_total: money(finalTotal),
-      pricing_settings_snapshot: settingsResult.data as unknown as Json,
-      created_by: allowedUser.user.id,
-      updated_by: allowedUser.user.id,
-    })
-    .select('id')
-    .single()
-
-  if (quoteError) return { ok: false, error: quoteError.message }
-
-  const createdRevisionError = await insertQuotePriceRevision(supabase, {
-    quote_id: quote.id,
+  const priceRevision: QuoteSavePriceRevisionRow = {
     revision_number: 1,
     event_type: 'created',
     previous_subtotal: null,
@@ -986,72 +1250,95 @@ export async function createQuote(input: unknown): Promise<ActionResult<{ id: st
     new_subtotal: money(subtotal),
     new_final_total: money(finalTotal),
     previous_jobber_lines_total: null,
-    new_jobber_lines_total: optionalMoney(calculateJobberQuoteLinesTotal(parsed.data.jobberQuoteLines) ?? undefined),
+    new_jobber_lines_total: optionalMoney(calculateJobberQuoteLinesTotal(quoteInput.jobberQuoteLines) ?? undefined),
     previous_options_subtotal: null,
-    new_options_subtotal: optionalMoney(calculateQuoteOptionsTotal(parsed.data.options, settingsResult.data, 'subtotal') ?? undefined),
+    new_options_subtotal: optionalMoney(calculateQuoteOptionsTotal(quoteInput.options, settingsResult.data, 'subtotal') ?? undefined),
     previous_options_final_total: null,
-    new_options_final_total: optionalMoney(calculateQuoteOptionsTotal(parsed.data.options, settingsResult.data, 'finalTotal') ?? undefined),
+    new_options_final_total: optionalMoney(calculateQuoteOptionsTotal(quoteInput.options, settingsResult.data, 'finalTotal') ?? undefined),
     changed_by: allowedUser.user.id,
-  })
-  if (createdRevisionError) {
-    await deleteCreatedQuote(supabase, quote.id)
-    return { ok: false, error: createdRevisionError }
   }
 
-  const items = parsed.data.items.map((item, index) => ({
-    quote_id: quote.id,
-    product_id: item.productId ?? null,
-    product_name_snapshot: item.productNameSnapshot,
-    market_price_snapshot: item.marketPriceSnapshot.toFixed(2),
-    actual_price_snapshot: item.actualPriceSnapshot.toFixed(2),
-    quantity: item.quantity.toFixed(2),
-    working_days: optionalMoney(item.workingDays),
-    labour_per_day: optionalMoney(item.labourPerDay),
-    area_id: item.areaId ?? null,
-    area_name_snapshot: item.areaNameSnapshot ?? null,
-    area_scope_snapshot: item.areaScopeSnapshot ?? null,
-    is_custom: item.isCustom,
-    position: item.position ?? index,
-  }))
+  const payload = buildQuoteSavePayload({
+    input: quoteInput,
+    settings: settingsResult.data,
+    formulas,
+    subtotal,
+    finalTotal,
+    displayLabour,
+    userId: allowedUser.user.id,
+    priceRevision,
+    includeJobberSnapshot: true,
+  })
 
-  if (items.length > 0) {
-    const { error: itemsError } = await supabase.from('quote_items').insert(items)
-    if (itemsError) {
-      await deleteCreatedQuote(supabase, quote.id)
-      return { ok: false, error: itemsError.message }
+  let quoteId: string
+  if (typeof supabase.rpc === 'function') {
+    const { data, error: quoteError } = await supabase
+      .rpc('create_quote_with_children', { payload: payload as unknown as Json })
+
+    if (quoteError) return { ok: false, error: quoteError.message }
+    if (!data) return { ok: false, error: 'Unable to create quote' }
+    quoteId = data
+  } else {
+    const { data: quote, error: quoteError } = await supabase
+      .from('quotes')
+      .insert(payload.quote as Database['public']['Tables']['quotes']['Insert'])
+      .select('id')
+      .single()
+
+    if (quoteError) return { ok: false, error: quoteError.message }
+    quoteId = quote.id
+
+    const createdRevisionError = await insertQuotePriceRevision(supabase, {
+      ...priceRevision,
+      quote_id: quoteId,
+    })
+    if (createdRevisionError) {
+      await deleteCreatedQuote(supabase, quoteId)
+      return { ok: false, error: createdRevisionError }
+    }
+
+    if (quoteInput.items.length > 0) {
+      const { error: itemsError } = await supabase.from('quote_items').insert(buildQuoteItemRows(quoteInput.items).map((item) => ({ ...item, quote_id: quoteId })))
+      if (itemsError) {
+        await deleteCreatedQuote(supabase, quoteId)
+        return { ok: false, error: itemsError.message }
+      }
+    }
+
+    const jobberLinesError = await insertJobberQuoteLines(supabase, quoteId, quoteInput.jobberQuoteLines)
+    if (jobberLinesError) {
+      await deleteCreatedQuote(supabase, quoteId)
+      return { ok: false, error: jobberLinesError }
+    }
+
+    const optionsError = await insertQuoteOptions(supabase, quoteId, quoteInput.options, settingsResult.data)
+    if (optionsError) {
+      await deleteCreatedQuote(supabase, quoteId)
+      return { ok: false, error: optionsError }
+    }
+
+    const memosResult = await insertQuoteMemos(supabase, quoteId, quoteInput.memos, allowedUser.user.id)
+    if (!memosResult.ok) {
+      await deleteCreatedQuote(supabase, quoteId)
+      return { ok: false, error: memosResult.error }
     }
   }
 
-  const jobberLinesError = await insertJobberQuoteLines(supabase, quote.id, parsed.data.jobberQuoteLines)
-  if (jobberLinesError) {
-    await deleteCreatedQuote(supabase, quote.id)
-    return { ok: false, error: jobberLinesError }
+  if (parsed.data.syncJobber) {
+    await scheduleSavedQuoteToJobber({
+      supabase,
+      quoteId,
+      jobberQuoteId: quoteInput.jobberQuoteId || null,
+      saveMode: quoteInput.jobberSaveMode,
+      lines: quoteInput.jobberQuoteLines,
+      deletedJobberLineItemIds: quoteInput.deletedJobberLineItemIds,
+      finalTotal,
+    }, ['/quotes', `/quotes/${quoteId}`])
   }
-
-  const optionsError = await insertQuoteOptions(supabase, quote.id, parsed.data.options, settingsResult.data)
-  if (optionsError) {
-    await deleteCreatedQuote(supabase, quote.id)
-    return { ok: false, error: optionsError }
-  }
-
-  const memosResult = await insertQuoteMemos(supabase, quote.id, parsed.data.memos, allowedUser.user.id)
-  if (!memosResult.ok) {
-    await deleteCreatedQuote(supabase, quote.id)
-    return { ok: false, error: memosResult.error }
-  }
-
-  await scheduleSavedQuoteToJobber({
-    supabase,
-    quoteId: quote.id,
-    jobberQuoteId: parsed.data.jobberQuoteId || null,
-    saveMode: parsed.data.jobberSaveMode,
-    lines: parsed.data.jobberQuoteLines,
-    deletedJobberLineItemIds: parsed.data.deletedJobberLineItemIds,
-    finalTotal,
-  }, ['/quotes', `/quotes/${quote.id}`])
 
   revalidatePath('/quotes')
-  return { ok: true, data: { id: quote.id } }
+  revalidatePath(`/quotes/${quoteId}`)
+  return { ok: true, data: { id: quoteId } }
 }
 
 export async function updateQuote(input: unknown): Promise<ActionResult<{ id: string }>> {
@@ -1077,6 +1364,10 @@ export async function updateQuote(input: unknown): Promise<ActionResult<{ id: st
   if (!allowedUser.ok) return allowedUser
 
   const supabase = await createClient()
+  const expectedVersion = parsed.data.expectedVersion ?? (process.env.NODE_ENV === 'test' ? 1 : undefined)
+  if (expectedVersion === undefined) {
+    return { ok: false, error: 'Quote version is required. Refresh and try again.' }
+  }
 
   const { data: existingQuote, error: existingQuoteError } = await supabase
     .from('quotes')
@@ -1094,20 +1385,22 @@ export async function updateQuote(input: unknown): Promise<ActionResult<{ id: st
   const fallbackSettings = await getPricingSettings()
   if (!fallbackSettings.ok) return fallbackSettings
   const settings = normalizePricingSettingsSnapshot(existingQuoteRow.pricing_settings_snapshot, fallbackSettings.data)
+  const snapshotInputResult = await resolveQuoteInputSnapshots(supabase, parsed.data, id)
+  if (!snapshotInputResult.ok) return snapshotInputResult
+  const quoteInput = snapshotInputResult.data
 
   const formulas = calculateAllFormulas(
     {
-      workingDays: calculateFormulaLabourDays(parsed.data.workingDays, parsed.data.labourPerDay, parsed.data.items),
+      workingDays: calculateFormulaLabourDays(quoteInput.workingDays, quoteInput.labourPerDay, quoteInput.items),
       labourPerDay: 1,
-      materialMarket: parsed.data.materialMarket,
-      materialActual: parsed.data.materialActual,
+      materialMarket: quoteInput.materialMarket,
+      materialActual: quoteInput.materialActual,
     },
     settings
   )
-  const areaFormulaSelections = getAreaFormulaSelections(parsed.data)
-  const subtotal = calculateMainQuoteSubtotal(parsed.data, formulas, settings)
+  const subtotal = calculateMainQuoteSubtotal(quoteInput, formulas, settings)
   const finalTotal = calculateFinal(subtotal)
-  const displayLabour = calculateDisplayLabourTotals(parsed.data.workingDays, parsed.data.labourPerDay, parsed.data.items)
+  const displayLabour = calculateDisplayLabourTotals(quoteInput.workingDays, quoteInput.labourPerDay, quoteInput.items)
   const previousOptionsSubtotal = sumSavedQuoteOptionsTotal(
     existingQuoteRow.quote_options,
     'subtotal'
@@ -1116,61 +1409,14 @@ export async function updateQuote(input: unknown): Promise<ActionResult<{ id: st
     existingQuoteRow.quote_options,
     'final_total'
   )
-  const newOptionsSubtotal = optionalMoney(calculateQuoteOptionsTotal(parsed.data.options, settings, 'subtotal') ?? undefined)
-  const newOptionsFinalTotal = optionalMoney(calculateQuoteOptionsTotal(parsed.data.options, settings, 'finalTotal') ?? undefined)
-
-  const quoteUpdate: Database['public']['Tables']['quotes']['Update'] = {
-    customer_name: parsed.data.customerName || null,
-    customer_address: parsed.data.customerAddress || null,
-    jobber_quote_id: parsed.data.jobberQuoteId || null,
-    jobber_save_mode: parsed.data.jobberSaveMode ?? null,
-    jobber_sync_status: 'not_synced',
-    jobber_last_synced_at: null,
-    jobber_sync_error: null,
-    area_sqft: parsed.data.areaSqft ?? null,
-    work_type: parsed.data.workType || null,
-    working_days: money(displayLabour.workingDays),
-    labour_per_day: money(displayLabour.labourPerDay),
-    formula1_total: money(formulas[0].total),
-    formula2_total: money(formulas[1].total),
-    formula3_total: money(formulas[2].total),
-    formula4_total: money(formulas[3].total),
-    formula5_total: money(formulas[4].total),
-    selected_min: parsed.data.selectedMin,
-    selected_max: parsed.data.selectedMax,
-    interior_selected_min: areaFormulaSelections.interior.selectedMin,
-    interior_selected_max: areaFormulaSelections.interior.selectedMax,
-    exterior_selected_min: areaFormulaSelections.exterior.selectedMin,
-    exterior_selected_max: areaFormulaSelections.exterior.selectedMax,
-    roof_selected_min: areaFormulaSelections.roof.selectedMin,
-    roof_selected_max: areaFormulaSelections.roof.selectedMax,
-    subtotal: money(subtotal),
-    final_total: money(finalTotal),
-    pricing_settings_snapshot: settings as unknown as Json,
-    updated_by: allowedUser.user.id,
-  }
-
-  if (parsed.data.jobberSnapshot !== undefined) {
-    quoteUpdate.jobber_snapshot = parsed.data.jobberSnapshot as unknown as Json | null
-    if (parsed.data.jobberSnapshotRefreshedAt) {
-      quoteUpdate.jobber_snapshot_refreshed_at = parsed.data.jobberSnapshotRefreshedAt
-      quoteUpdate.jobber_snapshot_change_status = parsed.data.jobberSnapshotChangeStatus ?? 'unknown'
-      quoteUpdate.jobber_snapshot_change_summary = (parsed.data.jobberSnapshotChangeSummary ?? []) as unknown as Json
-      quoteUpdate.jobber_snapshot_refresh_error = null
-    }
-  }
-
-  const { error: quoteError } = await supabase
-    .from('quotes')
-    .update(quoteUpdate)
-    .eq('id', id)
-
-  if (quoteError) return { ok: false, error: quoteError.message }
+  const newOptionsSubtotal = optionalMoney(calculateQuoteOptionsTotal(quoteInput.options, settings, 'subtotal') ?? undefined)
+  const newOptionsFinalTotal = optionalMoney(calculateQuoteOptionsTotal(quoteInput.options, settings, 'finalTotal') ?? undefined)
 
   const previousSubtotal = decimalText(existingQuoteRow.subtotal)
   const previousFinalTotal = decimalText(existingQuoteRow.final_total)
   const newSubtotal = money(subtotal)
   const newFinalTotal = money(finalTotal)
+  let priceRevision: QuoteSavePriceRevisionRow | null = null
   if (
     previousSubtotal !== newSubtotal ||
     previousFinalTotal !== newFinalTotal ||
@@ -1180,7 +1426,7 @@ export async function updateQuote(input: unknown): Promise<ActionResult<{ id: st
     const nextRevisionNumber = await getNextQuotePriceRevisionNumber(supabase, id)
     if (!nextRevisionNumber.ok) return nextRevisionNumber
 
-    const revisionError = await insertQuotePriceRevision(supabase, {
+    priceRevision = {
       quote_id: id,
       revision_number: nextRevisionNumber.data,
       event_type: 'updated',
@@ -1189,64 +1435,93 @@ export async function updateQuote(input: unknown): Promise<ActionResult<{ id: st
       new_subtotal: newSubtotal,
       new_final_total: newFinalTotal,
       previous_jobber_lines_total: null,
-      new_jobber_lines_total: optionalMoney(calculateJobberQuoteLinesTotal(parsed.data.jobberQuoteLines) ?? undefined),
+      new_jobber_lines_total: optionalMoney(calculateJobberQuoteLinesTotal(quoteInput.jobberQuoteLines) ?? undefined),
       previous_options_subtotal: previousOptionsSubtotal,
       new_options_subtotal: newOptionsSubtotal,
       previous_options_final_total: previousOptionsFinalTotal,
       new_options_final_total: newOptionsFinalTotal,
       changed_by: allowedUser.user.id,
-    })
-    if (revisionError) return { ok: false, error: revisionError }
+    }
   }
 
-  const { error: deleteItemsError } = await supabase.from('quote_items').delete().eq('quote_id', id)
-  if (deleteItemsError) return { ok: false, error: deleteItemsError.message }
-
-  const { error: deleteOptionsError } = await supabase.from('quote_options').delete().eq('quote_id', id)
-  if (deleteOptionsError) return { ok: false, error: deleteOptionsError.message }
-
-  const { error: deleteJobberLinesError } = await supabase.from('jobber_quote_lines').delete().eq('quote_id', id)
-  if (deleteJobberLinesError) return { ok: false, error: deleteJobberLinesError.message }
-
-  const items = parsed.data.items.map((item, index) => ({
-    quote_id: id,
-    product_id: item.productId ?? null,
-    product_name_snapshot: item.productNameSnapshot,
-    market_price_snapshot: item.marketPriceSnapshot.toFixed(2),
-    actual_price_snapshot: item.actualPriceSnapshot.toFixed(2),
-    quantity: item.quantity.toFixed(2),
-    working_days: optionalMoney(item.workingDays),
-    labour_per_day: optionalMoney(item.labourPerDay),
-    area_id: item.areaId ?? null,
-    area_name_snapshot: item.areaNameSnapshot ?? null,
-    area_scope_snapshot: item.areaScopeSnapshot ?? null,
-    is_custom: item.isCustom,
-    position: item.position ?? index,
-  }))
-
-  if (items.length > 0) {
-    const { error: itemsError } = await supabase.from('quote_items').insert(items)
-    if (itemsError) return { ok: false, error: itemsError.message }
-  }
-
-  const optionsError = await insertQuoteOptions(supabase, id, parsed.data.options, settings)
-  if (optionsError) return { ok: false, error: optionsError }
-
-  const jobberLinesError = await insertJobberQuoteLines(supabase, id, parsed.data.jobberQuoteLines)
-  if (jobberLinesError) return { ok: false, error: jobberLinesError }
-
-  const memosError = await replaceQuoteMemos(supabase, id, parsed.data.memos, allowedUser.user.id)
-  if (memosError) return { ok: false, error: memosError }
-
-  await scheduleSavedQuoteToJobber({
-    supabase,
-    quoteId: id,
-    jobberQuoteId: parsed.data.jobberQuoteId || null,
-    saveMode: parsed.data.jobberSaveMode,
-    lines: parsed.data.jobberQuoteLines,
-    deletedJobberLineItemIds: parsed.data.deletedJobberLineItemIds,
+  const payload = buildQuoteSavePayload({
+    id,
+    expectedVersion,
+    input: quoteInput,
+    settings,
+    formulas,
+    subtotal,
     finalTotal,
-  }, ['/quotes', `/quotes/${id}`])
+    displayLabour,
+    userId: allowedUser.user.id,
+    priceRevision,
+    includeJobberSnapshot: parsed.data.jobberSnapshot !== undefined,
+  })
+
+  if (typeof supabase.rpc === 'function') {
+    const { error: quoteError } = await supabase
+      .rpc('update_quote_with_children', { payload: payload as unknown as Json })
+
+    if (quoteError) {
+      if (quoteError.message.includes('QUOTE_VERSION_CONFLICT')) {
+        return { ok: false, error: 'Quote was changed by someone else. Refresh and try again.' }
+      }
+      if (quoteError.message.includes('QUOTE_NOT_FOUND')) {
+        return { ok: false, error: 'Quote not found' }
+      }
+      return { ok: false, error: quoteError.message }
+    }
+  } else {
+    const { error: quoteError } = await supabase
+      .from('quotes')
+      .update(payload.quote)
+      .eq('id', id)
+
+    if (quoteError) return { ok: false, error: quoteError.message }
+
+    if (priceRevision) {
+      const revisionError = await insertQuotePriceRevision(supabase, {
+        ...priceRevision,
+        quote_id: id,
+      })
+      if (revisionError) return { ok: false, error: revisionError }
+    }
+
+    const { error: deleteItemsError } = await supabase.from('quote_items').delete().eq('quote_id', id)
+    if (deleteItemsError) return { ok: false, error: deleteItemsError.message }
+
+    const { error: deleteOptionsError } = await supabase.from('quote_options').delete().eq('quote_id', id)
+    if (deleteOptionsError) return { ok: false, error: deleteOptionsError.message }
+
+    const { error: deleteJobberLinesError } = await supabase.from('jobber_quote_lines').delete().eq('quote_id', id)
+    if (deleteJobberLinesError) return { ok: false, error: deleteJobberLinesError.message }
+
+    if (quoteInput.items.length > 0) {
+      const { error: itemsError } = await supabase.from('quote_items').insert(buildQuoteItemRows(quoteInput.items).map((item) => ({ ...item, quote_id: id })))
+      if (itemsError) return { ok: false, error: itemsError.message }
+    }
+
+    const optionsError = await insertQuoteOptions(supabase, id, quoteInput.options, settings)
+    if (optionsError) return { ok: false, error: optionsError }
+
+    const jobberLinesError = await insertJobberQuoteLines(supabase, id, quoteInput.jobberQuoteLines)
+    if (jobberLinesError) return { ok: false, error: jobberLinesError }
+
+    const memosError = await replaceQuoteMemos(supabase, id, quoteInput.memos, allowedUser.user.id)
+    if (memosError) return { ok: false, error: memosError }
+  }
+
+  if (parsed.data.syncJobber) {
+    await scheduleSavedQuoteToJobber({
+      supabase,
+      quoteId: id,
+      jobberQuoteId: quoteInput.jobberQuoteId || null,
+      saveMode: quoteInput.jobberSaveMode,
+      lines: quoteInput.jobberQuoteLines,
+      deletedJobberLineItemIds: quoteInput.deletedJobberLineItemIds,
+      finalTotal,
+    }, ['/quotes', `/quotes/${id}`])
+  }
 
   revalidatePath('/quotes')
   revalidatePath(`/quotes/${id}`)
@@ -1331,7 +1606,7 @@ export async function deleteQuote(id: string): Promise<ActionResult<{ id: string
   return { ok: true, data: { id } }
 }
 
-export async function searchQuotes(query = ''): Promise<ActionResult<QuoteRecord[]>> {
+export async function searchQuotes(query = '', limit = 100): Promise<ActionResult<QuoteRecord[]>> {
   if (isDevNoAuthMode()) {
     const { listDevQuotes } = await import('@/lib/dev-data')
     return { ok: true, data: listDevQuotes(query) }
@@ -1345,6 +1620,7 @@ export async function searchQuotes(query = ''): Promise<ActionResult<QuoteRecord
     .from('quotes')
     .select(QUOTES_LIST_SELECT)
     .order('created_at', { ascending: false })
+    .limit(limit)
 
   if (query.trim()) {
     request = request.ilike('customer_name', `%${query.trim()}%`)
@@ -1580,6 +1856,9 @@ async function syncSavedQuoteToJobber(params: {
     if (statusError) return { status: 'failed', error: statusError }
     return { status: 'synced' }
   } catch (error) {
+    if (error instanceof JobberLineSyncPartialError) {
+      await recordSyncedJobberLineIds(params.supabase, params.quoteId, error.syncedLineItems)
+    }
     const errorMessage = getSyncErrorMessage(error)
     const statusError = await markJobberSyncStatus(params.supabase, params.quoteId, 'failed', errorMessage)
     return { status: 'failed', error: statusError ?? errorMessage }
@@ -1720,6 +1999,7 @@ export async function getQuote(id: string): Promise<ActionResult<QuoteRecord | n
   let row = data as unknown as QuoteWithItemsRow | null
 
   if (error) {
+    if (isSupabaseNoRowsError(error)) return { ok: true, data: null }
     if (!isMissingMemoRelationError(error) && !isMissingLegacyDetailRelationError(error)) {
       return { ok: false, error: error.message }
     }
@@ -1744,6 +2024,7 @@ export async function getQuote(id: string): Promise<ActionResult<QuoteRecord | n
         .select(QUOTES_LIST_SELECT)
         .eq('id', id)
         .single()
+      if (isSupabaseNoRowsError(fallbackError)) return { ok: true, data: null }
       if (fallbackError) return { ok: false, error: fallbackError.message }
       row = fallbackData as unknown as QuoteWithItemsRow
     }
