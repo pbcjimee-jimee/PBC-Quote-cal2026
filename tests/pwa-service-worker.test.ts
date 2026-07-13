@@ -15,6 +15,7 @@ function createServiceWorkerHarness() {
   const handlers = new Map<string, EventHandler>()
   const cache = {
     addAll: vi.fn(async () => undefined),
+    match: vi.fn(async () => new Response('current-offline')),
   }
   const cacheStorage = {
     delete: vi.fn(async () => true),
@@ -74,7 +75,7 @@ describe('PWA service worker', () => {
   })
 
   it('uses network-first for navigations and falls back only when the network fails', async () => {
-    const { cacheStorage, fetchMock, handlers } = createServiceWorkerHarness()
+    const { cache, cacheStorage, fetchMock, handlers } = createServiceWorkerHarness()
     const networkResponse = new Response('network')
     fetchMock.mockResolvedValueOnce(networkResponse)
     const respondWith = vi.fn()
@@ -92,7 +93,25 @@ describe('PWA service worker', () => {
     handlers.get('fetch')?.({ request, respondWith: offlineRespondWith })
 
     expect((await offlineRespondWith.mock.calls[0][0]).status).toBe(200)
-    expect(cacheStorage.match).toHaveBeenCalledWith('/offline')
+    expect(cacheStorage.open).toHaveBeenCalledWith('pbc-quote-offline-v1')
+    expect(cache.match).toHaveBeenCalledWith('/offline')
+    expect(cacheStorage.match).not.toHaveBeenCalled()
+  })
+
+  it('consults only the current app-owned cache for the offline fallback', async () => {
+    const { cache, cacheStorage, fetchMock, handlers } = createServiceWorkerHarness()
+    cacheStorage.match.mockResolvedValueOnce(new Response('unrelated-offline'))
+    fetchMock.mockRejectedValueOnce(new TypeError('offline'))
+    const respondWith = vi.fn()
+    const request = { mode: 'navigate', url: 'https://example.com/quotes/1' }
+
+    handlers.get('fetch')?.({ request, respondWith })
+
+    const response = await respondWith.mock.calls[0][0]
+    expect(await response.text()).toBe('current-offline')
+    expect(cacheStorage.open).toHaveBeenCalledWith('pbc-quote-offline-v1')
+    expect(cache.match).toHaveBeenCalledWith('/offline')
+    expect(cacheStorage.match).not.toHaveBeenCalled()
   })
 
   it('does not intercept API, Supabase, Server Action, RSC, or other non-navigation requests', () => {

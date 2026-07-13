@@ -171,3 +171,76 @@ Exit code: 0
 
 - Browser-level offline behavior was not exercised against a deployed HTTPS origin in this task. Unit behavior and the production build are verified; deployment/device validation remains part of the later PWA QA release.
 - The fallback intentionally precaches only its HTML and one public icon. Next-generated styling/runtime chunks are not service-worker-cached to preserve the strict no-runtime-cache policy, so a first-ever offline render may be minimally styled if the browser has no ordinary HTTP cache.
+
+## Important review fix — current-cache-only fallback lookup
+
+### Fix summary
+
+- Replaced the global `caches.match(OFFLINE_URL)` fallback lookup with `caches.open(CACHE_NAME)` followed by `cache.match(OFFLINE_URL)`.
+- Added a regression test that makes the global cache storage return an unrelated `/offline` response and proves the navigation fallback returns the current app-owned cache response without consulting `caches.match`.
+- Updated the existing network-first assertion to require the same current-cache-only behavior.
+
+### RED — regression test before the fix
+
+Command:
+
+```text
+npm.cmd run test:run -- tests/pwa-service-worker.test.ts
+```
+
+Observed output (exit 1):
+
+```text
+Test Files  1 failed (1)
+Tests       1 failed | 9 passed (10)
+Duration    489ms
+
+AssertionError: expected 'unrelated-offline' to be 'current-offline'
+Expected: "current-offline"
+Received: "unrelated-offline"
+```
+
+### GREEN — focused service-worker tests
+
+Command:
+
+```text
+npm.cmd run test:run -- tests/pwa-service-worker.test.ts
+```
+
+Observed output (exit 0):
+
+```text
+Test Files  1 passed (1)
+Tests       10 passed (10)
+Duration    511ms
+```
+
+### Review-fix verification
+
+```text
+npm.cmd run typecheck
+Exit code: 0
+tsc --noEmit
+
+npm.cmd run lint
+Exit code: 0
+eslint
+
+npm.cmd run test:run
+Exit code: 0
+Test Files  62 passed | 1 skipped (63)
+Tests       523 passed | 2 skipped (525)
+Duration    13.91s
+
+npm.cmd run build
+Exit code: 0
+Compiled successfully
+Generating static pages using 19 workers (15/15)
+/offline: static
+
+git diff --check
+Exit code: 0
+```
+
+The build-generated `next-env.d.ts` route import was restored to its committed form and is not part of this fix.
