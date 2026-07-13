@@ -1,7 +1,7 @@
 # Project Hardening Implementation Plan
 
 > **진행 중 로드맵.** task별 상세 스텝/코드는 축약했다. 감사 우선순위 요약은 `docs/BACKLOG.md`와 연동한다.
-> 설계·승인 판단은 Opus 4.8, 구현·검증은 Codex 5.5. Production Supabase 변경은 사용자 명시 승인 필요.
+> 설계·승인 판단은 Opus 4.8, 구현·검증은 Codex 5.6(구현=Terra high / 테스트·오류 수정·대규모=Sol high). Production Supabase 변경은 사용자 명시 승인 필요.
 
 **Goal:** 감사에서 발견한 authorization·데이터 무결성·검증·운영 백업·성능·QA 갭을 닫아 PBC 견적 계산기를 더 안전한 프로덕션 도구로 만든다.
 
@@ -38,7 +38,7 @@
 | 역할 | 담당 모델 | 책임 |
 |---|---|---|
 | Planner / Designer / Security 판단 | Opus 4.8 | 접근 모델·백업 정책 결정, UX·보안 리뷰 설계 |
-| Developer / DevOps | Codex 5.5 | RLS·RPC·검증·CSP·테스트·운영 문서 구현 |
+| Developer / DevOps | Codex 5.6 (구현=Terra high / 테스트·대규모=Sol high) | RLS·RPC·검증·CSP·테스트·운영 문서 구현 |
 
 Production 적용, 백업 정책, RLS 접근 모델 변경은 사용자 승인 게이트를 거친다.
 

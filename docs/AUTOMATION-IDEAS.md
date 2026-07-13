@@ -4,7 +4,7 @@
 > 목표: 사용자가 `Interior — Bedroom 1, Living Room, Hallway …`처럼 여러 service item(방/영역)의
 > 페인트 시공 상세를 입력하면 견적 가격이 자동으로 작성되는 수준의 자동화.
 >
-> 설계 담당: **Opus 4.8 extra**. 실제 구현은 확정 후 **Codex 5.5 high**가 수행한다.
+> 설계 담당: **Opus 4.8 extra**. 실제 구현은 확정 후 **Codex 5.6-Terra high**가 수행한다(대규모·장시간 구현은 **Codex 5.6-Sol high**).
 > 출처: 2026-07-06 전면 감사 워크플로(Opus 4.8) 자동화 설계 결과.
 
 ---

@@ -1,6 +1,7 @@
 # WORKFLOW.md — 작업 흐름 (설계·구현 분업)
 
-> **설계는 Claude Opus 4.8 extra, 구현은 Codex 5.5 high**로 역할을 나눠 진행한다.
+> **설계는 Claude Opus 4.8 extra, 구현·실행은 Codex 5.6**으로 역할을 나눠 진행한다.
+> Codex는 **5.6-Terra high**(코드 구현·간단한 변경)와 **5.6-Sol high**(테스트·오류 수정·대규모·장시간 작업)로 나눠 쓴다.
 > Phase별 상세 작업과 프롬프트 템플릿: `docs/WORKFLOW-TASKS.md`.
 
 ---
@@ -13,10 +14,11 @@
 | 아이디어·브레인스토밍 | **Opus 4.8** | 사용자 요구, superpowers/gstack 스킬 |
 | UI/UX 디자인 | **Opus 4.8** | `docs/UI-DESIGN-SYSTEM.md`, `docs/UI-DESIGN.md`, `docs/UI-UX-REVIEW.md` |
 | QA 시나리오·테스트 전략 | **Opus 4.8** | `docs/DECISIONS.md` 테스트 정책 |
-| 기능 구현·테스트 작성 | **Codex 5.5** | 기존 코드 패턴, 설계 문서 |
-| 버그 수정 | **Codex 5.5** | 재현 → 원인 확인 → 최소 수정 → 검증 |
-| 코드 리뷰·보안 | **Codex 5.5** | diff 기반 리뷰, 필요 시 `gstack-review`·`review` |
-| git·배포 실행 | **Codex 5.5** | `docs/DEPLOY.md`, `docs/CLI-ACCESS.md`, 사용자 승인 규칙 |
+| 기능 구현·간단한 변경 | **Codex 5.6-Terra** | 기존 코드 패턴, 설계 문서 |
+| 테스트 작성 | **Codex 5.6-Sol** | test plan, 설계 문서 |
+| 버그·오류 수정, 대규모 수정 | **Codex 5.6-Sol** | 재현 → 원인 확인 → 최소 수정 → 검증 |
+| 코드 리뷰·보안 | **Codex 5.6-Sol** | diff 기반 리뷰, 필요 시 `gstack-review`·`review` |
+| git·배포 실행 | **Codex 5.6-Terra** | `docs/DEPLOY.md`, `docs/CLI-ACCESS.md`, 사용자 승인 규칙 |
 
 모델 라우팅 전체 표: `docs/AGENT-MAP.md`. 런타임에서 모델 전환이 불가능하면 프롬프트 첫 줄에 `Model: <모델>`을 표시한다.
 
@@ -27,7 +29,7 @@
 ### 1. 설계와 구현을 분리한다
 
 - **무엇을·왜**(설계)는 Opus 4.8이 사용자와 협의해 결정하고 `docs/`에 남긴다.
-- **어떻게**(구현·검증)는 Codex 5.5가 그 문서를 입력으로 수행한다.
+- **어떻게**(구현·검증)는 Codex 5.6이 그 문서를 입력으로 수행한다.
 - 결정은 다음 세션에서도 같은 기준으로 이어가도록 문서에 남긴다.
 - 불명확한 요구는 추측하지 않고 질문한다.
 
@@ -66,17 +68,18 @@
    - DB/RLS/API/UI/테스트 범위 잠금
    - 산출물: 구현 계획 (docs/superpowers/plans/)
    ↓
-4. [Codex 5.5] 구현
+4. [Codex 5.6-Terra] 구현
    - DB 마이그레이션 → Server Actions/Route Handlers → UI → 테스트
    ↓
-5. [Codex 5.5] 검증
+5. [Codex 5.6-Terra] 검증
    - typecheck, lint, test, 필요 시 browser QA
    ↓
-6. [Codex 5.5] 완료 보고 → PROGRESS.md 반영
+6. [Codex 5.6-Terra] 완료 보고 → PROGRESS.md 반영
    - 변경 파일, 테스트, 남은 리스크, 다음 단계
 ```
 
-간단한 변경은 설계 단계를 짧은 요약으로 압축할 수 있으나, DB/RLS/보안/공식이 걸리면 반드시 Opus 4.8 설계 문서를 먼저 확정한 뒤 Codex 5.5가 구현한다.
+간단한 변경은 설계 단계를 짧은 요약으로 압축할 수 있으나, DB/RLS/보안/공식이 걸리면 반드시 Opus 4.8 설계 문서를 먼저 확정한 뒤 Codex 5.6이 구현한다.
+테스트 작성·오류 수정·대규모 수정이 주 작업이면 4~6단계를 **Codex 5.6-Sol high**가 수행한다.
 
 ---
 

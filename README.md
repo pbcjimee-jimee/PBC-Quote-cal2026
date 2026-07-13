@@ -63,7 +63,7 @@ git ls-remote origin main
 
 ## 개발 워크플로우
 
-- **역할 분업:** 설계·기획·QA·디자인은 **Claude Opus 4.8 extra**, 구현·리뷰·보안·git·배포는 **Codex 5.5 high**가 담당한다.
+- **역할 분업:** 설계·기획·QA·디자인은 **Claude Opus 4.8 extra**, 구현·실행은 **Codex 5.6**이 담당한다 — 코드 구현·간단한 변경은 **5.6-Terra high**, 테스트·오류 수정·대규모 수정 등 복잡한 작업은 **5.6-Sol high**.
 - **흐름:** 새 기능은 [Opus] 요구사항 확인 → 설계 doc → 구현 계획 → [Codex] 구현 → 검증 순서로 진행한다.
 - **검증:** 변경 후 typecheck, lint, 관련 테스트를 실행한다.
 - **승인 필요:** 프로덕션 DB 적용, Vercel 환경 변수·도메인 변경, 사용자 데이터 영구 삭제, force push/reset, 새 외부 의존성 추가.
