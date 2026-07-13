@@ -2,7 +2,7 @@
 
 > **검토 일자:** 2026-05-15 (코드베이스 정적 분석) · **대상:** v1.0 전 페이지·컴포넌트
 > 상세 페이지별 코드 라인 인용은 축약했다. P0 quick win 일부는 이후 반영됨(focus-visible, 대비, draft dialog a11y — `PROGRESS.md` 참조).
-> UI/UX 디자인 판단은 **Opus 4.8**, 실제 코드 반영은 **Codex 5.5**가 담당한다.
+> UI/UX 디자인 판단은 **Opus 4.8**, 실제 코드 반영은 **Codex 5.6-Terra high**가 담당한다(대규모 수정은 **Codex 5.6-Sol high**).
 
 ---
 

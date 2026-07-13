@@ -7,16 +7,18 @@
 
 ## 역할 분업 (핵심)
 
-이 프로젝트는 **두 모델이 역할로 나눠** 진행한다.
+이 프로젝트는 **역할별 모델 분업**으로 진행한다.
 
 | 역할군 | 담당 모델 | 하는 일 |
 |---|---|---|
 | **설계·기획** | **Claude Opus 4.8 extra** | 계획·아키텍처 설계, 아이디어·브레인스토밍, QA 시나리오 설계, UI/UX 디자인, plan/design 리뷰, 스코프·리스크 판단 |
-| **구현·실행** | **Codex 5.5 high** | 코딩(마이그레이션·Server Action·Route·UI), 코드 리뷰, 보안 점검·수정, git 작업, 버그 수정, 테스트 작성, 배포 실행 |
+| **구현 (간단·일반)** | **Codex 5.6-Terra high** | 코딩(마이그레이션·Server Action·Route·UI), 간단한 변경, 단순 문구 수정·기계적 반복, git 작업, 배포 실행 |
+| **복잡·장시간 작업** | **Codex 5.6-Sol high** | 테스트 작성, 버그·오류 수정, 대규모 수정·리팩토링, 코드 리뷰·보안 점검·수정, 오래 걸리는 작업 |
 
 원칙:
 - **무엇을·왜 만들지(설계)** 는 Opus 4.8이 사용자와 협의해 결정하고 문서로 남긴다.
-- **어떻게 코드로 구현·검증·반영할지(실행)** 는 Codex 5.5가 문서·코드 패턴에 따라 수행한다.
+- **어떻게 코드로 구현·검증·반영할지(실행)** 는 Codex 5.6이 문서·코드 패턴에 따라 수행한다. 코드 구현·간단한 변경은 **5.6-Terra high**, 테스트·오류 수정·대규모 수정 등 복잡한 작업은 **5.6-Sol high**를 쓴다.
+- **Codex 서브에이전트 스폰 시** 서브에이전트 모델은 전부 **`gpt-5.6-sol` + high**로 실행한다(`~/.codex/agents/`의 `default`/`worker`/`explorer` 오버라이드로 고정).
 - 사용자 명시 요청이 최우선이다. 이 분업 규칙은 시스템·개발자·사용자 지시보다 우선하지 않는다.
 - 핵심 결정 변경, 보안 critical 변경, 프로덕션 DB 적용, 새 외부 의존성 추가는 사용자 승인 후 진행한다.
 - 결정이 필요하면 추측하지 않고 질문한 뒤 문서화한다.
@@ -40,14 +42,15 @@
 | 작업 | 담당 모델 | 필독 파일 |
 |---|---|---|
 | 신규 기능 설계 | Opus 4.8 | `PROGRESS.md` → `docs/DECISIONS.md` → `docs/ARCHITECTURE.md` → `docs/SECURITY.md` |
-| DB 마이그레이션 | Codex 5.5 | `docs/DB-SCHEMA.md` → `docs/SECURITY.md` |
-| 계산 로직 | Codex 5.5 | `docs/CALCULATION.md` → `docs/CALCULATION-API.md` → `docs/CODING-STYLE.md` |
-| Server Actions | Codex 5.5 | `docs/ARCHITECTURE.md` → `docs/DB-SCHEMA.md` → `docs/CODING-STYLE.md` |
+| DB 마이그레이션 | Codex 5.6-Terra | `docs/DB-SCHEMA.md` → `docs/SECURITY.md` |
+| 계산 로직 | Codex 5.6-Terra | `docs/CALCULATION.md` → `docs/CALCULATION-API.md` → `docs/CODING-STYLE.md` |
+| Server Actions | Codex 5.6-Terra | `docs/ARCHITECTURE.md` → `docs/DB-SCHEMA.md` → `docs/CODING-STYLE.md` |
 | UI/UX 디자인 설계 | Opus 4.8 | `docs/UI-DESIGN-SYSTEM.md` → `docs/UI-DESIGN.md` → `docs/UI-UX-REVIEW.md` |
-| UI 컴포넌트 구현 | Codex 5.5 | `docs/UI-DESIGN-SYSTEM.md` → 페이지별 명세 → `docs/CODING-STYLE.md` |
-| 테스트 작성 | Codex 5.5 | `docs/CALCULATION.md` → `docs/CALCULATION-API.md` → `PROGRESS.md` |
-| 코드 리뷰·보안 | Codex 5.5 | `docs/DECISIONS.md` → `docs/CODING-STYLE.md` → `docs/SECURITY.md` |
-| 배포 | Codex 5.5 | `docs/DEPLOY.md` → `docs/CLI-ACCESS.md` → `docs/SECURITY.md` |
+| UI 컴포넌트 구현 | Codex 5.6-Terra | `docs/UI-DESIGN-SYSTEM.md` → 페이지별 명세 → `docs/CODING-STYLE.md` |
+| 테스트 작성 | Codex 5.6-Sol | `docs/CALCULATION.md` → `docs/CALCULATION-API.md` → `PROGRESS.md` |
+| 버그·오류 수정, 대규모 수정 | Codex 5.6-Sol | 재현 경로 → 관련 명세 → `docs/CODING-STYLE.md` |
+| 코드 리뷰·보안 | Codex 5.6-Sol | `docs/DECISIONS.md` → `docs/CODING-STYLE.md` → `docs/SECURITY.md` |
+| 배포 | Codex 5.6-Terra | `docs/DEPLOY.md` → `docs/CLI-ACCESS.md` → `docs/SECURITY.md` |
 
 전체 매트릭스: `docs/AGENT-MAP.md`.
 
@@ -123,7 +126,7 @@
 ```md
 [태스크 #X] {짧은 제목}
 
-**Model:** Opus 4.8 extra (설계) 또는 Codex 5.5 high (구현)
+**Model:** Opus 4.8 extra (설계) / Codex 5.6-Terra high (구현·간단한 변경) / Codex 5.6-Sol high (테스트·오류 수정·대규모)
 
 **Input docs to read first:**
 - (관련 docs/ 파일들)
@@ -152,7 +155,7 @@
 |---|---|
 | 명세가 모호함 | 명확화 질문, 추측 금지 |
 | 명세와 기존 코드가 모순 | 사용자에게 알리고 진실 확인 |
-| 설계와 구현 담당이 갈릴 때 | 설계는 Opus 4.8이 문서로 확정 → Codex 5.5가 그 문서 기준으로 구현 |
+| 설계와 구현 담당이 갈릴 때 | 설계는 Opus 4.8이 문서로 확정 → Codex 5.6이 그 문서 기준으로 구현 |
 | 더 좋은 방법이 보임 | 이유와 트레이드오프를 제안하고 사용자 확인 후 진행 |
 | 같은 문제로 3회 시도 실패 | 중단, `gstack-investigate` 권장 |
 | 보안 critical 변경 | 사용자 확인 필수 (`docs/SECURITY.md`) |
