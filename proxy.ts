@@ -4,11 +4,16 @@ import { NextResponse, type NextRequest } from 'next/server'
 // which uses __dirname and crashes in Edge/Proxy Runtime.
 // Full session verification happens in server components via createServerClient.
 export async function proxy(request: NextRequest) {
+  const { pathname } = request.nextUrl
+
+  if (pathname === '/') {
+    return NextResponse.rewrite(new URL('/quotes/new', request.url))
+  }
+
   if (process.env.NODE_ENV !== 'production' && process.env.NEXT_PUBLIC_DEV_NO_AUTH !== 'false') {
     return NextResponse.next()
   }
 
-  const { pathname } = request.nextUrl
   const isAuthPage = pathname === '/login' || pathname.startsWith('/login/')
   const isPublicPath = isAuthPage || pathname.startsWith('/api/')
 

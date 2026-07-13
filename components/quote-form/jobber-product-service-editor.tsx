@@ -5,6 +5,7 @@ import { Icons } from '@/components/ui/icons'
 import type { JobberQuoteLineItemDraft } from './types'
 import type { ProductServiceRecord } from '@/lib/product-services/types'
 import type { QuoteLineTemplateRecord } from '@/lib/quote-line-templates/types'
+import { searchProductServices } from '@/lib/actions/product-services'
 
 interface JobberProductServiceEditorProps {
   value: JobberQuoteLineItemDraft[]
@@ -164,6 +165,7 @@ export function JobberProductServiceEditor({
   const [dropTarget, setDropTarget] = useState<{ id: string; placement: DropPlacement } | null>(null)
   const [selectedTemplateId, setSelectedTemplateId] = useState('')
   const [activeLookupLineId, setActiveLookupLineId] = useState<string | null>(null)
+  const [catalogMatches, setCatalogMatches] = useState<ProductServiceRecord[]>([])
   const scrollListRef = useRef<HTMLDivElement | null>(null)
   const dragScrollFrameRef = useRef<number | null>(null)
   const dragScrollStepRef = useRef(0)
@@ -207,6 +209,30 @@ export function JobberProductServiceEditor({
   }
 
   useEffect(() => stopProductServiceDragScroll, [])
+
+  const activeLookupQuery = value.find((line) => line.id === activeLookupLineId)?.name.trim() ?? ''
+  const availableProductServices = productServices.length > 0
+    ? productServices
+    : activeLookupQuery.length > 0
+      ? catalogMatches
+      : []
+
+  useEffect(() => {
+    if (productServices.length > 0 || activeLookupQuery.length === 0) {
+      return
+    }
+
+    let cancelled = false
+    const timeoutId = window.setTimeout(async () => {
+      const result = await searchProductServices({ query: activeLookupQuery, limit: 6 })
+      if (!cancelled) setCatalogMatches(result.ok ? result.data : [])
+    }, 180)
+
+    return () => {
+      cancelled = true
+      window.clearTimeout(timeoutId)
+    }
+  }, [activeLookupQuery, productServices.length])
 
   function updateLine(updatedLine: JobberQuoteLineItemDraft) {
     onChange(value.map((line) => line.id === updatedLine.id ? updatedLine : line))
@@ -362,7 +388,7 @@ export function JobberProductServiceEditor({
                 isLookupActive={activeLookupLineId === line.id}
                 onLookupFocus={() => setActiveLookupLineId(line.id)}
                 onLookupBlur={() => setActiveLookupLineId(null)}
-                productServices={productServices}
+                productServices={availableProductServices}
                 onApplyProductService={(productService) => applyProductService(line, productService)}
                 onChange={updateLine}
                 onRemove={() => removeLine(line.id)}
@@ -383,7 +409,7 @@ export function JobberProductServiceEditor({
               isLookupActive={activeLookupLineId === line.id}
               onLookupFocus={() => setActiveLookupLineId(line.id)}
               onLookupBlur={() => setActiveLookupLineId(null)}
-              productServices={productServices}
+              productServices={availableProductServices}
               onApplyProductService={(productService) => applyProductService(line, productService)}
               onChange={updateLine}
               onRemove={() => removeLine(line.id)}

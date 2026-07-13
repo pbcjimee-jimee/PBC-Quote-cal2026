@@ -62,6 +62,8 @@ describe('requireAllowedUser', () => {
       user: {
         id: 'user-1',
         email: 'OWNER@example.com',
+        userMetadata: undefined,
+        appMetadata: undefined,
       },
     })
   })

@@ -65,6 +65,7 @@ function NavIcon({ icon }: { icon: NavItem['icon'] }) {
 
 function isNavItemActive(href: string, pathname: string | null): boolean {
   if (!pathname) return false
+  if (href === '/quotes/new' && pathname === '/') return true
   if (href === '/quotes') {
     return pathname === '/quotes' || (pathname.startsWith('/quotes/') && !pathname.startsWith('/quotes/new'))
   }
