@@ -36,6 +36,7 @@ quote_areas(interior/exterior/roof)
    ▲
 products(페인트 마스터) ── quote_items.product_id / quote_option_items.product_id
 product_services(Jobber 공개 라인 카탈로그) ── quote_line_templates / _items
+warehouse_inventory(Settings Inventory page, app-only stock list)
 ```
 
 ---
@@ -66,6 +67,8 @@ product_services(Jobber 공개 라인 카탈로그) ── quote_line_templates 
 | `0020_add_jobber_snapshot_refresh_metadata.sql` | `quotes` Jobber snapshot refresh metadata 4컬럼 + change status CHECK |
 | `20260705221912_tighten_pricing_margin_checks.sql` | `pricing_settings` F2-F5 margin `>= 0 AND < 1` CHECK 추가(기존 행 preflight, idempotent) |
 | `20260707003130_add_quote_version_and_save_rpcs.sql` | `quotes.version` + `create_quote_with_children(jsonb)` / `update_quote_with_children(jsonb)` RPC. 견적 본문/자식 행 저장을 서버 트랜잭션으로 묶고 version 기반 동시 편집 충돌 감지 |
+| `20260708000000_add_warehouse_inventory.sql` | `warehouse_inventory` app-only stock list + 2026 equipment workbook seed rows |
+| `20260708220900_recategorize_inventory_workbook_sections.sql` | Existing 2026 inventory seed rows recategorized by workbook section rows (`Tools`, `Sample`, `Weathershield`, etc.) |
 
 ---
 
@@ -101,6 +104,9 @@ product_services(Jobber 공개 라인 카탈로그) ── quote_line_templates 
 ### product_services / quote_line_templates
 `product_services`: Jobber Products & Services Export CSV 관리(공개 line 자동채우기용). `unit_cost`는 Jobber 호환 필드로만 보관, 계산에는 미사용(소비자가 기준 유지). `quote_line_templates`/`_items`: Settings에서 저장하는 재사용 line/text 묶음, quote에 복사 후에만 write-back. SQL: `0011`/`0012`.
 
+### warehouse_inventory
+App-only warehouse stock list managed at `/settings/inventory`. Fields: `name`, `category`, `brand`, `model_specification`, `colour`, `size_or_serial`, `quantity`, `purchase_date`, `used_date`, `used_location_text`, `status` (`in_stock`/`out`/`unknown`), `notes`, `source_year`, `active`, timestamps. For the 2026 equipment workbook, `category` follows the workbook section rows such as `Tools`, `Sample`, `Primer`, `Weathershield`, and `Interior walls`, not the generic Paint/Tools column. It is not used by quote calculation, material price snapshots, or Jobber write-back. SQL: `20260708000000_add_warehouse_inventory.sql` + `20260708220900_recategorize_inventory_workbook_sections.sql`.
+
 ### quote_memos (app-only)
 `quote_id`(CASCADE), `body`, `position`, `created_by`. Jobber 미fetch·미write-back. SQL: `0013`.
 
@@ -120,7 +126,7 @@ CREATE POLICY "authenticated_all" ON <table>
   FOR ALL TO authenticated USING (true) WITH CHECK (true);
 ```
 
-적용 테이블: `products`, `product_services`, `quote_line_templates`, `quote_line_template_items`, `pricing_settings`, `quotes`, `quote_items`, `quote_areas`, `jobber_quote_lines`, `quote_options`, `quote_option_items`, `quote_memos`, `quote_price_revisions`.
+적용 테이블: `products`, `product_services`, `quote_line_templates`, `quote_line_template_items`, `warehouse_inventory`, `pricing_settings`, `quotes`, `quote_items`, `quote_areas`, `jobber_quote_lines`, `quote_options`, `quote_option_items`, `quote_memos`, `quote_price_revisions`.
 
 - `jobber_tokens`만 정책 없음(service-role only). 미인증 사용자는 정책 없음 = 전 테이블 거부.
 - `tests/rls.test.ts`가 마이그레이션 SQL 텍스트로 RLS enable·정책·anon 부재를 회귀 검증한다(실 DB 강제는 `tests/rls-local-integration.test.ts`, env 있을 때만).

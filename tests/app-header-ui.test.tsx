@@ -4,18 +4,25 @@ import { describe, expect, it, vi } from 'vitest'
 import { AppHeader } from '@/components/layout/app-header'
 import type { UserProfile } from '@/lib/user-profiles'
 
-const sidebarPreference = vi.hoisted(() => ({ collapsed: false }))
+const headerState = vi.hoisted(() => ({
+  collapsed: false,
+  pathname: '/quotes/new',
+}))
 
 vi.mock('react', async (importOriginal) => {
   const actual = await importOriginal<typeof import('react')>()
   return {
     ...actual,
-    useSyncExternalStore: vi.fn(() => sidebarPreference.collapsed),
+    useSyncExternalStore: vi.fn((
+      _subscribe: unknown,
+      _getSnapshot: unknown,
+      getServerSnapshot?: () => unknown
+    ) => getServerSnapshot?.name === 'getServerHydratedSnapshot' ? false : headerState.collapsed),
   }
 })
 
 vi.mock('next/navigation', () => ({
-  usePathname: () => '/quotes/new',
+  usePathname: () => headerState.pathname,
 }))
 
 vi.mock('@/lib/actions/auth', () => ({
@@ -30,7 +37,8 @@ describe('AppHeader sidebar UI', () => {
   }
 
   it('renders the desktop sidebar toggle and expanded state markup', () => {
-    sidebarPreference.collapsed = false
+    headerState.collapsed = false
+    headerState.pathname = '/quotes/new'
     const markup = renderToStaticMarkup(createElement(AppHeader, { userProfile }))
 
     expect(markup).toContain('aria-label="Toggle sidebar"')
@@ -38,11 +46,13 @@ describe('AppHeader sidebar UI', () => {
     expect(markup).toContain('Overview')
     expect(markup).toContain('New Quote')
     expect(markup).toContain('Settings')
+    expect(markup).toContain('Inventory')
     expect(markup).toContain('pbc-usercard__identity')
   })
 
   it('renders the collapsed sidebar as an icon rail without text buttons', () => {
-    sidebarPreference.collapsed = true
+    headerState.collapsed = true
+    headerState.pathname = '/quotes/new'
     const markup = renderToStaticMarkup(createElement(AppHeader, { userProfile }))
 
     expect(markup).toContain('data-sidebar-state="collapsed"')
@@ -52,5 +62,14 @@ describe('AppHeader sidebar UI', () => {
     expect(markup).toContain('aria-label="Sign out"')
     expect(markup).toContain('<span class="sr-only">Sign out</span>')
     expect(markup).not.toContain('>Out</button>')
+  })
+
+  it('defers route active classes during server render to avoid hydration mismatch', () => {
+    headerState.collapsed = false
+    headerState.pathname = '/settings/inventory'
+    const markup = renderToStaticMarkup(createElement(AppHeader, { userProfile }))
+
+    expect(markup).toContain('Inventory')
+    expect(markup).not.toContain('is-active')
   })
 })

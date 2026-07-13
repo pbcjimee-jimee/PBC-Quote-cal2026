@@ -182,6 +182,8 @@ F5 margin   [30] %
 
 Settings also includes Material, Product & Service, Template, and Area tabs. The Template tab stores reusable Product / Service line item and text item sets. Those templates appear in `/quotes/new` and quote edit Product / Service sections and copy their saved rows into the current quote when selected.
 
+Inventory is managed on a separate Settings child page at `/settings/inventory`, not inside the Settings tab set. It supports warehouse stock search, add, edit, soft delete, CSV import/export, purchase date, used date, used location text, and in-stock/out tracking. Rows are grouped by workbook-style categories such as `Tools`, `Sample`, `Primer`, `Weathershield`, `Acratex`, and `Interior walls`; new manual items use the same category select. Out rows use a checkbox control, stronger background treatment, and line-through item text. Inventory rows are app-only and are not used in quote calculation or Jobber write-back.
+
 ---
 
 ## Current Styling Source

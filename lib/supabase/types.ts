@@ -69,6 +69,34 @@ export interface Database {
         Update: Partial<Database['public']['Tables']['product_services']['Insert']>
         Relationships: []
       }
+      warehouse_inventory: {
+        Row: {
+          id: string
+          name: string
+          category: string | null
+          brand: string | null
+          model_specification: string | null
+          colour: string | null
+          size_or_serial: string | null
+          quantity: string
+          purchase_date: string | null
+          used_date: string | null
+          used_location_text: string | null
+          status: 'in_stock' | 'out' | 'unknown'
+          notes: string | null
+          active: boolean
+          source_year: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: Omit<Database['public']['Tables']['warehouse_inventory']['Row'], 'id' | 'created_at' | 'updated_at'> & {
+          id?: string
+          created_at?: string
+          updated_at?: string
+        }
+        Update: Partial<Database['public']['Tables']['warehouse_inventory']['Insert']>
+        Relationships: []
+      }
       quote_line_templates: {
         Row: {
           id: string

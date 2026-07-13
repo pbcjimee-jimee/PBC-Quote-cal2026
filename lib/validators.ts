@@ -310,6 +310,49 @@ export const productServiceImportSchema = z.object({
   csvText: z.string().trim().min(1),
 })
 
+export const inventoryStatusSchema = z.enum(['in_stock', 'out', 'unknown'])
+
+export const inventorySearchSchema = z.object({
+  query: z.string().max(100).default(''),
+  status: inventoryStatusSchema.optional(),
+  category: z.string().trim().max(120).optional(),
+  limit: z.number().int().positive().max(500).default(200),
+})
+
+export const inventoryCreateSchema = z.object({
+  name: z.string().trim().min(1).max(200),
+  category: z.string().trim().max(120).nullable().optional(),
+  brand: z.string().trim().max(120).nullable().optional(),
+  modelSpecification: z.string().trim().max(200).nullable().optional(),
+  colour: z.string().trim().max(160).nullable().optional(),
+  sizeOrSerial: z.string().trim().max(120).nullable().optional(),
+  quantity: z.coerce.number().nonnegative().default(1),
+  purchaseDate: z.string().trim().max(20).nullable().optional(),
+  usedDate: z.string().trim().max(20).nullable().optional(),
+  usedLocationText: z.string().trim().max(500).nullable().optional(),
+  status: inventoryStatusSchema.default('in_stock'),
+  notes: z.string().trim().max(1000).nullable().optional(),
+  sourceYear: z.string().trim().max(20).nullable().optional(),
+  active: z.boolean().default(true),
+})
+
+export const inventoryUpdateSchema = inventoryCreateSchema.partial().extend({
+  id: z.string().uuid(),
+})
+
+export const inventoryDeleteSchema = z.object({
+  id: z.string().uuid(),
+})
+
+export const inventoryImportSchema = z.object({
+  csvText: z.string().trim().min(1),
+  sourceYear: z.string().trim().max(20).nullable().optional(),
+})
+
+export type InventoryCreateInput = z.infer<typeof inventoryCreateSchema>
+export type InventoryUpdateInput = z.infer<typeof inventoryUpdateSchema>
+export type InventorySearchInput = z.infer<typeof inventorySearchSchema>
+
 export const areaSchema = z.object({
   scope: z.enum(['interior', 'exterior', 'roof']),
   name: z.string().trim().min(1).max(80),

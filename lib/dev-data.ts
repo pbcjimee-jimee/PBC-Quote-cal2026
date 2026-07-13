@@ -9,6 +9,7 @@ import {
 } from './calculator'
 import { calculateDisplayLabourTotals, calculateFormulaLabourDays, calculateLabourTotals } from './quote-labour'
 import { DULUX_PAINT_PRODUCTS } from './products/dulux-paints'
+import { normalizeInventoryItem, type InventoryItemRecord, type InventoryStatus } from './inventory/types'
 import { normalizeRrpProduct, type ProductRecord } from './products/types'
 import { normalizeProductService, type ProductServiceRecord } from './product-services/types'
 import { normalizeQuoteLineTemplate, type QuoteLineTemplateRecord } from './quote-line-templates/types'
@@ -180,6 +181,7 @@ interface DevDataStore {
   quotes: QuoteRecord[]
   areas: AreaRecord[]
   quoteLineTemplates: QuoteLineTemplateRecord[]
+  inventoryItems: InventoryItemRecord[]
 }
 
 const storeOwner = globalThis as typeof globalThis & {
@@ -191,6 +193,7 @@ const store = storeOwner.__pbcDevDataStore ??= {
   quotes: [],
   areas: [],
   quoteLineTemplates: [],
+  inventoryItems: [],
 }
 
 function nextId(prefix: string): string {
@@ -397,6 +400,127 @@ function rowToDevProductService(
     active: row.active,
     createdAt: row.created_at ?? now,
     updatedAt: row.updated_at ?? now,
+  })
+}
+
+function rowToDevInventoryItem(
+  row: Database['public']['Tables']['warehouse_inventory']['Insert'] & {
+    id?: string
+    created_at?: string
+    updated_at?: string
+  }
+): InventoryItemRecord {
+  const now = new Date().toISOString()
+  return normalizeInventoryItem({
+    id: row.id ?? crypto.randomUUID(),
+    name: row.name,
+    category: row.category ?? null,
+    brand: row.brand ?? null,
+    modelSpecification: row.model_specification ?? null,
+    colour: row.colour ?? null,
+    sizeOrSerial: row.size_or_serial ?? null,
+    quantity: money(row.quantity),
+    purchaseDate: row.purchase_date ?? null,
+    usedDate: row.used_date ?? null,
+    usedLocationText: row.used_location_text ?? null,
+    status: row.status,
+    notes: row.notes ?? null,
+    active: row.active,
+    sourceYear: row.source_year ?? null,
+    createdAt: row.created_at ?? now,
+    updatedAt: row.updated_at ?? now,
+  })
+}
+
+export function listDevInventory(
+  query = '',
+  limit = 200,
+  status?: InventoryStatus,
+  category?: string
+): InventoryItemRecord[] {
+  const tokens = searchTokens(query)
+  const normalizedCategory = category?.trim().toLowerCase() ?? ''
+  return [...store.inventoryItems]
+    .filter((item) => {
+      if (!item.active) return false
+      if (status && item.status !== status) return false
+      if (normalizedCategory && (item.category ?? '').toLowerCase() !== normalizedCategory) return false
+      if (tokens.length === 0) return true
+
+      const haystack = [
+        item.name,
+        item.category,
+        item.brand,
+        item.modelSpecification,
+        item.colour,
+        item.sizeOrSerial,
+        item.usedLocationText,
+        item.notes,
+      ]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase()
+
+      return tokens.every((token) => haystack.includes(token))
+    })
+    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+    .slice(0, limit)
+}
+
+export function createDevInventoryItem(
+  row: Database['public']['Tables']['warehouse_inventory']['Insert']
+): InventoryItemRecord {
+  const item = rowToDevInventoryItem(row)
+  store.inventoryItems = [item, ...store.inventoryItems]
+  return item
+}
+
+export function createDevInventoryItemsFromImport(
+  rows: Database['public']['Tables']['warehouse_inventory']['Insert'][]
+): InventoryItemRecord[] {
+  const created = rows.map((row) => rowToDevInventoryItem(row))
+  store.inventoryItems = [...created, ...store.inventoryItems]
+  return created
+}
+
+export function updateDevInventoryItem(
+  id: string,
+  updates: Database['public']['Tables']['warehouse_inventory']['Update']
+): InventoryItemRecord | null {
+  const index = store.inventoryItems.findIndex((item) => item.id === id)
+  if (index === -1) return null
+
+  const current = store.inventoryItems[index]
+  const hasField = <K extends keyof Database['public']['Tables']['warehouse_inventory']['Update']>(field: K) =>
+    Object.prototype.hasOwnProperty.call(updates, field)
+  const updated = normalizeInventoryItem({
+    ...current,
+    name: hasField('name') ? updates.name ?? current.name : current.name,
+    category: hasField('category') ? updates.category ?? null : current.category,
+    brand: hasField('brand') ? updates.brand ?? null : current.brand,
+    modelSpecification: hasField('model_specification') ? updates.model_specification ?? null : current.modelSpecification,
+    colour: hasField('colour') ? updates.colour ?? null : current.colour,
+    sizeOrSerial: hasField('size_or_serial') ? updates.size_or_serial ?? null : current.sizeOrSerial,
+    quantity: updates.quantity === undefined ? current.quantity : money(updates.quantity),
+    purchaseDate: hasField('purchase_date') ? updates.purchase_date ?? null : current.purchaseDate,
+    usedDate: hasField('used_date') ? updates.used_date ?? null : current.usedDate,
+    usedLocationText: hasField('used_location_text') ? updates.used_location_text ?? null : current.usedLocationText,
+    status: updates.status ?? current.status,
+    notes: hasField('notes') ? updates.notes ?? null : current.notes,
+    active: updates.active ?? current.active,
+    sourceYear: hasField('source_year') ? updates.source_year ?? null : current.sourceYear,
+    updatedAt: updates.updated_at ?? new Date().toISOString(),
+  })
+
+  store.inventoryItems = [...store.inventoryItems]
+  store.inventoryItems[index] = updated
+  return updated
+}
+
+export function deleteDevInventoryItem(id: string): InventoryItemRecord | null {
+  return updateDevInventoryItem(id, {
+    active: false,
+    updated_at: new Date().toISOString(),
   })
 }
 
@@ -1005,6 +1129,7 @@ export function resetDevData(): void {
   store.quotes = []
   store.areas = []
   store.quoteLineTemplates = []
+  store.inventoryItems = []
   products = DULUX_PAINT_PRODUCTS.map(normalizeRrpProduct)
   productServices = []
 }

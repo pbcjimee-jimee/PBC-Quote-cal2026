@@ -79,6 +79,7 @@
 │  - product_services
 │  - quote_line_templates
 │  - quote_line_template_items
+│  - warehouse_inventory
 │  - quote_memos (app-only internal notes)
 │  - quote_price_revisions
 │  - pricing_settings (singleton)

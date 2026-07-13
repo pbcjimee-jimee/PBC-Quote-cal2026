@@ -15,6 +15,7 @@ const migrations = [
   '0013_add_quote_memos.sql',
   '0015_add_roof_scope_and_pricing.sql',
   '0017_add_quote_price_revisions.sql',
+  '20260708000000_add_warehouse_inventory.sql',
 ].map((file) => {
   const path = join(migrationsDir, file)
 
@@ -40,6 +41,7 @@ const authenticatedCrudTables = [
   'product_services',
   'quote_line_templates',
   'quote_line_template_items',
+  'warehouse_inventory',
 ]
 
 function escapeRegExp(value: string): string {
