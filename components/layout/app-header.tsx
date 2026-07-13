@@ -172,24 +172,29 @@ export function AppHeader({ userProfile }: { userProfile: UserProfile }) {
         </div>
       </aside>
 
-      {/* 모바일 헤더 (사이드바가 숨겨질 때) */}
-      <header className="sticky top-0 z-30 border-b border-[var(--border)] bg-[rgba(246,249,255,0.82)] backdrop-blur lg:hidden">
-        <div className="flex min-h-16 items-center justify-between gap-4 px-4 sm:px-6">
-          <Link href="/quotes" className="flex items-center gap-3">
+      <header className="pbc-mobile-header sticky top-0 z-30 border-b border-[var(--border)] bg-[rgba(246,249,255,0.82)] backdrop-blur lg:hidden">
+        <div className="pbc-mobile-header__inner">
+          <Link href="/quotes" className="pbc-mobile-header__brand">
             <span className="pbc-brand__mark !h-9 !w-9 !text-sm">P</span>
             <span className="text-sm font-extrabold text-[var(--foreground)]">PBC Quote</span>
           </Link>
 
-          <nav className="flex items-center gap-2 text-sm">
-            <Link href="/quotes/new" className="pbc-btn pbc-btn--primary pbc-btn--sm">
-              {Icons.plus({ size: 14 })} New
-            </Link>
-            <Link href="/settings" className="pbc-btn pbc-btn--ghost pbc-btn--sm">
-              Settings
-            </Link>
-            <Link href="/settings/inventory" className="pbc-btn pbc-btn--ghost pbc-btn--sm">
-              Inventory
-            </Link>
+          <nav aria-label="Mobile navigation" className="pbc-mobile-nav">
+            {navItems.map((item) => {
+              const isActive = isNavItemActive(item.href, hasHydrated ? pathname : null)
+
+              return (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  aria-current={isActive ? 'page' : undefined}
+                  className={`pbc-mobile-nav__item ${isActive ? 'is-active' : ''}`}
+                >
+                  <NavIcon icon={item.icon} />
+                  <span>{item.href === '/quotes/new' ? 'New' : item.label}</span>
+                </Link>
+              )
+            })}
           </nav>
         </div>
       </header>

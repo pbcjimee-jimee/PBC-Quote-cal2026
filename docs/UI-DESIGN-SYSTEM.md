@@ -104,6 +104,14 @@ Prefer these primitives before recreating card/header markup in page components.
 - Do not use inline `style` for standard component states such as soft buttons; add a shared `pbc-*` class instead.
 - After visual changes, validate desktop and one mobile viewport for `/quotes/new`, `/quotes/[id]/edit`, `/quotes/[id]`, `/quotes`, or `/settings`, depending on the touched surface.
 
+## Mobile interaction rules
+
+- The application switches between its desktop shell/sidebar and mobile header/total bar at the Tailwind `lg` boundary. CSS max-width queries for that transition must use `1023.98px`; component-specific layout breakpoints may remain independent.
+- At `max-width: 1023.98px`, form inputs, textareas, table inputs, search inputs, status controls, pricing inputs, and month selects must use a minimum `16px` font size to prevent iOS focus zoom. Preserve compact desktop type above this boundary.
+- Standalone-safe surfaces must add `env(safe-area-inset-*)` to their existing padding. This applies to the mobile sticky header top, mobile total bar bottom, and the auth layout left, right, and bottom edges.
+- Mobile `pbc-iconbtn`, `pbc-iconbtn--compact`, and `pbc-btn--sm` controls must provide at least a `44px` by `44px` hit target. Dense tables may retain internal horizontal scrolling rather than shrinking these targets.
+- The mobile header must expose Overview, New Quote, Settings, and Inventory with a visible active state and remain usable without page-level horizontal scrolling at narrow widths.
+
 ## Current cleanup outcome
 
 As of 2026-05-30:
