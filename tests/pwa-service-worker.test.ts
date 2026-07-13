@@ -1,8 +1,12 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { runInNewContext } from 'node:vm'
+import { createElement } from 'react'
+import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it, vi } from 'vitest'
 import nextConfig from '@/next.config'
+import OfflinePage from '@/app/offline/page'
+import { registerServiceWorker } from '@/components/pwa/service-worker-register'
 
 type EventHandler = (event: Record<string, unknown>) => void
 
@@ -177,13 +181,36 @@ describe('PWA service worker', () => {
 })
 
 describe('PWA registration and offline UI', () => {
-  it('registers the service worker only in supported production browsers', () => {
-    const source = readProjectFile('components/pwa/service-worker-register.tsx')
+  it('registers the production service worker at the fixed public URL', async () => {
+    const register = vi.fn(async () => ({ scope: '/' }))
 
-    expect(source).toContain("'use client'")
-    expect(source).toContain("process.env.NODE_ENV !== 'production'")
-    expect(source).toContain("'serviceWorker' in navigator")
-    expect(source).toContain("navigator.serviceWorker.register('/sw.js')")
+    await registerServiceWorker('production', { serviceWorker: { register } })
+
+    expect(register).toHaveBeenCalledOnce()
+    expect(register).toHaveBeenCalledWith('/sw.js')
+  })
+
+  it('does not register the service worker outside production', async () => {
+    const register = vi.fn(async () => ({ scope: '/' }))
+
+    await registerServiceWorker('development', { serviceWorker: { register } })
+
+    expect(register).not.toHaveBeenCalled()
+  })
+
+  it('does not register when the browser has no service worker support', async () => {
+    await expect(registerServiceWorker('production', {})).resolves.toBeUndefined()
+  })
+
+  it('contains registration rejection without leaking an unhandled failure', async () => {
+    const register = vi.fn(async () => {
+      throw new Error('registration blocked')
+    })
+
+    await expect(
+      registerServiceWorker('production', { serviceWorker: { register } })
+    ).resolves.toBeUndefined()
+    expect(register).toHaveBeenCalledOnce()
   })
 
   it('mounts registration in the root layout', () => {
@@ -193,13 +220,13 @@ describe('PWA registration and offline UI', () => {
     expect(source).toContain('<ServiceWorkerRegister />')
   })
 
-  it('provides a branded offline message and retry action', () => {
-    const source = readProjectFile('app/offline/page.tsx')
+  it('renders a branded offline message and retry action', () => {
+    const markup = renderToStaticMarkup(createElement(OfflinePage))
 
-    expect(source).toContain('PBC Quote Calculator')
-    expect(source).toContain('You are offline')
-    expect(source).toContain('Try again')
-    expect(source).toContain('href="/"')
+    expect(markup).toContain('PBC Quote Calculator')
+    expect(markup).toContain('You are offline')
+    expect(markup).toContain('Try again')
+    expect(markup).toContain('href="/"')
   })
 
   it('serves the service worker with an exact revalidation header rule', async () => {

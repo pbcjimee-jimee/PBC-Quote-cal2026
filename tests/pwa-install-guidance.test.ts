@@ -116,6 +116,38 @@ describe('PWA install guidance', () => {
     await Promise.all([firstInstall, repeatedInstall])
   })
 
+  it('allows a fresh browser prompt after prompt rejection without persisting dismissal', async () => {
+    const browserWindow = new TestWindow()
+    const { controller, states } = createController(browserWindow)
+    const failedPrompt = vi.fn(async () => {
+      throw new Error('browser prompt failed')
+    })
+    const failedEvent = Object.assign(new Event('beforeinstallprompt', { cancelable: true }), {
+      prompt: failedPrompt,
+      userChoice: Promise.resolve({ outcome: 'accepted' as const, platform: 'web' }),
+    })
+
+    controller.start()
+    browserWindow.dispatchEvent(failedEvent)
+
+    await expect(controller.install()).rejects.toThrow('browser prompt failed')
+    expect(failedPrompt).toHaveBeenCalledOnce()
+    expect(states.at(-1)).toBeNull()
+    expect(browserWindow.localStorage.getItem(INSTALL_GUIDANCE_DISMISSED_KEY)).toBeNull()
+
+    const retryPrompt = vi.fn(async () => undefined)
+    const retryEvent = Object.assign(new Event('beforeinstallprompt', { cancelable: true }), {
+      prompt: retryPrompt,
+      userChoice: Promise.resolve({ outcome: 'accepted' as const, platform: 'web' }),
+    })
+    browserWindow.dispatchEvent(retryEvent)
+
+    expect(states.at(-1)).toEqual({ kind: 'android' })
+    await controller.install()
+    expect(retryPrompt).toHaveBeenCalledOnce()
+    expect(states.at(-1)).toBeNull()
+  })
+
   it('persists a dismissed Android browser choice and ignores later prompt events', async () => {
     const browserWindow = new TestWindow()
     const { controller, states } = createController(browserWindow)

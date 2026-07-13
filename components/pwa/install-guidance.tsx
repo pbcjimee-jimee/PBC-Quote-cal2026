@@ -199,7 +199,7 @@ export function InstallGuidance() {
   )
 }
 
-export function InstallGuidanceView({
+function InstallGuidanceView({
   dismiss,
   guidance,
   install,
