@@ -1,19 +1,15 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest'
 
 const mocks = vi.hoisted(() => ({
-  getUser: vi.fn(),
+  requireAllowedUser: vi.fn(),
   appHeader: vi.fn(() => <header>App header</header>),
   redirect: vi.fn((path: string) => {
     throw new Error(`redirect:${path}`)
   }),
 }))
 
-vi.mock('@/lib/supabase/server', () => ({
-  createClient: vi.fn(async () => ({
-    auth: {
-      getUser: mocks.getUser,
-    },
-  })),
+vi.mock('@/lib/security/require-allowed-user', () => ({
+  requireAllowedUser: mocks.requireAllowedUser,
 }))
 
 vi.mock('next/navigation', () => ({
@@ -33,9 +29,9 @@ describe('app layout auth guard', () => {
   })
 
   it('redirects to login when Supabase has no current user', async () => {
-    mocks.getUser.mockResolvedValueOnce({
-      data: { user: null },
-      error: null,
+    mocks.requireAllowedUser.mockResolvedValueOnce({
+      ok: false,
+      error: 'Authentication required',
     })
 
     await expect(
@@ -46,9 +42,9 @@ describe('app layout auth guard', () => {
   })
 
   it('renders protected content when Supabase verifies the current user', async () => {
-    mocks.getUser.mockResolvedValueOnce({
-      data: { user: { id: 'user-1', email: 'user@example.com', user_metadata: { full_name: 'Mia Kang' } } },
-      error: null,
+    mocks.requireAllowedUser.mockResolvedValueOnce({
+      ok: true,
+      user: { id: 'user-1', email: 'user@example.com', userMetadata: { full_name: 'Mia Kang' } },
     })
 
     const result = await Promise.resolve().then(() =>
@@ -68,9 +64,9 @@ describe('app layout auth guard', () => {
 
   it('redirects disallowed authenticated users through sign-out when an email allowlist is configured', async () => {
     process.env.ALLOWED_LOGIN_EMAILS = 'owner@example.com'
-    mocks.getUser.mockResolvedValueOnce({
-      data: { user: { id: 'user-2', email: 'intruder@example.com' } },
-      error: null,
+    mocks.requireAllowedUser.mockResolvedValueOnce({
+      ok: false,
+      error: 'User is not allowed to access this app',
     })
 
     await expect(

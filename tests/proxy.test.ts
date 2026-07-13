@@ -27,4 +27,19 @@ describe('proxy auth routing', () => {
     expect(response.status).toBe(200)
     expect(response.headers.get('location')).toBeNull()
   })
+
+  it('rewrites the landing route directly to the new quote screen', async () => {
+    const response = await proxy(makeRequest('/', 'sb-abc123-auth-token=session'))
+
+    expect(response.status).toBe(200)
+    expect(response.headers.get('x-middleware-rewrite')).toBe('http://localhost:3000/quotes/new')
+  })
+
+  it('keeps the direct landing rewrite in local no-auth mode', async () => {
+    process.env.NEXT_PUBLIC_DEV_NO_AUTH = 'true'
+
+    const response = await proxy(makeRequest('/'))
+
+    expect(response.headers.get('x-middleware-rewrite')).toBe('http://localhost:3000/quotes/new')
+  })
 })
