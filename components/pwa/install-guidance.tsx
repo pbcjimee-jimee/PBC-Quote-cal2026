@@ -190,6 +190,20 @@ function useInstallGuidance(): InstallGuidanceContextValue {
 export function InstallGuidance() {
   const { dismiss, guidance, install } = useInstallGuidance()
 
+  return (
+    <InstallGuidanceView
+      guidance={guidance}
+      install={install}
+      dismiss={dismiss}
+    />
+  )
+}
+
+export function InstallGuidanceView({
+  dismiss,
+  guidance,
+  install,
+}: InstallGuidanceContextValue) {
   if (!guidance) return null
 
   return (

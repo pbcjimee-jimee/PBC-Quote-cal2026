@@ -15,7 +15,7 @@ function createServiceWorkerHarness() {
   const handlers = new Map<string, EventHandler>()
   const cache = {
     addAll: vi.fn(async () => undefined),
-    match: vi.fn(async () => new Response('current-offline')),
+    match: vi.fn(async (): Promise<Response | undefined> => new Response('current-offline')),
   }
   const cacheStorage = {
     delete: vi.fn(async () => true),
@@ -33,11 +33,13 @@ function createServiceWorkerHarness() {
   const fetchMock = vi.fn()
   const serviceWorkerGlobal = {
     addEventListener: (type: string, handler: EventHandler) => handlers.set(type, handler),
+    location: new URL('https://example.com/sw.js'),
     skipWaiting: vi.fn(async () => undefined),
   }
 
   runInNewContext(readProjectFile('public/sw.js'), {
     Response,
+    URL,
     caches: cacheStorage,
     clients,
     fetch: fetchMock,
@@ -114,6 +116,39 @@ describe('PWA service worker', () => {
     expect(cacheStorage.match).not.toHaveBeenCalled()
   })
 
+  it('serves only the exact same-origin brand icon from the current cache', async () => {
+    const { cache, cacheStorage, fetchMock, handlers } = createServiceWorkerHarness()
+    const cachedIcon = new Response('current-brand-icon')
+    cache.match.mockResolvedValueOnce(cachedIcon)
+    const respondWith = vi.fn()
+
+    handlers.get('fetch')?.({
+      request: { mode: 'no-cors', url: 'https://example.com/icons/icon-192.png' },
+      respondWith,
+    })
+
+    expect(respondWith).toHaveBeenCalledOnce()
+    expect(await respondWith.mock.calls[0][0]).toBe(cachedIcon)
+    expect(cacheStorage.open).toHaveBeenCalledWith('pbc-quote-offline-v1')
+    expect(cache.match).toHaveBeenCalledWith('https://example.com/icons/icon-192.png')
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('falls back to the network only when the current cache misses the brand icon', async () => {
+    const { cache, fetchMock, handlers } = createServiceWorkerHarness()
+    cache.match.mockResolvedValueOnce(undefined)
+    const networkIcon = new Response('network-brand-icon')
+    fetchMock.mockResolvedValueOnce(networkIcon)
+    const request = { mode: 'no-cors', url: 'https://example.com/icons/icon-192.png' }
+    const respondWith = vi.fn()
+
+    handlers.get('fetch')?.({ request, respondWith })
+
+    expect(await respondWith.mock.calls[0][0]).toBe(networkIcon)
+    expect(fetchMock).toHaveBeenCalledOnce()
+    expect(fetchMock).toHaveBeenCalledWith(request)
+  })
+
   it('does not intercept API, Supabase, Server Action, RSC, or other non-navigation requests', () => {
     const { cacheStorage, fetchMock, handlers } = createServiceWorkerHarness()
     const respondWith = vi.fn()
@@ -122,6 +157,8 @@ describe('PWA service worker', () => {
       'https://example.com/api/jobber/quote/1',
       'https://project.supabase.co/rest/v1/quotes',
       'https://example.com/quotes/new?_rsc=abc',
+      'https://example.com/_next/static/chunks/app.js',
+      'https://cdn.example.com/icons/icon-192.png',
     ]) {
       handlers.get('fetch')?.({ request: { mode: 'cors', url }, respondWith })
     }

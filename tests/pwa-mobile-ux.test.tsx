@@ -29,6 +29,21 @@ vi.mock('@/lib/actions/auth', () => ({
   signOut: vi.fn(),
 }))
 
+function getMediaBlock(css: string, query: string): string {
+  const start = css.indexOf(`@media (${query})`)
+  if (start < 0) return ''
+
+  const openingBrace = css.indexOf('{', start)
+  let depth = 0
+  for (let index = openingBrace; index < css.length; index += 1) {
+    if (css[index] === '{') depth += 1
+    if (css[index] === '}') depth -= 1
+    if (depth === 0) return css.slice(openingBrace + 1, index)
+  }
+
+  return ''
+}
+
 describe('PWA mobile UX', () => {
   const userProfile: UserProfile = {
     id: 'user-1',
@@ -61,8 +76,9 @@ describe('PWA mobile UX', () => {
 
   it('defines the binding mobile input, safe-area, touch target, and lg breakpoint rules', () => {
     const css = readFileSync('app/styles/components.css', 'utf8')
+    const lgResponsive = getMediaBlock(css, 'max-width: 1023.98px')
 
-    expect(css).toContain('@media (max-width: 1023.98px)')
+    expect(lgResponsive).not.toBe('')
     for (const selector of [
       '.pbc-input',
       '.pbc-textarea',
@@ -73,16 +89,25 @@ describe('PWA mobile UX', () => {
       '.pbc-ptable__money input',
       '.pbc-monthselect select',
     ]) {
-      expect(css).toMatch(new RegExp(`${selector.replace(/[.*+?^${}()|[\\]\\]/g, '\\$&')}[^}]*font-size:\\s*16px`))
+      expect(lgResponsive).toMatch(new RegExp(`${selector.replace(/[.*+?^${}()|[\\]\\]/g, '\\$&')}[^}]*font-size:\\s*16px`))
     }
 
     expect(css).toMatch(/\.pbc-auth\s*{[^}]*min-height:\s*100vh;[^}]*min-height:\s*100dvh;/)
     expect(css).toContain('env(safe-area-inset-left)')
     expect(css).toContain('env(safe-area-inset-right)')
-    expect(css).toContain('env(safe-area-inset-bottom)')
-    expect(css).toMatch(/\.pbc-mobile-header\s*{[^}]*padding-top:\s*env\(safe-area-inset-top\)/)
-    expect(css).toMatch(/\.pbc-iconbtn[\s\S]*?min-width:\s*44px;[\s\S]*?min-height:\s*44px;/)
-    expect(css).toMatch(/\.pbc-btn--sm[^}]*min-width:\s*44px;[^}]*min-height:\s*44px;/)
+    expect(lgResponsive).toContain('env(safe-area-inset-bottom)')
+    expect(lgResponsive).toMatch(/\.pbc-mobile-header\s*{[^}]*padding-top:\s*env\(safe-area-inset-top\)/)
+    expect(lgResponsive).toMatch(/\.pbc-iconbtn[\s\S]*?min-width:\s*44px;[\s\S]*?min-height:\s*44px;/)
+    expect(lgResponsive).toMatch(/\.pbc-btn--sm[^}]*min-width:\s*44px;[^}]*min-height:\s*44px;/)
+  })
+
+  it('stacks narrow mobile navigation icons above visible labels without shrinking targets', () => {
+    const css = readFileSync('app/styles/components.css', 'utf8')
+    const narrowResponsive = getMediaBlock(css, 'max-width: 359.98px')
+
+    expect(narrowResponsive).toMatch(/\.pbc-mobile-nav\s*{[^}]*grid-template-columns:\s*repeat\(4,\s*minmax\(0,\s*1fr\)\)/)
+    expect(narrowResponsive).toMatch(/\.pbc-mobile-nav__item\s*{[^}]*min-width:\s*0[^}]*min-height:\s*44px[^}]*flex-direction:\s*column/)
+    expect(narrowResponsive).not.toMatch(/\.pbc-mobile-nav__item\s+span\s*{[^}]*(display:\s*none|visibility:\s*hidden)/)
   })
 
   it('keeps component-specific 1080px layouts while moving shell transitions to lg', () => {
@@ -91,8 +116,7 @@ describe('PWA mobile UX', () => {
       css.indexOf('@media (max-width: 1080px)'),
       css.indexOf('@media (max-width: 1023.98px)')
     )
-    const lgStart = css.indexOf('@media (max-width: 1023.98px)')
-    const lgResponsive = css.slice(lgStart, css.indexOf('@media (max-width: 720px)', lgStart))
+    const lgResponsive = getMediaBlock(css, 'max-width: 1023.98px')
 
     expect(legacyResponsive).toContain('.pbc-grid')
     expect(legacyResponsive).not.toContain('.pbc-appshell')

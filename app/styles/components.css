@@ -903,6 +903,13 @@
   .pbc-mobile-nav__item { padding-inline: 4px; }
 }
 
+@media (max-width: 359.98px) {
+  .pbc-mobile-nav { width: 100%; grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .pbc-mobile-nav__item { min-width: 0; min-height: 44px; flex-direction: column; gap: 1px; padding: 4px 2px; font-size: 10px; }
+  .pbc-mobile-nav__item svg { flex-shrink: 0; }
+  .pbc-mobile-nav__item span { max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+}
+
 @media (min-width: 640px) {
   .pbc-tableactions { flex-direction: row; justify-content: flex-end; }
 }

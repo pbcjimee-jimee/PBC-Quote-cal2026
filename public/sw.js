@@ -3,7 +3,9 @@
 const CACHE_PREFIX = 'pbc-quote-offline-'
 const CACHE_NAME = `${CACHE_PREFIX}v1`
 const OFFLINE_URL = '/offline'
-const PRECACHE_URLS = [OFFLINE_URL, '/icons/icon-192.png']
+const BRAND_ICON_PATH = '/icons/icon-192.png'
+const BRAND_ICON_URL = new URL(BRAND_ICON_PATH, self.location.origin).href
+const PRECACHE_URLS = [OFFLINE_URL, BRAND_ICON_PATH]
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
@@ -30,6 +32,16 @@ self.addEventListener('activate', (event) => {
 })
 
 self.addEventListener('fetch', (event) => {
+  if (event.request.url === BRAND_ICON_URL) {
+    event.respondWith(
+      caches
+        .open(CACHE_NAME)
+        .then((cache) => cache.match(BRAND_ICON_URL))
+        .then((cachedIcon) => cachedIcon ?? fetch(event.request))
+    )
+    return
+  }
+
   if (event.request.mode !== 'navigate') {
     return
   }
