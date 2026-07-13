@@ -63,6 +63,7 @@
 
 ## 🔲 남은 작업
 
+- **PWA·모바일 최적화** (2026-07-13 계획 수립, 구현 미착수): iPhone·Android 홈 화면 설치(manifest·앱 아이콘·최소 서비스 워커)와 모바일 UX 보완(iOS 입력 줌 방지 16px, safe-area, 100dvh, 터치 타깃 44px, 브레이크포인트 1024px 통일). 실행 계획·결정 게이트(아이콘/SW 전략/오프라인 범위): `docs/superpowers/plans/2026-07-13-pwa-mobile-optimization.md`. **착수 전 결정 게이트 3건 사용자 확인 필요.**
 - **감사 발견 이슈** (2026-07-06): 우선순위별로 `docs/BACKLOG.md`에 등록. 2026-07-04 hardening으로 마진 CHECK·서버 액션 allowlist 해결, 2026-07-07 quote save conflict hardening으로 견적 저장 트랜잭션·동시 편집 충돌·product 스냅샷 재고정·Jobber 부분 성공 line id 보존을 반영. 남은 항목은 `docs/BACKLOG.md`의 미체크 항목 기준으로 처리.
 - **Supabase 실제 데이터 백업**: 운영 결정 대기(`TODOS.md` #2). Pro/PITR 우선, cron export는 restore 검증 포함 시만.
 - **UX 잔여**: `docs/UI-UX-REVIEW.md` P1 항목(폰트 시스템, 브랜드 색, sticky 결과 카드 등). P0 일부(focus-visible, 대비, draft dialog a11y)는 반영됨.
@@ -82,6 +83,7 @@
 
 | 날짜 | 작업 | 담당 |
 |---|---|---|
+| 2026-07-13 | PWA·모바일 최적화 구현 계획 수립(`docs/superpowers/plans/2026-07-13-pwa-mobile-optimization.md`). 현황 감사: PWA 자산 0%(manifest/SW/앱 아이콘/viewport 전무), `proxy.ts` matcher가 manifest·SW 요청을 `/login`으로 302시키는 설치 차단 리스크, iOS 입력 자동 줌(13~13.5px)·safe-area 미적용·터치 타깃 미달·1024/1080 브레이크포인트 불일치 확인. 4개 릴리스(설치 기반 → 최소 SW → 모바일 UX → 설치 안내/QA)와 결정 게이트 3건(아이콘·SW 전략·오프라인 범위) 정의. 오프라인 데이터 캐싱은 stale 금액 리스크로 스코프 제외. 구현 미착수. | Claude |
 | 2026-07-13 | Codex 모델 라우팅 갱신: 구현 담당을 Codex 5.5 high → **Codex 5.6-Terra high**(코드 구현·간단한 변경)와 **Codex 5.6-Sol high**(테스트·오류 수정·대규모·장시간 작업)로 분리. Codex 서브에이전트는 전부 `gpt-5.6-sol`+high로 고정(`~/.codex/agents/`의 `default`/`worker`/`explorer` 오버라이드 생성). `AGENTS.md`/`CLAUDE.md`/`README.md`/`WORKFLOW.md`/`WORKFLOW-TASKS.md`/`AGENT-MAP.md`/`CODEX-TASKS.md`/`BACKLOG.md`/`UI-UX-REVIEW.md`/`AUTOMATION-IDEAS.md`/hardening 로드맵 동기화. | Claude |
 | 2026-07-09 | Warehouse Inventory 카테고리/상태 UX 보완. 2026 Excel section row(`Tools`, `Sample`, `Weathershield` 등)를 inventory `category`로 쓰도록 seed와 CSV import를 보정하고, 이미 seeded 된 DB용 `20260708220900_recategorize_inventory_workbook_sections.sql` 마이그레이션 추가. `/settings/inventory` UI는 카테고리별 그룹 렌더링, manual add category select, out/in stock checkbox toggle, out row 배경 강조와 line-through 표시를 지원. Production DB 적용은 미수행(사용자 승인 필요). 검증: inventory tests, RLS/header tests, typecheck, lint 통과. | Codex |
 | 2026-07-08 | Warehouse Inventory 별도 페이지 repo 구현 및 Production Supabase 적용. `/settings/inventory` 라우트, `warehouse_inventory` 마이그레이션/RLS, 2026 Excel seed 95행, Inventory Server Actions, 검색/필터/추가/수정/soft delete/CSV import-export UI, 네비게이션 링크 추가. Inventory 경로에서 AppHeader active nav hydration mismatch를 수정. 원격 migration `20260708101550_add_warehouse_inventory` 적용, REST 조회 95행 확인. 검증: 관련 테스트/typecheck/lint/Vitest/build 통과. | Codex |
