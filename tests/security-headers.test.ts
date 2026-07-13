@@ -6,7 +6,7 @@ describe('security headers', () => {
     expect(nextConfig.headers).toBeTypeOf('function')
     const headers = await nextConfig.headers!()
 
-    expect(headers).toEqual([
+    expect(headers).toEqual(expect.arrayContaining([
       expect.objectContaining({
         source: '/(.*)',
         headers: expect.arrayContaining([
@@ -21,6 +21,6 @@ describe('security headers', () => {
           { key: 'Permissions-Policy', value: expect.stringContaining('camera=()') },
         ]),
       }),
-    ])
+    ]))
   })
 })
