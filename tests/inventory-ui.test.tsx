@@ -1,6 +1,6 @@
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { InventoryManager } from '@/components/inventory/inventory-manager'
@@ -147,15 +147,26 @@ describe('inventory UI', () => {
 
   it('adds categories through the category dropdown pattern used by quote material pickers', () => {
     const source = readFileSync(join(process.cwd(), 'components/inventory/inventory-manager.tsx'), 'utf8')
+    const pickerCssPath = join(process.cwd(), 'components/inventory/inventory-manager.module.css')
 
+    expect(existsSync(pickerCssPath)).toBe(true)
+    if (!existsSync(pickerCssPath)) return
+    const pickerCss = readFileSync(pickerCssPath, 'utf8')
+    expect(source).toContain("import styles from './inventory-manager.module.css'")
+    expect(source).toContain('styles.categoryPicker')
+    expect(source).toContain('styles.categoryDropdown')
     expect(source).toContain('pbc-dropdown')
     expect(source).toContain('aria-label="Category dropdown"')
-    expect(source).toContain('Add custom category')
+    expect(source).toContain('Add &quot;{value.trim()}&quot; as custom category')
     expect(source).toContain('Search or add category')
+    expect(source).toContain("if (event.key === 'Enter' && canAddCategory)")
     expect(source).toContain('pbc-dropdownitem font-semibold text-[var(--primary)]')
     expect(source).not.toContain('<select value={form.category}')
     expect(source).not.toContain('...(form.category ? [form.category] : [])')
     expect(source).not.toContain('...(rowEditForm.category ? [rowEditForm.category] : [])')
+    expect(pickerCss).toContain('.categoryPicker.categoryPicker .categoryDropdown')
+    expect(pickerCss).toContain('right: 0;')
+    expect(pickerCss).toContain('overflow-wrap: anywhere;')
   })
 
   it('uses workbook section categories for legacy paint rows and icon-only row actions', () => {

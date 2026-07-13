@@ -11,6 +11,7 @@ import {
 } from '@/lib/actions/inventory'
 import type { InventoryItemRecord, InventoryStatus } from '@/lib/inventory/types'
 import { resolveWorkbookInventoryCategory, WORKBOOK_CATEGORY_ORDER } from '@/lib/inventory/workbook-categories'
+import styles from './inventory-manager.module.css'
 
 type InventoryFormState = {
   name: string
@@ -261,8 +262,7 @@ function CategoryPicker({ value, categories, disabled = false, onChange, onAddCu
   const [isOpen, setIsOpen] = useState(false)
   const query = value.trim().toLowerCase()
   const matchingCategories = categories.filter((category) => !query || category.toLowerCase().includes(query))
-  const hasExactMatch = categories.some((category) => category.toLowerCase() === query)
-  const canAddCategory = Boolean(value.trim()) && !hasExactMatch
+  const canAddCategory = Boolean(value.trim()) && matchingCategories.length === 0
 
   function addCustomCategory() {
     if (!canAddCategory) return
@@ -271,7 +271,7 @@ function CategoryPicker({ value, categories, disabled = false, onChange, onAddCu
   }
 
   return (
-    <div className="pbc-inventorycategoryselect">
+    <div className={`${styles.categoryPicker} pbc-inventorycategoryselect`}>
       <input
         value={value}
         onChange={(event) => {
@@ -279,6 +279,12 @@ function CategoryPicker({ value, categories, disabled = false, onChange, onAddCu
           setIsOpen(true)
         }}
         onFocus={() => setIsOpen(true)}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter' && canAddCategory) {
+            event.preventDefault()
+            addCustomCategory()
+          }
+        }}
         onBlur={() => window.setTimeout(() => setIsOpen(false), 120)}
         disabled={disabled}
         className="pbc-input"
@@ -286,7 +292,7 @@ function CategoryPicker({ value, categories, disabled = false, onChange, onAddCu
         aria-label="Search or add category"
       />
       {isOpen ? (
-        <div className="pbc-dropdown" aria-label="Category dropdown">
+        <div className={`${styles.categoryDropdown} pbc-dropdown`} aria-label="Category dropdown">
           {matchingCategories.map((category) => (
             <button
               key={category}
@@ -296,7 +302,7 @@ function CategoryPicker({ value, categories, disabled = false, onChange, onAddCu
                 onChange(category)
                 setIsOpen(false)
               }}
-              className={`pbc-dropdownitem${category === value ? ' pbc-dropdownitem--selected' : ''}`}
+              className={`${styles.categoryDropdownItem} pbc-dropdownitem${category === value ? ' pbc-dropdownitem--selected' : ''}`}
             >
               {category}
             </button>
@@ -306,15 +312,13 @@ function CategoryPicker({ value, categories, disabled = false, onChange, onAddCu
               type="button"
               onMouseDown={(event) => event.preventDefault()}
               onClick={addCustomCategory}
-              className="pbc-dropdownitem font-semibold text-[var(--primary)]"
+              className={`${styles.categoryDropdownItem} pbc-dropdownitem font-semibold text-[var(--primary)]`}
             >
-              {Icons.plus({ size: 14 })}
-              <span>Add custom category</span>
-              <span className="pbc-dropdownitem__meta">{value.trim()}</span>
+              Add &quot;{value.trim()}&quot; as custom category
             </button>
           ) : null}
           {matchingCategories.length === 0 && !canAddCategory ? (
-            <div className="pbc-dropdownitem pbc-dropdownitem--muted">No categories found.</div>
+            <div className={`${styles.categoryDropdownItem} pbc-dropdownitem pbc-dropdownitem--muted`}>No categories found.</div>
           ) : null}
         </div>
       ) : null}

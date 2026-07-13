@@ -1,0 +1,27 @@
+.categoryPicker.categoryPicker {
+  position: relative;
+  width: 100%;
+  min-width: 0;
+}
+
+.categoryPicker > input {
+  min-width: 0;
+}
+
+.categoryPicker.categoryPicker .categoryDropdown {
+  right: 0;
+  left: 0;
+  width: auto;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+.categoryPicker .categoryDropdown .categoryDropdownItem {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  line-height: 1.35;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}

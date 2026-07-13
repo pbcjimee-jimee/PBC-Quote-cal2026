@@ -270,15 +270,23 @@
 }
 .pbc-inventorycategoryselect {
   position: relative;
-  min-width: 160px;
+  width: 100%;
+  min-width: 0;
 }
 .pbc-inventorycategoryselect .pbc-dropdown {
-  min-width: 220px;
+  left: 0;
+  right: 0;
+  width: auto;
+  min-width: 0;
 }
 .pbc-inventorycategoryselect .pbc-dropdownitem {
   display: flex;
   align-items: center;
   gap: 7px;
+  min-width: 0;
+  line-height: 1.35;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 .pbc-dropdownitem__meta {
   color: var(--muted);
