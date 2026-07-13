@@ -57,7 +57,7 @@
 ### 8. PWA 서비스 워커·캐시
 
 - CSP에 `worker-src 'self'`를 명시해 same-origin 서비스 워커만 허용한다.
-- 서비스 워커는 오프라인 안내를 위한 `/offline`만 프리캐시한다.
+- 서비스 워커는 오프라인 안내를 위한 `/offline`과 그 화면에 필요한 공개 브랜딩 아이콘(`/icons/icon-192.png`)만 프리캐시한다.
 - 인증된 HTML, 견적·가격 데이터, API, Supabase, Server Actions, RSC payload는 절대 캐시하지 않는다. 네비게이션은 network-first로 처리하고 네트워크 실패 시에만 `/offline`을 반환한다.
 - 캐시 범위를 늘리는 변경은 stale 견적·가격 노출 리스크를 보안 리뷰한 뒤 사용자 승인을 받는다.
 

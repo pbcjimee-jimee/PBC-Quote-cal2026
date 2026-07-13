@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from "next";
+import { InstallGuidanceProvider } from "@/components/pwa/install-guidance";
 import { ServiceWorkerRegister } from "@/components/pwa/service-worker-register";
 import "./globals.css";
 
@@ -27,7 +28,7 @@ export default function RootLayout({
   return (
     <html lang="en" className="h-full antialiased">
       <body className="min-h-full flex flex-col">
-        {children}
+        <InstallGuidanceProvider>{children}</InstallGuidanceProvider>
         <ServiceWorkerRegister />
       </body>
     </html>

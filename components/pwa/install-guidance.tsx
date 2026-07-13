@@ -1,6 +1,14 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react'
 
 export const INSTALL_GUIDANCE_DISMISSED_KEY = 'pbc-install-guidance-dismissed'
 
@@ -33,6 +41,7 @@ type InstallGuidanceControllerOptions = {
 
 export class InstallGuidanceController {
   private installPrompt: InstallPromptEvent | null = null
+  private dismissed = false
 
   constructor(private readonly options: InstallGuidanceControllerOptions) {}
 
@@ -40,8 +49,9 @@ export class InstallGuidanceController {
     const { navigator, window } = this.options
     const isStandalone = navigator.standalone === true
       || window.matchMedia('(display-mode: standalone)').matches
+    this.dismissed = this.isDismissed()
 
-    if (isStandalone || this.isDismissed()) {
+    if (isStandalone || this.dismissed) {
       this.options.onChange(null)
       return () => undefined
     }
@@ -61,25 +71,35 @@ export class InstallGuidanceController {
 
   async install(): Promise<void> {
     const installPrompt = this.installPrompt
-    if (!installPrompt) return
+    if (!installPrompt || this.dismissed) return
 
+    this.installPrompt = null
+    this.options.onChange(null)
     await installPrompt.prompt()
-    await installPrompt.userChoice
+    const choice = await installPrompt.userChoice
+    if (choice.outcome === 'dismissed') {
+      this.dismissed = true
+      this.persistDismissal()
+    }
+  }
+
+  dismiss(): void {
+    this.dismissed = true
+    this.persistDismissal()
     this.installPrompt = null
     this.options.onChange(null)
   }
 
-  dismiss(): void {
+  private persistDismissal(): void {
     try {
       this.options.window.localStorage.setItem(INSTALL_GUIDANCE_DISMISSED_KEY, 'true')
     } catch {
       // Storage may be unavailable in private browsing; dismissal still applies for this view.
     }
-    this.installPrompt = null
-    this.options.onChange(null)
   }
 
   private readonly handleBeforeInstallPrompt: EventListener = (event) => {
+    if (this.dismissed) return
     event.preventDefault()
     this.installPrompt = event as InstallPromptEvent
     this.options.onChange({ kind: 'android' })
@@ -104,13 +124,21 @@ export class InstallGuidanceController {
       || (platform === 'MacIntel' && maxTouchPoints > 1)
     const isSafari = vendor.includes('Apple')
       && /Safari/i.test(userAgent)
-      && !/(CriOS|FxiOS|EdgiOS|OPiOS)/i.test(userAgent)
+      && !/(Brave|CriOS|FxiOS|EdgiOS|OPiOS)/i.test(userAgent)
 
     return isIos && isSafari
   }
 }
 
-export function InstallGuidance() {
+type InstallGuidanceContextValue = {
+  guidance: InstallGuidanceState
+  install: () => Promise<void>
+  dismiss: () => void
+}
+
+const InstallGuidanceContext = createContext<InstallGuidanceContextValue | null>(null)
+
+export function InstallGuidanceProvider({ children }: { children: React.ReactNode }) {
   const [guidance, setGuidance] = useState<InstallGuidanceState>(null)
   const controllerRef = useRef<InstallGuidanceController | null>(null)
 
@@ -128,6 +156,39 @@ export function InstallGuidance() {
       controllerRef.current = null
     }
   }, [])
+
+  const install = useCallback(async () => {
+    await controllerRef.current?.install()
+  }, [])
+
+  const dismiss = useCallback(() => {
+    controllerRef.current?.dismiss()
+  }, [])
+
+  const value = useMemo<InstallGuidanceContextValue>(() => ({
+    guidance,
+    install,
+    dismiss,
+  }), [dismiss, guidance, install])
+
+  return (
+    <InstallGuidanceContext.Provider value={value}>
+      {children}
+    </InstallGuidanceContext.Provider>
+  )
+}
+
+function useInstallGuidance(): InstallGuidanceContextValue {
+  const value = useContext(InstallGuidanceContext)
+  if (!value) {
+    throw new Error('InstallGuidance must be rendered inside InstallGuidanceProvider')
+  }
+
+  return value
+}
+
+export function InstallGuidance() {
+  const { dismiss, guidance, install } = useInstallGuidance()
 
   if (!guidance) return null
 
@@ -147,7 +208,7 @@ export function InstallGuidance() {
             <button
               type="button"
               className="pbc-btn pbc-btn--primary pbc-btn--sm"
-              onClick={() => void controllerRef.current?.install().catch(() => undefined)}
+              onClick={() => void install().catch(() => undefined)}
             >
               App install
             </button>
@@ -157,7 +218,7 @@ export function InstallGuidance() {
             className="pbc-iconbtn pbc-iconbtn--compact"
             aria-label="Dismiss install guidance"
             title="Dismiss"
-            onClick={() => controllerRef.current?.dismiss()}
+            onClick={dismiss}
           >
             ×
           </button>
