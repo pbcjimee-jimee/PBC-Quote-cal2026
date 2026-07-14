@@ -21,7 +21,7 @@
 | Content/Microcopy | C | "X" 삭제 버튼, 용어 혼용, 공허한 빈 상태 |
 | AI Slop | B+ | 마케팅 슬랍 패턴 없음(사내 도구라 깔끔) |
 | Motion | F | 전환 애니메이션 0개 |
-| Performance Feel | B | Server Components 기본, 검색 디바운스. 로딩 스켈레톤 없음 |
+| Performance Feel | A- | route skeleton, intent prefetch, Settings tab lazy load, quote detail profile reuse 적용 |
 
 **Design Score: C+ (66/100) · AI Slop Score: B+ (84/100)**
 

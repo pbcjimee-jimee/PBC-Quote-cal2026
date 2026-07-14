@@ -23,6 +23,7 @@ vi.mock('react', async (importOriginal) => {
 
 vi.mock('next/navigation', () => ({
   usePathname: () => headerState.pathname,
+  useRouter: () => ({ prefetch: vi.fn() }),
 }))
 
 vi.mock('@/lib/actions/auth', () => ({

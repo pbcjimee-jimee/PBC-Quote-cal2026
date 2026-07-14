@@ -33,25 +33,25 @@
 - Produces: `IntentLink(props: ComponentProps<typeof Link>)`
 - Consumes: Next.js `useRouter().prefetch`, `useLinkStatus`, existing Link props
 
-- [ ] **Step 1: Write failing navigation tests**
+- [x] **Step 1: Write failing navigation tests**
 
 Assert that `IntentLink` renders `prefetch={false}`, repeated pointer/focus intent calls `router.prefetch(href)` only once, and header/overview markup contains the intent-link marker.
 
-- [ ] **Step 2: Run tests and confirm RED**
+- [x] **Step 2: Run tests and confirm RED**
 
 Run: `npm.cmd run test:run -- tests/intent-link.test.tsx tests/app-header-ui.test.tsx tests/quote-ui.test.tsx`
 
 Expected: FAIL because `IntentLink` and its marker do not exist.
 
-- [ ] **Step 3: Implement the minimal intent link**
+- [x] **Step 3: Implement the minimal intent link**
 
 Implement a client component that sets `prefetch={false}`, preserves caller event handlers, manually prefetches string destinations once on pointer enter/focus/touch start, and renders pending status from `useLinkStatus()`.
 
-- [ ] **Step 4: Apply the component**
+- [x] **Step 4: Apply the component**
 
 Replace authenticated navigation Links in AppHeader and quote overview/card actions. Add a fixed top progress style that does not affect layout.
 
-- [ ] **Step 5: Run focused tests and confirm GREEN**
+- [x] **Step 5: Run focused tests and confirm GREEN**
 
 Run: `npm.cmd run test:run -- tests/intent-link.test.tsx tests/app-header-ui.test.tsx tests/quote-ui.test.tsx`
 
@@ -69,33 +69,33 @@ Expected: all selected tests pass with no warnings.
 - Consumes: `listProducts({ limit: 200 })`, `listProductServices({ limit: 300 })`, `listQuoteLineTemplates()`, `listAreas()`
 - Produces: optional initial collection props and tab-scoped `ensureTabData(tab)` behavior
 
-- [ ] **Step 1: Write failing server-page test**
+- [x] **Step 1: Write failing server-page test**
 
 Render `SettingsPage` with mocked actions and assert that only `getPricingSettings()` is called before the Labour Rates UI is returned.
 
-- [ ] **Step 2: Write failing tab-loading tests**
+- [x] **Step 2: Write failing tab-loading tests**
 
 Mount `SettingsForm` without initial collections. Click Material and assert only products load; click it again and assert no duplicate call. Cover Template parallel requirements and failed-load Retry.
 
-- [ ] **Step 3: Run tests and confirm RED**
+- [x] **Step 3: Run tests and confirm RED**
 
 Run: `npm.cmd run test:run -- tests/settings-page-performance.test.tsx tests/settings-ui.test.tsx`
 
 Expected: FAIL because Settings currently loads every collection on the server and tabs do not load data.
 
-- [ ] **Step 4: Reduce the Settings server page**
+- [x] **Step 4: Reduce the Settings server page**
 
 Keep the existing safe normalization for pricing settings only. Pass no collection props so `SettingsForm` can distinguish an unloaded resource from a loaded empty array.
 
-- [ ] **Step 5: Implement resource state and tab loading**
+- [x] **Step 5: Implement resource state and tab loading**
 
 Track loaded and in-flight resource keys with refs; track loading and error keys in state. Load each tab's exact dependencies, keep successful arrays, and make retry skip already-loaded dependencies.
 
-- [ ] **Step 6: Add loading/error UI and tab semantics**
+- [x] **Step 6: Add loading/error UI and tab semantics**
 
 Activate tabs synchronously, render a compact status skeleton while required data loads, render a local alert and Retry on failure, and add `role="tablist"`, `role="tab"`, and `aria-selected`.
 
-- [ ] **Step 7: Run focused tests and confirm GREEN**
+- [x] **Step 7: Run focused tests and confirm GREEN**
 
 Run: `npm.cmd run test:run -- tests/settings-page-performance.test.tsx tests/settings-ui.test.tsx`
 
@@ -111,25 +111,25 @@ Expected: all selected tests pass and no inactive collection action is called on
 - Consumes: `getAuthUserProfile`, `getAuthUserProfilesById`, `allowedUser.user`
 - Produces: a profile map seeded with the authenticated user and admin lookups only for missing IDs
 
-- [ ] **Step 1: Write failing current-user test**
+- [x] **Step 1: Write failing current-user test**
 
 Return current-user metadata from `requireAllowedUser`, load a quote created/revised by that ID, assert displayed names use that metadata, and assert `createServiceClient` is never called.
 
-- [ ] **Step 2: Write different-user coverage**
+- [x] **Step 2: Write different-user coverage**
 
 Add a revision by another user and assert the service-role profile lookup still occurs for that missing ID.
 
-- [ ] **Step 3: Run test and confirm RED**
+- [x] **Step 3: Run test and confirm RED**
 
 Run: `npm.cmd run test:run -- tests/quote-actions-supabase.test.ts`
 
 Expected: current-user test fails because `getQuote` still calls the Auth Admin path.
 
-- [ ] **Step 4: Seed and merge profiles**
+- [x] **Step 4: Seed and merge profiles**
 
 Build the current profile from allowed-user metadata, filter it from lookup IDs, fetch remaining profiles, and merge them into the map before `toQuoteRecord`.
 
-- [ ] **Step 5: Run test and confirm GREEN**
+- [x] **Step 5: Run test and confirm GREEN**
 
 Run: `npm.cmd run test:run -- tests/quote-actions-supabase.test.ts`
 
@@ -146,13 +146,13 @@ Expected: all quote action tests pass, including the different-user fallback.
 - Consumes: existing Jobber route/UI/write-back tests and project `verify` script
 - Produces: verification evidence and final project history entry
 
-- [ ] **Step 1: Run Jobber-focused regression tests**
+- [x] **Step 1: Run Jobber-focused regression tests**
 
 Run: `npm.cmd run test:run -- tests/jobber-quote-route-refresh.test.ts tests/jobber-write-client.test.ts tests/quote-ui.test.tsx tests/quote-actions-supabase.test.ts`
 
 Expected: all selected tests pass; no Jobber production file changed.
 
-- [ ] **Step 2: Run full verification**
+- [x] **Step 2: Run full verification**
 
 Run: `npm.cmd run verify`
 

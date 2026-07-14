@@ -1,7 +1,7 @@
 # Core Navigation Performance Design
 
-**Date:** 2026-07-14  
-**Status:** Approved  
+**Date:** 2026-07-14
+**Status:** Approved
 **Scope:** Overview, New Quote, Settings, quote detail navigation and perceived response time
 
 ## Problem
