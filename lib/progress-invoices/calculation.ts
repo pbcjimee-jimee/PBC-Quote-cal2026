@@ -203,6 +203,14 @@ export function calculateProgressClaim(
     currentGst = currentIncGst.minus(currentExGst)
     cumulativeTargetExGst = previousExGst.plus(currentExGst)
     cumulativeTargetGst = previousGst.plus(currentGst)
+    if (
+      cumulativeTargetExGst.gt(adjustedExGst)
+      || cumulativeTargetGst.gt(adjustedGst)
+    ) {
+      throw new ProgressInvoiceCalculationError(
+        'Normal claim cannot exceed an adjusted contract tax component',
+      )
+    }
   }
 
   const remainingExGst = adjustedExGst.minus(cumulativeTargetExGst)

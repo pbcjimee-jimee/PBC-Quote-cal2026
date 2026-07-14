@@ -227,6 +227,35 @@ describe('calculateProgressClaim', () => {
     })
   })
 
+  it('rejects a normal cent-boundary claim that over-claims a tax component', () => {
+    const previousClaim = {
+      claimId: 'cent-boundary-prior',
+      sequence: 1,
+      exGst: '0.01',
+      gst: '0.00',
+      incGst: '0.01',
+    }
+
+    expect(() => calculateProgressClaim(progressInput({
+      inputMode: 'current_claim_amount',
+      authoritativeValue: '0.05',
+      baseContractExGst: '0.05',
+      previousClaims: [previousClaim],
+    }))).toThrow(/component|Ex GST|GST/i)
+
+    expect(calculateProgressClaim(progressInput({
+      kind: 'final',
+      inputMode: 'current_claim_amount',
+      authoritativeValue: '0.05',
+      baseContractExGst: '0.05',
+      previousClaims: [previousClaim],
+    }))).toMatchObject({
+      currentClaimExGst: '0.04',
+      currentClaimGst: '0.01',
+      currentClaimIncGst: '0.05',
+    })
+  })
+
   it('uses independent Ex GST and GST residuals for FINAL', () => {
     const p01 = calculateProgressClaim(progressInput({
       inputMode: 'current_claim_amount',

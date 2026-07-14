@@ -50,7 +50,7 @@ const profileShape = {
 
 export const saveBusinessInvoiceProfileSchema = z.strictObject({
   ...profileShape,
-  expectedVersion: expectedVersionSchema,
+  expectedVersion: expectedVersionSchema.optional(),
 })
 
 const seriesEditableShape = {
@@ -98,18 +98,10 @@ export const updateProgressInvoiceSeriesSchema = z.strictObject({
 export const linkProgressJobberInvoiceSchema = z.strictObject({
   seriesId: uuidSchema,
   expectedVersion: expectedVersionSchema,
-  jobberAccountId: externalIdSchema,
-  jobberInvoiceId: externalIdSchema,
-  jobberJobId: externalIdSchema.optional(),
-  jobberClientId: externalIdSchema.optional(),
-  jobberPropertyId: externalIdSchema.optional(),
+  selectedJobberInvoiceId: externalIdSchema,
+  selectedJobberJobId: externalIdSchema.optional(),
+  selectedJobberPropertyId: externalIdSchema.optional(),
   observedJobberSnapshotId: uuidSchema,
-  originalObservedInvoiceNumber: requiredText(
-    PROGRESS_INVOICE_TEXT_LIMITS.invoiceNumberBase,
-  ),
-  acceptedInvoiceNumberBase: requiredText(
-    PROGRESS_INVOICE_TEXT_LIMITS.invoiceNumberBase,
-  ),
   correlationKey: uuidSchema,
 })
 
@@ -126,9 +118,7 @@ export const acceptProgressJobberInvoiceNumberSchema = z.strictObject({
   seriesId: uuidSchema,
   expectedVersion: expectedVersionSchema,
   observedJobberSnapshotId: uuidSchema,
-  acceptedInvoiceNumberBase: requiredText(
-    PROGRESS_INVOICE_TEXT_LIMITS.invoiceNumberBase,
-  ),
+  numberSource: z.enum(['original', 'latest']),
   idempotencyKey: uuidSchema,
 })
 
@@ -147,7 +137,7 @@ export const createProgressAdjustmentSchema = z.strictObject({
   correlationKey: uuidSchema,
 })
 
-export const updateProgressAdjustmentSchema = z.strictObject({
+export const updateProgressAdjustmentDraftSchema = z.strictObject({
   adjustmentId: uuidSchema,
   expectedVersion: expectedVersionSchema,
   type: adjustmentShape.type.optional(),
@@ -214,14 +204,14 @@ function validateClaimDraft(
   }
 }
 
-export const createProgressClaimSchema = z.strictObject({
+export const createProgressClaimDraftSchema = z.strictObject({
   seriesId: uuidSchema,
   kind: z.enum(['progress', 'final']),
   ...claimDraftShape,
   correlationKey: uuidSchema,
 }).superRefine(validateClaimDraft)
 
-export const saveProgressClaimSchema = z.strictObject({
+export const saveProgressClaimDraftSchema = z.strictObject({
   claimId: uuidSchema,
   expectedVersion: expectedVersionSchema,
   ...claimDraftShape,
@@ -235,7 +225,7 @@ export const issueProgressClaimSchema = z.strictObject({
   idempotencyKey: uuidSchema,
 })
 
-export const reviseProgressClaimSchema = z.strictObject({
+export const reviseIssuedProgressClaimSchema = z.strictObject({
   claimId: uuidSchema,
   expectedVersion: expectedVersionSchema,
   ...claimDraftShape,
@@ -287,7 +277,7 @@ const paymentMatchShape = {
   idempotencyKey: uuidSchema,
 }
 
-export const matchProgressPaymentSchema = z.strictObject(paymentMatchShape)
+export const matchProgressPaymentsSchema = z.strictObject(paymentMatchShape)
 export const undoProgressPaymentMatchSchema = z.strictObject(paymentMatchShape)
 
 export const progressInvoiceDocumentRequestSchema = z.strictObject({
@@ -326,8 +316,12 @@ export type UpdateProgressInvoiceSeriesInput = z.infer<
 export type CreateProgressAdjustmentInput = z.infer<
   typeof createProgressAdjustmentSchema
 >
-export type CreateProgressClaimInput = z.infer<typeof createProgressClaimSchema>
-export type SaveProgressClaimInput = z.infer<typeof saveProgressClaimSchema>
+export type CreateProgressClaimDraftInput = z.infer<
+  typeof createProgressClaimDraftSchema
+>
+export type SaveProgressClaimDraftInput = z.infer<
+  typeof saveProgressClaimDraftSchema
+>
 export type CreateManualProgressPaymentInput = z.infer<
   typeof createManualProgressPaymentSchema
 >

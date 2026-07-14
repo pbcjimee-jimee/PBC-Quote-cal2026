@@ -6,19 +6,19 @@ import {
   approveProgressAdjustmentSchema,
   createManualProgressPaymentSchema,
   createProgressAdjustmentSchema,
-  createProgressClaimSchema,
+  createProgressClaimDraftSchema,
   createProgressInvoiceSeriesSchema,
   linkProgressJobberInvoiceSchema,
-  matchProgressPaymentSchema,
+  matchProgressPaymentsSchema,
   progressInvoiceDocumentRequestSchema,
   refreshProgressJobberInvoiceSchema,
   reviseManualProgressPaymentSchema,
-  reviseProgressClaimSchema,
+  reviseIssuedProgressClaimSchema,
   saveBusinessInvoiceProfileSchema,
-  saveProgressClaimSchema,
+  saveProgressClaimDraftSchema,
   supersedeProgressAdjustmentSchema,
   undoProgressPaymentMatchSchema,
-  updateProgressAdjustmentSchema,
+  updateProgressAdjustmentDraftSchema,
   updateProgressInvoiceSeriesSchema,
   voidManualProgressPaymentSchema,
   voidProgressClaimSchema,
@@ -34,6 +34,21 @@ const claimDraft = {
   dueDate: '2026-07-28',
   description: 'Completed painting works',
   notes: 'Sample note',
+}
+
+const businessProfile = {
+  legalName: 'Harbour Example Co Pty Ltd',
+  abn: '11 222 333 444',
+  address: '1 Sample Street',
+  email: 'accounts@example.test',
+  phone: '0400000000',
+  bankName: 'Sample Bank',
+  bankAccountName: 'Harbour Example Co',
+  bsb: '000-000',
+  accountNumber: '12345678',
+  gstRate: '0.10' as const,
+  businessTimezone: 'Australia/Sydney' as const,
+  defaultPaymentTermDays: 14,
 }
 
 describe('Progress Invoice command schemas', () => {
@@ -56,7 +71,7 @@ describe('Progress Invoice command schemas', () => {
       gstRate: '0.10',
       correlationKey: UUID_2,
     }).success).toBe(false)
-    expect(createProgressClaimSchema.safeParse({
+    expect(createProgressClaimDraftSchema.safeParse({
       seriesId: UUID,
       kind: 'progress',
       ...claimDraft,
@@ -66,14 +81,14 @@ describe('Progress Invoice command schemas', () => {
   })
 
   it('enforces exact calendar dates and due date ordering', () => {
-    expect(createProgressClaimSchema.safeParse({
+    expect(createProgressClaimDraftSchema.safeParse({
       seriesId: UUID,
       kind: 'progress',
       ...claimDraft,
       issueDate: '14/07/2026',
       correlationKey: UUID_2,
     }).success).toBe(false)
-    expect(createProgressClaimSchema.safeParse({
+    expect(createProgressClaimDraftSchema.safeParse({
       seriesId: UUID,
       kind: 'progress',
       ...claimDraft,
@@ -81,7 +96,7 @@ describe('Progress Invoice command schemas', () => {
       dueDate: '2026-03-01',
       correlationKey: UUID_2,
     }).success).toBe(false)
-    expect(createProgressClaimSchema.safeParse({
+    expect(createProgressClaimDraftSchema.safeParse({
       seriesId: UUID,
       kind: 'progress',
       ...claimDraft,
@@ -94,11 +109,8 @@ describe('Progress Invoice command schemas', () => {
     expect(linkProgressJobberInvoiceSchema.safeParse({
       seriesId: 'not-a-uuid',
       expectedVersion: 1,
-      jobberAccountId: 'account-node',
-      jobberInvoiceId: 'invoice-node',
+      selectedJobberInvoiceId: 'invoice-node',
       observedJobberSnapshotId: UUID,
-      originalObservedInvoiceNumber: 'INV-100',
-      acceptedInvoiceNumberBase: 'INV-100',
       correlationKey: UUID_2,
     }).success).toBe(false)
     expect(refreshProgressJobberInvoiceSchema.safeParse({
@@ -109,9 +121,64 @@ describe('Progress Invoice command schemas', () => {
     }).success).toBe(false)
   })
 
+  it('derives Jobber account, client, and numbering values from an observation', () => {
+    expect(linkProgressJobberInvoiceSchema.safeParse({
+      seriesId: UUID,
+      expectedVersion: 1,
+      selectedJobberInvoiceId: 'invoice-node',
+      selectedJobberJobId: 'job-node',
+      selectedJobberPropertyId: 'property-node',
+      observedJobberSnapshotId: UUID_2,
+      correlationKey: '33333333-3333-4333-8333-333333333333',
+    }).success).toBe(true)
+
+    expect(linkProgressJobberInvoiceSchema.safeParse({
+      seriesId: UUID,
+      expectedVersion: 1,
+      jobberAccountId: 'client-authoritative-account',
+      jobberInvoiceId: 'invoice-node',
+      jobberClientId: 'client-authoritative-client',
+      observedJobberSnapshotId: UUID_2,
+      originalObservedInvoiceNumber: 'INV-100',
+      acceptedInvoiceNumberBase: 'INV-100',
+      correlationKey: '33333333-3333-4333-8333-333333333333',
+    }).success).toBe(false)
+
+    expect(acceptProgressJobberInvoiceNumberSchema.safeParse({
+      seriesId: UUID,
+      expectedVersion: 1,
+      observedJobberSnapshotId: UUID_2,
+      numberSource: 'original',
+      idempotencyKey: '33333333-3333-4333-8333-333333333333',
+    }).success).toBe(true)
+    expect(acceptProgressJobberInvoiceNumberSchema.safeParse({
+      seriesId: UUID,
+      expectedVersion: 1,
+      observedJobberSnapshotId: UUID_2,
+      acceptedInvoiceNumberBase: 'INV-100',
+      idempotencyKey: '33333333-3333-4333-8333-333333333333',
+    }).success).toBe(false)
+  })
+
+  it('omits expectedVersion for first profile creation and requires it when supplied', () => {
+    expect(saveBusinessInvoiceProfileSchema.safeParse(businessProfile).success).toBe(true)
+    expect(saveBusinessInvoiceProfileSchema.safeParse({
+      ...businessProfile,
+      expectedVersion: 1,
+    }).success).toBe(true)
+    expect(saveBusinessInvoiceProfileSchema.safeParse({
+      ...businessProfile,
+      expectedVersion: 0,
+    }).success).toBe(false)
+    expect(saveBusinessInvoiceProfileSchema.safeParse({
+      ...businessProfile,
+      expectedVersion: null,
+    }).success).toBe(false)
+  })
+
   it('requires non-empty reasons for post-issue, void, and reconciliation commands', () => {
     const cases = [
-      reviseProgressClaimSchema.safeParse({
+      reviseIssuedProgressClaimSchema.safeParse({
         claimId: UUID,
         expectedVersion: 1,
         ...claimDraft,
@@ -124,7 +191,7 @@ describe('Progress Invoice command schemas', () => {
         reason: '',
         idempotencyKey: UUID_2,
       }),
-      matchProgressPaymentSchema.safeParse({
+      matchProgressPaymentsSchema.safeParse({
         jobberPaymentId: UUID,
         manualPaymentId: UUID_2,
         jobberExpectedVersion: 1,
@@ -174,7 +241,7 @@ describe('Progress Invoice command schemas', () => {
       correlationKey: UUID,
     }).success).toBe(false)
 
-    expect(saveProgressClaimSchema.safeParse({
+    expect(saveProgressClaimDraftSchema.safeParse({
       claimId: UUID,
       expectedVersion: 1,
       ...claimDraft,
@@ -205,13 +272,6 @@ describe('Progress Invoice command schemas', () => {
       correlationKey: UUID_2,
     }).success).toBe(false)
 
-    expect(acceptProgressJobberInvoiceNumberSchema.safeParse({
-      seriesId: UUID,
-      expectedVersion: 1,
-      observedJobberSnapshotId: UUID_2,
-      acceptedInvoiceNumberBase: 'I'.repeat(PROGRESS_INVOICE_TEXT_LIMITS.invoiceNumberBase + 1),
-      idempotencyKey: '33333333-3333-4333-8333-333333333333',
-    }).success).toBe(false)
   })
 
   it('rejects unknown keys on every command envelope and nested object', () => {
@@ -247,7 +307,7 @@ describe('Progress Invoice command schemas', () => {
         recipientName: 'Updated Recipient',
         correlationKey: UUID_2,
       }),
-      updateProgressAdjustmentSchema.safeParse({
+      updateProgressAdjustmentDraftSchema.safeParse({
         adjustmentId: UUID,
         expectedVersion: 1,
         description: 'Updated draft adjustment',
