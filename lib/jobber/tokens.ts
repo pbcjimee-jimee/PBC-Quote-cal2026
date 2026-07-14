@@ -1,5 +1,9 @@
 import { createServiceClient } from '@/lib/supabase/server'
-import { assertJobberReadOnlyScopes, type JobberConfig } from './config'
+import {
+  assertJobberReadOnlyScopes,
+  assertJobberRequiredReadScopes,
+  type JobberConfig,
+} from './config'
 import { getTokenExpiresAt, refreshAccessToken } from './oauth'
 import { assertJobberTokenStorageConfigured, decryptTokenValue, encryptTokenValue } from './token-encryption'
 
@@ -12,6 +16,14 @@ export interface StoredJobberToken {
 }
 
 const REFRESH_SKEW_MS = 5 * 60 * 1000
+
+interface JobberTokenRequirements {
+  requiredScopes?: readonly string[]
+}
+
+interface JobberTokenRefreshOptions extends JobberTokenRequirements {
+  storedScope?: string | null
+}
 
 function shouldRefresh(expiresAt: string | null, now = new Date()): boolean {
   if (!expiresAt) return false
@@ -50,6 +62,7 @@ export async function getSharedJobberConnectionToken(): Promise<StoredJobberToke
     ownerUserId: data.user_id,
     accessToken: decryptTokenValue(data.access_token),
     refreshToken: decryptTokenValue(data.refresh_token),
+    scope: data.scope,
     expiresAt: data.expires_at,
   }
 }
@@ -57,7 +70,8 @@ export async function getSharedJobberConnectionToken(): Promise<StoredJobberToke
 export async function refreshSharedJobberConnectionToken(
   currentRefreshToken: string,
   config: JobberConfig,
-  ownerUserId: string
+  ownerUserId: string,
+  options: JobberTokenRefreshOptions = {},
 ): Promise<StoredJobberToken> {
   assertJobberTokenStorageConfigured()
 
@@ -68,6 +82,7 @@ export async function refreshSharedJobberConnectionToken(
     if (isRefreshUnauthorizedError(error)) {
       const latestToken = await getSharedJobberConnectionToken()
       if (latestToken && latestToken.refreshToken !== currentRefreshToken && !shouldRefresh(latestToken.expiresAt)) {
+        assertJobberRequiredReadScopes(latestToken.scope, options.requiredScopes ?? [])
         return latestToken
       }
 
@@ -75,6 +90,9 @@ export async function refreshSharedJobberConnectionToken(
     }
     throw error
   }
+  const effectiveScope = token.scope ?? options.storedScope ?? null
+  assertJobberReadOnlyScopes(effectiveScope)
+  assertJobberRequiredReadScopes(effectiveScope, options.requiredScopes ?? [])
   const expiresAt = getTokenExpiresAt(token)
   const service = await createServiceClient()
   const { error } = await service
@@ -83,7 +101,7 @@ export async function refreshSharedJobberConnectionToken(
       access_token: encryptTokenValue(token.accessToken),
       refresh_token: encryptTokenValue(token.refreshToken),
       token_type: token.tokenType,
-      scope: token.scope,
+      scope: effectiveScope,
       expires_at: expiresAt,
       updated_at: new Date().toISOString(),
     })
@@ -97,17 +115,28 @@ export async function refreshSharedJobberConnectionToken(
     ownerUserId,
     accessToken: token.accessToken,
     refreshToken: token.refreshToken,
+    scope: effectiveScope,
     expiresAt,
   }
 }
 
 export async function getUsableSharedJobberConnectionToken(
-  config: JobberConfig
+  config: JobberConfig,
+  options: JobberTokenRequirements = {},
 ): Promise<StoredJobberToken | null> {
   const token = await getSharedJobberConnectionToken()
   if (!token) return null
+  assertJobberRequiredReadScopes(token.scope, options.requiredScopes ?? [])
 
   if (!shouldRefresh(token.expiresAt)) return token
 
-  return refreshSharedJobberConnectionToken(token.refreshToken, config, requireSharedJobberConnectionOwnerId(token))
+  return refreshSharedJobberConnectionToken(
+    token.refreshToken,
+    config,
+    requireSharedJobberConnectionOwnerId(token),
+    {
+      storedScope: token.scope,
+      requiredScopes: options.requiredScopes,
+    },
+  )
 }

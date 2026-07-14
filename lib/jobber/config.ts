@@ -54,20 +54,40 @@ export function assertJobberReadOnlyScopes(scope: string | null): void {
   const hasDisallowedScope = scopes.some((item) => {
     const normalized = item.toLowerCase()
     const parts = normalized.split(/[:._-]/).filter(Boolean)
-    const operation = parts.at(-1) ?? ''
-    const target = parts.slice(0, -1).join(':')
+    const first = parts.at(0) ?? ''
+    const last = parts.at(-1) ?? ''
+    const prefixTarget = parts.slice(1).join(':')
+    const suffixTarget = parts.slice(0, -1).join(':')
+    const writeOperations = new Set(['write', 'update', 'edit', 'create'])
     const isNarrowQuoteWrite = (
-      (target === 'quote' || target === 'quotes') &&
-      (operation === 'write' || operation === 'update' || operation === 'edit' || operation === 'create')
+      (writeOperations.has(first) && (prefixTarget === 'quote' || prefixTarget === 'quotes')) ||
+      (writeOperations.has(last) && (suffixTarget === 'quote' || suffixTarget === 'quotes'))
     )
     if (isNarrowQuoteWrite) return false
     if (/(write|create|update|delete|edit|manage)/i.test(normalized)) return true
-    if (normalized.includes(':')) return operation !== 'read'
-    return !/(^|[._-])read$/.test(normalized)
+    const isReadScope = normalized === 'read' || first === 'read' || last === 'read'
+    return !isReadScope
   })
 
   if (hasDisallowedScope) {
     throw new Error('Jobber OAuth scopes must be read-only')
+  }
+}
+
+export function assertJobberRequiredReadScopes(
+  scope: string | null | undefined,
+  requiredScopes: readonly string[],
+): void {
+  const grantedScopes = new Set((scope ?? '')
+    .split(/[\s,]+/)
+    .map((item) => item.trim().toLowerCase())
+    .filter(Boolean))
+  const missingScopes = requiredScopes.filter((requiredScope) => (
+    !grantedScopes.has(requiredScope.toLowerCase())
+  ))
+
+  if (missingScopes.length > 0) {
+    throw new Error(`Jobber connection is missing required read scopes: ${missingScopes.join(', ')}`)
   }
 }
 
