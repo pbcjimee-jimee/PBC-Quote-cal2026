@@ -1,20 +1,23 @@
 'use client'
 
 import { useRef, useState, useTransition } from 'react'
-import { createArea, deleteArea, updateArea } from '@/lib/actions/areas'
-import { createProduct, deleteProduct, importProductsCSV, updateProduct } from '@/lib/actions/products'
+import { createArea, deleteArea, listAreas, updateArea } from '@/lib/actions/areas'
+import { createProduct, deleteProduct, importProductsCSV, listProducts, updateProduct } from '@/lib/actions/products'
 import {
   createProductService,
   deleteProductService,
   importProductServicesCSV,
+  listProductServices,
   updateProductService,
 } from '@/lib/actions/product-services'
 import {
   createQuoteLineTemplate,
   deleteQuoteLineTemplate,
+  listQuoteLineTemplates,
   updateQuoteLineTemplate,
 } from '@/lib/actions/quote-line-templates'
 import { updatePricingSettings } from '@/lib/actions/settings'
+import type { ActionResult } from '@/lib/actions/types'
 import { Icons } from '@/components/ui/icons'
 import { JobberProductServiceEditor } from '@/components/quote-form/jobber-product-service-editor'
 import type { JobberQuoteLineItemDraft } from '@/components/quote-form/types'
@@ -64,11 +67,26 @@ type MaterialUpdateInput = {
 }
 
 interface SettingsFormProps {
-  initialAreas: AreaRecord[]
-  initialProducts: ProductRecord[]
+  initialAreas?: AreaRecord[]
+  initialProducts?: ProductRecord[]
   initialProductServices?: ProductServiceRecord[]
   initialQuoteLineTemplates?: QuoteLineTemplateRecord[]
   initialSettings: PricingSettings
+}
+
+type SettingsTab = 'labour' | 'material' | 'productService' | 'template' | 'area'
+type SettingsResource = 'areas' | 'products' | 'productServices' | 'quoteLineTemplates'
+
+const SETTINGS_TAB_RESOURCES: Record<SettingsTab, SettingsResource[]> = {
+  labour: [],
+  material: ['products'],
+  productService: ['productServices'],
+  template: ['quoteLineTemplates', 'productServices'],
+  area: ['areas'],
+}
+
+function formatSettingsLoadError(error: unknown): string {
+  return error instanceof Error ? error.message : 'Unable to load this settings tab.'
 }
 
 interface MaterialProductsTableProps {
@@ -908,21 +926,30 @@ export function QuoteLineTemplateEditor({
 export function SettingsForm({
   initialAreas,
   initialProducts,
-  initialProductServices = [],
-  initialQuoteLineTemplates = [],
+  initialProductServices,
+  initialQuoteLineTemplates,
   initialSettings,
 }: SettingsFormProps) {
   const [isPending, startTransition] = useTransition()
-  const [activeTab, setActiveTab] = useState<'labour' | 'material' | 'productService' | 'template' | 'area'>('labour')
+  const [activeTab, setActiveTab] = useState<SettingsTab>('labour')
+  const initiallyLoadedResources = useRef(new Set<SettingsResource>([
+    ...(initialAreas !== undefined ? ['areas' as const] : []),
+    ...(initialProducts !== undefined ? ['products' as const] : []),
+    ...(initialProductServices !== undefined ? ['productServices' as const] : []),
+    ...(initialQuoteLineTemplates !== undefined ? ['quoteLineTemplates' as const] : []),
+  ]))
+  const loadingResourcesRef = useRef(new Set<SettingsResource>())
+  const [loadingResources, setLoadingResources] = useState<ReadonlySet<SettingsResource>>(new Set())
+  const [resourceErrors, setResourceErrors] = useState<Partial<Record<SettingsResource, string>>>({})
   const [materialQuery, setMaterialQuery] = useState('')
   const [materialPage, setMaterialPage] = useState(1)
-  const [materialProducts, setMaterialProducts] = useState(initialProducts)
+  const [materialProducts, setMaterialProducts] = useState(initialProducts ?? [])
   const [editingProductId, setEditingProductId] = useState<string | null>(null)
   const [materialMessage, setMaterialMessage] = useState<string | null>(null)
   const [productServiceQuery, setProductServiceQuery] = useState('')
   const [productServicePage, setProductServicePage] = useState(1)
-  const [productServices, setProductServices] = useState(initialProductServices)
-  const [quoteLineTemplates, setQuoteLineTemplates] = useState(initialQuoteLineTemplates)
+  const [productServices, setProductServices] = useState(initialProductServices ?? [])
+  const [quoteLineTemplates, setQuoteLineTemplates] = useState(initialQuoteLineTemplates ?? [])
   const [editingProductServiceId, setEditingProductServiceId] = useState<string | null>(null)
   const [productServiceMessage, setProductServiceMessage] = useState<string | null>(null)
   const [productServiceImportError, setProductServiceImportError] = useState<string | null>(null)
@@ -964,7 +991,7 @@ export function SettingsForm({
   const [materialImportError, setMaterialImportError] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [areaMessage, setAreaMessage] = useState<string | null>(null)
-  const [areas, setAreas] = useState(initialAreas)
+  const [areas, setAreas] = useState(initialAreas ?? [])
   const [areaScope, setAreaScope] = useState<AreaScope>('interior')
   const [areaName, setAreaName] = useState('')
   const [editingAreaId, setEditingAreaId] = useState<string | null>(null)
@@ -984,6 +1011,59 @@ export function SettingsForm({
     f4Margin: toPercent(initialSettings.f4Margin),
     f5Margin: toPercent(initialSettings.f5Margin),
   })
+
+  async function loadSettingsResource<T>(
+    resource: SettingsResource,
+    load: () => Promise<ActionResult<T>>,
+    apply: (data: T) => void
+  ) {
+    if (initiallyLoadedResources.current.has(resource) || loadingResourcesRef.current.has(resource)) return
+
+    loadingResourcesRef.current.add(resource)
+    setLoadingResources(new Set(loadingResourcesRef.current))
+    setResourceErrors((current) => {
+      const next = { ...current }
+      delete next[resource]
+      return next
+    })
+
+    try {
+      const result = await load()
+      if (!result.ok) {
+        setResourceErrors((current) => ({ ...current, [resource]: result.error }))
+        return
+      }
+
+      apply(result.data)
+      initiallyLoadedResources.current.add(resource)
+    } catch (error) {
+      setResourceErrors((current) => ({ ...current, [resource]: formatSettingsLoadError(error) }))
+    } finally {
+      loadingResourcesRef.current.delete(resource)
+      setLoadingResources(new Set(loadingResourcesRef.current))
+    }
+  }
+
+  async function ensureTabData(tab: SettingsTab) {
+    if (tab === 'material') {
+      await loadSettingsResource('products', () => listProducts({ limit: 200 }), setMaterialProducts)
+      return
+    }
+    if (tab === 'productService') {
+      await loadSettingsResource('productServices', () => listProductServices({ limit: 300 }), setProductServices)
+      return
+    }
+    if (tab === 'template') {
+      await Promise.all([
+        loadSettingsResource('quoteLineTemplates', listQuoteLineTemplates, setQuoteLineTemplates),
+        loadSettingsResource('productServices', () => listProductServices({ limit: 300 }), setProductServices),
+      ])
+      return
+    }
+    if (tab === 'area') {
+      await loadSettingsResource('areas', listAreas, setAreas)
+    }
+  }
 
   function setField(field: keyof typeof settings, value: string) {
     setSettings((current) => ({ ...current, [field]: value }))
@@ -1419,22 +1499,34 @@ export function SettingsForm({
   const productServicePageStart = (safeProductServicePage - 1) * SETTINGS_TABLE_PAGE_SIZE
   const pagedProductServices = filteredProductServices.slice(productServicePageStart, productServicePageStart + SETTINGS_TABLE_PAGE_SIZE)
 
-  const tabs: Array<{ key: typeof activeTab; label: string; icon: React.ReactNode }> = [
+  const tabs: Array<{ key: SettingsTab; label: string; icon: React.ReactNode }> = [
     { key: 'labour', label: 'Labour Rates', icon: Icons.dollar({ size: 16 }) },
     { key: 'material', label: 'Material', icon: Icons.palette({ size: 16 }) },
     { key: 'productService', label: 'Product & Service', icon: Icons.template({ size: 16 }) },
     { key: 'template', label: 'Template', icon: Icons.layers({ size: 16 }) },
     { key: 'area', label: 'Area', icon: Icons.pin({ size: 16 }) },
   ]
+  const activeResources = SETTINGS_TAB_RESOURCES[activeTab]
+  const activeLoadError = activeResources.map((resource) => resourceErrors[resource]).find(Boolean)
+  const isActiveTabLoading = activeResources.some((resource) => (
+    loadingResources.has(resource) || (
+      !initiallyLoadedResources.current.has(resource) && !resourceErrors[resource]
+    )
+  ))
 
   return (
     <div className="pbc-settings">
-      <div className="pbc-tabs">
+      <div className="pbc-tabs" role="tablist" aria-label="Settings sections">
         {tabs.map((tab) => (
           <button
             key={tab.key}
             type="button"
-            onClick={() => setActiveTab(tab.key)}
+            role="tab"
+            aria-selected={activeTab === tab.key}
+            onClick={() => {
+              setActiveTab(tab.key)
+              void ensureTabData(tab.key)
+            }}
             className={`pbc-tab ${activeTab === tab.key ? 'is-on' : ''}`}
           >
             {tab.icon} {tab.label}
@@ -1443,7 +1535,21 @@ export function SettingsForm({
       </div>
 
       <div className="pbc-card">
-      {activeTab === 'labour' ? (
+      {activeLoadError ? (
+        <div className="pbc-formsection pbc-formsection--center pbc-formsection--narrow" role="alert">
+          <p className="pbc-alert pbc-alert--danger">{activeLoadError}</p>
+          <button type="button" className="pbc-btn pbc-btn--ghost" onClick={() => void ensureTabData(activeTab)}>
+            Retry
+          </button>
+        </div>
+      ) : isActiveTabLoading ? (
+        <div className="pbc-formsection pbc-formsection--center pbc-formsection--narrow" role="status" aria-live="polite">
+          <div className="pbc-skeleton h-5 w-40" />
+          <div className="pbc-skeleton mt-4 h-12 w-full" />
+          <div className="pbc-skeleton mt-3 h-12 w-full" />
+          <span className="sr-only">Loading settings data</span>
+        </div>
+      ) : activeTab === 'labour' ? (
         <div className="pbc-formsection pbc-formsection--center pbc-formsection--narrow">
           <section className="pbc-formgroup">
             <h2 className="pbc-paneltitle">Labour Rates</h2>

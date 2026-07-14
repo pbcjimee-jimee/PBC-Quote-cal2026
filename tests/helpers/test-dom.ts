@@ -97,6 +97,9 @@ export class TestElement extends TestNode {
   value = ''
   checked = false
   disabled = false
+  selected = false
+  defaultSelected = false
+  multiple = false
   oninput: TestEventListener | null = null
   onchange: TestEventListener | null = null
   onclick: TestEventListener | null = null
@@ -112,6 +115,10 @@ export class TestElement extends TestNode {
     this.nodeName = this.tagName
     this.ownerDocument = ownerDocument
     this.namespaceURI = namespaceURI
+  }
+
+  get options(): TestElement[] {
+    return this.tagName === 'SELECT' ? this.querySelectorAll('option') : []
   }
 
   setAttribute(name: string, value: unknown): void {

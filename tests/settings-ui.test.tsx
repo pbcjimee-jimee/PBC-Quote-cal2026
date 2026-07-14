@@ -21,6 +21,33 @@ import { DEFAULT_PRICING_SETTINGS } from '@/lib/calculator'
 import { updatePricingSettings } from '@/lib/actions/settings'
 import { installTestDom } from '@/tests/helpers/test-dom'
 
+const settingsDataMocks = vi.hoisted(() => ({
+  listAreas: vi.fn(),
+  listProducts: vi.fn(),
+  listProductServices: vi.fn(),
+  listQuoteLineTemplates: vi.fn(),
+}))
+
+vi.mock('@/lib/actions/areas', async (importOriginal) => ({
+  ...await importOriginal<typeof import('@/lib/actions/areas')>(),
+  listAreas: settingsDataMocks.listAreas,
+}))
+
+vi.mock('@/lib/actions/products', async (importOriginal) => ({
+  ...await importOriginal<typeof import('@/lib/actions/products')>(),
+  listProducts: settingsDataMocks.listProducts,
+}))
+
+vi.mock('@/lib/actions/product-services', async (importOriginal) => ({
+  ...await importOriginal<typeof import('@/lib/actions/product-services')>(),
+  listProductServices: settingsDataMocks.listProductServices,
+}))
+
+vi.mock('@/lib/actions/quote-line-templates', async (importOriginal) => ({
+  ...await importOriginal<typeof import('@/lib/actions/quote-line-templates')>(),
+  listQuoteLineTemplates: settingsDataMocks.listQuoteLineTemplates,
+}))
+
 vi.mock('@/lib/actions/settings', () => ({
   updatePricingSettings: vi.fn(),
 }))
@@ -116,6 +143,135 @@ describe('settings material UI', () => {
     expect(markup).not.toContain('Jobber Connection')
     expect(markup).not.toContain('Reconnect Jobber')
     expect(markup).not.toContain('/api/jobber/connect')
+  })
+
+  it('loads Material data once on first tab activation without loading unrelated settings data', async () => {
+    settingsDataMocks.listProducts.mockReset()
+    settingsDataMocks.listProducts.mockResolvedValue({
+      ok: true,
+      data: [{
+        id: 'product-lazy-1',
+        name: 'Lazy paint',
+        manufacturer: 'Dulux',
+        type: null,
+        unit: '15L',
+        marketPrice: '199.00',
+        actualPrice: '199.00',
+        colorCode: null,
+        active: true,
+      }],
+    })
+    settingsDataMocks.listProductServices.mockReset()
+    settingsDataMocks.listQuoteLineTemplates.mockReset()
+    settingsDataMocks.listAreas.mockReset()
+    const { cleanup } = installTestDom()
+    let root: Root | null = null
+
+    try {
+      const { createRoot } = await import('react-dom/client')
+      const container = document.createElement('div')
+      root = createRoot(container)
+
+      await act(async () => {
+        root!.render(createElement(SettingsForm, { initialSettings: DEFAULT_PRICING_SETTINGS }))
+      })
+
+      const materialTab = Array.from(container.querySelectorAll('button')).find((button) => button.textContent.includes('Material'))
+      expect(materialTab).toBeDefined()
+
+      await act(async () => {
+        materialTab!.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+        await Promise.resolve()
+      })
+      await act(async () => undefined)
+
+      expect(settingsDataMocks.listProducts).toHaveBeenCalledTimes(1)
+      expect(settingsDataMocks.listProducts).toHaveBeenCalledWith({ limit: 200 })
+      expect(settingsDataMocks.listProductServices).not.toHaveBeenCalled()
+      expect(settingsDataMocks.listQuoteLineTemplates).not.toHaveBeenCalled()
+      expect(settingsDataMocks.listAreas).not.toHaveBeenCalled()
+      expect(container.textContent).toContain('1 materials')
+
+      await act(async () => {
+        materialTab!.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+        await Promise.resolve()
+      })
+
+      expect(settingsDataMocks.listProducts).toHaveBeenCalledTimes(1)
+    } finally {
+      try {
+        if (root) await act(async () => root?.unmount())
+      } finally {
+        cleanup()
+      }
+    }
+  })
+
+  it('loads both template dependencies once and retries a failed Area load', async () => {
+    settingsDataMocks.listProducts.mockReset()
+    settingsDataMocks.listProductServices.mockReset()
+    settingsDataMocks.listProductServices.mockResolvedValue({ ok: true, data: [] })
+    settingsDataMocks.listQuoteLineTemplates.mockReset()
+    settingsDataMocks.listQuoteLineTemplates.mockResolvedValue({ ok: true, data: [] })
+    settingsDataMocks.listAreas.mockReset()
+    settingsDataMocks.listAreas
+      .mockResolvedValueOnce({ ok: false, error: 'Area network failed' })
+      .mockResolvedValueOnce({
+        ok: true,
+        data: [{ id: 'area-1', scope: 'interior', name: 'Hallway', active: true, position: 0 }],
+      })
+    const { cleanup } = installTestDom()
+    let root: Root | null = null
+
+    try {
+      const { createRoot } = await import('react-dom/client')
+      const container = document.createElement('div')
+      root = createRoot(container)
+
+      await act(async () => {
+        root!.render(createElement(SettingsForm, { initialSettings: DEFAULT_PRICING_SETTINGS }))
+      })
+
+      const buttons = () => Array.from(container.querySelectorAll('button'))
+      const templateTab = buttons().find((button) => button.textContent.includes('Template'))
+      expect(templateTab).toBeDefined()
+
+      await act(async () => {
+        templateTab!.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+        await Promise.resolve()
+      })
+      await act(async () => undefined)
+
+      expect(settingsDataMocks.listProductServices).toHaveBeenCalledTimes(1)
+      expect(settingsDataMocks.listQuoteLineTemplates).toHaveBeenCalledTimes(1)
+
+      const areaTab = buttons().find((button) => button.textContent.includes('Area'))
+      expect(areaTab).toBeDefined()
+      await act(async () => {
+        areaTab!.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+        await Promise.resolve()
+      })
+      await act(async () => undefined)
+
+      expect(container.textContent).toContain('Area network failed')
+      const retry = buttons().find((button) => button.textContent === 'Retry')
+      expect(retry).toBeDefined()
+
+      await act(async () => {
+        retry!.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+        await Promise.resolve()
+      })
+      await act(async () => undefined)
+
+      expect(settingsDataMocks.listAreas).toHaveBeenCalledTimes(2)
+      expect(container.textContent).toContain('Hallway')
+    } finally {
+      try {
+        if (root) await act(async () => root?.unmount())
+      } finally {
+        cleanup()
+      }
+    }
   })
 
   it('uses shared design-system form section and table classes', () => {
@@ -235,7 +391,7 @@ describe('settings material UI', () => {
       ok: true,
       data: DEFAULT_PRICING_SETTINGS,
     })
-    const { cleanup } = installTestDom()
+const { cleanup } = installTestDom()
     let root: Root | null = null
 
     try {

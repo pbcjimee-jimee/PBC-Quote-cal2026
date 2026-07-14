@@ -79,7 +79,9 @@ describe('IntentLink', () => {
       })
 
       expect(container.textContent).toContain('Loading page')
-      expect(container.querySelectorAll('span').some((element) => element.getAttribute('data-route-progress') === 'true')).toBe(true)
+      expect(Array.from(container.querySelectorAll('span')).some((element) => (
+        element.getAttribute('data-route-progress') === 'true'
+      ))).toBe(true)
     } finally {
       navigationState.pending = false
       try {
