@@ -6,7 +6,13 @@ export default defineConfig({
   plugins: [react()],
   test: {
     environment: 'node',
-    exclude: ['**/.claude/**', '**/node_modules/**', '**/dist/**', '**/.next/**'],
+    exclude: [
+      '**/.claude/**',
+      '**/.worktrees/**',
+      '**/node_modules/**',
+      '**/dist/**',
+      '**/.next/**',
+    ],
     coverage: {
       provider: 'v8',
       include: ['lib/**/*.ts'],
