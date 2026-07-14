@@ -23,6 +23,7 @@ vi.mock('react', async (importOriginal) => {
 
 vi.mock('next/navigation', () => ({
   usePathname: () => headerState.pathname,
+  useRouter: () => ({ prefetch: vi.fn() }),
 }))
 
 vi.mock('@/lib/actions/auth', () => ({
@@ -47,6 +48,7 @@ describe('AppHeader sidebar UI', () => {
     expect(markup).toContain('New Quote')
     expect(markup).toContain('Settings')
     expect(markup).toContain('Inventory')
+    expect(markup).toContain('data-intent-link="true"')
     expect(markup).toContain('pbc-usercard__identity')
   })
 

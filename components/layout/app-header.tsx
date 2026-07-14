@@ -1,8 +1,8 @@
 'use client'
 
-import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useEffect, useSyncExternalStore } from 'react'
+import { IntentLink } from '@/components/navigation/intent-link'
 import { signOut } from '@/lib/actions/auth'
 import { Icons } from '@/components/ui/icons'
 import type { UserProfile } from '@/lib/user-profiles'
@@ -107,13 +107,13 @@ export function AppHeader({ userProfile }: { userProfile: UserProfile }) {
         ].join(' ')}
       >
         <div className={isSidebarCollapsed ? 'flex flex-col items-center gap-3' : 'flex items-center justify-between gap-2'}>
-          <Link href="/quotes" className={`pbc-brand min-w-0 ${isSidebarCollapsed ? '!px-0' : ''}`}>
+          <IntentLink href="/quotes" className={`pbc-brand min-w-0 ${isSidebarCollapsed ? '!px-0' : ''}`}>
             <span className="pbc-brand__mark">P</span>
             <span className={isSidebarCollapsed ? 'sr-only' : 'pbc-brand__text min-w-0'}>
               <b>PBC Quote</b>
               <i>Calculator</i>
             </span>
-          </Link>
+          </IntentLink>
           <button
             type="button"
             aria-label="Toggle sidebar"
@@ -131,7 +131,7 @@ export function AppHeader({ userProfile }: { userProfile: UserProfile }) {
             const isActive = isNavItemActive(item.href, hasHydrated ? pathname : null)
 
             return (
-              <Link
+              <IntentLink
                 key={item.href}
                 href={item.href}
                 title={item.label}
@@ -139,7 +139,7 @@ export function AppHeader({ userProfile }: { userProfile: UserProfile }) {
               >
                 <NavIcon icon={item.icon} />
                 <span className={isSidebarCollapsed ? 'sr-only' : ''}>{item.label}</span>
-              </Link>
+              </IntentLink>
             )
           })}
         </nav>
@@ -174,17 +174,17 @@ export function AppHeader({ userProfile }: { userProfile: UserProfile }) {
 
       <header className="pbc-mobile-header sticky top-0 z-30 border-b border-[var(--border)] bg-[rgba(246,249,255,0.82)] backdrop-blur lg:hidden">
         <div className="pbc-mobile-header__inner">
-          <Link href="/quotes" className="pbc-mobile-header__brand">
+          <IntentLink href="/quotes" className="pbc-mobile-header__brand">
             <span className="pbc-brand__mark !h-9 !w-9 !text-sm">P</span>
             <span className="text-sm font-extrabold text-[var(--foreground)]">PBC Quote</span>
-          </Link>
+          </IntentLink>
 
           <nav aria-label="Mobile navigation" className="pbc-mobile-nav">
             {navItems.map((item) => {
               const isActive = isNavItemActive(item.href, hasHydrated ? pathname : null)
 
               return (
-                <Link
+                <IntentLink
                   key={item.href}
                   href={item.href}
                   aria-current={isActive ? 'page' : undefined}
@@ -192,7 +192,7 @@ export function AppHeader({ userProfile }: { userProfile: UserProfile }) {
                 >
                   <NavIcon icon={item.icon} />
                   <span>{item.href === '/quotes/new' ? 'New' : item.label}</span>
-                </Link>
+                </IntentLink>
               )
             })}
           </nav>

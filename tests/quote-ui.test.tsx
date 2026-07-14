@@ -30,10 +30,12 @@ import type { QuoteRecord } from '@/lib/dev-data'
 import { createQuote, updateQuote } from '@/lib/actions/quotes'
 
 const routerPushMock = vi.hoisted(() => vi.fn())
+const routerPrefetchMock = vi.hoisted(() => vi.fn())
 
 vi.mock('next/navigation', () => ({
   useRouter: () => ({
     push: routerPushMock,
+    prefetch: routerPrefetchMock,
   }),
 }))
 
@@ -199,6 +201,7 @@ describe('quote form pricing UI', () => {
   it('shows edit and delete actions on quote cards', () => {
     const markup = renderToStaticMarkup(createElement(QuoteCard, { quote: quoteRecord }))
 
+    expect(markup).toContain('data-intent-link="true"')
     expect(markup).toContain('View')
     expect(markup).toContain('Edit')
     expect(markup).toContain(`/quotes/${quoteRecord.id}/edit`)

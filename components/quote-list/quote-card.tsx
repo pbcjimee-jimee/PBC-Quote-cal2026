@@ -1,5 +1,5 @@
-import Link from 'next/link'
 import type { QuoteRecord } from '@/lib/dev-data'
+import { IntentLink } from '@/components/navigation/intent-link'
 import { buttonClassName } from '@/components/ui/card'
 import { Icons } from '@/components/ui/icons'
 import { QuoteDeleteButton } from './quote-delete-button'
@@ -29,7 +29,7 @@ export function OverviewQuoteRow({ quote }: { quote: QuoteRecord }) {
   const savedDate = OVERVIEW_DATE_FORMATTER.format(new Date(quote.createdAt))
 
   return (
-    <Link className="pbc-qrow" href={`/quotes/${quote.id}`}>
+    <IntentLink className="pbc-qrow" href={`/quotes/${quote.id}`}>
       <span className={`pbc-qrow__av pbc-qrow__av--${tone}`}>{initials(title)}</span>
       <span className="pbc-qrow__main">
         <span className="pbc-qrow__name">{title}</span>
@@ -42,7 +42,7 @@ export function OverviewQuoteRow({ quote }: { quote: QuoteRecord }) {
       <span className="pbc-qrow__date">{savedDate}</span>
       <span className="pbc-qrow__amt mono">${quote.subtotal}</span>
       <span className="pbc-qrow__go">{Icons.arrowDown({ size: 16 })}</span>
-    </Link>
+    </IntentLink>
   )
 }
 
@@ -69,12 +69,12 @@ export function QuoteCard({ quote }: { quote: QuoteRecord }) {
           <div className="mono text-lg font-bold text-[var(--foreground)]">${quote.subtotal}</div>
           <div className="text-xs font-semibold text-[var(--muted-2)]">ex GST</div>
           <div className="mt-3 flex flex-wrap items-center justify-end gap-2">
-            <Link href={`/quotes/${quote.id}`} className={buttonClassName({ variant: 'soft', size: 'sm' })}>
+            <IntentLink href={`/quotes/${quote.id}`} className={buttonClassName({ variant: 'soft', size: 'sm' })}>
               View
-            </Link>
-            <Link href={`/quotes/${quote.id}/edit`} className="pbc-btn pbc-btn--ghost pbc-btn--sm">
+            </IntentLink>
+            <IntentLink href={`/quotes/${quote.id}/edit`} className="pbc-btn pbc-btn--ghost pbc-btn--sm">
               Edit
-            </Link>
+            </IntentLink>
             <QuoteDuplicateButton quoteId={quote.id} />
             <QuoteDeleteButton quoteId={quote.id} />
           </div>
