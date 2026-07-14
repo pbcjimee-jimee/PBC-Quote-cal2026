@@ -1,0 +1,35 @@
+{
+  "seriesName": "Invented Community Hall Repaint",
+  "supplier": {
+    "legalName": "Harbour Example Co Pty Ltd",
+    "abn": "11 222 333 444"
+  },
+  "recipient": {
+    "name": "Jordan Example",
+    "company": "Sample Civic Projects"
+  },
+  "site": {
+    "name": "Fictional Community Hall",
+    "address": "42 Example Parade, Sydney NSW 2000"
+  },
+  "p01": {
+    "currentIncGst": "18942.55"
+  },
+  "p02": {
+    "baseContractExGst": "17220.50",
+    "approvedVariationExGst": "21712.54",
+    "adjustedExGst": "38933.04",
+    "adjustedIncGst": "42826.34",
+    "cumulativePercentage": "90",
+    "cumulativeTargetIncGst": "38543.71",
+    "currentIncGst": "19601.16",
+    "remainingIncGst": "4282.63"
+  },
+  "final": {
+    "adjustedExGst": "39507.08",
+    "adjustedIncGst": "43457.79",
+    "currentExGst": "4467.34",
+    "currentGst": "446.74",
+    "currentIncGst": "4914.08"
+  }
+}

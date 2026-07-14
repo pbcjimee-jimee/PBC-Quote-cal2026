@@ -21,6 +21,11 @@ export default defineConfig({
         'lib/calculator.ts': {
           100: true,
         },
+        'lib/progress-invoices/calculation.ts': {
+          statements: 100,
+          lines: 100,
+          functions: 100,
+        },
         'lib/actions/**/*.ts': {
           statements: 80,
           lines: 80,
