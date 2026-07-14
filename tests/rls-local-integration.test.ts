@@ -50,7 +50,7 @@ describeLocal('Supabase local RLS CRUD integration', () => {
   let anon: SupabaseClient
   let authed: SupabaseClient
   let userId: string
-  let originalF1Rate: string | null = null
+  let originalPricingSettings: { f1LabourRate: string; updatedBy: string | null } | null = null
 
   beforeAll(async () => {
     const local = requireConfig()
@@ -95,15 +95,20 @@ describeLocal('Supabase local RLS CRUD integration', () => {
   })
 
   afterAll(async () => {
-    if (originalF1Rate !== null) {
-      await admin
+    if (originalPricingSettings !== null) {
+      const restored = await admin
         .from('pricing_settings')
-        .update({ f1_labour_rate: originalF1Rate })
+        .update({
+          f1_labour_rate: originalPricingSettings.f1LabourRate,
+          updated_by: originalPricingSettings.updatedBy,
+        })
         .eq('id', 1)
+      if (restored.error) throw restored.error
     }
 
     if (userId) {
-      await admin.auth.admin.deleteUser(userId)
+      const deleted = await admin.auth.admin.deleteUser(userId)
+      if (deleted.error) throw deleted.error
     }
   })
 
@@ -118,7 +123,54 @@ describeLocal('Supabase local RLS CRUD integration', () => {
       market_price: '1.00',
       actual_price: '1.00',
     })
-    expect(inserted.error).not.toBeNull()
+    expect(inserted.error?.code).toBe('42501')
+    expect(inserted.error?.message).toMatch(/row-level security/i)
+  })
+
+  it('keeps Jobber tokens behind table privileges and RLS', async () => {
+    const anonSelected = await anon.from('jobber_tokens').select('user_id').limit(1)
+    expect(anonSelected.error?.code).toBe('42501')
+    expect(anonSelected.error?.message).toMatch(/permission denied for table jobber_tokens/i)
+
+    const authedSelected = await authed.from('jobber_tokens').select('user_id').limit(1)
+    expect(authedSelected.error?.code).toBe('42501')
+    expect(authedSelected.error?.message).toMatch(/permission denied for table jobber_tokens/i)
+
+    expectNoError(
+      await admin.from('jobber_tokens').upsert({
+        user_id: userId,
+        access_token: 'local-test-access-token',
+        refresh_token: 'local-test-refresh-token',
+        token_type: 'Bearer',
+      })
+    )
+    expectNoError(
+      await admin.from('jobber_tokens').select('user_id').eq('user_id', userId).single()
+    )
+    expectNoError(await admin.from('jobber_tokens').delete().eq('user_id', userId))
+  })
+
+  it('allows service-role cleanup on non-secret application tables', async () => {
+    const product = expectNoError(
+      await authed
+        .from('products')
+        .insert({
+          name: `service-cleanup-${Date.now()}`,
+          unit: 'gallon',
+          market_price: '1.00',
+          actual_price: '1.00',
+        })
+        .select('id')
+        .single()
+    )
+    const productData = expectData(product.data)
+
+    expectNoError(await admin.from('products').delete().eq('id', productData.id))
+
+    const selected = expectNoError(
+      await authed.from('products').select('id').eq('id', productData.id)
+    )
+    expect(selected.data).toEqual([])
   })
 
   it('allows authenticated CRUD on RLS-protected app tables', async () => {
@@ -127,12 +179,15 @@ describeLocal('Supabase local RLS CRUD integration', () => {
     const settings = expectNoError(
       await authed
         .from('pricing_settings')
-        .select('f1_labour_rate')
+        .select('f1_labour_rate, updated_by')
         .eq('id', 1)
         .single()
     )
     const settingsData = expectData(settings.data)
-    originalF1Rate = settingsData.f1_labour_rate
+    originalPricingSettings = {
+      f1LabourRate: settingsData.f1_labour_rate,
+      updatedBy: settingsData.updated_by,
+    }
 
     expectNoError(
       await authed
