@@ -59,6 +59,7 @@ supabase/.branches/
 .codex/
 .gstack/
 .superpowers/
+.worktrees/
 
 # ===== OS / 에디터 =====
 .DS_Store

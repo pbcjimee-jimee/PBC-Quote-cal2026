@@ -130,11 +130,16 @@
 
 | 동작 | 목표 |
 |---|---|
+| 페이지 이동 클릭 피드백 | <200ms, 고정 progress 표시 |
 | 견적 작성 화면 진입 (`/quotes/new`) | <500ms |
 | 페인트 검색 (한 키 입력) | <200ms, debounce 200ms |
 | 5가지 공식 계산 | <10ms (클라이언트 사이드) |
 | 견적 저장 | <500ms |
 | 견적 목록 페이지 | <500ms, 현재 최신 100건 제한. 전체 페이지네이션은 후속 |
+| Settings 초기 화면 | Labour Rates 필수 데이터만 로드, 비활성 탭 데이터는 첫 진입 시 로드 |
+| 견적 상세 사용자 표시 | 현재 인증 사용자는 Auth 결과 재사용, 다른 사용자만 Auth Admin 조회 |
+
+인증된 앱 내부 링크는 viewport 자동 prefetch를 사용하지 않는다. 링크 hover·focus·touch intent가 있을 때만 대상 route를 한 번 prefetch하여 Overview의 다수 quote row와 sidebar route가 실제 클릭 요청과 경쟁하지 않게 한다. 이 정책은 앱 route 이동에만 적용하며 Jobber fetch API, snapshot refresh, Save & Sync 호출에는 적용하지 않는다.
 
 ---
 
