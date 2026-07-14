@@ -158,14 +158,16 @@ Run: `npm.cmd run verify`
 
 Expected: diff check, typecheck, ESLint, full tests, coverage thresholds, production build, and high-severity audit all pass.
 
-- [ ] **Step 3: Measure affected transitions**
+- [x] **Step 3: Measure affected transitions**
 
 Use the authenticated production browser after deployment, or a comparable authenticated local production build before deployment, to inspect request fan-out and record navigation timings for Settings, Overview, New Quote, and quote detail.
 
-- [ ] **Step 4: Update project records**
+Production evidence: Settings→Overview URL 0.45s, New Quote→Overview URL 0.51s, first Overview→Settings URL 4.09s, and Overview→quote detail URL 2.69s. Slow detail transitions exposed the fixed progress bar and accessible status. Settings lazy-load showed its loading state and resolved content; console errors were empty.
+
+- [x] **Step 4: Update project records**
 
 Record completed behavior, exact test counts, build/audit result, measured timings, and any deployment limitation in `PROGRESS.md`. Mark this plan's completed checkboxes only after evidence exists.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 Stage only task files and create a descriptive performance commit. Do not push or deploy unless separately authorized.
