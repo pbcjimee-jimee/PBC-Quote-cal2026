@@ -356,7 +356,12 @@ describe('quote actions against Supabase', () => {
     mocks.isDevNoAuthMode.mockReturnValue(false)
     mocks.requireAllowedUser.mockResolvedValue({
       ok: true,
-      user: { id: 'user-1', email: 'owner@example.com' },
+      user: {
+        id: 'user-1',
+        email: 'owner@example.com',
+        userMetadata: { full_name: 'Mia Kang' },
+        appMetadata: {},
+      },
     })
     mocks.getPricingSettings.mockResolvedValue({ ok: true, data: DEFAULT_PRICING_SETTINGS })
     mocks.getJobberConfig.mockReturnValue({
@@ -2061,6 +2066,80 @@ describe('quote actions against Supabase', () => {
         changedByEmail: 'owner@example.com',
       }))
     }
+  })
+
+  it('reuses the allowed user profile for current-user quote details without an Auth Admin lookup', async () => {
+    mocks.requireAllowedUser.mockResolvedValueOnce({
+      ok: true,
+      user: {
+        id: 'user-1',
+        email: 'owner@example.com',
+        userMetadata: { full_name: 'Mia Direct' },
+        appMetadata: {},
+      },
+    })
+    const detailBuilder = createSelectSingleBuilder({ data: quoteRow, error: null })
+    mocks.createClient.mockResolvedValueOnce({ from: vi.fn(() => detailBuilder) })
+
+    const result = await getQuote(quoteId)
+
+    expect(result.ok).toBe(true)
+    if (result.ok) {
+      expect(result.data?.createdByName).toBe('Mia Direct')
+      expect(result.data?.priceRevisions[0]?.changedByName).toBe('Mia Direct')
+    }
+    expect(mocks.createServiceClient).not.toHaveBeenCalled()
+  })
+
+  it('uses Auth Admin only for quote detail users missing from the allowed user profile', async () => {
+    mocks.requireAllowedUser.mockResolvedValueOnce({
+      ok: true,
+      user: {
+        id: 'user-1',
+        email: 'owner@example.com',
+        userMetadata: { full_name: 'Mia Direct' },
+        appMetadata: {},
+      },
+    })
+    const getUserById = vi.fn(async (userId: string) => ({
+      data: {
+        user: {
+          id: userId,
+          email: 'estimator@example.com',
+          user_metadata: { full_name: 'Other Estimator' },
+          app_metadata: {},
+        },
+      },
+      error: null,
+    }))
+    mocks.createServiceClient.mockResolvedValueOnce({ auth: { admin: { getUserById } } })
+    const detailBuilder = createSelectSingleBuilder({
+      data: {
+        ...quoteRow,
+        quote_price_revisions: [
+          ...quoteRow.quote_price_revisions,
+          {
+            ...quoteRow.quote_price_revisions[0],
+            id: '00000000-0000-4000-8000-000000000602',
+            revision_number: 2,
+            event_type: 'updated',
+            changed_by: 'user-2',
+          },
+        ],
+      },
+      error: null,
+    })
+    mocks.createClient.mockResolvedValueOnce({ from: vi.fn(() => detailBuilder) })
+
+    const result = await getQuote(quoteId)
+
+    expect(result.ok).toBe(true)
+    if (result.ok) {
+      expect(result.data?.createdByName).toBe('Mia Direct')
+      expect(result.data?.priceRevisions[1]?.changedByName).toBe('Other Estimator')
+    }
+    expect(getUserById).toHaveBeenCalledTimes(1)
+    expect(getUserById).toHaveBeenCalledWith('user-2')
   })
 
   it('normalizes numeric Supabase decimal values before sending quote data to the edit form', async () => {

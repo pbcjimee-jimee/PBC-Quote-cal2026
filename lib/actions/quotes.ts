@@ -28,7 +28,7 @@ import { fetchJobberQuote, JobberApiError, JobberLineSyncPartialError, syncJobbe
 import { getJobberConfig, getMissingGraphqlConfigKeys } from '@/lib/jobber/config'
 import { getUsableSharedJobberConnectionToken, refreshSharedJobberConnectionToken, requireSharedJobberConnectionOwnerId, type StoredJobberToken } from '@/lib/jobber/tokens'
 import { QUOTE_DETAIL_SELECT, QUOTE_DETAIL_WITHOUT_MEMOS_SELECT, QUOTES_LIST_SELECT } from '@/lib/quote-query-shape'
-import { getAuthUserProfilesById, type UserProfile } from '@/lib/user-profiles'
+import { getAuthUserProfile, getAuthUserProfilesById, type UserProfile } from '@/lib/user-profiles'
 import { getPricingSettings } from './settings'
 import type { ActionResult } from './types'
 import { isDevNoAuthMode } from './types'
@@ -2036,7 +2036,17 @@ export async function getQuote(id: string): Promise<ActionResult<QuoteRecord | n
         ...(row.quote_price_revisions ?? []).map((revision) => revision.changed_by).filter((id): id is string => typeof id === 'string'),
       ]
     : []
-  const profiles = await getAuthUserProfilesById(profileIds)
+  const currentUserProfile = getAuthUserProfile({
+    id: allowedUser.user.id,
+    email: allowedUser.user.email,
+    user_metadata: allowedUser.user.userMetadata,
+    app_metadata: allowedUser.user.appMetadata,
+  })
+  const profiles = new Map<string, UserProfile>([[currentUserProfile.id, currentUserProfile]])
+  const missingProfiles = await getAuthUserProfilesById(
+    profileIds.filter((userId) => userId !== currentUserProfile.id)
+  )
+  for (const [userId, profile] of missingProfiles) profiles.set(userId, profile)
 
   return {
     ok: true,
