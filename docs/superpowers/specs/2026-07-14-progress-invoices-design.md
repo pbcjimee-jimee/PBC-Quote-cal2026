@@ -1,7 +1,7 @@
 # Progress Invoice Series Design
 
 **Date:** 2026-07-14
-**Status:** Awaiting written-spec review
+**Status:** Approved
 **Product:** PBC Quote Calculator
 **Scope:** Jobber-linked Progress Invoice series, claims, payments, Tax Invoice XLSX/PDF generation, history, and reporting
 
