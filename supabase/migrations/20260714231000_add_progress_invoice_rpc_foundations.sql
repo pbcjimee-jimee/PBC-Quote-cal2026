@@ -24,6 +24,7 @@ LANGUAGE plpgsql
 SET search_path = ''
 AS $$
 DECLARE
+  expected_version_numeric NUMERIC;
   expected_version INT;
 BEGIN
   IF jsonb_typeof(payload) IS DISTINCT FROM 'object'
@@ -32,11 +33,19 @@ BEGIN
     RAISE EXCEPTION 'PROGRESS_EXPECTED_VERSION_REQUIRED' USING ERRCODE = '22023';
   END IF;
 
-  expected_version := (payload ->> 'expected_version')::INT;
+  IF jsonb_typeof(payload -> 'expected_version') IS DISTINCT FROM 'number' THEN
+    RAISE EXCEPTION 'PROGRESS_PAYLOAD_TYPE_INVALID' USING ERRCODE = '22023';
+  END IF;
 
-  IF expected_version <= 0 THEN
+  expected_version_numeric := (payload ->> 'expected_version')::NUMERIC;
+
+  IF expected_version_numeric <> trunc(expected_version_numeric)
+    OR expected_version_numeric <= 0
+    OR expected_version_numeric > 2147483647 THEN
     RAISE EXCEPTION 'PROGRESS_EXPECTED_VERSION_INVALID' USING ERRCODE = '22023';
   END IF;
+
+  expected_version := expected_version_numeric::INT;
 
   IF expected_version <> current_version THEN
     RAISE EXCEPTION 'PROGRESS_VERSION_CONFLICT' USING ERRCODE = 'P0001';
@@ -205,6 +214,8 @@ DECLARE
   current_profile public.business_invoice_profiles%ROWTYPE;
   saved_profile public.business_invoice_profiles%ROWTYPE;
   unknown_keys TEXT[];
+  payment_term_days_numeric NUMERIC;
+  payment_term_days INT;
 BEGIN
   IF jsonb_typeof(payload) IS DISTINCT FROM 'object' THEN
     RAISE EXCEPTION 'PROGRESS_PAYLOAD_INVALID' USING ERRCODE = '22023';
@@ -235,21 +246,86 @@ BEGIN
     RAISE EXCEPTION 'PROGRESS_PAYLOAD_UNKNOWN_KEYS' USING ERRCODE = '22023';
   END IF;
 
+  IF jsonb_typeof(payload -> 'legal_name') IS DISTINCT FROM 'string'
+    OR jsonb_typeof(payload -> 'abn') IS DISTINCT FROM 'string'
+    OR jsonb_typeof(payload -> 'business_address') IS DISTINCT FROM 'string'
+    OR jsonb_typeof(payload -> 'phone') IS DISTINCT FROM 'string'
+    OR jsonb_typeof(payload -> 'email') IS DISTINCT FROM 'string'
+    OR jsonb_typeof(payload -> 'bank_name') IS DISTINCT FROM 'string'
+    OR jsonb_typeof(payload -> 'bsb') IS DISTINCT FROM 'string'
+    OR jsonb_typeof(payload -> 'bank_account_name') IS DISTINCT FROM 'string'
+    OR jsonb_typeof(payload -> 'bank_account_number') IS DISTINCT FROM 'string'
+    OR jsonb_typeof(payload -> 'gst_rate') IS DISTINCT FROM 'string'
+    OR jsonb_typeof(payload -> 'business_timezone') IS DISTINCT FROM 'string'
+    OR jsonb_typeof(payload -> 'default_payment_term_days') IS DISTINCT FROM 'number' THEN
+    RAISE EXCEPTION 'PROGRESS_PAYLOAD_TYPE_INVALID' USING ERRCODE = '22023';
+  END IF;
+
+  IF payload ? 'trading_name'
+    AND NOT (
+      payload -> 'trading_name' = 'null'::JSONB
+      OR jsonb_typeof(payload -> 'trading_name') = 'string'
+    ) THEN
+    RAISE EXCEPTION 'PROGRESS_PAYLOAD_TYPE_INVALID' USING ERRCODE = '22023';
+  END IF;
+
+  IF payload ? 'contractor_licence'
+    AND NOT (
+      payload -> 'contractor_licence' = 'null'::JSONB
+      OR jsonb_typeof(payload -> 'contractor_licence') = 'string'
+    ) THEN
+    RAISE EXCEPTION 'PROGRESS_PAYLOAD_TYPE_INVALID' USING ERRCODE = '22023';
+  END IF;
+
   IF NULLIF(btrim(payload ->> 'legal_name'), '') IS NULL
+    OR length(btrim(payload ->> 'legal_name')) > 160
+    OR length(btrim(COALESCE(payload ->> 'trading_name', ''))) > 160
     OR NULLIF(btrim(payload ->> 'abn'), '') IS NULL
     OR NULLIF(btrim(payload ->> 'business_address'), '') IS NULL
+    OR length(btrim(payload ->> 'business_address')) > 300
     OR NULLIF(btrim(payload ->> 'phone'), '') IS NULL
+    OR length(btrim(payload ->> 'phone')) > 40
     OR NULLIF(btrim(payload ->> 'email'), '') IS NULL
+    OR length(btrim(payload ->> 'email')) > 254
     OR NULLIF(btrim(payload ->> 'bank_name'), '') IS NULL
+    OR length(btrim(payload ->> 'bank_name')) > 120
     OR NULLIF(btrim(payload ->> 'bsb'), '') IS NULL
+    OR length(btrim(payload ->> 'bsb')) > 16
     OR NULLIF(btrim(payload ->> 'bank_account_name'), '') IS NULL
-    OR NULLIF(btrim(payload ->> 'bank_account_number'), '') IS NULL THEN
-    RAISE EXCEPTION 'PROGRESS_VALIDATION_FAILED' USING ERRCODE = '22023';
+    OR length(btrim(payload ->> 'bank_account_name')) > 120
+    OR NULLIF(btrim(payload ->> 'bank_account_number'), '') IS NULL
+    OR length(btrim(payload ->> 'bank_account_number')) > 32
+    OR length(btrim(COALESCE(payload ->> 'contractor_licence', ''))) > 64 THEN
+    RAISE EXCEPTION 'PROGRESS_VALIDATION_FAILED' USING ERRCODE = '23514';
+  END IF;
+
+  IF btrim(payload ->> 'abn') !~ '^[0-9]{11}$' THEN
+    RAISE EXCEPTION 'PROGRESS_ABN_INVALID' USING ERRCODE = '23514';
+  END IF;
+
+  IF btrim(payload ->> 'email') !~* '^[^[:space:]@]+@[^[:space:]@]+[.][^[:space:]@]+$' THEN
+    RAISE EXCEPTION 'PROGRESS_EMAIL_INVALID' USING ERRCODE = '23514';
   END IF;
 
   IF payload ->> 'gst_rate' IS DISTINCT FROM '0.10' THEN
     RAISE EXCEPTION 'PROGRESS_GST_RATE_INVALID' USING ERRCODE = '23514';
   END IF;
+
+  IF payload ->> 'business_timezone' IS DISTINCT FROM 'Australia/Sydney' THEN
+    RAISE EXCEPTION 'PROGRESS_BUSINESS_TIMEZONE_INVALID' USING ERRCODE = '23514';
+  END IF;
+
+  payment_term_days_numeric := (payload ->> 'default_payment_term_days')::NUMERIC;
+
+  IF payment_term_days_numeric <> trunc(payment_term_days_numeric) THEN
+    RAISE EXCEPTION 'PROGRESS_PAYLOAD_TYPE_INVALID' USING ERRCODE = '22023';
+  END IF;
+
+  IF payment_term_days_numeric < 0 OR payment_term_days_numeric > 365 THEN
+    RAISE EXCEPTION 'PROGRESS_PAYMENT_TERM_DAYS_INVALID' USING ERRCODE = '23514';
+  END IF;
+
+  payment_term_days := payment_term_days_numeric::INT;
 
   LOCK TABLE public.business_invoice_profiles IN SHARE ROW EXCLUSIVE MODE;
 
@@ -260,8 +336,7 @@ BEGIN
   FOR UPDATE;
 
   IF NOT FOUND THEN
-    IF payload ? 'expected_version'
-      AND payload -> 'expected_version' <> 'null'::JSONB THEN
+    IF payload ? 'expected_version' THEN
       RAISE EXCEPTION 'PROGRESS_EXPECTED_VERSION_NOT_ALLOWED' USING ERRCODE = '22023';
     END IF;
 
@@ -297,7 +372,7 @@ BEGIN
       btrim(payload ->> 'bank_account_number'),
       (payload ->> 'gst_rate')::NUMERIC,
       payload ->> 'business_timezone',
-      (payload ->> 'default_payment_term_days')::INT,
+      payment_term_days,
       1,
       actor,
       actor
@@ -320,7 +395,7 @@ BEGIN
         bank_account_number = btrim(payload ->> 'bank_account_number'),
         gst_rate = (payload ->> 'gst_rate')::NUMERIC,
         business_timezone = payload ->> 'business_timezone',
-        default_payment_term_days = (payload ->> 'default_payment_term_days')::INT,
+        default_payment_term_days = payment_term_days,
         version = profile.version + 1,
         updated_by = actor
     WHERE profile.id = current_profile.id
@@ -340,7 +415,7 @@ BEGIN
          saved_profile.bsb,
          saved_profile.bank_account_name,
          saved_profile.bank_account_number,
-         saved_profile.gst_rate::TEXT,
+         pg_catalog.to_char(saved_profile.gst_rate, 'FM0.00'),
          saved_profile.business_timezone,
          saved_profile.default_payment_term_days,
          saved_profile.version,

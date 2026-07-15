@@ -1,10 +1,28 @@
-import { describe, expect, it } from 'vitest'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
+import { beforeEach, describe, expect, expectTypeOf, it, vi } from 'vitest'
+
+const serverMocks = vi.hoisted(() => ({
+  createClient: vi.fn(),
+}))
+
+vi.mock('@/lib/supabase/server', () => ({
+  createClient: serverMocks.createClient,
+}))
 
 import {
   ProgressInvoiceRepository,
-  type ProgressInvoiceRpcClient,
+  createProgressInvoiceRepository,
+  createProgressInvoiceRpcExecutor,
+  type ProgressInvoiceRpcExecutor,
   type SaveBusinessInvoiceProfilePayload,
 } from '@/lib/progress-invoices/repository'
+import type { createClient as createAuthenticatedClient } from '@/lib/supabase/server'
+
+const repositorySource = readFileSync(
+  join(process.cwd(), 'lib', 'progress-invoices', 'repository.ts'),
+  'utf8'
+)
 
 const payload: SaveBusinessInvoiceProfilePayload = {
   legal_name: 'Paint Buddy & Co Pty Ltd',
@@ -36,7 +54,7 @@ const profileRow = {
   bsb: payload.bsb,
   bank_account_name: payload.bank_account_name,
   bank_account_number: payload.bank_account_number,
-  gst_rate: '0.1000',
+  gst_rate: '0.10',
   business_timezone: payload.business_timezone,
   default_payment_term_days: 14,
   version: 1,
@@ -47,21 +65,25 @@ const profileRow = {
 }
 
 function clientReturning(
-  response: Awaited<ReturnType<ProgressInvoiceRpcClient['rpc']>>
-): ProgressInvoiceRpcClient {
+  response: Awaited<ReturnType<ProgressInvoiceRpcExecutor['execute']>>
+): ProgressInvoiceRpcExecutor {
   return {
-    rpc: async () => response,
+    execute: async () => response,
   }
 }
 
 describe('ProgressInvoiceRepository', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
   it('calls the typed command and safely parses its result', async () => {
     let observedCommand = ''
-    let observedArgs: unknown
-    const client: ProgressInvoiceRpcClient = {
-      rpc: async (command, args) => {
+    let observedPayload: unknown
+    const client: ProgressInvoiceRpcExecutor = {
+      execute: async (command, commandPayload) => {
         observedCommand = command
-        observedArgs = args
+        observedPayload = commandPayload
         return { data: [profileRow], error: null }
       },
     }
@@ -72,8 +94,38 @@ describe('ProgressInvoiceRepository', () => {
     )
 
     expect(observedCommand).toBe('save_business_invoice_profile')
-    expect(observedArgs).toEqual({ payload })
+    expect(observedPayload).toEqual(payload)
     expect(result).toEqual({ ok: true, data: profileRow })
+  })
+
+  it('creates a production repository from the request-authenticated Supabase client', async () => {
+    const rpc = vi.fn().mockResolvedValue({ data: [profileRow], error: null })
+    serverMocks.createClient.mockResolvedValue({ rpc })
+
+    const repository = await createProgressInvoiceRepository()
+    const result = await repository.call('save_business_invoice_profile', payload)
+
+    expect(serverMocks.createClient).toHaveBeenCalledOnce()
+    expect(rpc).toHaveBeenCalledWith('save_business_invoice_profile', {
+      payload,
+    })
+    expect(result).toEqual({ ok: true, data: profileRow })
+  })
+
+  it('accepts the actual authenticated createClient shape through the production adapter', () => {
+    type AuthenticatedClient = Awaited<ReturnType<typeof createAuthenticatedClient>>
+    type AdapterInput = Parameters<typeof createProgressInvoiceRpcExecutor>[0]
+
+    expectTypeOf<AuthenticatedClient>().toMatchTypeOf<AdapterInput>()
+    expectTypeOf(createProgressInvoiceRpcExecutor).returns.toMatchTypeOf<ProgressInvoiceRpcExecutor>()
+  })
+
+  it('keeps the production adapter authenticated and free of sensitive logging', () => {
+    expect(repositorySource).toMatch(
+      /import\s*\{\s*createClient\s*\}\s*from\s*'@\/lib\/supabase\/server'/
+    )
+    expect(repositorySource).not.toMatch(/createServiceClient|SUPABASE_SERVICE_ROLE_KEY/)
+    expect(repositorySource).not.toMatch(/console\.|JSON\.stringify\s*\(\s*payload/)
   })
 
   it.each([
@@ -130,14 +182,17 @@ describe('ProgressInvoiceRepository', () => {
     })
   })
 
-  it('rejects malformed RPC data instead of exposing an untyped row', async () => {
-    const result = await new ProgressInvoiceRepository(
-      clientReturning({ data: [{ ...profileRow, gst_rate: 0.1 }], error: null })
-    ).call('save_business_invoice_profile', payload)
+  it.each(['0.1000', '0.1', '10%', 0.1])(
+    'rejects non-canonical RPC GST output %s instead of exposing an untyped row',
+    async (gstRate) => {
+      const result = await new ProgressInvoiceRepository(
+        clientReturning({ data: [{ ...profileRow, gst_rate: gstRate }], error: null })
+      ).call('save_business_invoice_profile', payload)
 
-    expect(result).toEqual({
-      ok: false,
-      error: 'PROGRESS_RESPONSE_INVALID',
-    })
-  })
+      expect(result).toEqual({
+        ok: false,
+        error: 'PROGRESS_RESPONSE_INVALID',
+      })
+    }
+  )
 })

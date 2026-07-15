@@ -1,7 +1,7 @@
 CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA extensions;
 CREATE EXTENSION IF NOT EXISTS dblink WITH SCHEMA extensions;
 
-SELECT plan(29);
+SELECT plan(48);
 
 DELETE FROM public.business_invoice_profiles;
 DELETE FROM auth.users
@@ -66,9 +66,15 @@ AS $$
 BEGIN
   BEGIN
     EXECUTE command;
-    RETURN 'NO_ERROR';
-  EXCEPTION WHEN OTHERS THEN
-    RETURN SQLSTATE;
+    RAISE EXCEPTION '__PGTAP_ROLLBACK_SUCCESS__' USING ERRCODE = 'P0001';
+  EXCEPTION
+    WHEN SQLSTATE 'P0001' THEN
+      IF SQLERRM = '__PGTAP_ROLLBACK_SUCCESS__' THEN
+        RETURN 'NO_ERROR';
+      END IF;
+      RETURN SQLSTATE;
+    WHEN OTHERS THEN
+      RETURN SQLSTATE;
   END;
 END;
 $$;
@@ -151,6 +157,26 @@ SELECT is(
   'authenticated users cannot write the profile table directly'
 );
 
+SELECT is(
+  pg_temp.capture_sqlstate(
+    format(
+      'SELECT * FROM public.save_business_invoice_profile(%L::JSONB)',
+      (
+        pg_temp.profile_payload('Explicit Null Version')
+        || jsonb_build_object('expected_version', NULL)
+      )::TEXT
+    )
+  ),
+  '22023',
+  'first save rejects expected_version whenever the key is present, including JSON null'
+);
+
+SELECT is(
+  (SELECT count(*)::INT FROM public.business_invoice_profiles),
+  0,
+  'an explicit-null first-save attempt leaves the singleton empty'
+);
+
 SELECT lives_ok(
   format(
     'SELECT * FROM public.save_business_invoice_profile(%L::JSONB)',
@@ -197,8 +223,8 @@ SELECT is(
       pg_temp.profile_payload('Paint Buddy & Co Updated', '12345678901', 21, 1)
     )
   ),
-  '0.1000',
-  'profile updates return GST NUMERIC as text'
+  '0.10',
+  'profile updates return GST as canonical v1 text'
 );
 
 SELECT is(
@@ -211,6 +237,242 @@ SELECT is(
   (SELECT legal_name FROM public.business_invoice_profiles),
   'Paint Buddy & Co Updated',
   'a matching expected version updates profile values'
+);
+
+SELECT is(
+  pg_temp.capture_sqlstate(
+    format(
+      'SELECT * FROM public.save_business_invoice_profile(%L::JSONB)',
+      (
+        pg_temp.profile_payload('Safe Base', '12345678901', 14, 2)
+        || jsonb_build_object('legal_name', jsonb_build_object('nested', 'object'))
+      )::TEXT
+    )
+  ),
+  '22023',
+  'required text rejects a JSON object before text extraction'
+);
+
+SELECT is(
+  pg_temp.capture_sqlstate(
+    format(
+      'SELECT * FROM public.save_business_invoice_profile(%L::JSONB)',
+      (
+        pg_temp.profile_payload('Safe Base', '12345678901', 14, 2)
+        || jsonb_build_object('email', jsonb_build_array('not', 'email'))
+      )::TEXT
+    )
+  ),
+  '22023',
+  'required text rejects a JSON array before text extraction'
+);
+
+SELECT is(
+  pg_temp.capture_sqlstate(
+    format(
+      'SELECT * FROM public.save_business_invoice_profile(%L::JSONB)',
+      (
+        pg_temp.profile_payload('Safe Base', '12345678901', 14, 2)
+        || jsonb_build_object('gst_rate', 0.10::NUMERIC)
+      )::TEXT
+    )
+  ),
+  '22023',
+  'GST rejects a JSON number even when numerically equal to 0.10'
+);
+
+SELECT is(
+  pg_temp.capture_sqlstate(
+    format(
+      'SELECT * FROM public.save_business_invoice_profile(%L::JSONB)',
+      (
+        pg_temp.profile_payload('Safe Base', '12345678901', 14, 2)
+        || jsonb_build_object('default_payment_term_days', '14')
+      )::TEXT
+    )
+  ),
+  '22023',
+  'payment terms reject a numeric-looking JSON string'
+);
+
+SELECT is(
+  pg_temp.capture_sqlstate(
+    format(
+      'SELECT * FROM public.save_business_invoice_profile(%L::JSONB)',
+      (
+        pg_temp.profile_payload('Safe Base', '12345678901', 14, 2)
+        || jsonb_build_object('default_payment_term_days', 14.5)
+      )::TEXT
+    )
+  ),
+  '22023',
+  'payment terms reject a fractional JSON number'
+);
+
+SELECT is(
+  pg_temp.capture_sqlstate(
+    format(
+      'SELECT * FROM public.save_business_invoice_profile(%L::JSONB)',
+      (
+        pg_temp.profile_payload('Safe Base', '12345678901', 14, 2)
+        || jsonb_build_object('trading_name', jsonb_build_object('bad', true))
+      )::TEXT
+    )
+  ),
+  '22023',
+  'optional trading name accepts only JSON string or null'
+);
+
+SELECT is(
+  pg_temp.capture_sqlstate(
+    format(
+      'SELECT * FROM public.save_business_invoice_profile(%L::JSONB)',
+      (
+        pg_temp.profile_payload('Safe Base', '12345678901', 14, 2)
+        || jsonb_build_object('contractor_licence', jsonb_build_array('bad'))
+      )::TEXT
+    )
+  ),
+  '22023',
+  'optional contractor licence accepts only JSON string or null'
+);
+
+SELECT is(
+  pg_temp.capture_sqlstate(
+    format(
+      'SELECT * FROM public.save_business_invoice_profile(%L::JSONB)',
+      (
+        pg_temp.profile_payload('Safe Base', '12345678901', 14, 2)
+        || jsonb_build_object('business_timezone', 10)
+      )::TEXT
+    )
+  ),
+  '22023',
+  'business timezone rejects non-string JSON values'
+);
+
+SELECT is(
+  pg_temp.capture_sqlstate(
+    format(
+      'SELECT * FROM public.save_business_invoice_profile(%L::JSONB)',
+      (
+        pg_temp.profile_payload('Safe Base', '12345678901', 14, 2)
+        || jsonb_build_object('email', 'not-an-email')
+      )::TEXT
+    )
+  ),
+  '23514',
+  'email content is validated at the database boundary'
+);
+
+SELECT is(
+  pg_temp.capture_sqlstate(
+    format(
+      'SELECT * FROM public.save_business_invoice_profile(%L::JSONB)',
+      (
+        pg_temp.profile_payload('Safe Base', '12345678901', 14, 2)
+        || jsonb_build_object('phone', '   ')
+      )::TEXT
+    )
+  ),
+  '23514',
+  'required text rejects whitespace-only content'
+);
+
+SELECT is(
+  pg_temp.capture_sqlstate(
+    format(
+      'SELECT * FROM public.save_business_invoice_profile(%L::JSONB)',
+      (
+        pg_temp.profile_payload('Safe Base', '12345678901', 14, 2)
+        || jsonb_build_object('legal_name', repeat('L', 161))
+      )::TEXT
+    )
+  ),
+  '23514',
+  'legal name enforces the approved maximum length'
+);
+
+SELECT is(
+  pg_temp.capture_sqlstate(
+    format(
+      'SELECT * FROM public.save_business_invoice_profile(%L::JSONB)',
+      (
+        pg_temp.profile_payload('Safe Base', '12345678901', 14, 2)
+        || jsonb_build_object('expected_version', '2')
+      )::TEXT
+    )
+  ),
+  '22023',
+  'expected_version rejects a numeric-looking JSON string'
+);
+
+SELECT is(
+  pg_temp.capture_sqlstate(
+    format(
+      'SELECT * FROM public.save_business_invoice_profile(%L::JSONB)',
+      (
+        pg_temp.profile_payload('Safe Base', '12345678901', 14, 2)
+        || jsonb_build_object('expected_version', 2.5)
+      )::TEXT
+    )
+  ),
+  '22023',
+  'expected_version rejects a fractional JSON number'
+);
+
+SELECT is(
+  pg_temp.capture_sqlstate(
+    format(
+      'SELECT * FROM public.save_business_invoice_profile(%L::JSONB)',
+      (
+        pg_temp.profile_payload('Safe Base', '12345678901', 14, 2)
+        || jsonb_build_object('expected_version', jsonb_build_array(2))
+      )::TEXT
+    )
+  ),
+  '22023',
+  'expected_version rejects a JSON array'
+);
+
+SELECT is(
+  pg_temp.capture_sqlstate(
+    format(
+      'SELECT * FROM public.save_business_invoice_profile(%L::JSONB)',
+      (
+        pg_temp.profile_payload('Safe Base', '12345678901', 14, 2)
+        || jsonb_build_object('bank_account_number', repeat('1', 33))
+      )::TEXT
+    )
+  ),
+  '23514',
+  'bank account number enforces the approved maximum length'
+);
+
+SELECT is(
+  pg_temp.capture_sqlstate(
+    format(
+      'SELECT * FROM public.save_business_invoice_profile(%L::JSONB)',
+      (
+        pg_temp.profile_payload('Safe Base', '12345678901', 14, 2)
+        || jsonb_build_object('business_timezone', 'UTC')
+      )::TEXT
+    )
+  ),
+  '23514',
+  'business timezone enforces the fixed Australia/Sydney value'
+);
+
+SELECT is(
+  (
+    SELECT version = 2
+      AND legal_name = 'Paint Buddy & Co Updated'
+      AND email = 'accounts@example.test'
+      AND default_payment_term_days = 21
+    FROM public.business_invoice_profiles
+  ),
+  true,
+  'all rejected type and content probes leave the profile and version unchanged'
 );
 
 SELECT is(

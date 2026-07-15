@@ -1,4 +1,6 @@
 import type { ActionErrorCode, ActionResult } from '@/lib/actions/types'
+import { createClient } from '@/lib/supabase/server'
+import type { Json } from '@/lib/supabase/types'
 
 export interface SaveBusinessInvoiceProfilePayload {
   legal_name: string
@@ -31,7 +33,7 @@ export interface BusinessInvoiceProfileRpcResult {
   bsb: string
   bank_account_name: string
   bank_account_number: string
-  gst_rate: string
+  gst_rate: '0.10'
   business_timezone: 'Australia/Sydney'
   default_payment_term_days: number
   version: number
@@ -55,12 +57,15 @@ export interface ProgressInvoiceRpcError {
   hint?: unknown
 }
 
-export interface ProgressInvoiceRpcClient {
-  rpc(
-    command: string,
-    args: { payload: unknown }
+export interface ProgressInvoiceRpcExecutor {
+  execute(
+    command: keyof ProgressInvoiceCommandMap,
+    payload: Json
   ): Promise<{ data: unknown; error: ProgressInvoiceRpcError | null }>
 }
+
+type AuthenticatedSupabaseClient = Awaited<ReturnType<typeof createClient>>
+type ProgressInvoiceAuthenticatedClient = Pick<AuthenticatedSupabaseClient, 'rpc'>
 
 type ProgressInvoiceCommand = keyof ProgressInvoiceCommandMap
 type CommandPayload<TCommand extends ProgressInvoiceCommand> =
@@ -177,7 +182,7 @@ function parseBusinessInvoiceProfile(
     bsb === null ||
     bankAccountName === null ||
     bankAccountNumber === null ||
-    gstRate === null ||
+    gstRate !== '0.10' ||
     businessTimezone !== 'Australia/Sydney' ||
     typeof defaultPaymentTermDays !== 'number' ||
     !Number.isSafeInteger(defaultPaymentTermDays) ||
@@ -214,6 +219,37 @@ function parseBusinessInvoiceProfile(
     created_at: createdAt,
     updated_at: updatedAt,
   }
+}
+
+function serializeProfilePayload(
+  payload: SaveBusinessInvoiceProfilePayload
+): Json {
+  const serialized: Record<string, Json | undefined> = {
+    legal_name: payload.legal_name,
+    abn: payload.abn,
+    business_address: payload.business_address,
+    phone: payload.phone,
+    email: payload.email,
+    bank_name: payload.bank_name,
+    bsb: payload.bsb,
+    bank_account_name: payload.bank_account_name,
+    bank_account_number: payload.bank_account_number,
+    gst_rate: payload.gst_rate,
+    business_timezone: payload.business_timezone,
+    default_payment_term_days: payload.default_payment_term_days,
+  }
+
+  if (payload.trading_name !== undefined) {
+    serialized.trading_name = payload.trading_name
+  }
+  if (payload.contractor_licence !== undefined) {
+    serialized.contractor_licence = payload.contractor_licence
+  }
+  if (payload.expected_version !== undefined) {
+    serialized.expected_version = payload.expected_version
+  }
+
+  return serialized
 }
 
 function parseRpcError(value: ProgressInvoiceRpcError): ParsedRpcError {
@@ -279,13 +315,16 @@ function parseCommandResult<TCommand extends ProgressInvoiceCommand>(
 }
 
 export class ProgressInvoiceRepository {
-  constructor(private readonly client: ProgressInvoiceRpcClient) {}
+  constructor(private readonly executor: ProgressInvoiceRpcExecutor) {}
 
   async call<TCommand extends ProgressInvoiceCommand>(
     command: TCommand,
     payload: CommandPayload<TCommand>
   ): Promise<ActionResult<CommandResult<TCommand>>> {
-    const { data, error } = await this.client.rpc(command, { payload })
+    const rpcPayload = serializeProfilePayload(
+      payload as SaveBusinessInvoiceProfilePayload
+    )
+    const { data, error } = await this.executor.execute(command, rpcPayload)
 
     if (error) return mapRpcError(error)
 
@@ -296,4 +335,20 @@ export class ProgressInvoiceRepository {
 
     return { ok: true, data: result }
   }
+}
+
+export function createProgressInvoiceRpcExecutor(
+  client: ProgressInvoiceAuthenticatedClient
+): ProgressInvoiceRpcExecutor {
+  return {
+    async execute(command, payload) {
+      const { data, error } = await client.rpc(command, { payload })
+      return { data, error }
+    },
+  }
+}
+
+export async function createProgressInvoiceRepository(): Promise<ProgressInvoiceRepository> {
+  const client = await createClient()
+  return new ProgressInvoiceRepository(createProgressInvoiceRpcExecutor(client))
 }

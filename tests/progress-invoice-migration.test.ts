@@ -805,10 +805,48 @@ describe('Progress Invoice RPC foundations migration', () => {
       'concurrent first save must take a self-conflicting table lock'
     )
     expectRpcSql(/version\s*=\s*[^,;]*version\s*\+\s*1/i, 'updates must increment version')
-    expectRpcSql(/gst_rate\s*::\s*TEXT/i, 'GST NUMERIC must cross the RPC boundary as text')
+    expectRpcSql(
+      /(?:pg_catalog\.)?to_char\s*\(\s*saved_profile\.gst_rate\s*,\s*'FM0\.00'\s*\)/i,
+      'GST NUMERIC must cross the RPC boundary as canonical 0.10 text'
+    )
     expectRpcSql(/0\.10(?:00)?/i, 'profile RPC must retain the exact v1 GST boundary')
     expectRpcSql(/COALESCE\s*\([^)]*trading_name[^)]*''/i, 'optional trading name normalizes to empty text')
     expectRpcSql(/COALESCE\s*\([^)]*contractor_licence[^)]*''/i, 'optional licence normalizes to empty text')
+  })
+
+  it('validates exact JSON types and bounded profile content before extraction or casts', () => {
+    for (const field of [
+      'legal_name',
+      'abn',
+      'business_address',
+      'phone',
+      'email',
+      'bank_name',
+      'bsb',
+      'bank_account_name',
+      'bank_account_number',
+      'gst_rate',
+      'business_timezone',
+      'default_payment_term_days',
+    ]) {
+      expectRpcSql(
+        new RegExp(`jsonb_typeof\\s*\\(\\s*payload\\s*->\\s*'${field}'\\s*\\)`, 'i'),
+        `expected an exact JSON type guard for ${field}`
+      )
+    }
+
+    for (const optionalField of ['trading_name', 'contractor_licence']) {
+      expectRpcSql(
+        new RegExp(`payload\\s*->\\s*'${optionalField}'\\s*=\\s*'null'::JSONB`, 'i'),
+        `${optionalField} must allow only JSON string or null when present`
+      )
+    }
+
+    expectRpcSql(/jsonb_typeof\s*\(\s*payload\s*->\s*'expected_version'\s*\)/i, 'expected_version must be a JSON number')
+    expectRpcSql(/PROGRESS_PAYLOAD_TYPE_INVALID/i, 'type confusion must use a safe validation error')
+    expectRpcSql(/length\s*\(\s*btrim/i, 'text limits must be enforced after string type checks')
+    expectRpcSql(/\^\[0-9\]\{11\}\$/i, 'ABN must be exactly eleven digits')
+    expectRpcSql(/PROGRESS_EMAIL_INVALID/i, 'email must receive DB-boundary validation')
   })
 
   it('defines internal fixed-search-path helpers with no API-role execute grants', () => {
