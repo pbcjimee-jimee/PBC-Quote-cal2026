@@ -263,6 +263,8 @@ Represents one contract and Progress Invoice sequence:
 - optimistic version; and
 - current totals cached only as a transactionally maintained read model.
 
+A PBC-quote series must reference an existing Quote when it is created. The stored Quote link remains optional afterward: deleting the Quote sets `quote_id` to null while retaining `source_type = pbc_quote` and the series' immutable financial history.
+
 A series may be drafted before a Jobber invoice exists, but a Claim draft cannot be created until exactly one Jobber account/invoice identity and accepted numbering base are linked.
 
 Jobber account ID, invoice ID, and the accepted numbering base become permanently locked when the first Claim draft reserves its Tax Invoice number. Before any Claim exists, the link may be changed. After the lock, correcting a wrong link requires voiding and recreating the series or a separately approved reconciliation procedure.
@@ -335,8 +337,8 @@ Stores immutable draft or issued content:
 - input mode: Cumulative Percentage or Current Claim Amount;
 - authoritative decimal input;
 - issue date and due date;
-- description and notes;
-- supplier and recipient snapshots;
+- description, notes, and series reference;
+- supplier and recipient snapshots, including supplier profile version and default payment-term days;
 - Jobber link and invoice-number snapshot;
 - adjusted contract Ex GST, GST, and Inc GST;
 - cumulative approved Variation and Credit amounts;
@@ -346,7 +348,7 @@ Stores immutable draft or issued content:
 - cumulative percentage at high precision;
 - remaining unclaimed Ex GST, GST, and Inc GST balances;
 - calculation-policy version;
-- template version;
+- template ID and version as one bound evidence pair, required for Issued and Superseded revisions;
 - edit classification: Clerical or Financial/Tax Affecting;
 - financial-snapshot hash;
 - predecessor financial-manifest hash;
@@ -354,7 +356,7 @@ Stores immutable draft or issued content:
 - creator, creation time, and revision reason; and
 - complete adjustment snapshot used for the document.
 
-Revision rows are never updated after they become Issued or Superseded.
+After issuance, only an exact state-only transition from Issued to Superseded is allowed; every document and financial field remains unchanged. Superseded revisions are terminal and fully immutable.
 
 ### progress_invoice_revision_sets
 

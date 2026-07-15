@@ -55,7 +55,8 @@ CREATE TABLE public.progress_invoice_templates (
     OR (status = 'active' AND activated_at IS NOT NULL AND failure_code IS NULL)
     OR (status = 'failed' AND activated_at IS NULL AND length(btrim(failure_code)) > 0)
     OR (status = 'superseded' AND activated_at IS NOT NULL AND failure_code IS NULL)
-  )
+  ),
+  UNIQUE (id, version)
 );
 
 CREATE UNIQUE INDEX uq_progress_invoice_templates_active
@@ -122,8 +123,7 @@ CREATE TABLE public.progress_invoice_series (
     (jobber_account_id IS NULL AND jobber_invoice_id IS NULL)
     OR (jobber_account_id IS NOT NULL AND jobber_invoice_id IS NOT NULL)
   ),
-  CHECK (accepted_numbering_base IS NULL OR jobber_invoice_id IS NOT NULL),
-  CHECK (source_type <> 'pbc_quote' OR quote_id IS NOT NULL)
+  CHECK (accepted_numbering_base IS NULL OR jobber_invoice_id IS NOT NULL)
 );
 
 CREATE UNIQUE INDEX uq_progress_invoice_series_jobber_identity
@@ -183,7 +183,8 @@ CREATE TABLE public.progress_jobber_invoice_snapshots (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   CHECK (invoice_subtotal IS NULL OR invoice_subtotal >= 0),
   CHECK (invoice_tax IS NULL OR invoice_tax >= 0),
-  CHECK (invoice_total IS NULL OR invoice_total >= 0)
+  CHECK (invoice_total IS NULL OR invoice_total >= 0),
+  UNIQUE (id, series_id)
 );
 
 CREATE INDEX idx_progress_jobber_snapshots_series
@@ -260,6 +261,8 @@ CREATE TABLE public.progress_claim_revisions (
   due_date DATE NOT NULL,
   description TEXT NOT NULL,
   notes TEXT NOT NULL DEFAULT '',
+  reference TEXT,
+  supplier_profile_version INT NOT NULL CHECK (supplier_profile_version > 0),
   supplier_legal_name TEXT NOT NULL,
   supplier_trading_name TEXT NOT NULL,
   supplier_abn TEXT NOT NULL CHECK (supplier_abn ~ '^[0-9]{11}$'),
@@ -274,6 +277,8 @@ CREATE TABLE public.progress_claim_revisions (
   supplier_gst_rate NUMERIC(5,4) NOT NULL DEFAULT 0.1000 CHECK (supplier_gst_rate = 0.1000),
   supplier_timezone TEXT NOT NULL DEFAULT 'Australia/Sydney'
     CHECK (supplier_timezone = 'Australia/Sydney'),
+  supplier_default_payment_term_days INT NOT NULL
+    CHECK (supplier_default_payment_term_days BETWEEN 0 AND 365),
   recipient_name TEXT NOT NULL,
   recipient_company TEXT,
   recipient_address TEXT NOT NULL,
@@ -306,7 +311,7 @@ CREATE TABLE public.progress_claim_revisions (
   remaining_gst NUMERIC(14,2) NOT NULL,
   remaining_inc_gst NUMERIC(14,2) NOT NULL,
   calculation_policy_version TEXT NOT NULL,
-  template_id UUID REFERENCES public.progress_invoice_templates(id) ON DELETE RESTRICT,
+  template_id UUID,
   template_version INT CHECK (template_version IS NULL OR template_version > 0),
   edit_classification TEXT NOT NULL
     CHECK (edit_classification IN ('clerical', 'financial_tax_affecting')),
@@ -333,7 +338,17 @@ CREATE TABLE public.progress_claim_revisions (
   created_by UUID NOT NULL REFERENCES auth.users(id) ON DELETE RESTRICT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   UNIQUE (claim_id, revision_number),
+  UNIQUE (id, claim_id),
+  CONSTRAINT fk_progress_claim_revisions_template
+    FOREIGN KEY (template_id, template_version)
+    REFERENCES public.progress_invoice_templates(id, version)
+    MATCH FULL
+    ON DELETE RESTRICT,
   CHECK (due_date >= issue_date),
+  CHECK (
+    state = 'draft'
+    OR (template_id IS NOT NULL AND template_version IS NOT NULL)
+  ),
   CHECK (
     (
       input_mode = 'cumulative_percentage'
@@ -373,7 +388,7 @@ CREATE TABLE public.progress_invoice_revision_sets (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   series_id UUID NOT NULL REFERENCES public.progress_invoice_series(id) ON DELETE RESTRICT,
   set_number INT NOT NULL CHECK (set_number > 0),
-  predecessor_set_id UUID REFERENCES public.progress_invoice_revision_sets(id) ON DELETE RESTRICT,
+  predecessor_set_id UUID,
   revision_manifest JSONB NOT NULL
     CHECK (jsonb_typeof(revision_manifest) = 'array' AND pg_column_size(revision_manifest) <= 262144),
   state TEXT NOT NULL DEFAULT 'draft'
@@ -393,6 +408,11 @@ CREATE TABLE public.progress_invoice_revision_sets (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   UNIQUE (series_id, set_number),
+  UNIQUE (id, series_id),
+  CONSTRAINT fk_progress_revision_sets_predecessor_parent
+    FOREIGN KEY (predecessor_set_id, series_id)
+    REFERENCES public.progress_invoice_revision_sets(id, series_id)
+    ON DELETE RESTRICT,
   CHECK (predecessor_set_id IS NULL OR predecessor_set_id <> id),
   CHECK (state <> 'current' OR published_at IS NOT NULL),
   CHECK (state <> 'failed' OR (failed_at IS NOT NULL AND length(btrim(failure_code)) > 0))
@@ -411,12 +431,17 @@ CREATE TABLE public.progress_payments (
   source TEXT NOT NULL CHECK (source IN ('jobber', 'manual')),
   jobber_payment_id TEXT,
   current_revision_id UUID,
-  matched_manual_payment_id UUID REFERENCES public.progress_payments(id) ON DELETE RESTRICT,
+  matched_manual_payment_id UUID,
   version INT NOT NULL DEFAULT 1 CHECK (version > 0),
   created_by UUID NOT NULL REFERENCES auth.users(id) ON DELETE RESTRICT,
   updated_by UUID NOT NULL REFERENCES auth.users(id) ON DELETE RESTRICT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (id, series_id),
+  CONSTRAINT fk_progress_payments_matched_manual_parent
+    FOREIGN KEY (matched_manual_payment_id, series_id)
+    REFERENCES public.progress_payments(id, series_id)
+    ON DELETE RESTRICT,
   CHECK (
     (source = 'jobber' AND jobber_payment_id IS NOT NULL)
     OR (source = 'manual' AND jobber_payment_id IS NULL)
@@ -454,12 +479,17 @@ CREATE TABLE public.progress_payment_revisions (
     ),
   status TEXT NOT NULL DEFAULT 'active'
     CHECK (status IN ('active', 'superseded', 'unconfirmed', 'void')),
-  predecessor_revision_id UUID REFERENCES public.progress_payment_revisions(id) ON DELETE RESTRICT,
+  predecessor_revision_id UUID,
   source_observed_at TIMESTAMPTZ,
   created_by UUID NOT NULL REFERENCES auth.users(id) ON DELETE RESTRICT,
   reason TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   UNIQUE (payment_id, revision_number),
+  UNIQUE (id, payment_id),
+  CONSTRAINT fk_progress_payment_revisions_predecessor_parent
+    FOREIGN KEY (predecessor_revision_id, payment_id)
+    REFERENCES public.progress_payment_revisions(id, payment_id)
+    ON DELETE RESTRICT,
   CHECK (predecessor_revision_id IS NULL OR predecessor_revision_id <> id),
   CHECK (status NOT IN ('superseded', 'void') OR length(btrim(reason)) > 0)
 );
@@ -562,27 +592,27 @@ CREATE INDEX idx_progress_invoice_events_series
 
 ALTER TABLE public.progress_invoice_series
   ADD CONSTRAINT fk_progress_series_current_jobber_snapshot
-  FOREIGN KEY (current_jobber_snapshot_id)
-  REFERENCES public.progress_jobber_invoice_snapshots(id)
+  FOREIGN KEY (current_jobber_snapshot_id, id)
+  REFERENCES public.progress_jobber_invoice_snapshots(id, series_id)
   ON DELETE RESTRICT
   DEFERRABLE INITIALLY DEFERRED,
   ADD CONSTRAINT fk_progress_series_current_revision_set
-  FOREIGN KEY (current_revision_set_id)
-  REFERENCES public.progress_invoice_revision_sets(id)
+  FOREIGN KEY (current_revision_set_id, id)
+  REFERENCES public.progress_invoice_revision_sets(id, series_id)
   ON DELETE RESTRICT
   DEFERRABLE INITIALLY DEFERRED;
 
 ALTER TABLE public.progress_claims
   ADD CONSTRAINT fk_progress_claims_current_revision
-  FOREIGN KEY (current_revision_id)
-  REFERENCES public.progress_claim_revisions(id)
+  FOREIGN KEY (current_revision_id, id)
+  REFERENCES public.progress_claim_revisions(id, claim_id)
   ON DELETE RESTRICT
   DEFERRABLE INITIALLY DEFERRED;
 
 ALTER TABLE public.progress_payments
   ADD CONSTRAINT fk_progress_payments_current_revision
-  FOREIGN KEY (current_revision_id)
-  REFERENCES public.progress_payment_revisions(id)
+  FOREIGN KEY (current_revision_id, id)
+  REFERENCES public.progress_payment_revisions(id, payment_id)
   ON DELETE RESTRICT
   DEFERRABLE INITIALLY DEFERRED;
 
@@ -657,6 +687,12 @@ BEGIN
       OR (OLD.status = 'active' AND NEW.status = 'superseded')
     ) THEN
     RAISE EXCEPTION 'PROGRESS_TEMPLATE_STATUS_TRANSITION_INVALID' USING ERRCODE = '23514';
+  END IF;
+
+  IF OLD.status = 'active'
+    AND NEW.status = 'superseded'
+    AND NEW.activated_at IS DISTINCT FROM OLD.activated_at THEN
+    RAISE EXCEPTION 'PROGRESS_TEMPLATE_ACTIVATION_EVIDENCE_IMMUTABLE' USING ERRCODE = '55000';
   END IF;
 
   IF NEW.status = OLD.status
@@ -746,12 +782,100 @@ LANGUAGE plpgsql
 SET search_path = ''
 AS $$
 BEGIN
-  IF OLD.state IN ('issued', 'superseded') THEN
+  IF TG_OP = 'DELETE' THEN
+    IF OLD.state IN ('issued', 'superseded') THEN
+      RAISE EXCEPTION 'PROGRESS_CLAIM_REVISION_IMMUTABLE' USING ERRCODE = '55000';
+    END IF;
+    RETURN OLD;
+  END IF;
+
+  IF ROW(
+    NEW.id,
+    NEW.claim_id,
+    NEW.revision_number,
+    NEW.created_by,
+    NEW.created_at
+  ) IS DISTINCT FROM ROW(
+    OLD.id,
+    OLD.claim_id,
+    OLD.revision_number,
+    OLD.created_by,
+    OLD.created_at
+  ) THEN
+    RAISE EXCEPTION 'PROGRESS_CLAIM_REVISION_IDENTITY_IMMUTABLE' USING ERRCODE = '55000';
+  END IF;
+
+  IF OLD.state = 'superseded' THEN
     RAISE EXCEPTION 'PROGRESS_CLAIM_REVISION_IMMUTABLE' USING ERRCODE = '55000';
   END IF;
 
-  IF TG_OP = 'DELETE' THEN
-    RETURN OLD;
+  IF OLD.state = 'issued' THEN
+    IF NEW.state <> 'superseded'
+      OR (to_jsonb(NEW) - 'state') IS DISTINCT FROM (to_jsonb(OLD) - 'state') THEN
+      RAISE EXCEPTION 'PROGRESS_CLAIM_REVISION_IMMUTABLE' USING ERRCODE = '55000';
+    END IF;
+
+    RETURN NEW;
+  END IF;
+
+  IF OLD.state = 'draft' AND NEW.state = 'superseded' THEN
+    RAISE EXCEPTION 'PROGRESS_CLAIM_REVISION_STATE_TRANSITION_INVALID' USING ERRCODE = '23514';
+  END IF;
+
+  RETURN NEW;
+END;
+$$;
+
+CREATE FUNCTION public.protect_progress_revision_set_identity()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SET search_path = ''
+AS $$
+BEGIN
+  IF ROW(
+    NEW.id,
+    NEW.series_id,
+    NEW.set_number,
+    NEW.predecessor_set_id,
+    NEW.created_by,
+    NEW.created_at
+  ) IS DISTINCT FROM ROW(
+    OLD.id,
+    OLD.series_id,
+    OLD.set_number,
+    OLD.predecessor_set_id,
+    OLD.created_by,
+    OLD.created_at
+  ) THEN
+    RAISE EXCEPTION 'PROGRESS_REVISION_SET_IDENTITY_IMMUTABLE' USING ERRCODE = '55000';
+  END IF;
+
+  RETURN NEW;
+END;
+$$;
+
+CREATE FUNCTION public.protect_progress_payment_identity()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SET search_path = ''
+AS $$
+BEGIN
+  IF ROW(
+    NEW.id,
+    NEW.series_id,
+    NEW.source,
+    NEW.jobber_payment_id,
+    NEW.created_by,
+    NEW.created_at
+  ) IS DISTINCT FROM ROW(
+    OLD.id,
+    OLD.series_id,
+    OLD.source,
+    OLD.jobber_payment_id,
+    OLD.created_by,
+    OLD.created_at
+  ) THEN
+    RAISE EXCEPTION 'PROGRESS_PAYMENT_IDENTITY_IMMUTABLE' USING ERRCODE = '55000';
   END IF;
 
   RETURN NEW;
@@ -1133,6 +1257,10 @@ CREATE TRIGGER trg_progress_claim_revisions_immutable
 BEFORE UPDATE OR DELETE ON public.progress_claim_revisions
 FOR EACH ROW EXECUTE FUNCTION public.protect_progress_claim_revision();
 
+CREATE TRIGGER trg_progress_revision_sets_protect_identity
+BEFORE UPDATE ON public.progress_invoice_revision_sets
+FOR EACH ROW EXECUTE FUNCTION public.protect_progress_revision_set_identity();
+
 CREATE TRIGGER trg_progress_revision_sets_validate_predecessor
 BEFORE INSERT OR UPDATE ON public.progress_invoice_revision_sets
 FOR EACH ROW EXECUTE FUNCTION public.validate_progress_revision_set_predecessor();
@@ -1140,6 +1268,10 @@ FOR EACH ROW EXECUTE FUNCTION public.validate_progress_revision_set_predecessor(
 CREATE TRIGGER trg_progress_revision_sets_updated_at
 BEFORE UPDATE ON public.progress_invoice_revision_sets
 FOR EACH ROW EXECUTE FUNCTION public.set_progress_updated_at();
+
+CREATE TRIGGER trg_progress_payments_protect_identity
+BEFORE UPDATE ON public.progress_payments
+FOR EACH ROW EXECUTE FUNCTION public.protect_progress_payment_identity();
 
 CREATE TRIGGER trg_progress_payments_validate_match
 BEFORE INSERT OR UPDATE ON public.progress_payments
@@ -1186,6 +1318,8 @@ REVOKE ALL ON FUNCTION public.protect_progress_template_evidence() FROM PUBLIC, 
 REVOKE ALL ON FUNCTION public.reject_progress_row_mutation() FROM PUBLIC, anon, authenticated, service_role;
 REVOKE ALL ON FUNCTION public.protect_progress_adjustment() FROM PUBLIC, anon, authenticated, service_role;
 REVOKE ALL ON FUNCTION public.protect_progress_claim_revision() FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION public.protect_progress_revision_set_identity() FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION public.protect_progress_payment_identity() FROM PUBLIC, anon, authenticated, service_role;
 REVOKE ALL ON FUNCTION public.protect_progress_claim_identity() FROM PUBLIC, anon, authenticated, service_role;
 REVOKE ALL ON FUNCTION public.protect_progress_series_locked_link() FROM PUBLIC, anon, authenticated, service_role;
 REVOKE ALL ON FUNCTION public.protect_progress_document() FROM PUBLIC, anon, authenticated, service_role;

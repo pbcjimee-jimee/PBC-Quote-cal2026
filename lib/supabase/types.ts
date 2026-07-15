@@ -307,17 +307,17 @@ export interface Database {
         Relationships: [
           {
             foreignKeyName: "fk_progress_series_current_jobber_snapshot"
-            columns: ["current_jobber_snapshot_id"]
+            columns: ["current_jobber_snapshot_id", "id"]
             isOneToOne: false
             referencedRelation: "progress_jobber_invoice_snapshots"
-            referencedColumns: ["id"]
+            referencedColumns: ["id", "series_id"]
           },
           {
             foreignKeyName: "fk_progress_series_current_revision_set"
-            columns: ["current_revision_set_id"]
+            columns: ["current_revision_set_id", "id"]
             isOneToOne: false
             referencedRelation: "progress_invoice_revision_sets"
-            referencedColumns: ["id"]
+            referencedColumns: ["id", "series_id"]
           },
           {
             foreignKeyName: "progress_invoice_series_quote_id_fkey"
@@ -590,10 +590,10 @@ export interface Database {
         Relationships: [
           {
             foreignKeyName: "fk_progress_claims_current_revision"
-            columns: ["current_revision_id"]
+            columns: ["current_revision_id", "id"]
             isOneToOne: false
             referencedRelation: "progress_claim_revisions"
-            referencedColumns: ["id"]
+            referencedColumns: ["id", "claim_id"]
           },
           {
             foreignKeyName: "progress_claims_series_id_fkey"
@@ -648,6 +648,7 @@ export interface Database {
           recipient_email: string | null
           recipient_name: string
           recipient_phone: string | null
+          reference: string | null
           remaining_ex_gst: number
           remaining_gst: number
           remaining_inc_gst: number
@@ -663,10 +664,12 @@ export interface Database {
           supplier_bank_name: string
           supplier_bsb: string
           supplier_contractor_licence: string
+          supplier_default_payment_term_days: number
           supplier_email: string
           supplier_gst_rate: number
           supplier_legal_name: string
           supplier_phone: string
+          supplier_profile_version: number
           supplier_timezone: string
           supplier_trading_name: string
           tax_review_external_reference: string | null
@@ -717,6 +720,7 @@ export interface Database {
           recipient_email?: string | null
           recipient_name: string
           recipient_phone?: string | null
+          reference?: string | null
           remaining_ex_gst: number
           remaining_gst: number
           remaining_inc_gst: number
@@ -732,10 +736,12 @@ export interface Database {
           supplier_bank_name: string
           supplier_bsb: string
           supplier_contractor_licence: string
+          supplier_default_payment_term_days: number
           supplier_email: string
           supplier_gst_rate?: number
           supplier_legal_name: string
           supplier_phone: string
+          supplier_profile_version: number
           supplier_timezone?: string
           supplier_trading_name: string
           tax_review_external_reference?: string | null
@@ -786,6 +792,7 @@ export interface Database {
           recipient_email?: string | null
           recipient_name?: string
           recipient_phone?: string | null
+          reference?: string | null
           remaining_ex_gst?: number
           remaining_gst?: number
           remaining_inc_gst?: number
@@ -801,10 +808,12 @@ export interface Database {
           supplier_bank_name?: string
           supplier_bsb?: string
           supplier_contractor_licence?: string
+          supplier_default_payment_term_days?: number
           supplier_email?: string
           supplier_gst_rate?: number
           supplier_legal_name?: string
           supplier_phone?: string
+          supplier_profile_version?: number
           supplier_timezone?: string
           supplier_trading_name?: string
           tax_review_external_reference?: string | null
@@ -814,17 +823,17 @@ export interface Database {
         }
         Relationships: [
           {
+            foreignKeyName: "fk_progress_claim_revisions_template"
+            columns: ["template_id", "template_version"]
+            isOneToOne: false
+            referencedRelation: "progress_invoice_templates"
+            referencedColumns: ["id", "version"]
+          },
+          {
             foreignKeyName: "progress_claim_revisions_claim_id_fkey"
             columns: ["claim_id"]
             isOneToOne: false
             referencedRelation: "progress_claims"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "progress_claim_revisions_template_id_fkey"
-            columns: ["template_id"]
-            isOneToOne: false
-            referencedRelation: "progress_invoice_templates"
             referencedColumns: ["id"]
           },
         ]
@@ -895,11 +904,11 @@ export interface Database {
         }
         Relationships: [
           {
-            foreignKeyName: "progress_invoice_revision_sets_predecessor_set_id_fkey"
-            columns: ["predecessor_set_id"]
+            foreignKeyName: "fk_progress_revision_sets_predecessor_parent"
+            columns: ["predecessor_set_id", "series_id"]
             isOneToOne: false
             referencedRelation: "progress_invoice_revision_sets"
-            referencedColumns: ["id"]
+            referencedColumns: ["id", "series_id"]
           },
           {
             foreignKeyName: "progress_invoice_revision_sets_series_id_fkey"
@@ -953,17 +962,17 @@ export interface Database {
         Relationships: [
           {
             foreignKeyName: "fk_progress_payments_current_revision"
-            columns: ["current_revision_id"]
+            columns: ["current_revision_id", "id"]
             isOneToOne: false
             referencedRelation: "progress_payment_revisions"
-            referencedColumns: ["id"]
+            referencedColumns: ["id", "payment_id"]
           },
           {
-            foreignKeyName: "progress_payments_matched_manual_payment_id_fkey"
-            columns: ["matched_manual_payment_id"]
+            foreignKeyName: "fk_progress_payments_matched_manual_parent"
+            columns: ["matched_manual_payment_id", "series_id"]
             isOneToOne: false
             referencedRelation: "progress_payments"
-            referencedColumns: ["id"]
+            referencedColumns: ["id", "series_id"]
           },
           {
             foreignKeyName: "progress_payments_series_id_fkey"
@@ -1034,17 +1043,17 @@ export interface Database {
         }
         Relationships: [
           {
+            foreignKeyName: "fk_progress_payment_revisions_predecessor_parent"
+            columns: ["predecessor_revision_id", "payment_id"]
+            isOneToOne: false
+            referencedRelation: "progress_payment_revisions"
+            referencedColumns: ["id", "payment_id"]
+          },
+          {
             foreignKeyName: "progress_payment_revisions_payment_id_fkey"
             columns: ["payment_id"]
             isOneToOne: false
             referencedRelation: "progress_payments"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "progress_payment_revisions_predecessor_revision_id_fkey"
-            columns: ["predecessor_revision_id"]
-            isOneToOne: false
-            referencedRelation: "progress_payment_revisions"
             referencedColumns: ["id"]
           },
         ]

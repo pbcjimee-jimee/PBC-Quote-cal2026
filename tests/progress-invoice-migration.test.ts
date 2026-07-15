@@ -212,6 +212,8 @@ const requiredColumns: Readonly<Record<(typeof tables)[number], readonly string[
     'due_date',
     'description',
     'notes',
+    'reference',
+    'supplier_profile_version',
     'supplier_legal_name',
     'supplier_trading_name',
     'supplier_abn',
@@ -225,6 +227,7 @@ const requiredColumns: Readonly<Record<(typeof tables)[number], readonly string[
     'supplier_bank_account_number',
     'supplier_gst_rate',
     'supplier_timezone',
+    'supplier_default_payment_term_days',
     'recipient_name',
     'recipient_company',
     'recipient_address',
@@ -378,6 +381,28 @@ function tableBody(table: (typeof tables)[number]): string {
   return match?.[1] ?? ''
 }
 
+function functionBody(name: string): string {
+  const match = sql.match(
+    new RegExp(
+      `CREATE\\s+FUNCTION\\s+public\\.${escapeRegExp(name)}\\(\\)\\s*[\\s\\S]*?AS\\s+\\$\\$([\\s\\S]*?)\\$\\$;`,
+      'i'
+    )
+  )
+
+  return match?.[1] ?? ''
+}
+
+function databaseTypeTableBody(table: (typeof tables)[number]): string {
+  const match = databaseTypes.match(
+    new RegExp(
+      `^      ${escapeRegExp(table)}: \\{([\\s\\S]*?)(?=^      [a-z_][a-z0-9_]*: \\{|^    \\})`,
+      'm'
+    )
+  )
+
+  return match?.[1] ?? ''
+}
+
 function expectSql(pattern: RegExp, message: string): void {
   expect(sql, message).toMatch(pattern)
 }
@@ -387,17 +412,40 @@ describe('Progress Invoice core migration', () => {
     expect(databaseTypes, `expected ${databaseTypesPath}`).not.toBe('')
 
     for (const table of tables) {
-      const match = databaseTypes.match(
-        new RegExp(
-          `^      ${escapeRegExp(table)}: \\{([\\s\\S]*?)(?=^      [a-z_][a-z0-9_]*: \\{|^    \\})`,
-          'm'
-        )
-      )
-
-      expect(match?.[1], `expected generated database types for ${table}`).toMatch(
+      expect(databaseTypeTableBody(table), `expected generated database types for ${table}`).toMatch(
         /Row:\s*\{[\s\S]*Insert:\s*\{[\s\S]*Update:\s*\{[\s\S]*Relationships:/
       )
     }
+  })
+
+  it('keeps generated snapshot fields and composite relationships in sync with the migration', () => {
+    const revisions = databaseTypeTableBody('progress_claim_revisions')
+
+    for (const field of [
+      'reference',
+      'supplier_profile_version',
+      'supplier_default_payment_term_days',
+    ]) {
+      expect(
+        revisions.match(new RegExp(`^          ${field}(?:\\?|):`, 'gm'))?.length,
+        `expected ${field} in generated Row, Insert, and Update shapes`
+      ).toBe(3)
+    }
+
+    expect(revisions).toContain('foreignKeyName: "fk_progress_claim_revisions_template"')
+    expect(revisions).toMatch(
+      /columns:\s*\["template_id",\s*"template_version"\][\s\S]*referencedColumns:\s*\["id",\s*"version"\]/
+    )
+
+    expect(databaseTypeTableBody('progress_invoice_revision_sets')).toContain(
+      'foreignKeyName: "fk_progress_revision_sets_predecessor_parent"'
+    )
+    expect(databaseTypeTableBody('progress_payments')).toContain(
+      'foreignKeyName: "fk_progress_payments_matched_manual_parent"'
+    )
+    expect(databaseTypeTableBody('progress_payment_revisions')).toContain(
+      'foreignKeyName: "fk_progress_payment_revisions_predecessor_parent"'
+    )
   })
 
   it('creates exactly the twelve approved core tables with UUID primary keys', () => {
@@ -473,8 +521,32 @@ describe('Progress Invoice core migration', () => {
     )
   })
 
+  it('snapshots every supplier-profile field and the series reference on each Claim Revision', () => {
+    const revisions = tableBody('progress_claim_revisions')
+
+    expect(revisions).toMatch(/^\s*reference\s+TEXT\b/im)
+    expect(revisions).toMatch(
+      /^\s*supplier_profile_version\s+INT\s+NOT\s+NULL[\s\S]*CHECK\s*\(\s*supplier_profile_version\s*>\s*0\s*\)/im
+    )
+    expect(revisions).toMatch(
+      /^\s*supplier_default_payment_term_days\s+INT\s+NOT\s+NULL[\s\S]*CHECK\s*\(\s*supplier_default_payment_term_days\s+BETWEEN\s+0\s+AND\s+365\s*\)/im
+    )
+  })
+
+  it('preserves ON DELETE SET NULL when a PBC Quote is removed', () => {
+    const series = tableBody('progress_invoice_series')
+
+    expect(series).toMatch(
+      /quote_id\s+UUID\s+REFERENCES\s+public\.quotes\s*\(\s*id\s*\)\s+ON\s+DELETE\s+SET\s+NULL/i
+    )
+    expect(series).not.toMatch(
+      /source_type\s*<>\s*'pbc_quote'[\s\S]*quote_id\s+IS\s+NOT\s+NULL/i
+    )
+  })
+
   it('uses the approved template lifecycle and preserves rotation evidence', () => {
     const templates = tableBody('progress_invoice_templates')
+    const guard = functionBody('protect_progress_template_evidence')
 
     expect(templates).toMatch(
       /status\s+TEXT\s+NOT\s+NULL\s+DEFAULT\s+'pending'\s+CHECK\s*\(\s*status\s+IN\s*\(\s*'pending'\s*,\s*'active'\s*,\s*'failed'\s*,\s*'superseded'\s*\)\s*\)/i
@@ -486,6 +558,23 @@ describe('Progress Invoice core migration', () => {
     expectSql(
       /OLD\.status\s+IN\s*\(\s*'failed'\s*,\s*'superseded'\s*\)[\s\S]*NEW\.status\s*<>\s*OLD\.status/i,
       'Failed and Superseded template states must be terminal'
+    )
+    expect(guard).toMatch(
+      /OLD\.status\s*=\s*'active'[\s\S]*NEW\.status\s*=\s*'superseded'[\s\S]*NEW\.activated_at\s+IS\s+DISTINCT\s+FROM\s+OLD\.activated_at/i
+    )
+  })
+
+  it('binds Claim Revision template evidence to one registered template version', () => {
+    const templates = tableBody('progress_invoice_templates')
+    const revisions = tableBody('progress_claim_revisions')
+
+    expect(templates).toMatch(/UNIQUE\s*\(\s*id\s*,\s*version\s*\)/i)
+    expectSql(
+      /FOREIGN\s+KEY\s*\(\s*template_id\s*,\s*template_version\s*\)\s*REFERENCES\s+public\.progress_invoice_templates\s*\(\s*id\s*,\s*version\s*\)\s*MATCH\s+FULL/i,
+      'Claim Revision template ID/version must be one composite evidence reference'
+    )
+    expect(revisions).toMatch(
+      /state\s*=\s*'draft'\s+OR\s*\(\s*template_id\s+IS\s+NOT\s+NULL\s+AND\s+template_version\s+IS\s+NOT\s+NULL\s*\)/i
     )
   })
 
@@ -549,6 +638,43 @@ describe('Progress Invoice core migration', () => {
     ]) {
       expectSql(new RegExp(`CREATE\\s+TRIGGER\\s+${trigger}\\b`, 'i'), `expected ${trigger}`)
     }
+
+    for (const relationship of [
+      /FOREIGN\s+KEY\s*\(\s*current_jobber_snapshot_id\s*,\s*id\s*\)\s*REFERENCES\s+public\.progress_jobber_invoice_snapshots\s*\(\s*id\s*,\s*series_id\s*\)/i,
+      /FOREIGN\s+KEY\s*\(\s*current_revision_set_id\s*,\s*id\s*\)\s*REFERENCES\s+public\.progress_invoice_revision_sets\s*\(\s*id\s*,\s*series_id\s*\)/i,
+      /FOREIGN\s+KEY\s*\(\s*predecessor_set_id\s*,\s*series_id\s*\)\s*REFERENCES\s+public\.progress_invoice_revision_sets\s*\(\s*id\s*,\s*series_id\s*\)/i,
+      /FOREIGN\s+KEY\s*\(\s*current_revision_id\s*,\s*id\s*\)\s*REFERENCES\s+public\.progress_claim_revisions\s*\(\s*id\s*,\s*claim_id\s*\)/i,
+      /FOREIGN\s+KEY\s*\(\s*current_revision_id\s*,\s*id\s*\)\s*REFERENCES\s+public\.progress_payment_revisions\s*\(\s*id\s*,\s*payment_id\s*\)/i,
+      /FOREIGN\s+KEY\s*\(\s*predecessor_revision_id\s*,\s*payment_id\s*\)\s*REFERENCES\s+public\.progress_payment_revisions\s*\(\s*id\s*,\s*payment_id\s*\)/i,
+      /FOREIGN\s+KEY\s*\(\s*matched_manual_payment_id\s*,\s*series_id\s*\)\s*REFERENCES\s+public\.progress_payments\s*\(\s*id\s*,\s*series_id\s*\)/i,
+    ]) {
+      expectSql(relationship, `expected composite same-parent relationship ${relationship.source}`)
+    }
+  })
+
+  it('keeps revision and payment ownership immutable from the referenced side', () => {
+    const revisionGuard = functionBody('protect_progress_claim_revision')
+    const revisionSetGuard = functionBody('protect_progress_revision_set_identity')
+    const paymentGuard = functionBody('protect_progress_payment_identity')
+
+    expect(revisionGuard).toMatch(
+      /ROW\s*\([\s\S]*NEW\.claim_id[\s\S]*\)\s+IS\s+DISTINCT\s+FROM\s+ROW\s*\([\s\S]*OLD\.claim_id/i
+    )
+    expect(revisionSetGuard).toMatch(
+      /ROW\s*\([\s\S]*NEW\.series_id[\s\S]*\)\s+IS\s+DISTINCT\s+FROM\s+ROW\s*\([\s\S]*OLD\.series_id/i
+    )
+    expect(paymentGuard).toMatch(
+      /ROW\s*\([\s\S]*NEW\.series_id[\s\S]*NEW\.source[\s\S]*NEW\.jobber_payment_id[\s\S]*\)\s+IS\s+DISTINCT\s+FROM\s+ROW\s*\([\s\S]*OLD\.series_id[\s\S]*OLD\.source[\s\S]*OLD\.jobber_payment_id/i
+    )
+  })
+
+  it('allows only a state-only Issued-to-Superseded Claim Revision transition', () => {
+    const guard = functionBody('protect_progress_claim_revision')
+
+    expect(guard).toMatch(
+      /OLD\.state\s*=\s*'issued'[\s\S]*NEW\.state\s*<>\s*'superseded'[\s\S]*to_jsonb\s*\(\s*NEW\s*\)\s*-\s*'state'[\s\S]*to_jsonb\s*\(\s*OLD\s*\)\s*-\s*'state'/i
+    )
+    expect(guard).toMatch(/OLD\.state\s*=\s*'superseded'[\s\S]*RAISE\s+EXCEPTION/i)
   })
 
   it('protects immutable observations, revisions, ready documents, adjustments, and audit events', () => {

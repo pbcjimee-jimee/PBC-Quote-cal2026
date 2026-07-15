@@ -600,6 +600,7 @@ export interface ProgressInvoiceDocumentSnapshot {
   issueDate: string
   dueDate: string
   supplier: {
+    profileVersion: number
     legalName: string
     tradingName: string
     abn: string
@@ -613,6 +614,7 @@ export interface ProgressInvoiceDocumentSnapshot {
     accountNumber: string
     gstRate: GstRateV1
     timezone: 'Australia/Sydney'
+    defaultPaymentTermDays: number
   }
   recipient: ProgressInvoiceRecipientSnapshot
   jobber: {
@@ -1034,6 +1036,8 @@ Statically assert:
 - one non-void FINAL per series;
 - positive versions/revision numbers;
 - current-pointer same-parent constraints enforced by RPCs/triggers;
+- composite same-parent foreign keys plus immutable ownership columns for current, predecessor, and payment-match relationships;
+- Claim Revision template ID/version bound by a composite MATCH FULL foreign key, with a complete pair required after Draft;
 - immutable update/delete guards for observations, issued/superseded revisions, payment revisions, ready documents, and audit events.
 - partial unique (series_id, command_name, correlation_key) for idempotent commands, plus non-null request_fingerprint and bounded result_refs.
 
@@ -1049,7 +1053,9 @@ Expected: FAIL because the migration and table policies do not exist.
 
 - [ ] **Step 4: Implement the table schema**
 
-Use the approved design's columns. Store supplier, recipient, Jobber normalization, adjustment, and document payloads as versioned typed columns plus JSONB only for bounded immutable snapshots/manifests. Template rows include immutable source and normalized SHA-256 values, manifest/layout/font versions, server-generated opaque source-evidence and normalized-master paths, Pending/Active/Failed/Superseded status, and the authenticated registering actor. Add created_at/updated_at where mutable, creator IDs, optimistic version, and safe enum CHECK constraints. Enforce a singleton business profile with a unique constant-expression index, one active template with a partial unique index, and one-to-one Manual matching with a partial unique index plus a same-series/source-direction trigger. The schema layer guarantees at most one business profile; the concurrent first-save/exactly-one lifecycle belongs to Task 4's transactional RPC. Store the authoritative claim input in separate nullable cumulative-percentage NUMERIC(9,6) and current-claim-amount NUMERIC(14,2) columns with an input-mode XOR. Template evidence fields never change; the only successful rotation transition is verified Pending to Active while the prior Active row becomes Superseded atomically in Task 15.
+Use the approved design's columns. Store supplier, recipient, Jobber normalization, adjustment, and document payloads as versioned typed columns plus JSONB only for bounded immutable snapshots/manifests. Every Claim Revision snapshots the series reference plus every business-profile field, including profile version and default payment-term days. Template rows include immutable source and normalized SHA-256 values, manifest/layout/font versions, server-generated opaque source-evidence and normalized-master paths, Pending/Active/Failed/Superseded status, and the authenticated registering actor. Add created_at/updated_at where mutable, creator IDs, optimistic version, and safe enum CHECK constraints. Enforce a singleton business profile with a unique constant-expression index, one active template with a partial unique index, and one-to-one Manual matching with a partial unique index plus a same-series/source-direction trigger. The schema layer guarantees at most one business profile; the concurrent first-save/exactly-one lifecycle belongs to Task 4's transactional RPC. Store the authoritative claim input in separate nullable cumulative-percentage NUMERIC(9,6) and current-claim-amount NUMERIC(14,2) columns with an input-mode XOR. Bind Claim Revision template ID/version with a composite MATCH FULL foreign key and preserve both-null only while Draft. Back same-parent current, predecessor, and matched-payment relationships with composite foreign keys and immutable ownership/identity columns, retaining validation triggers for semantic source/direction checks. Template evidence fields never change; the only successful rotation transition is verified Pending to Active while the prior Active row becomes Superseded atomically in Task 15, preserving its original activation timestamp.
+
+The optional Quote foreign key remains `ON DELETE SET NULL` so deleting an existing Quote cannot erase or block the immutable Progress Invoice history. The Task 5 create RPC—not a persistent table CHECK—requires a valid Quote when creating a `pbc_quote` source series.
 
 For idempotent series commands, progress_invoice_events stores command_name, correlation_key, SHA-256 request_fingerprint, and safe result_refs. The unique series/command/key index makes an exact same-payload retry return the recorded refs and rejects the same key with a different fingerprint as IDEMPOTENCY_KEY_REUSED. Never store the financial request payload in the event.
 
@@ -1240,7 +1246,7 @@ updateProgressInvoiceSeries(
 ): Promise<ActionResult<VersionedMutationResult, ProgressInvoiceSeriesDetail>>
 ~~~
 
-Cover PBC-quote creation and standalone creation. For a quote, offer quote.subtotal as base Ex GST and quote.final_total as a read-only Inc GST comparison; snapshot the accepted values so later Quote edits cannot change the series.
+Cover PBC-quote creation and standalone creation. A `pbc_quote` creation request must include an existing Quote, while later Quote deletion leaves the series intact with `source_type = 'pbc_quote'` and `quote_id = null`. For a quote, offer quote.subtotal as base Ex GST and quote.final_total as a read-only Inc GST comparison; snapshot the accepted values so later Quote edits cannot change the series.
 
 - [ ] **Step 2: Write failing recipient and link-lock tests**
 
@@ -1291,7 +1297,7 @@ Do not return raw rows. Dashboard/search DTOs expose claimed and received separa
 
 - [ ] **Step 6: Implement adjustment services and RPC bodies**
 
-In 20260714231100_add_progress_invoice_series_rpcs.sql, implement create/update series and create/update/approve/supersede adjustment RPCs. Recalculate the series read model in the same transaction from Approved adjustments and the Current revision set.
+In 20260714231100_add_progress_invoice_series_rpcs.sql, implement create/update series and create/update/approve/supersede adjustment RPCs. The create RPC requires and locks a valid Quote row when `source_type = 'pbc_quote'`; the core table deliberately permits a later null Quote link so `ON DELETE SET NULL` remains effective. Recalculate the series read model in the same transaction from Approved adjustments and the Current revision set.
 
 - [ ] **Step 7: Implement thin Server Actions**
 
@@ -2030,10 +2036,10 @@ git commit -m "feat: secure progress invoice OOXML"
 
 Assert the snapshot contains:
 
-- supplier/profile snapshot including ABN, licence, contact, bank, GST and timezone;
+- supplier/profile snapshot including profile version, ABN, licence, contact, bank, GST, timezone, and default payment-term days;
 - recipient/company/address/contact/optional ABN and site snapshot;
 - Jobber account/invoice/original-number/current-observation reference;
-- Tax Invoice number, dates, suffix/kind/revision reason;
+- Tax Invoice number, dates, suffix/kind/revision reason, and immutable series reference;
 - approved adjustment snapshot;
 - adjusted contract, previous claims, current Ex/GST/Inc, cumulative percentage, and remaining components;
 - calculation/template/layout policy versions;
