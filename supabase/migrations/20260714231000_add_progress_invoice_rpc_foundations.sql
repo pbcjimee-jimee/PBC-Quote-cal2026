@@ -303,7 +303,7 @@ BEGIN
     RAISE EXCEPTION 'PROGRESS_ABN_INVALID' USING ERRCODE = '23514';
   END IF;
 
-  IF btrim(payload ->> 'email') !~* '^[^[:space:]@]+@[^[:space:]@]+[.][^[:space:]@]+$' THEN
+  IF btrim(payload ->> 'email') !~ $zod_email$^(?!\.)(?!.*\.\.)([A-Za-z0-9_'+\-\.]*)[A-Za-z0-9_+-]@([A-Za-z0-9][A-Za-z0-9\-]*\.)+[A-Za-z]{2,}\Z$zod_email$ THEN
     RAISE EXCEPTION 'PROGRESS_EMAIL_INVALID' USING ERRCODE = '23514';
   END IF;
 

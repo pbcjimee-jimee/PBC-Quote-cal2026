@@ -1,7 +1,7 @@
 CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA extensions;
 CREATE EXTENSION IF NOT EXISTS dblink WITH SCHEMA extensions;
 
-SELECT plan(48);
+SELECT plan(56);
 
 DELETE FROM public.business_invoice_profiles;
 DELETE FROM auth.users
@@ -363,6 +363,118 @@ SELECT is(
   ),
   '23514',
   'email content is validated at the database boundary'
+);
+
+SELECT is(
+  pg_temp.capture_sqlstate(
+    format(
+      'SELECT * FROM public.save_business_invoice_profile(%L::JSONB)',
+      (
+        pg_temp.profile_payload('Safe Base', '12345678901', 14, 2)
+        || jsonb_build_object('email', '.alice@example.com')
+      )::TEXT
+    )
+  ),
+  '23514',
+  'email rejects a leading local-part dot exactly like Zod v4'
+);
+
+SELECT is(
+  pg_temp.capture_sqlstate(
+    format(
+      'SELECT * FROM public.save_business_invoice_profile(%L::JSONB)',
+      (
+        pg_temp.profile_payload('Safe Base', '12345678901', 14, 2)
+        || jsonb_build_object('email', 'a..b@example.com')
+      )::TEXT
+    )
+  ),
+  '23514',
+  'email rejects consecutive local-part dots exactly like Zod v4'
+);
+
+SELECT is(
+  pg_temp.capture_sqlstate(
+    format(
+      'SELECT * FROM public.save_business_invoice_profile(%L::JSONB)',
+      (
+        pg_temp.profile_payload('Safe Base', '12345678901', 14, 2)
+        || jsonb_build_object('email', 'alice@-example.com')
+      )::TEXT
+    )
+  ),
+  '23514',
+  'email rejects a leading-hyphen domain label exactly like Zod v4'
+);
+
+SELECT is(
+  pg_temp.capture_sqlstate(
+    format(
+      'SELECT * FROM public.save_business_invoice_profile(%L::JSONB)',
+      (
+        pg_temp.profile_payload('Safe Base', '12345678901', 14, 2)
+        || jsonb_build_object('email', 'alice@example.c')
+      )::TEXT
+    )
+  ),
+  '23514',
+  'email rejects a single-letter TLD exactly like Zod v4'
+);
+
+SELECT is(
+  pg_temp.capture_sqlstate(
+    format(
+      'SELECT * FROM public.save_business_invoice_profile(%L::JSONB)',
+      (
+        pg_temp.profile_payload('Safe Base', '12345678901', 14, 2)
+        || jsonb_build_object('email', 'alice@example.c0m')
+      )::TEXT
+    )
+  ),
+  '23514',
+  'email rejects a non-alpha TLD exactly like Zod v4'
+);
+
+SELECT is(
+  pg_temp.capture_sqlstate(
+    format(
+      'SELECT * FROM public.save_business_invoice_profile(%L::JSONB)',
+      (
+        pg_temp.profile_payload('Safe Base', '12345678901', 14, 2)
+        || jsonb_build_object('email', 'o''connor+tag@example.com')
+      )::TEXT
+    )
+  ),
+  'NO_ERROR',
+  'email accepts an apostrophe and plus tag exactly like Zod v4'
+);
+
+SELECT is(
+  pg_temp.capture_sqlstate(
+    format(
+      'SELECT * FROM public.save_business_invoice_profile(%L::JSONB)',
+      (
+        pg_temp.profile_payload('Safe Base', '12345678901', 14, 2)
+        || jsonb_build_object('email', 'user@example-.com')
+      )::TEXT
+    )
+  ),
+  'NO_ERROR',
+  'email preserves Zod v4 acceptance of a trailing-hyphen domain label'
+);
+
+SELECT is(
+  pg_temp.capture_sqlstate(
+    format(
+      'SELECT * FROM public.save_business_invoice_profile(%L::JSONB)',
+      (
+        pg_temp.profile_payload('Safe Base', '12345678901', 14, 2)
+        || jsonb_build_object('email', 'A_B+C@0-.Technology')
+      )::TEXT
+    )
+  ),
+  'NO_ERROR',
+  'email preserves Zod v4 acceptance of uppercase, underscore, and an alpha TLD'
 );
 
 SELECT is(

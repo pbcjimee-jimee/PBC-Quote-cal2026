@@ -847,6 +847,9 @@ describe('Progress Invoice RPC foundations migration', () => {
     expectRpcSql(/length\s*\(\s*btrim/i, 'text limits must be enforced after string type checks')
     expectRpcSql(/\^\[0-9\]\{11\}\$/i, 'ABN must be exactly eleven digits')
     expectRpcSql(/PROGRESS_EMAIL_INVALID/i, 'email must receive DB-boundary validation')
+    expect(rpcSql).toContain(
+      String.raw`$zod_email$^(?!\.)(?!.*\.\.)([A-Za-z0-9_'+\-\.]*)[A-Za-z0-9_+-]@([A-Za-z0-9][A-Za-z0-9\-]*\.)+[A-Za-z]{2,}\Z$zod_email$`
+    )
   })
 
   it('defines internal fixed-search-path helpers with no API-role execute grants', () => {
