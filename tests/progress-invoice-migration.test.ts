@@ -10,6 +10,15 @@ const migrationPath = join(
 )
 
 const sql = existsSync(migrationPath) ? readFileSync(migrationPath, 'utf8') : ''
+const rpcMigrationPath = join(
+  process.cwd(),
+  'supabase',
+  'migrations',
+  '20260714231000_add_progress_invoice_rpc_foundations.sql'
+)
+const rpcSql = existsSync(rpcMigrationPath)
+  ? readFileSync(rpcMigrationPath, 'utf8')
+  : ''
 const databaseTypesPath = join(process.cwd(), 'lib', 'supabase', 'types.ts')
 const databaseTypes = existsSync(databaseTypesPath)
   ? readFileSync(databaseTypesPath, 'utf8')
@@ -407,6 +416,10 @@ function expectSql(pattern: RegExp, message: string): void {
   expect(sql, message).toMatch(pattern)
 }
 
+function expectRpcSql(pattern: RegExp, message: string): void {
+  expect(rpcSql, message).toMatch(pattern)
+}
+
 describe('Progress Invoice core migration', () => {
   it('includes generated Row, Insert, Update, and Relationships shapes for every core table', () => {
     expect(databaseTypes, `expected ${databaseTypesPath}`).not.toBe('')
@@ -742,5 +755,87 @@ describe('Progress Invoice core migration', () => {
     expect(sql).not.toMatch(/GRANT\s+(?:INSERT|UPDATE|DELETE|ALL)[^;]*\bTO\s+(?:anon|authenticated|service_role)\b/i)
     expect(sql).not.toMatch(/CREATE\s+POLICY[^;]*\bTO\s+(?:anon|PUBLIC)\b/i)
     expect(sql).not.toMatch(/CREATE\s+POLICY[^;]*\bFOR\s+(?:INSERT|UPDATE|DELETE|ALL)\b/i)
+  })
+})
+
+describe('Progress Invoice RPC foundations migration', () => {
+  it('exposes only the profile command in this migration', () => {
+    const apiFunctions = Array.from(
+      rpcSql.matchAll(
+        /CREATE\s+(?:OR\s+REPLACE\s+)?FUNCTION\s+public\.([a-z0-9_]+)\s*\(\s*payload\s+JSONB\s*\)/gi
+      ),
+      (match) => match[1]
+    )
+
+    expect(apiFunctions).toEqual(['save_business_invoice_profile'])
+    expect(rpcSql).not.toMatch(/CREATE[^;]*FUNCTION\s+public\.(?:create_progress_invoice_series|register_progress_invoice_template|prepare_progress_revision_set)\b/i)
+  })
+
+  it('uses one hardened JSONB API boundary with exact role grants', () => {
+    expectRpcSql(
+      /CREATE\s+FUNCTION\s+public\.save_business_invoice_profile\s*\(\s*payload\s+JSONB\s*\)[\s\S]*SECURITY\s+DEFINER[\s\S]*SET\s+search_path\s*=\s*''/i,
+      'profile save must be a fixed-search-path SECURITY DEFINER JSONB RPC'
+    )
+    expectRpcSql(
+      /REVOKE\s+ALL\s+ON\s+FUNCTION\s+public\.save_business_invoice_profile\s*\(\s*JSONB\s*\)\s+FROM\s+PUBLIC\s*,\s*anon\s*,\s*authenticated\s*,\s*service_role\s*;/i,
+      'profile RPC must reset every API-role grant'
+    )
+    expectRpcSql(
+      /GRANT\s+EXECUTE\s+ON\s+FUNCTION\s+public\.save_business_invoice_profile\s*\(\s*JSONB\s*\)\s+TO\s+authenticated\s*;/i,
+      'profile RPC must be callable only by authenticated'
+    )
+    expect(rpcSql).not.toMatch(
+      /GRANT\s+EXECUTE[^;]*save_business_invoice_profile[^;]*\b(?:PUBLIC|anon|service_role)\b/i
+    )
+  })
+
+  it('derives the actor, rejects forged keys, and requires version matching for updates', () => {
+    expectRpcSql(/auth\.uid\s*\(\s*\)/i, 'actor must be derived from auth.uid()')
+    expectRpcSql(/PROGRESS_AUTH_REQUIRED/i, 'null auth.uid() must be rejected')
+    expectRpcSql(/PROGRESS_PAYLOAD_UNKNOWN_KEYS/i, 'unknown and forged actor keys must be rejected')
+    expectRpcSql(/expected_version/i, 'existing profile updates require expected_version')
+    expectRpcSql(/PROGRESS_EXPECTED_VERSION_REQUIRED/i, 'missing update version must fail')
+    expectRpcSql(/PROGRESS_VERSION_CONFLICT/i, 'stale update version must fail')
+    expect(rpcSql).not.toMatch(/save_business_invoice_profile\s*\([^)]*actor/i)
+  })
+
+  it('serializes first save, preserves the singleton, and returns GST as text', () => {
+    expectRpcSql(
+      /LOCK\s+TABLE\s+public\.business_invoice_profiles\s+IN\s+(?:SHARE\s+ROW\s+EXCLUSIVE|EXCLUSIVE)\s+MODE/i,
+      'concurrent first save must take a self-conflicting table lock'
+    )
+    expectRpcSql(/version\s*=\s*[^,;]*version\s*\+\s*1/i, 'updates must increment version')
+    expectRpcSql(/gst_rate\s*::\s*TEXT/i, 'GST NUMERIC must cross the RPC boundary as text')
+    expectRpcSql(/0\.10(?:00)?/i, 'profile RPC must retain the exact v1 GST boundary')
+    expectRpcSql(/COALESCE\s*\([^)]*trading_name[^)]*''/i, 'optional trading name normalizes to empty text')
+    expectRpcSql(/COALESCE\s*\([^)]*contractor_licence[^)]*''/i, 'optional licence normalizes to empty text')
+  })
+
+  it('defines internal fixed-search-path helpers with no API-role execute grants', () => {
+    for (const helper of [
+      'progress_require_actor',
+      'progress_require_expected_version',
+      'progress_lock_idempotency',
+      'progress_append_event',
+      'progress_assert_current_pointer',
+    ]) {
+      expectRpcSql(
+        new RegExp(`CREATE\\s+FUNCTION\\s+public\\.${helper}\\b[\\s\\S]*?SET\\s+search_path\\s*=\\s*''`, 'i'),
+        `expected hardened helper ${helper}`
+      )
+      expectRpcSql(
+        new RegExp(`REVOKE\\s+ALL\\s+ON\\s+FUNCTION\\s+public\\.${helper}\\([^;]*?\\)\\s+FROM\\s+PUBLIC\\s*,\\s*anon\\s*,\\s*authenticated\\s*,\\s*service_role\\s*;`, 'i'),
+        `expected no API-role EXECUTE on ${helper}`
+      )
+    }
+  })
+
+  it('does not append a series event for the singleton profile command', () => {
+    const profileFunction = rpcSql.match(
+      /CREATE\s+FUNCTION\s+public\.save_business_invoice_profile\s*\(\s*payload\s+JSONB\s*\)[\s\S]*?AS\s+\$\$([\s\S]*?)\$\$;/i
+    )?.[1]
+
+    expect(profileFunction).toBeDefined()
+    expect(profileFunction).not.toMatch(/progress_append_event|progress_invoice_events/i)
   })
 })

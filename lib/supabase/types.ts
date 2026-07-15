@@ -1633,6 +1633,69 @@ export interface Database {
         Args: { payload: Json }
         Returns: string
       }
+      progress_append_event: {
+        Args: {
+          owning_claim_id: string
+          owning_series_id: string
+          requested_command_name: string
+          requested_correlation_key: string
+          requested_event_type: string
+          requested_fingerprint: string
+          requested_next_revision_id: string
+          requested_prior_revision_id: string
+          requested_result_refs: Json
+          requested_safe_field_changes: Json
+          requested_source: string
+        }
+        Returns: string
+      }
+      progress_assert_current_pointer: {
+        Args: {
+          actual_parent_id: string
+          expected_parent_id: string
+          pointer_id: string
+        }
+        Returns: undefined
+      }
+      progress_lock_idempotency: {
+        Args: {
+          owning_series_id: string
+          requested_command_name: string
+          requested_correlation_key: string
+          requested_fingerprint: string
+        }
+        Returns: Json
+      }
+      progress_require_actor: { Args: never; Returns: string }
+      progress_require_expected_version: {
+        Args: { current_version: number; payload: Json }
+        Returns: number
+      }
+      save_business_invoice_profile: {
+        Args: { payload: Json }
+        Returns: {
+          abn: string
+          bank_account_name: string
+          bank_account_number: string
+          bank_name: string
+          bsb: string
+          business_address: string
+          business_timezone: string
+          contractor_licence: string
+          created_at: string
+          created_by: string
+          default_payment_term_days: number
+          email: string
+          gst_rate: string
+          id: string
+          legal_name: string
+          phone: string
+          trading_name: string
+          updated_at: string
+          updated_by: string
+          version: number
+        }[]
+      }
       update_quote_with_children: {
         Args: { payload: Json }
         Returns: Array<{ id: string; version: number }>

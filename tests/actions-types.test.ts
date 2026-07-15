@@ -1,5 +1,12 @@
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import { isDevNoAuthMode } from '@/lib/actions/types'
+import { isDevNoAuthMode, type ActionResult } from '@/lib/actions/types'
+
+const actionTypesSource = readFileSync(
+  join(process.cwd(), 'lib', 'actions', 'types.ts'),
+  'utf8'
+)
 
 const originalEnv = {
   NEXT_PUBLIC_DEV_NO_AUTH: process.env.NEXT_PUBLIC_DEV_NO_AUTH,
@@ -57,5 +64,43 @@ describe('action runtime mode', () => {
     delete process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY
 
     expect(isDevNoAuthMode()).toBe(true)
+  })
+})
+
+describe('ActionResult compatibility', () => {
+  it('keeps existing success and error values assignable', () => {
+    const success: ActionResult<{ id: string }> = {
+      ok: true,
+      data: { id: 'profile-1' },
+    }
+    const error: ActionResult<{ id: string }> = {
+      ok: false,
+      error: 'Could not save',
+    }
+
+    expect(success).toEqual({ ok: true, data: { id: 'profile-1' } })
+    expect(error).toEqual({ ok: false, error: 'Could not save' })
+  })
+
+  it('supports the approved stable error codes and typed conflict data', () => {
+    const conflict: ActionResult<{ id: string }, { id: string; version: number }> = {
+      ok: false,
+      error: 'PROGRESS_VERSION_CONFLICT',
+      code: 'VERSION_CONFLICT',
+      current: { id: 'profile-1', version: 2 },
+    }
+
+    expect(conflict).toEqual({
+      ok: false,
+      error: 'PROGRESS_VERSION_CONFLICT',
+      code: 'VERSION_CONFLICT',
+      current: { id: 'profile-1', version: 2 },
+    })
+    expect(actionTypesSource).toMatch(
+      /export type ActionErrorCode\s*=\s*[\s\S]*'VALIDATION'[\s\S]*'AUTH_REQUIRED'[\s\S]*'FORBIDDEN'[\s\S]*'NOT_FOUND'[\s\S]*'VERSION_CONFLICT'[\s\S]*'RECONCILIATION_REQUIRED'[\s\S]*'JOBBER_ERROR'[\s\S]*'DOCUMENT_ERROR'[\s\S]*'STORAGE_ERROR'/
+    )
+    expect(actionTypesSource).toMatch(
+      /export type ActionResult<T,\s*TCurrent\s*=\s*never>/
+    )
   })
 })
