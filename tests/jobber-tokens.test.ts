@@ -300,7 +300,8 @@ describe('jobber tokens', () => {
       await expect(refreshSharedJobberConnectionToken(
         'owner-refresh-token',
         config,
-        'jobber-owner'
+        'jobber-owner',
+        { storedScope: null },
       )).rejects.toThrow('JOBBER_TOKEN_ENCRYPTION_KEY is required before storing Jobber tokens')
     } finally {
       vi.unstubAllEnvs()
@@ -322,7 +323,8 @@ describe('jobber tokens', () => {
     await expect(refreshSharedJobberConnectionToken(
       'owner-refresh-token',
       config,
-      'jobber-owner'
+      'jobber-owner',
+      { storedScope: null },
     )).rejects.toThrow('Jobber OAuth scopes must be read-only')
 
     expect(mocks.createServiceClient).not.toHaveBeenCalled()

@@ -1436,12 +1436,14 @@ describe('quote actions against Supabase', () => {
     mocks.getUsableSharedJobberConnectionToken.mockResolvedValueOnce({
       accessToken: 'expired-access-token',
       refreshToken: 'refresh-token',
+      scope: 'read_clients read_quotes write_quotes read_jobs',
       expiresAt: null,
       ownerUserId: 'jobber-owner',
     })
     mocks.refreshSharedJobberConnectionToken.mockResolvedValueOnce({
       accessToken: 'refreshed-access-token',
       refreshToken: 'new-refresh-token',
+      scope: 'read_clients read_quotes write_quotes read_jobs',
       expiresAt: null,
       ownerUserId: 'jobber-owner',
     })
@@ -1461,7 +1463,8 @@ describe('quote actions against Supabase', () => {
     expect(mocks.refreshSharedJobberConnectionToken).toHaveBeenCalledWith(
       'refresh-token',
       expect.objectContaining({ graphqlVersion: '2025-04-16' }),
-      'jobber-owner'
+      'jobber-owner',
+      { storedScope: 'read_clients read_quotes write_quotes read_jobs' },
     )
     expect(mocks.syncJobberQuoteLineItems).toHaveBeenNthCalledWith(2, 'jobber-quote-id', expect.any(Object), expect.objectContaining({
       accessToken: 'refreshed-access-token',
@@ -1866,12 +1869,14 @@ describe('quote actions against Supabase', () => {
     mocks.getUsableSharedJobberConnectionToken.mockResolvedValueOnce({
       accessToken: 'expired-access-token',
       refreshToken: 'refresh-token',
+      scope: 'read_clients read_quotes write_quotes read_jobs',
       expiresAt: null,
       ownerUserId: 'jobber-owner',
     })
     mocks.refreshSharedJobberConnectionToken.mockResolvedValueOnce({
       accessToken: 'refreshed-access-token',
       refreshToken: 'new-refresh-token',
+      scope: 'read_clients read_quotes write_quotes read_jobs',
       expiresAt: null,
       ownerUserId: 'jobber-owner',
     })
@@ -1887,7 +1892,8 @@ describe('quote actions against Supabase', () => {
     expect(mocks.refreshSharedJobberConnectionToken).toHaveBeenCalledWith(
       'refresh-token',
       expect.objectContaining({ graphqlVersion: '2025-04-16' }),
-      'jobber-owner'
+      'jobber-owner',
+      { storedScope: 'read_clients read_quotes write_quotes read_jobs' },
     )
     expect(mocks.fetchJobberQuote).toHaveBeenNthCalledWith(2, 'jobber-quote-id', {
       accessToken: 'refreshed-access-token',

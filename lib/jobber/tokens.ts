@@ -22,7 +22,7 @@ interface JobberTokenRequirements {
 }
 
 interface JobberTokenRefreshOptions extends JobberTokenRequirements {
-  storedScope?: string | null
+  storedScope: string | null
 }
 
 function shouldRefresh(expiresAt: string | null, now = new Date()): boolean {
@@ -71,7 +71,7 @@ export async function refreshSharedJobberConnectionToken(
   currentRefreshToken: string,
   config: JobberConfig,
   ownerUserId: string,
-  options: JobberTokenRefreshOptions = {},
+  options: JobberTokenRefreshOptions,
 ): Promise<StoredJobberToken> {
   assertJobberTokenStorageConfigured()
 
@@ -135,7 +135,7 @@ export async function getUsableSharedJobberConnectionToken(
     config,
     requireSharedJobberConnectionOwnerId(token),
     {
-      storedScope: token.scope,
+      storedScope: token.scope ?? null,
       requiredScopes: options.requiredScopes,
     },
   )

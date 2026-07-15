@@ -98,11 +98,33 @@ query JobberInvoiceDetail($invoiceId: EncodedId!) {
       postalCode
       country
     }
-    jobs(first: 20) {
+  }
+}
+```
+
+`invoice` is nullable. `id`, `invoiceNumber`, `invoiceStatus`, `jobberWebUri`, `createdAt`, and `updatedAt` are non-null. `amounts`, `issuedDate`, `dueDate`, `receivedDate`, `client`, and `billingAddress` are nullable. If `amounts` exists, its recorded amount fields are non-null floats. `client.name` and `client.defaultEmails` are non-null; `companyName` is nullable. Billing address fields are nullable except `street` in the broader schema; this contract queries nullable `street1`/`street2` components.
+
+### Invoice jobs page
+
+```graphql
+query JobberInvoiceJobs($invoiceId: EncodedId!, $first: Int!, $after: String) {
+  invoice(id: $invoiceId) {
+    id
+    jobs(first: $first, after: $after) {
       nodes { id }
       pageInfo { endCursor hasNextPage }
     }
-    properties(first: 20) {
+  }
+}
+```
+
+### Invoice properties page
+
+```graphql
+query JobberInvoiceProperties($invoiceId: EncodedId!, $first: Int!, $after: String) {
+  invoice(id: $invoiceId) {
+    id
+    properties(first: $first, after: $after) {
       nodes {
         id
         address {
@@ -120,7 +142,7 @@ query JobberInvoiceDetail($invoiceId: EncodedId!) {
 }
 ```
 
-`invoice` is nullable. `id`, `invoiceNumber`, `invoiceStatus`, `jobberWebUri`, `createdAt`, and `updatedAt` are non-null. `amounts`, `issuedDate`, `dueDate`, `receivedDate`, `client`, and `billingAddress` are nullable. If `amounts` exists, its recorded amount fields are non-null floats. `client.name` and `client.defaultEmails` are non-null; `companyName` is nullable. Billing address fields are nullable except `street` in the broader schema; this contract queries nullable `street1`/`street2` components. Jobs and properties require complete independent pagination.
+Jobs and properties require complete, independent pagination. Start each query with `after: null`, then pass the prior `endCursor` until `hasNextPage` is false. A null invoice on any continuation page invalidates the whole observation.
 
 ### Invoice payment page
 
@@ -136,15 +158,6 @@ query JobberInvoicePayments($invoiceId: EncodedId!, $first: Int!, $after: String
         adjustmentType
         jobberPaymentPaymentMethod
         jobberPaymentTransactionStatus
-        refunds(first: 50) {
-          nodes {
-            id
-            amount
-            entryDate
-            jobberPaymentTransactionStatus
-          }
-          pageInfo { endCursor hasNextPage }
-        }
       }
       pageInfo { endCursor hasNextPage }
     }
@@ -152,7 +165,28 @@ query JobberInvoicePayments($invoiceId: EncodedId!, $first: Int!, $after: String
 }
 ```
 
-`Invoice.paymentRecords`, its `nodes`, and its `pageInfo` are non-null. Each legacy `PaymentRecord` has non-null `id`, `amount`, `entryDate`, and `adjustmentType`. Jobber payment method/status and the refund connection are nullable. Paginate the invoice payment connection and every non-null refund connection completely.
+`Invoice.paymentRecords`, its `nodes`, and its `pageInfo` are non-null. Each legacy `PaymentRecord` has non-null `id`, `amount`, `entryDate`, and `adjustmentType`. Jobber payment method/status are nullable. Paginate the invoice payment connection completely before fetching each record's refund pages.
+
+### Payment refunds page
+
+```graphql
+query JobberPaymentRefunds($paymentId: EncodedId!, $first: Int!, $after: String) {
+  paymentRecord(id: $paymentId) {
+    id
+    refunds(first: $first, after: $after) {
+      nodes {
+        id
+        amount
+        entryDate
+        jobberPaymentTransactionStatus
+      }
+      pageInfo { endCursor hasNextPage }
+    }
+  }
+}
+```
+
+The refund connection is nullable. For each non-null connection, start with `after: null` and continue with its `endCursor` until `hasNextPage` is false. A missing payment or refund connection on a continuation page invalidates that payment observation rather than returning a partial refund set.
 
 ### Concrete payment detail
 
@@ -168,10 +202,6 @@ query JobberPaymentDetail($paymentId: EncodedId!) {
     paymentType
     paymentOrigin
     details
-    refunds(first: 50) {
-      nodes { id amount entryDate jobberPaymentTransactionStatus }
-      pageInfo { endCursor hasNextPage }
-    }
     ... on CheckPaymentRecord { checkNumber }
     ... on JobberPaymentsACHPaymentRecord { transactionId }
     ... on JobberPaymentsCreditCardPaymentRecord { transactionId }
@@ -180,7 +210,7 @@ query JobberPaymentDetail($paymentId: EncodedId!) {
 }
 ```
 
-`paymentRecord` is nullable and returns `PaymentRecordInterface`. `id`, `adjustmentType`, `amount`, `rawAmount`, and `entryDate` are non-null. `amount` is absolute; `rawAmount` preserves Jobber's sign. `paymentType`, `paymentOrigin`, `details`, and refunds are nullable. There is no payment-level `updatedAt`; normalized `externalUpdatedAt` is `null`. `entryDate` is the record-created timestamp and is the only confirmed payment event-date provenance; it maps to nullable `receivedAt` without claiming a separate settlement time.
+`paymentRecord` is nullable and returns `PaymentRecordInterface`. `id`, `adjustmentType`, `amount`, `rawAmount`, and `entryDate` are non-null. `amount` is absolute; `rawAmount` preserves Jobber's sign. `paymentType`, `paymentOrigin`, and `details` are nullable. Refunds are fetched only through the independently paginated query above. There is no payment-level `updatedAt`; normalized `externalUpdatedAt` is `null`. `entryDate` is the record-created timestamp and is the only confirmed payment event-date provenance; it maps to nullable `receivedAt` without claiming a separate settlement time.
 
 Reference precedence is `transactionId`, then `checkNumber`, then `details`, otherwise `null`. Method precedence is `paymentType`, then the legacy invoice row's `jobberPaymentPaymentMethod`, otherwise `null`. External status comes from the matching legacy invoice row's `jobberPaymentTransactionStatus`, otherwise `null`.
 
@@ -244,4 +274,4 @@ All Jobber floats are converted directly to decimal strings at the gateway bound
 
 ## Sanitized fixture boundary
 
-`tests/fixtures/jobber-invoice-contract.ts` uses invented IDs, contacts, addresses, dates, and amounts. Its applied payment mirrors the observed schema and live negative `rawAmount` convention. Its refund and failed-ACH rows exercise confirmed schema discriminators and sign-preserving fields but are not presented as live account observations.
+`tests/fixtures/jobber-invoice-contract.ts` uses invented IDs, contacts, addresses, dates, and amounts. Its applied payment mirrors the observed schema and live negative `rawAmount` convention. Its second jobs/properties/refund pages, refund row, and failed-ACH row are schema-backed synthetic cases: they exercise confirmed cursor shapes, discriminators, stable identities, and sign-preserving fields but are not presented as live account observations.

@@ -1769,7 +1769,12 @@ async function fetchJobberSnapshot(jobberQuoteId: string): Promise<JobberQuoteDr
       throw error
     }
 
-    token = await refreshSharedJobberConnectionToken(token.refreshToken, config, requireSharedJobberConnectionOwnerId(token))
+    token = await refreshSharedJobberConnectionToken(
+      token.refreshToken,
+      config,
+      requireSharedJobberConnectionOwnerId(token),
+      { storedScope: token.scope ?? null },
+    )
     accessToken = token.accessToken
     return mapJobberQuoteToDraft(await fetchJobberQuote(jobberQuoteId, {
       accessToken,
@@ -1833,7 +1838,12 @@ async function syncSavedQuoteToJobber(params: {
         throw error
       }
 
-      token = await refreshSharedJobberConnectionToken(token.refreshToken, config, requireSharedJobberConnectionOwnerId(token))
+      token = await refreshSharedJobberConnectionToken(
+        token.refreshToken,
+        config,
+        requireSharedJobberConnectionOwnerId(token),
+        { storedScope: token.scope ?? null },
+      )
       accessToken = token.accessToken
       syncResult = await syncJobberQuoteLineItems(params.jobberQuoteId, syncInput, {
         accessToken,

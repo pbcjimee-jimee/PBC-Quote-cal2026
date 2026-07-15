@@ -25,6 +25,13 @@ export const JOBBER_INVOICE_CONTRACT_FIXTURE = {
     'paymentsTotal',
   ],
   paymentEligibilityPolicyVersion: 'jobber-2025-04-16-v1',
+  schemaBackedSyntheticCases: [
+    'second-page jobs',
+    'second-page properties',
+    'second-page refunds',
+    'refund payment record',
+    'failed ACH reversal',
+  ],
   pageInfo: {
     endCursor: null,
     hasNextPage: false,
@@ -94,15 +101,27 @@ export const JOBBER_INVOICE_CONTRACT_FIXTURE = {
         jobs: {
           nodes: [{ id: 'job_fixture_01' }],
           pageInfo: {
-            endCursor: null,
-            hasNextPage: false,
+            endCursor: 'cursor_fixture_job_01',
+            hasNextPage: true,
           },
         },
         properties: {
-          nodes: [{ id: 'property_fixture_01' }],
+          nodes: [
+            {
+              id: 'property_fixture_01',
+              address: {
+                street1: '1 Fixture Street',
+                street2: null,
+                city: 'Fixture City',
+                province: 'NSW',
+                postalCode: '2000',
+                country: 'Australia',
+              },
+            },
+          ],
           pageInfo: {
-            endCursor: null,
-            hasNextPage: false,
+            endCursor: 'cursor_fixture_property_01',
+            hasNextPage: true,
           },
         },
         paymentRecords: {
@@ -124,8 +143,8 @@ export const JOBBER_INVOICE_CONTRACT_FIXTURE = {
                   },
                 ],
                 pageInfo: {
-                  endCursor: null,
-                  hasNextPage: false,
+                  endCursor: 'cursor_fixture_refund_01',
+                  hasNextPage: true,
                 },
               },
             },
@@ -137,6 +156,122 @@ export const JOBBER_INVOICE_CONTRACT_FIXTURE = {
         },
       },
     },
+    invoiceJobsPages: [
+      {
+        invoice: {
+          id: 'invoice_fixture_01',
+          jobs: {
+            nodes: [{ id: 'job_fixture_01' }],
+            pageInfo: {
+              endCursor: 'cursor_fixture_job_01',
+              hasNextPage: true,
+            },
+          },
+        },
+      },
+      {
+        invoice: {
+          id: 'invoice_fixture_01',
+          jobs: {
+            nodes: [{ id: 'job_fixture_02' }],
+            pageInfo: {
+              endCursor: null,
+              hasNextPage: false,
+            },
+          },
+        },
+      },
+    ],
+    invoicePropertiesPages: [
+      {
+        invoice: {
+          id: 'invoice_fixture_01',
+          properties: {
+            nodes: [
+              {
+                id: 'property_fixture_01',
+                address: {
+                  street1: '1 Fixture Street',
+                  street2: null,
+                  city: 'Fixture City',
+                  province: 'NSW',
+                  postalCode: '2000',
+                  country: 'Australia',
+                },
+              },
+            ],
+            pageInfo: {
+              endCursor: 'cursor_fixture_property_01',
+              hasNextPage: true,
+            },
+          },
+        },
+      },
+      {
+        invoice: {
+          id: 'invoice_fixture_01',
+          properties: {
+            nodes: [
+              {
+                id: 'property_fixture_02',
+                address: {
+                  street1: '2 Fixture Street',
+                  street2: 'Suite 2',
+                  city: 'Fixture City',
+                  province: 'NSW',
+                  postalCode: '2000',
+                  country: 'Australia',
+                },
+              },
+            ],
+            pageInfo: {
+              endCursor: null,
+              hasNextPage: false,
+            },
+          },
+        },
+      },
+    ],
+    paymentRefundPages: [
+      {
+        paymentRecord: {
+          id: 'payment_fixture_applied',
+          refunds: {
+            nodes: [
+              {
+                id: 'payment_fixture_refund',
+                amount: 25,
+                entryDate: '2026-07-03T00:00:00Z',
+                jobberPaymentTransactionStatus: 'SUCCEEDED',
+              },
+            ],
+            pageInfo: {
+              endCursor: 'cursor_fixture_refund_01',
+              hasNextPage: true,
+            },
+          },
+        },
+      },
+      {
+        paymentRecord: {
+          id: 'payment_fixture_applied',
+          refunds: {
+            nodes: [
+              {
+                id: 'payment_fixture_refund_02',
+                amount: 15,
+                entryDate: '2026-07-05T00:00:00Z',
+                jobberPaymentTransactionStatus: 'SUCCEEDED',
+              },
+            ],
+            pageInfo: {
+              endCursor: null,
+              hasNextPage: false,
+            },
+          },
+        },
+      },
+    ],
     concretePayments: [
       {
         __typename: 'BankTransferPaymentRecord',
