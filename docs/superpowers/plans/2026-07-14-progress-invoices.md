@@ -1049,11 +1049,11 @@ Expected: FAIL because the migration and table policies do not exist.
 
 - [ ] **Step 4: Implement the table schema**
 
-Use the approved design's columns. Store supplier, recipient, Jobber normalization, adjustment, and document payloads as versioned typed columns plus JSONB only for bounded immutable snapshots/manifests. Template rows include immutable source and normalized SHA-256 values, manifest/layout/font versions, server-generated opaque source-evidence and normalized-master paths, Pending/Active/Failed status, and the authenticated registering actor. Add created_at/updated_at where mutable, creator IDs, optimistic version, and safe enum CHECK constraints. Enforce a singleton business profile with a unique constant-expression index, one active template with a partial unique index, and one-to-one Manual matching with a partial unique index plus a same-series/source-direction trigger.
+Use the approved design's columns. Store supplier, recipient, Jobber normalization, adjustment, and document payloads as versioned typed columns plus JSONB only for bounded immutable snapshots/manifests. Template rows include immutable source and normalized SHA-256 values, manifest/layout/font versions, server-generated opaque source-evidence and normalized-master paths, Pending/Active/Failed/Superseded status, and the authenticated registering actor. Add created_at/updated_at where mutable, creator IDs, optimistic version, and safe enum CHECK constraints. Enforce a singleton business profile with a unique constant-expression index, one active template with a partial unique index, and one-to-one Manual matching with a partial unique index plus a same-series/source-direction trigger. The schema layer guarantees at most one business profile; the concurrent first-save/exactly-one lifecycle belongs to Task 4's transactional RPC. Store the authoritative claim input in separate nullable cumulative-percentage NUMERIC(9,6) and current-claim-amount NUMERIC(14,2) columns with an input-mode XOR. Template evidence fields never change; the only successful rotation transition is verified Pending to Active while the prior Active row becomes Superseded atomically in Task 15.
 
 For idempotent series commands, progress_invoice_events stores command_name, correlation_key, SHA-256 request_fingerprint, and safe result_refs. The unique series/command/key index makes an exact same-payload retry return the recorded refs and rejects the same key with a different fingerprint as IDEMPOTENCY_KEY_REUSED. Never store the financial request payload in the event.
 
-The series status values are draft, active, completed, reconciliation_required, and void. Claim status values are draft, issued, and void. Revision-set states are draft, generating, ready, current, superseded, and failed. Payment revision states are active, superseded, unconfirmed, and void.
+The template status values are pending, active, failed, and superseded. The series status values are draft, active, completed, reconciliation_required, and void. Claim status values are draft, issued, and void. Revision-set states are draft, generating, ready, current, superseded, and failed. Payment revision states are active, superseded, unconfirmed, and void. Idempotent command metadata on audit events is all-or-none so ordinary non-command audit events remain valid.
 
 - [ ] **Step 5: Implement grants, RLS, and immutability**
 
@@ -2331,7 +2331,7 @@ Expected: FAIL because orchestration, storage, and route do not exist.
 
 - [ ] **Step 6: Implement local Storage migration and bounded registration**
 
-Create private buckets with XLSX/PDF MIME and size limits. Do not create owner-based policies because Service Role uploads may lack owner_id. The authenticated register_progress_invoice_template RPC creates a Pending template row with the approved source/normalized hashes, opaque source-evidence/master paths, and actor from auth.uid(). Only then may the authorized server upload/re-read/hash both the exact supplied source workbook and sanitized master and invoke service-only activate_progress_invoice_template, which reads the stored actor, paths, and expected hashes before atomically activating it.
+Create private buckets with XLSX/PDF MIME and size limits. Do not create owner-based policies because Service Role uploads may lack owner_id. The authenticated register_progress_invoice_template RPC creates a Pending template row with the approved source/normalized hashes, opaque source-evidence/master paths, and actor from auth.uid(). Only then may the authorized server upload/re-read/hash both the exact supplied source workbook and sanitized master and invoke service-only activate_progress_invoice_template, which reads the stored actor, paths, and expected hashes before atomically transitioning the prior Active row to Superseded and the verified Pending row to Active. The old row, paths, hashes, and every historical Claim Revision template reference remain unchanged.
 
 Implement the only registration entry point as:
 
@@ -2351,7 +2351,7 @@ Applying this migration to production remains blocked by G6.
 
 - [ ] **Step 7: Implement cross-format and document orchestration**
 
-Implement authenticated register template plus service-only activate template and record-ready/publish/fail revision-set RPCs in 20260714231500_add_progress_invoice_document_rpcs.sql. publish_progress_revision_set applies an approved Void proposal atomically with the pointer/status changes. Service-only functions accept only pending IDs and verified metadata, derive storage paths/actor from locked rows, and reject any missing/mismatched correlation. A failed template upload/verification marks the Pending row Failed and quarantines or removes only its opaque partial objects; it never displaces the existing Active template. Never revise the committed foundation/series/Jobber/payment/claim migrations.
+Implement authenticated register template plus service-only activate template and record-ready/publish/fail revision-set RPCs in 20260714231500_add_progress_invoice_document_rpcs.sql. Template activation locks the candidate and current Active rows, verifies the candidate is Pending, transitions the prior Active row to Superseded, and transitions the candidate to Active in one transaction; the partial unique index remains the final one-active guard. Failed and Superseded rows are terminal and retain every evidence field. publish_progress_revision_set applies an approved Void proposal atomically with the pointer/status changes. Service-only functions accept only pending IDs and verified metadata, derive storage paths/actor from locked rows, and reject any missing/mismatched correlation. A failed template upload/verification marks the Pending row Failed and quarantines or removes only its opaque partial objects; it never displaces the existing Active template. Never revise the committed foundation/series/Jobber/payment/claim migrations.
 
 For issue/revision/void, generate only the pair for every changed/cascade Claim Revision required by the proposed set. Process one Claim Revision pair at a time: render, validate, upload, re-read/hash, record Ready, release its byte buffers, then continue. A full-series bundle is generated lazily on download and is not required for issue publication.
 
@@ -2484,7 +2484,7 @@ Add PROGRESS_INVOICES_ENABLED=false to .env.example. Read it only on the server.
 
 - [ ] **Step 5: Implement dedicated Invoice Settings**
 
-Keep the existing Settings tabs stable and add a clear link/card to /settings/invoice. The form never stores values locally, never logs them, posts unknown input to the existing validated action, and shows optimistic conflict data without overwriting. Add a separate setup panel that shows the reviewed bundled template version/hash, accepts only the original workbook File for exact-hash evidence, reports Pending/Active/Failed without revealing object paths, and calls registerBundledProgressInvoiceTemplate. It cannot accept an arbitrary manifest/template/version and is hidden after the expected version is Active except for an explicit future rotation workflow.
+Keep the existing Settings tabs stable and add a clear link/card to /settings/invoice. The form never stores values locally, never logs them, posts unknown input to the existing validated action, and shows optimistic conflict data without overwriting. Add a separate setup panel that shows the reviewed bundled template version/hash, accepts only the original workbook File for exact-hash evidence, reports Pending/Active/Failed/Superseded without revealing object paths, and calls registerBundledProgressInvoiceTemplate. It cannot accept an arbitrary manifest/template/version and is hidden after the expected version is Active except for an explicit future rotation workflow.
 
 - [ ] **Step 6: Run focused tests and confirm GREEN**
 
@@ -2956,7 +2956,7 @@ The accountant review record must state the reviewed Tax Invoice fields and post
 Cover:
 
 - register/activate a normalized template;
-- rotate a template without changing old revisions;
+- rotate a template by atomically moving the prior Active row to Superseded and the verified Pending row to Active, without changing old paths, hashes, or Claim Revision template references;
 - retry/inspect failed generation without exposing payloads;
 - reconcile disappeared/ambiguous Jobber payments;
 - handle Jobber scope/version failure;

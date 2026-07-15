@@ -17,6 +17,7 @@ const migrations = [
   '0017_add_quote_price_revisions.sql',
   '20260708000000_add_warehouse_inventory.sql',
   '20260714225000_restore_existing_data_api_grants.sql',
+  '20260714230000_add_progress_invoice_core.sql',
 ].map((file) => {
   const path = join(migrationsDir, file)
 
@@ -49,13 +50,35 @@ const dataApiGrantMigration = migrations.find(
   ({ file }) => file === '20260714225000_restore_existing_data_api_grants.sql'
 )
 
+const progressInvoiceTables = [
+  'business_invoice_profiles',
+  'progress_invoice_templates',
+  'progress_invoice_series',
+  'progress_jobber_invoice_snapshots',
+  'progress_adjustments',
+  'progress_claims',
+  'progress_claim_revisions',
+  'progress_invoice_revision_sets',
+  'progress_payments',
+  'progress_payment_revisions',
+  'progress_documents',
+  'progress_invoice_events',
+]
+
+const progressInvoiceMigration = migrations.find(
+  ({ file }) => file === '20260714230000_add_progress_invoice_core.sql'
+)
+
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
 
 function expectRlsEnabled(table: string): void {
   expect(combinedSql).toMatch(
-    new RegExp(`ALTER\\s+TABLE\\s+${escapeRegExp(table)}\\s+ENABLE\\s+ROW\\s+LEVEL\\s+SECURITY`, 'i')
+    new RegExp(
+      `ALTER\\s+TABLE\\s+(?:public\\.)?${escapeRegExp(table)}\\s+ENABLE\\s+ROW\\s+LEVEL\\s+SECURITY`,
+      'i'
+    )
   )
 }
 
@@ -81,6 +104,30 @@ function expectExplicitPrivilegeReset(table: string): void {
   expect(dataApiGrantMigration?.sql).toMatch(
     new RegExp(
       `REVOKE\\s+ALL\\s+ON\\s+TABLE\\s+public\\.${escapeRegExp(table)}\\s+FROM\\s+PUBLIC\\s*,\\s*anon\\s*,\\s*authenticated\\s*,\\s*service_role\\s*;`,
+      'i'
+    )
+  )
+}
+
+function expectAuthenticatedSelectOnly(table: string): void {
+  const migrationSql = progressInvoiceMigration?.sql ?? ''
+  const escapedTable = escapeRegExp(table)
+
+  expect(migrationSql).toMatch(
+    new RegExp(
+      `REVOKE\\s+ALL\\s+ON\\s+TABLE\\s+public\\.${escapedTable}\\s+FROM\\s+PUBLIC\\s*,\\s*anon\\s*,\\s*authenticated\\s*,\\s*service_role\\s*;`,
+      'i'
+    )
+  )
+  expect(migrationSql).toMatch(
+    new RegExp(
+      `GRANT\\s+SELECT\\s+ON\\s+TABLE\\s+public\\.${escapedTable}\\s+TO\\s+authenticated\\s*;`,
+      'i'
+    )
+  )
+  expect(migrationSql).toMatch(
+    new RegExp(
+      `CREATE\\s+POLICY\\s+"${escapedTable}_authenticated_select"\\s+ON\\s+public\\.${escapedTable}\\s+FOR\\s+SELECT\\s+TO\\s+authenticated\\s+USING\\s*\\(true\\)`,
       'i'
     )
   )
@@ -131,5 +178,21 @@ describe('RLS migrations', () => {
   it('does not define anonymous access policies', () => {
     expect(combinedSql).not.toMatch(/CREATE\s+POLICY[^;]*\bTO\s+anon\b/i)
     expect(combinedSql).not.toMatch(/CREATE\s+POLICY[^;]*\bTO\s+public\b/i)
+  })
+
+  it('keeps every Progress Invoice table authenticated read-only', () => {
+    expect(progressInvoiceMigration?.sql, 'expected Progress Invoice core migration').not.toBe('')
+
+    for (const table of progressInvoiceTables) {
+      expectRlsEnabled(table)
+      expectAuthenticatedSelectOnly(table)
+    }
+
+    expect(progressInvoiceMigration?.sql).not.toMatch(
+      /GRANT\s+(?:INSERT|UPDATE|DELETE|ALL)[^;]*\bTO\s+(?:anon|authenticated|service_role)\b/i
+    )
+    expect(progressInvoiceMigration?.sql).not.toMatch(
+      /CREATE\s+POLICY[^;]*\bFOR\s+(?:INSERT|UPDATE|DELETE|ALL)\b/i
+    )
   })
 })

@@ -150,6 +150,39 @@ describeLocal('Supabase local RLS CRUD integration', () => {
     expectNoError(await admin.from('jobber_tokens').delete().eq('user_id', userId))
   })
 
+  it('keeps Progress Invoice tables authenticated read-only', async () => {
+    const anonSelected = await anon.from('progress_invoice_series').select('id').limit(1)
+    expect(anonSelected.error?.code).toBe('42501')
+    expect(anonSelected.error?.message).toMatch(/permission denied for table progress_invoice_series/i)
+
+    const authenticatedSelected = await authed
+      .from('progress_invoice_series')
+      .select('id')
+      .limit(1)
+    expectNoError(authenticatedSelected)
+
+    const authenticatedInserted = await authed.from('business_invoice_profiles').insert({
+      legal_name: 'Direct write must fail',
+      trading_name: 'Direct write must fail',
+      abn: '00000000000',
+      contractor_licence: 'DENIED',
+      business_address: 'Denied',
+      phone: 'Denied',
+      email: 'denied@example.test',
+      bank_name: 'Denied',
+      bsb: '000-000',
+      bank_account_name: 'Denied',
+      bank_account_number: '0',
+      created_by: userId,
+    })
+    expect(authenticatedInserted.error?.code).toBe('42501')
+    expect(authenticatedInserted.error?.message).toMatch(/permission denied for table business_invoice_profiles/i)
+
+    const serviceSelected = await admin.from('progress_invoice_series').select('id').limit(1)
+    expect(serviceSelected.error?.code).toBe('42501')
+    expect(serviceSelected.error?.message).toMatch(/permission denied for table progress_invoice_series/i)
+  })
+
   it('allows service-role cleanup on non-secret application tables', async () => {
     const product = expectNoError(
       await authed

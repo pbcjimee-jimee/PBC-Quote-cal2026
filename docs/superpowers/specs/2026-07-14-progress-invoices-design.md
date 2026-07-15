@@ -101,6 +101,7 @@ There is currently no Jobber invoice gateway, progress-invoice schema, document 
 | Legal document | Generated XLSX and PDF are the official Tax Invoice |
 | Issued edits | Edit the same claim identity; create and retain an internal revision and change history |
 | Numbering | Jobber invoice number plus P01, P02, or FINAL suffix; original Jobber number stored separately |
+| Template rotation | Statuses are Pending, Active, Failed, and Superseded. Activating a verified Pending version atomically moves the prior Active version to Superseded; old template rows, paths, hashes, and revision references remain immutable. |
 
 ## Goals
 
@@ -233,7 +234,7 @@ Registers the private master template:
 - page-layout version; and
 - activation timestamp.
 
-Only one template version is active for new revisions. Existing revisions retain their original template version.
+Template status is Pending, Active, Failed, or Superseded. Only one template version is Active for new revisions. Activating a verified Pending template atomically transitions the prior Active row to Superseded before making the new row Active. Superseded and Failed rows are terminal evidence records: their source/normalized paths and hashes remain immutable, and existing Claim Revisions retain their original template ID and version.
 
 ### progress_invoice_series
 
