@@ -184,7 +184,9 @@ Accepts decimal strings and returns a fully reconciled financial snapshot. It ha
 
 ### Jobber invoice gateway
 
-Owns read-only GraphQL queries, pagination, normalization, and OAuth error mapping. It returns stable internal DTOs rather than exposing raw GraphQL shapes to the domain or UI.
+Owns read-only GraphQL queries, pagination, normalization, and OAuth error mapping. It returns stable internal DTOs rather than exposing raw GraphQL shapes to the domain or UI. All Progress Invoice Jobber reads and Routes live in dedicated Progress Invoice modules and Route namespaces.
+
+The gateway may share only generic Jobber OAuth and token infrastructure, including configuration, encrypted token storage, refresh, and scope validation. It must not import, call, or modify the existing Quote fetch/write-back modules, Quote Routes, Quote Actions, or their tests.
 
 ### Document snapshot builder
 
@@ -613,7 +615,7 @@ The invoice gateway may query:
 
 No invoice or payment mutation is added to the allowed Jobber operation set.
 
-The invoice gateway is a server-only normalization layer over the repository’s existing centralized Jobber query transport in lib/jobber/client.ts. It does not call Jobber with a separate fetch implementation, accept raw GraphQL from UI/Routes/Actions, or invoke the existing approved quote-line mutation path. Existing quote DTOs, quote snapshots, quote IDs, and the narrow quote mutation allowlist remain unchanged.
+The invoice gateway is a server-only normalization layer with a dedicated Progress Invoice query transport. It may depend on generic OAuth/token configuration, encryption, refresh, and scope-validation infrastructure, but not on the existing Quote client, Quote fetch/sync helpers, Quote Routes, or Quote Actions. Raw GraphQL remains inside the dedicated Progress Invoice Jobber modules, and no Progress Invoice code may invoke the existing approved quote-line mutation path. Existing Quote DTOs, snapshots, IDs, modules, Routes, Actions, tests, and the narrow quote mutation allowlist remain unchanged.
 
 Jobber’s public schema describes invoices with identity, amounts, status, dates, jobs, and payment records. Exact query arguments, search capabilities, amount shapes, payment semantics, enum values, pagination, and OAuth scope names must be verified in the connected application’s GraphiQL schema at the effective pinned API version before implementation. [Jobber Developer Center](https://developer.getjobber.com/docs/)
 

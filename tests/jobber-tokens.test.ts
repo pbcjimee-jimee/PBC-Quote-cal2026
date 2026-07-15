@@ -67,6 +67,8 @@ function createUpdateBuilder() {
 describe('jobber tokens', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mocks.createServiceClient.mockReset()
+    mocks.refreshAccessToken.mockReset()
     process.env.JOBBER_TOKEN_ENCRYPTION_KEY = ''
   })
 
@@ -266,6 +268,80 @@ describe('jobber tokens', () => {
     if (!token) throw new Error('Expected a refreshed Jobber token')
     expect(token.scope).toBe(storedScope)
     expect(updateBuilder.update).toHaveBeenCalledWith(expect.objectContaining({ scope: storedScope }))
+  })
+
+  it('loads only the owner row scope when refresh options are omitted', async () => {
+    const ownerScope = 'read_clients read_jobs read_invoices read_jobber_payments'
+    const ownerRow = {
+      user_id: 'jobber-owner',
+      access_token: 'owner-access-token',
+      refresh_token: 'owner-refresh-token',
+      scope: ownerScope,
+      expires_at: '2026-05-14T00:00:00.000Z',
+    }
+    const unrelatedLatestRow = {
+      user_id: 'other-owner',
+      access_token: 'other-access-token',
+      refresh_token: 'other-refresh-token',
+      scope: 'quotes:read',
+      expires_at: '2026-05-14T00:00:00.000Z',
+    }
+    const selectBuilder = createSelectBuilder(ownerRow, unrelatedLatestRow)
+    const updateBuilder = createUpdateBuilder()
+
+    mocks.createServiceClient
+      .mockResolvedValueOnce({ from: vi.fn(() => selectBuilder) })
+      .mockResolvedValueOnce({ from: vi.fn(() => updateBuilder) })
+    mocks.refreshAccessToken.mockResolvedValueOnce({
+      accessToken: 'new-access-token',
+      refreshToken: 'new-refresh-token',
+      expiresIn: 3600,
+      tokenType: 'Bearer',
+      scope: null,
+    })
+
+    const token = await refreshSharedJobberConnectionToken(
+      'owner-refresh-token',
+      config,
+      'jobber-owner',
+    )
+
+    expect(selectBuilder.select).toHaveBeenCalledWith('scope')
+    expect(selectBuilder.eq).toHaveBeenCalledWith('user_id', 'jobber-owner')
+    expect(selectBuilder.order).not.toHaveBeenCalled()
+    expect(token.scope).toBe(ownerScope)
+    expect(updateBuilder.update).toHaveBeenCalledWith(expect.objectContaining({ scope: ownerScope }))
+  })
+
+  it('rejects a malicious owner scope before consuming a refresh token when options are omitted', async () => {
+    const ownerRow = {
+      user_id: 'jobber-owner',
+      access_token: 'owner-access-token',
+      refresh_token: 'owner-refresh-token',
+      scope: 'read_invoices jobs:write',
+      expires_at: '2026-05-14T00:00:00.000Z',
+    }
+    const selectBuilder = createSelectBuilder(ownerRow, ownerRow)
+
+    mocks.createServiceClient.mockResolvedValueOnce({
+      from: vi.fn(() => selectBuilder),
+    })
+    mocks.refreshAccessToken.mockResolvedValueOnce({
+      accessToken: 'new-access-token',
+      refreshToken: 'new-refresh-token',
+      expiresIn: 3600,
+      tokenType: 'Bearer',
+      scope: 'read_invoices',
+    })
+
+    await expect(refreshSharedJobberConnectionToken(
+      'owner-refresh-token',
+      config,
+      'jobber-owner',
+    )).rejects.toThrow('Jobber OAuth scopes must be read-only')
+
+    expect(selectBuilder.eq).toHaveBeenCalledWith('user_id', 'jobber-owner')
+    expect(mocks.refreshAccessToken).not.toHaveBeenCalled()
   })
 
   it('asks for a Jobber reconnect when the stored refresh token is already invalid', async () => {

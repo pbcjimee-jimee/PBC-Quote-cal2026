@@ -260,12 +260,7 @@ async function refreshToken(
   config: ReturnType<typeof getJobberConfig>
 ): Promise<StoredJobberToken> {
   if (userId) {
-    return refreshSharedJobberConnectionToken(
-      token.refreshToken,
-      config,
-      requireSharedJobberConnectionOwnerId(token),
-      { storedScope: token.scope ?? null },
-    )
+    return refreshSharedJobberConnectionToken(token.refreshToken, config, requireSharedJobberConnectionOwnerId(token))
   }
 
   return refreshDevJobberToken(token.refreshToken, config)

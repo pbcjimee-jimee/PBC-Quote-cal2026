@@ -15,6 +15,7 @@
 - Use a separate codex/progress-invoice-series branch and isolated worktree before implementation. Do not modify the approved design while implementing unless the user approves a decision change.
 - This plan does not authorize a production migration, production Storage change, Jobber OAuth scope change, reconnect, Vercel environment change, feature enablement, or deployment.
 - Jobber invoice and payment access remains read-only. Do not add an invoice/payment mutation or widen the existing Quote mutation allowlist.
+- Progress Invoice Jobber reads and Routes use dedicated modules and Route namespaces. They may share only generic OAuth/token configuration, encryption, refresh, and scope-validation infrastructure; existing Quote fetch/write-back modules, Routes, Actions, and tests remain unchanged.
 - One non-void Progress Invoice Series can link to only one Jobber account/invoice identity; the pair and accepted numbering base lock when the first Claim draft reserves its number.
 - Previous Progress Claims means prior issued claims in the current revision set. Actual Receipts is a separate Jobber/manual payment ledger.
 - Retention, automatic Adjustment Notes, Jobber writes, scheduled sync, email delivery, payment collection, multi-currency, and non-Australian GST remain out of scope.
@@ -669,8 +670,8 @@ Jobber read gateway:
 lib/jobber/invoice-contract.ts
 lib/jobber/invoice-types.ts
 lib/jobber/pagination.ts
+lib/jobber/invoice-client.ts
 lib/jobber/invoice-gateway.ts
-lib/jobber/client.ts
 lib/jobber/config.ts
 lib/jobber/tokens.ts
 ~~~
@@ -836,7 +837,7 @@ docs: record progress invoice implementation baseline
 **Interfaces:**
 - Produces: getJobberInvoiceReadContract(effectiveGraphqlVersion)
 - Produces: assertJobberRequiredReadScopes(scope, requiredScopes)
-- Preserves: getJobberConfig().graphqlVersion and all existing quote behavior
+- Preserves: getJobberConfig().graphqlVersion and all existing Quote modules, Routes, Actions, tests, and behavior
 
 - [ ] **Step 1: Capture G1 read-only evidence**
 
@@ -869,6 +870,8 @@ Assert:
 - the contract's direct-search flag matches GraphiQL evidence.
 - an expired token missing a required scope fails before refreshAccessToken;
 - a refresh response that omits scope preserves the previously stored scope;
+- a direct refresh caller that omits refresh options reads only the exact owner row's stored scope before consuming the refresh token;
+- a malicious owner-row scope is rejected before refresh, and an omitted response scope never overwrites a known stored scope with null;
 - a changed refresh scope that fails either generic read-only or invoice-required checks is not saved.
 
 - [ ] **Step 4: Run the contract tests and confirm RED**
@@ -883,7 +886,7 @@ Expected: FAIL because invoice-contract.ts does not exist and StoredJobberToken 
 
 - [ ] **Step 5: Implement the contract and retain token scope**
 
-Add the immutable contract object and scope assertion. Extend getUsableSharedJobberConnectionToken(config, options?: { requiredScopes?: readonly string[] }) so invoice callers can require scopes and stored scopes are checked before any refresh; existing Quote callers remain valid without the optional argument. In both getSharedJobberConnectionToken() and refreshSharedJobberConnectionToken(), include scope in the returned StoredJobberToken. On refresh, use effectiveScope = token.scope ?? storedScope, run both generic read-only and requested-scope assertions, and only then persist/return it. Keep the current Quote scope policy unchanged.
+Add the immutable contract object and scope assertion. Extend getUsableSharedJobberConnectionToken(config, options?: { requiredScopes?: readonly string[] }) so invoice callers can require scopes and stored scopes are checked before any refresh; existing Quote callers remain unchanged and valid without the optional argument. In both getSharedJobberConnectionToken() and refreshSharedJobberConnectionToken(), include scope in the returned StoredJobberToken. When refresh options omit storedScope, load only the exact owner row's scope server-side and validate it before consuming the refresh token. On refresh, use effectiveScope = token.scope ?? storedScope, run both generic read-only and requested-scope assertions, and only then persist/return it. Preserve refresh-token rotation and concurrent-refresh recovery without logging secrets or weakening the current Quote scope policy.
 
 - [ ] **Step 6: Run the tests and confirm GREEN**
 
@@ -1336,6 +1339,7 @@ git commit -m "feat: manage progress invoice series and adjustments"
 **Files:**
 - Create: lib/jobber/invoice-types.ts
 - Create: lib/jobber/pagination.ts
+- Create: lib/jobber/invoice-client.ts
 - Create: lib/jobber/invoice-gateway.ts
 - Create: tests/jobber-pagination.test.ts
 - Create: tests/jobber-invoice-client.test.ts
@@ -1344,7 +1348,6 @@ git commit -m "feat: manage progress invoice series and adjustments"
 - Create: tests/fixtures/progress-invoices/jobber-job-invoices-page-2.json
 - Create: tests/fixtures/progress-invoices/jobber-invoice-payments-page-1.json
 - Create: tests/fixtures/progress-invoices/jobber-invoice-payments-page-2.json
-- Modify: lib/jobber/client.ts
 - Modify: tests/jobber-readonly-regression.test.ts
 - Modify: tests/jobber-write-client.test.ts
 
@@ -1352,7 +1355,7 @@ git commit -m "feat: manage progress invoice series and adjustments"
 - Produces: fetchAllJobberPages(fetchPage, options)
 - Produces: listJobberInvoicesForJob(input)
 - Produces: fetchJobberInvoiceObservation(input)
-- Preserves: centralized transport, version header, throttle retry, and Quote mutation allowlist
+- Preserves: existing Quote client/fetch/write-back modules, Routes, Actions, tests, and mutation allowlist without modification
 
 - [ ] **Step 1: Write failing pagination tests**
 
@@ -1376,7 +1379,7 @@ Cover:
 - nullable payment method/reference normalization when the G1 contract exposes them;
 - response fingerprint stability;
 - 401 token refresh followed by restart of the entire operation;
-- 429 retry through the existing transport;
+- 429 retry through the dedicated Progress Invoice query transport;
 - version/schema mismatch before database access.
 
 - [ ] **Step 4: Run focused tests and confirm RED**
@@ -1402,7 +1405,7 @@ export async function fetchAllJobberPages<T>(
 
 Default maxPages to a bounded value recorded in the contract test. Reject repeated cursors and inconsistent pageInfo.
 
-- [ ] **Step 6: Add narrow query functions to the existing client**
+- [ ] **Step 6: Add a dedicated Progress Invoice query client**
 
 Implement only:
 
@@ -1413,13 +1416,13 @@ fetchJobberInvoiceDetail(jobberInvoiceId, options)
 fetchJobberInvoicePaymentsPage(jobberInvoiceId, page, options)
 ~~~
 
-Each function uses the existing postJobberGraphql transport and query-only document guard. Do not export a generic raw GraphQL escape hatch and do not touch quote mutation documents.
+Implement these functions in lib/jobber/invoice-client.ts with a server-only, query-only transport owned by the Progress Invoice integration. Share only generic OAuth/token configuration, encryption, refresh, and scope-validation infrastructure. Do not import or modify lib/jobber/client.ts, existing Quote fetch/write-back helpers, Quote Routes, Quote Actions, Quote tests, or quote mutation documents. Do not export a generic raw GraphQL escape hatch.
 
 - [ ] **Step 7: Implement the invoice gateway**
 
 The gateway performs token/version/scope checks before refresh/network access, all-page fetch, explicit selection validation, normalized decimal/date/status/payment mapping, warning creation, and SHA-256 fingerprinting. Invoice.receivedAt remains invoice metadata and is never converted into a payment row. Raw GraphQL stays inside the server-only module.
 
-If G1 records supportsDirectInvoiceSearch=true, add the exact confirmed search query to lib/jobber/client.ts, a fully paginated searchJobberInvoiceCandidates() gateway method, app/api/jobber/progress-invoices/invoices/search/route.ts, and positive contract/gateway/route tests. If false, add a regression assertion that the route and query document are absent and expose only the job-first flow.
+If G1 records supportsDirectInvoiceSearch=true, add the exact confirmed search query to lib/jobber/invoice-client.ts, a fully paginated searchJobberInvoiceCandidates() gateway method, app/api/jobber/progress-invoices/invoices/search/route.ts, and positive contract/gateway/route tests. If false, add a regression assertion that the route and query document are absent and expose only the job-first flow.
 
 - [ ] **Step 8: Run focused tests and confirm GREEN**
 
@@ -1440,7 +1443,7 @@ Expected: all existing Jobber tests pass and the approved Quote write path is un
 - [ ] **Step 10: Commit**
 
 ~~~powershell
-git add lib/jobber/invoice-types.ts lib/jobber/pagination.ts lib/jobber/invoice-gateway.ts lib/jobber/client.ts tests/jobber-pagination.test.ts tests/jobber-invoice-client.test.ts tests/jobber-invoice-gateway.test.ts tests/fixtures/progress-invoices tests/jobber-readonly-regression.test.ts tests/jobber-write-client.test.ts
+git add lib/jobber/invoice-types.ts lib/jobber/pagination.ts lib/jobber/invoice-client.ts lib/jobber/invoice-gateway.ts tests/jobber-pagination.test.ts tests/jobber-invoice-client.test.ts tests/jobber-invoice-gateway.test.ts tests/fixtures/progress-invoices tests/jobber-readonly-regression.test.ts tests/jobber-write-client.test.ts
 git commit -m "feat: read Jobber invoices and payments"
 ~~~
 
@@ -2526,7 +2529,7 @@ git commit -m "feat: configure progress invoice business profile"
 - Modify: app/(app)/quotes/[id]/page.tsx
 - Modify: components/quote-detail/quote-detail-view.tsx
 - Modify: tests/quote-ui.test.tsx
-- Modify: lib/jobber/client.ts
+- Modify: lib/jobber/invoice-client.ts
 - Modify: lib/jobber/invoice-gateway.ts
 
 **Interfaces:**
@@ -2584,7 +2587,7 @@ Expected: FAIL because the routes/components do not exist.
 
 - [ ] **Step 6: Implement safe Jobber job candidate discovery**
 
-Add a new query-only function that returns all exact/fuzzy Job candidates with IDs/numbers/titles, preserving the existing searchJobberJob behavior for Quote fetch. The new route requires auth, calls requireProgressInvoicesEnabled(), validates bounded search text, returns no raw GraphQL, and forces the user to choose one candidate. Add a disabled-route regression test here because this route is created after Task 16.
+Add a new query-only function to the dedicated Progress Invoice invoice client that returns all exact/fuzzy Job candidates with IDs/numbers/titles. Do not import, call, or modify the existing searchJobberJob behavior used by Quote fetch. The new route requires auth, calls requireProgressInvoicesEnabled(), validates bounded search text, returns no raw GraphQL, and forces the user to choose one candidate. Add a disabled-route regression test here because this route is created after Task 16.
 
 - [ ] **Step 7: Implement dashboard and query-state filters**
 
@@ -2617,7 +2620,7 @@ Expected: all pass.
 - [ ] **Step 12: Commit**
 
 ~~~powershell
-git add -- 'app/(app)/progress-invoices' components/progress-invoices app/api/jobber/progress-invoices/jobs/search lib/jobber/client.ts lib/jobber/invoice-gateway.ts 'app/(app)/layout.tsx' components/layout/app-header.tsx components/ui/icons.tsx 'app/(app)/quotes/[id]/page.tsx' components/quote-detail/quote-detail-view.tsx tests/app-header-ui.test.tsx tests/progress-invoice-dashboard-ui.test.tsx tests/progress-invoice-create-ui.test.tsx tests/progress-invoice-jobber-selector.test.tsx tests/quote-ui.test.tsx
+git add -- 'app/(app)/progress-invoices' components/progress-invoices app/api/jobber/progress-invoices/jobs/search lib/jobber/invoice-client.ts lib/jobber/invoice-gateway.ts 'app/(app)/layout.tsx' components/layout/app-header.tsx components/ui/icons.tsx 'app/(app)/quotes/[id]/page.tsx' components/quote-detail/quote-detail-view.tsx tests/app-header-ui.test.tsx tests/progress-invoice-dashboard-ui.test.tsx tests/progress-invoice-create-ui.test.tsx tests/progress-invoice-jobber-selector.test.tsx tests/quote-ui.test.tsx
 git commit -m "feat: add progress invoice creation workspace"
 ~~~
 

@@ -73,14 +73,12 @@ describe('jobber quote route token refresh', () => {
     mocks.getUsableSharedJobberConnectionToken.mockResolvedValue({
       accessToken: 'old-access',
       refreshToken: 'old-refresh',
-      scope: 'read_clients read_quotes write_quotes read_jobs',
       expiresAt: '2099-01-01T00:00:00.000Z',
       ownerUserId: 'jobber-owner',
     })
     mocks.refreshSharedJobberConnectionToken.mockResolvedValue({
       accessToken: 'new-access',
       refreshToken: 'new-refresh',
-      scope: 'read_clients read_quotes write_quotes read_jobs',
       expiresAt: '2099-01-01T01:00:00.000Z',
       ownerUserId: 'jobber-owner',
     })
@@ -110,8 +108,7 @@ describe('jobber quote route token refresh', () => {
     expect(mocks.refreshSharedJobberConnectionToken).toHaveBeenCalledWith(
       'old-refresh',
       expect.objectContaining({ graphqlVersion: '2025-04-16' }),
-      'jobber-owner',
-      { storedScope: 'read_clients read_quotes write_quotes read_jobs' },
+      'jobber-owner'
     )
     expect(mocks.fetchJobberQuote).toHaveBeenNthCalledWith(1, 'Z2lkOi8vSm9iYmVyL1F1b3RlLzE=', {
       accessToken: 'old-access',

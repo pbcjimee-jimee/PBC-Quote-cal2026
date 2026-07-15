@@ -22,7 +22,7 @@ interface JobberTokenRequirements {
 }
 
 interface JobberTokenRefreshOptions extends JobberTokenRequirements {
-  storedScope: string | null
+  storedScope?: string | null
 }
 
 function shouldRefresh(expiresAt: string | null, now = new Date()): boolean {
@@ -67,13 +67,35 @@ export async function getSharedJobberConnectionToken(): Promise<StoredJobberToke
   }
 }
 
+async function getSharedJobberConnectionOwnerScope(ownerUserId: string): Promise<string | null> {
+  const service = await createServiceClient()
+  const { data, error } = await service
+    .from('jobber_tokens')
+    .select('scope')
+    .eq('user_id', ownerUserId)
+    .maybeSingle()
+
+  if (error || !data) {
+    throw new Error('Unable to read Jobber connection')
+  }
+
+  assertJobberReadOnlyScopes(data.scope)
+  return data.scope
+}
+
 export async function refreshSharedJobberConnectionToken(
   currentRefreshToken: string,
   config: JobberConfig,
   ownerUserId: string,
-  options: JobberTokenRefreshOptions,
+  options: JobberTokenRefreshOptions = {},
 ): Promise<StoredJobberToken> {
   assertJobberTokenStorageConfigured()
+
+  const storedScope = options.storedScope === undefined
+    ? await getSharedJobberConnectionOwnerScope(ownerUserId)
+    : options.storedScope
+  assertJobberReadOnlyScopes(storedScope)
+  assertJobberRequiredReadScopes(storedScope, options.requiredScopes ?? [])
 
   let token
   try {
@@ -90,7 +112,7 @@ export async function refreshSharedJobberConnectionToken(
     }
     throw error
   }
-  const effectiveScope = token.scope ?? options.storedScope ?? null
+  const effectiveScope = token.scope ?? storedScope ?? null
   assertJobberReadOnlyScopes(effectiveScope)
   assertJobberRequiredReadScopes(effectiveScope, options.requiredScopes ?? [])
   const expiresAt = getTokenExpiresAt(token)
