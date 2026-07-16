@@ -53,6 +53,7 @@ vi.mock('@/lib/jobber/invoice-client', async (importOriginal) => {
 import { JobberInvoiceApiError } from '@/lib/jobber/invoice-client'
 import {
   fetchJobberInvoiceObservation,
+  fetchJobberInvoiceSelectionPreview,
   listJobberInvoicesForJob,
   searchJobberInvoiceCandidates,
 } from '@/lib/jobber/invoice-gateway'
@@ -158,6 +159,97 @@ describe('Progress Invoice Jobber gateway discovery', () => {
     await expect(listJobberInvoicesForJob({ jobberJobId: 'job-1' })).rejects.toMatchObject({ status: 401 })
     expect(mocks.refreshSharedJobberConnectionToken).toHaveBeenCalledOnce()
     expect(mocks.fetchJobberAccountIdentity).toHaveBeenCalledTimes(2)
+  })
+})
+
+describe('Progress Invoice Jobber selection preview', () => {
+  beforeEach(() => {
+    mocks.fetchJobberInvoiceDetail.mockResolvedValue(invoiceDetail())
+  })
+
+  it('returns every paginated candidate and requires explicit selection without reading payments', async () => {
+    mocks.fetchJobberInvoiceJobsPage
+      .mockResolvedValueOnce(connection([{ id: 'job-2' }], 'jobs-cursor', true))
+      .mockResolvedValueOnce(connection([{ id: 'job-1' }]))
+    mocks.fetchJobberInvoicePropertiesPage
+      .mockResolvedValueOnce(connection([
+        { id: 'property-2', address: address('2 Street') },
+      ], 'properties-cursor', true))
+      .mockResolvedValueOnce(connection([
+        { id: 'property-1', address: address('1 Street') },
+      ]))
+
+    const preview = await fetchJobberInvoiceSelectionPreview({
+      jobberInvoiceId: 'invoice-1',
+    })
+
+    expect(preview.jobs.map(({ id }) => id)).toEqual(['job-1', 'job-2'])
+    expect(preview.properties.map(({ id }) => id)).toEqual(['property-1', 'property-2'])
+    expect(preview.jobSelectionRequired).toBe(true)
+    expect(preview.propertySelectionRequired).toBe(true)
+    expect(preview.selectedJobberJobId).toBeNull()
+    expect(preview.selectedJobberPropertyId).toBeNull()
+    expect(mocks.fetchJobberInvoiceJobsPage.mock.calls).toEqual([
+      ['invoice-1', pageOptions, clientOptions('access-1')],
+      ['invoice-1', { first: 50, after: 'jobs-cursor' }, clientOptions('access-1')],
+    ])
+    expect(mocks.fetchJobberInvoicePropertiesPage.mock.calls).toEqual([
+      ['invoice-1', pageOptions, clientOptions('access-1')],
+      ['invoice-1', { first: 50, after: 'properties-cursor' }, clientOptions('access-1')],
+    ])
+    expect(mocks.fetchJobberInvoicePaymentsPage).not.toHaveBeenCalled()
+    expect(mocks.fetchJobberPaymentDetail).not.toHaveBeenCalled()
+    expect(mocks.fetchJobberPaymentRefundsPage).not.toHaveBeenCalled()
+  })
+
+  it('auto-resolves sole candidates and honors valid supplied selectors', async () => {
+    mocks.fetchJobberInvoiceJobsPage.mockResolvedValue(connection([{ id: 'job-1' }]))
+    mocks.fetchJobberInvoicePropertiesPage.mockResolvedValue(connection([
+      { id: 'property-1', address: address('1 Street') },
+    ]))
+
+    await expect(fetchJobberInvoiceSelectionPreview({ jobberInvoiceId: 'invoice-1' }))
+      .resolves.toMatchObject({
+        selectedJobberJobId: 'job-1',
+        selectedJobberPropertyId: 'property-1',
+        jobSelectionRequired: false,
+        propertySelectionRequired: false,
+      })
+
+    mocks.fetchJobberInvoiceJobsPage.mockResolvedValue(connection([{ id: 'job-1' }, { id: 'job-2' }]))
+    mocks.fetchJobberInvoicePropertiesPage.mockResolvedValue(connection([
+      { id: 'property-1', address: address('1 Street') },
+      { id: 'property-2', address: address('2 Street') },
+    ]))
+
+    await expect(fetchJobberInvoiceSelectionPreview({
+      jobberInvoiceId: 'invoice-1',
+      selectedJobberJobId: ' job-2 ',
+      selectedJobberPropertyId: 'property-2',
+    })).resolves.toMatchObject({
+      selectedJobberJobId: 'job-2',
+      selectedJobberPropertyId: 'property-2',
+      jobSelectionRequired: false,
+      propertySelectionRequired: false,
+    })
+    expect(mocks.fetchJobberInvoicePaymentsPage).not.toHaveBeenCalled()
+  })
+
+  it('rejects supplied selectors that are not invoice relations without reading payments', async () => {
+    mocks.fetchJobberInvoiceJobsPage.mockResolvedValue(connection([{ id: 'job-1' }]))
+    mocks.fetchJobberInvoicePropertiesPage.mockResolvedValue(connection([
+      { id: 'property-1', address: address('1 Street') },
+    ]))
+
+    await expect(fetchJobberInvoiceSelectionPreview({
+      jobberInvoiceId: 'invoice-1',
+      selectedJobberJobId: 'missing',
+    })).rejects.toThrow('Selected Jobber relation was not found on the invoice')
+    await expect(fetchJobberInvoiceSelectionPreview({
+      jobberInvoiceId: 'invoice-1',
+      selectedJobberPropertyId: 'missing',
+    })).rejects.toThrow('Selected Jobber relation was not found on the invoice')
+    expect(mocks.fetchJobberInvoicePaymentsPage).not.toHaveBeenCalled()
   })
 })
 

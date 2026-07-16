@@ -116,6 +116,26 @@ export type NormalizedJobberInvoiceStatus =
   | 'past_due'
   | 'unknown'
 
+export interface JobberInvoiceSelectionPreview {
+  readonly invoiceId: string
+  readonly invoiceNumber: string
+  readonly rawStatus: string
+  readonly normalizedStatus: NormalizedJobberInvoiceStatus
+  readonly jobberWebUri: string
+  readonly amounts: JobberInvoiceAmounts | null
+  readonly issuedDate: string | null
+  readonly dueDate: string | null
+  readonly receivedDate: string | null
+  readonly client: JobberInvoiceDetail['client']
+  readonly billingAddress: JobberAddress | null
+  readonly jobs: readonly JobberInvoiceJob[]
+  readonly properties: readonly JobberInvoiceProperty[]
+  readonly selectedJobberJobId: string | null
+  readonly selectedJobberPropertyId: string | null
+  readonly jobSelectionRequired: boolean
+  readonly propertySelectionRequired: boolean
+}
+
 export interface JobberNormalizationWarning {
   readonly code:
     | 'unknown_invoice_status'

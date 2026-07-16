@@ -28,6 +28,7 @@ import type {
   JobberInvoiceCandidateList,
   JobberInvoiceClientOptions,
   JobberInvoicePaymentRecord,
+  JobberInvoiceSelectionPreview,
   JobberNormalizationWarning,
   JobberPaymentDetail,
   JobberPaymentDirection,
@@ -130,6 +131,59 @@ export async function searchJobberInvoiceCandidates(input: {
     ))
     return freezeCandidateList(accountId, invoices)
   }, { requireDirectSearch: true })
+}
+
+export async function fetchJobberInvoiceSelectionPreview(input: {
+  readonly jobberInvoiceId: string
+  readonly selectedJobberJobId?: string
+  readonly selectedJobberPropertyId?: string
+}): Promise<JobberInvoiceSelectionPreview> {
+  const invoiceId = requireExternalId(input.jobberInvoiceId, 'Jobber invoice ID is required')
+  return withRestartableToken(async (options) => {
+    await requireAccountId(options)
+    const invoice = await fetchJobberInvoiceDetail(invoiceId, options)
+    if (invoice === null) throw new Error('Jobber invoice was not found')
+
+    const jobs = await fetchAllJobberPages(async (after) => {
+      const page = await fetchJobberInvoiceJobsPage(invoiceId, { first: PAGE_SIZE, after }, options)
+      if (page === null) throw new Error('Jobber invoice jobs could not be read completely')
+      return page
+    })
+    const properties = await fetchAllJobberPages(async (after) => {
+      const page = await fetchJobberInvoicePropertiesPage(invoiceId, { first: PAGE_SIZE, after }, options)
+      if (page === null) throw new Error('Jobber invoice properties could not be read completely')
+      return page
+    })
+    const jobSelection = previewSelection(
+      jobs.map(({ id }) => id),
+      input.selectedJobberJobId,
+    )
+    const propertySelection = previewSelection(
+      properties.map(({ id }) => id),
+      input.selectedJobberPropertyId,
+    )
+    const status = normalizeInvoiceStatus(invoice.invoiceStatus)
+
+    return Object.freeze({
+      invoiceId: invoice.id,
+      invoiceNumber: invoice.invoiceNumber,
+      rawStatus: invoice.invoiceStatus,
+      normalizedStatus: status.normalizedStatus,
+      jobberWebUri: invoice.jobberWebUri,
+      amounts: invoice.amounts,
+      issuedDate: invoice.issuedDate,
+      dueDate: invoice.dueDate,
+      receivedDate: invoice.receivedDate,
+      client: invoice.client,
+      billingAddress: invoice.billingAddress,
+      jobs: Object.freeze([...jobs].sort(compareIds)),
+      properties: Object.freeze([...properties].sort(compareIds)),
+      selectedJobberJobId: jobSelection.selectedId,
+      selectedJobberPropertyId: propertySelection.selectedId,
+      jobSelectionRequired: jobSelection.selectionRequired,
+      propertySelectionRequired: propertySelection.selectionRequired,
+    })
+  })
 }
 
 export async function fetchJobberInvoiceObservation(input: {
@@ -275,6 +329,19 @@ function normalizeInvoiceStatus(rawStatus: string): {
   }
   if (rawStatus === 'sent_not_due') return { normalizedStatus: 'awaiting_payment', warnings: [] }
   return { normalizedStatus: 'unknown', warnings: [{ code: 'unknown_invoice_status' }] }
+}
+
+function previewSelection(ids: readonly string[], suppliedId: string | undefined): {
+  selectedId: string | null
+  selectionRequired: boolean
+} {
+  const selectedId = suppliedId?.trim()
+  if (selectedId && !ids.includes(selectedId)) {
+    throw new Error('Selected Jobber relation was not found on the invoice')
+  }
+  if (selectedId) return { selectedId, selectionRequired: false }
+  if (ids.length === 1) return { selectedId: ids[0]!, selectionRequired: false }
+  return { selectedId: null, selectionRequired: ids.length > 1 }
 }
 
 function selectCandidate(

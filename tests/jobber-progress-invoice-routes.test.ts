@@ -4,7 +4,7 @@ import { NextRequest } from 'next/server'
 const mocks = vi.hoisted(() => ({
   requireAllowedUser: vi.fn(),
   listJobberInvoicesForJob: vi.fn(),
-  fetchJobberInvoiceObservation: vi.fn(),
+  fetchJobberInvoiceSelectionPreview: vi.fn(),
   classifyJobberInvoiceError: vi.fn(),
 }))
 
@@ -13,7 +13,7 @@ vi.mock('@/lib/security/require-allowed-user', () => ({
 }))
 vi.mock('@/lib/jobber/invoice-gateway', () => ({
   listJobberInvoicesForJob: mocks.listJobberInvoicesForJob,
-  fetchJobberInvoiceObservation: mocks.fetchJobberInvoiceObservation,
+  fetchJobberInvoiceSelectionPreview: mocks.fetchJobberInvoiceSelectionPreview,
   classifyJobberInvoiceError: mocks.classifyJobberInvoiceError,
 }))
 
@@ -22,17 +22,14 @@ import { GET as previewInvoice } from '@/app/api/jobber/progress-invoices/invoic
 
 const NO_STORE = 'private, no-store, max-age=0'
 
-const observation = {
+const selectionPreview = {
   accountId: 'account-secret-authority',
   invoiceId: 'invoice-1',
   invoiceNumber: 'INV-100',
   rawStatus: 'AWAITING_PAYMENT',
   normalizedStatus: 'awaiting_payment',
   jobberWebUri: 'https://secure.getjobber.com/invoices/invoice-1',
-  amounts: {
-    subtotal: '100.00', taxAmount: '10.00', total: '110.00',
-    invoiceBalance: '60.00', paymentsTotal: '50.00',
-  },
+  amounts: null,
   issuedDate: '2026-01-01',
   dueDate: '2026-01-15',
   receivedDate: null,
@@ -42,7 +39,7 @@ const observation = {
     id: 'client-1',
     name: 'Example Builder',
     companyName: 'Example Builder Pty Ltd',
-    emails: ['accounts@example.test', 'owner@example.test'],
+    defaultEmails: ['accounts@example.test', 'owner@example.test'],
     phones: [{ number: '0400000000', primary: true }],
   },
   billingAddress: {
@@ -56,9 +53,14 @@ const observation = {
       street1: '4 Curra Close', street2: null, city: 'Frenchs Forest',
       province: 'NSW', postalCode: '2086', country: 'Australia',
     },
+  }, {
+    id: 'property-2',
+    address: null,
   }],
   selectedJobberJobId: null,
-  selectedJobberPropertyId: 'property-1',
+  selectedJobberPropertyId: null,
+  jobSelectionRequired: true,
+  propertySelectionRequired: true,
   payments: [{
     id: 'payment-secret', source: 'payment_record', rawAdjustmentType: 'PAYMENT',
     rawSignedAmount: '50.00', absoluteAmount: '50.00', direction: 'receipt',
@@ -90,7 +92,7 @@ beforeEach(() => {
       normalizedStatus: 'paid', jobberWebUri: null, warnings: [],
     }],
   })
-  mocks.fetchJobberInvoiceObservation.mockResolvedValue(observation)
+  mocks.fetchJobberInvoiceSelectionPreview.mockResolvedValue(selectionPreview)
   mocks.classifyJobberInvoiceError.mockReturnValue({
     code: 'JOBBER_TEMPORARY_FAILURE', status: 503, message: 'Jobber is temporarily unavailable',
   })
@@ -114,7 +116,7 @@ describe('Progress Invoice Jobber selector routes', () => {
     expect(jobResponse.headers.get('Cache-Control')).toBe(NO_STORE)
     expect(invoiceResponse.headers.get('Cache-Control')).toBe(NO_STORE)
     expect(mocks.listJobberInvoicesForJob).not.toHaveBeenCalled()
-    expect(mocks.fetchJobberInvoiceObservation).not.toHaveBeenCalled()
+    expect(mocks.fetchJobberInvoiceSelectionPreview).not.toHaveBeenCalled()
   })
 
   it('maps an authenticated but disallowed user to 403 before gateway work', async () => {
@@ -158,7 +160,7 @@ describe('Progress Invoice Jobber selector routes', () => {
       expect(response.status).toBe(400)
       expect(response.headers.get('Cache-Control')).toBe(NO_STORE)
     }
-    expect(mocks.fetchJobberInvoiceObservation).not.toHaveBeenCalled()
+    expect(mocks.fetchJobberInvoiceSelectionPreview).not.toHaveBeenCalled()
   })
 
   it('returns a bounded invoice-candidate allowlist', async () => {
@@ -183,11 +185,9 @@ describe('Progress Invoice Jobber selector routes', () => {
     })
   })
 
-  it('returns explicit candidates while omitting payments, authority, raw transport, and fingerprints', async () => {
+  it('returns selection-required candidates while omitting payments, authority, raw transport, and fingerprints', async () => {
     const response = await previewInvoice(
-      new NextRequest(
-        'http://localhost/api/jobber/progress-invoices/invoices/invoice-1?selectedJobberPropertyId=property-1',
-      ),
+      new NextRequest('http://localhost/api/jobber/progress-invoices/invoices/invoice-1'),
       params({ invoiceId: 'invoice-1' }),
     )
     const body = await response.json()
@@ -195,24 +195,31 @@ describe('Progress Invoice Jobber selector routes', () => {
 
     expect(response.status).toBe(200)
     expect(response.headers.get('Cache-Control')).toBe(NO_STORE)
-    expect(mocks.fetchJobberInvoiceObservation).toHaveBeenCalledWith({
+    expect(mocks.fetchJobberInvoiceSelectionPreview).toHaveBeenCalledWith({
       jobberInvoiceId: 'invoice-1',
-      selectedJobberPropertyId: 'property-1',
     })
     expect(body.data).toMatchObject({
-      accountId: 'account-secret-authority',
       invoiceId: 'invoice-1',
       invoiceNumber: 'INV-100',
-      amounts: { paymentsTotal: '50.00' },
       jobs: [{ id: 'job-1' }, { id: 'job-2' }],
-      properties: [{ id: 'property-1' }],
+      properties: [{ id: 'property-1' }, { id: 'property-2' }],
       selectedJobberJobId: null,
-      selectedJobberPropertyId: 'property-1',
+      selectedJobberPropertyId: null,
+      selectionRequired: { job: true, property: true },
+      client: {
+        name: 'Example Builder',
+        companyName: 'Example Builder Pty Ltd',
+        emails: ['accounts@example.test', 'owner@example.test'],
+        phones: [{ number: '0400000000', primary: true }],
+      },
+      billingAddress: {
+        street1: '1 Billing Street', city: 'Sydney', province: 'NSW',
+        postalCode: '2000', country: 'Australia',
+      },
     })
-    for (const secret of [
-      'payment-secret', 'txn-secret',
-      'responseFingerprint', 'sensitive-persistence-fingerprint', 'effectiveGraphqlVersion',
-    ]) expect(serialized).not.toContain(secret)
+    for (const forbidden of [
+      'payments', 'payment-secret', 'responseFingerprint', 'accountId',
+    ]) expect(serialized).not.toContain(forbidden)
     expect(body.data).not.toHaveProperty('payments')
   })
 

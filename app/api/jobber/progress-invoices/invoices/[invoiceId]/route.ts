@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 
 import {
   classifyJobberInvoiceError,
-  fetchJobberInvoiceObservation,
+  fetchJobberInvoiceSelectionPreview,
 } from '@/lib/jobber/invoice-gateway'
 import { progressJobberExternalIdSchema } from '@/lib/progress-invoices/validators'
 import { requireAllowedUser } from '@/lib/security/require-allowed-user'
@@ -51,7 +51,7 @@ export async function GET(
   if (!auth.ok) return json({ ok: false, error: auth.error }, authorizationStatus(auth.error))
 
   try {
-    const observation = await fetchJobberInvoiceObservation({
+    const preview = await fetchJobberInvoiceSelectionPreview({
       jobberInvoiceId: invoiceId,
       ...(selectedJobberJobId === undefined ? {} : { selectedJobberJobId }),
       ...(selectedJobberPropertyId === undefined ? {} : { selectedJobberPropertyId }),
@@ -59,39 +59,30 @@ export async function GET(
     return json({
       ok: true,
       data: {
-        accountId: observation.accountId,
-        invoiceId: observation.invoiceId,
-        invoiceNumber: observation.invoiceNumber,
-        rawStatus: observation.rawStatus,
-        normalizedStatus: observation.normalizedStatus,
-        jobberWebUri: observation.jobberWebUri,
-        amounts: observation.amounts === null ? null : {
-          subtotal: observation.amounts.subtotal,
-          taxAmount: observation.amounts.taxAmount,
-          total: observation.amounts.total,
-          invoiceBalance: observation.amounts.invoiceBalance,
-          paymentsTotal: observation.amounts.paymentsTotal,
+        invoiceId: preview.invoiceId,
+        invoiceNumber: preview.invoiceNumber,
+        rawStatus: preview.rawStatus,
+        normalizedStatus: preview.normalizedStatus,
+        jobberWebUri: preview.jobberWebUri,
+        amounts: preview.amounts,
+        issuedDate: preview.issuedDate,
+        dueDate: preview.dueDate,
+        receivedDate: preview.receivedDate,
+        client: preview.client === null ? null : {
+          name: preview.client.name,
+          companyName: preview.client.companyName,
+          emails: [...preview.client.defaultEmails],
+          phones: preview.client.phones.map((phone) => ({ ...phone })),
         },
-        issuedDate: observation.issuedDate,
-        dueDate: observation.dueDate,
-        receivedDate: observation.receivedDate,
-        client: observation.client === null ? null : {
-          name: observation.client.name,
-          companyName: observation.client.companyName,
-          emails: [...observation.client.emails],
-          phones: observation.client.phones.map((phone) => ({ ...phone })),
+        billingAddress: preview.billingAddress,
+        jobs: preview.jobs.map(({ id }) => ({ id })),
+        properties: preview.properties.map(({ id, address }) => ({ id, address })),
+        selectedJobberJobId: preview.selectedJobberJobId,
+        selectedJobberPropertyId: preview.selectedJobberPropertyId,
+        selectionRequired: {
+          job: preview.jobSelectionRequired,
+          property: preview.propertySelectionRequired,
         },
-        billingAddress: observation.billingAddress === null
-          ? null
-          : { ...observation.billingAddress },
-        jobs: observation.jobs.map(({ id }) => ({ id })),
-        properties: observation.properties.map((property) => ({
-          id: property.id,
-          address: property.address === null ? null : { ...property.address },
-        })),
-        selectedJobberJobId: observation.selectedJobberJobId,
-        selectedJobberPropertyId: observation.selectedJobberPropertyId,
-        warnings: observation.warnings.map(({ code }) => ({ code })),
       },
     }, 200)
   } catch (error) {
