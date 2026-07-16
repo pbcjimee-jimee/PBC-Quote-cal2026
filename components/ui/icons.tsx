@@ -44,6 +44,13 @@ export const Icons = {
       <path d="M6.2 6.4h7.6M6.2 9.6h7.6M6.2 12.8h4.6" />
     </Icon>
   ),
+  progressInvoice: (p?: { size?: number }) => (
+    <Icon size={p?.size}>
+      <path d="M5.2 2.8h7.1l2.5 2.5v11.9H5.2z" />
+      <path d="M12.3 2.8v2.8h2.5M7.6 8.2h4.8M7.6 11h4.8M7.6 13.8h2.8" />
+      <path d="M3.2 5.4v11.8h8.6" />
+    </Icon>
+  ),
   settings: (p?: { size?: number }) => (
     <Icon size={p?.size}>
       <circle cx="10" cy="10" r="2.6" />

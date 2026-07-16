@@ -48,6 +48,8 @@ describe('AppHeader sidebar UI', () => {
     expect(markup).toContain('New Quote')
     expect(markup).toContain('Settings')
     expect(markup).toContain('Inventory')
+    expect(markup).toContain('href="/progress-invoices"')
+    expect(markup).toContain('Progress Invoices')
     expect(markup).toContain('data-intent-link="true"')
     expect(markup).toContain('pbc-usercard__identity')
   })

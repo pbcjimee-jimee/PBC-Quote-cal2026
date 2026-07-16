@@ -43,7 +43,7 @@
 .pbc-signout:hover { border-color: var(--danger); background: var(--danger-soft); color: var(--danger); }
 .pbc-mobile-header__inner { display: flex; min-height: 64px; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 16px; }
 .pbc-mobile-header__brand { display: flex; flex-shrink: 0; align-items: center; gap: 10px; }
-.pbc-mobile-nav { display: grid; min-width: 0; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px; }
+.pbc-mobile-nav { display: grid; min-width: 0; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 4px; }
 .pbc-mobile-nav__item { display: flex; min-width: 0; min-height: 44px; align-items: center; justify-content: center; gap: 5px; padding: 6px 8px; border: 1px solid transparent; border-radius: 9px; color: var(--muted); font-size: 12px; font-weight: 700; white-space: nowrap; }
 .pbc-mobile-nav__item:hover { border-color: var(--border); background: #fff; color: var(--foreground); }
 .pbc-mobile-nav__item.is-active { border-color: var(--primary); background: var(--primary-soft); color: var(--primary); }
@@ -153,6 +153,51 @@
 .pbc-ministat span { display: block; font-size: 11px; font-weight: 700; color: var(--muted-2); }
 .pbc-ministat b { display: block; margin-top: 3px; font-size: 14px; font-weight: 800; color: var(--foreground); }
 .pbc-divider { border-top: 1px solid var(--border-soft); padding-top: 16px; }
+
+/* Progress Invoices */
+.pbc-progress-dashboard { display: flex; min-width: 0; flex-direction: column; gap: 22px; }
+.pbc-progress-filters { display: grid; grid-template-columns: minmax(0, 1fr) minmax(180px, 240px) auto; align-items: end; gap: 14px; }
+.pbc-progress-filters__actions { display: flex; align-items: center; gap: 8px; }
+.pbc-progress-listhead { display: flex; align-items: end; justify-content: space-between; gap: 12px; }
+.pbc-progress-listhead h2 { margin: 0; font-size: 18px; font-weight: 800; color: var(--foreground); }
+.pbc-progress-listhead p { margin: 4px 0 0; font-size: 12.5px; color: var(--muted); }
+.pbc-progress-series-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.pbc-progress-series { display: flex; min-width: 0; flex-direction: column; gap: 16px; }
+.pbc-progress-series__head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.pbc-progress-series__head > div { min-width: 0; }
+.pbc-progress-series__eyebrow { display: block; margin-bottom: 4px; font-size: 10.5px; font-weight: 800; letter-spacing: 0.05em; text-transform: uppercase; color: var(--primary); }
+.pbc-progress-series h2 { overflow: hidden; margin: 0; font-size: 17px; font-weight: 800; text-overflow: ellipsis; white-space: nowrap; }
+.pbc-progress-series__head p { overflow: hidden; margin: 3px 0 0; font-size: 12.5px; color: var(--muted); text-overflow: ellipsis; white-space: nowrap; }
+.pbc-progress-series__site { display: flex; min-width: 0; align-items: center; gap: 7px; margin: 0; font-size: 13px; font-weight: 650; color: var(--foreground); }
+.pbc-progress-series__site svg { flex-shrink: 0; color: var(--primary); }
+.pbc-progress-series__money { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin: 0; }
+.pbc-progress-series__money > div { min-width: 0; padding: 10px; border: 1px solid var(--border-soft); border-radius: 10px; background: var(--surface-soft); }
+.pbc-progress-series__money dt { font-size: 10.5px; font-weight: 700; color: var(--muted-2); }
+.pbc-progress-series__money dd { overflow: hidden; margin: 4px 0 0; font-family: var(--mono); font-size: 13px; font-weight: 800; color: var(--foreground); text-overflow: ellipsis; white-space: nowrap; }
+.pbc-progress-series__foot { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; margin-top: auto; padding-top: 14px; border-top: 1px solid var(--border-soft); }
+.pbc-progress-series__foot > div { display: flex; min-width: 0; flex-direction: column; align-items: flex-start; gap: 6px; }
+.pbc-progress-series__sync { font-size: 11.5px; color: var(--muted); }
+.pbc-progress-badge { display: inline-flex; align-items: center; width: fit-content; padding: 4px 8px; border: 1px solid var(--border); border-radius: 999px; font-size: 10.5px; font-weight: 800; white-space: nowrap; }
+.pbc-progress-badge--success { border-color: color-mix(in srgb, var(--success) 30%, var(--border)); background: var(--success-soft); color: var(--success); }
+.pbc-progress-badge--warning { border-color: color-mix(in srgb, var(--warning) 32%, var(--border)); background: var(--warning-soft); color: #8a5a14; }
+.pbc-progress-badge--danger { border-color: color-mix(in srgb, var(--danger) 30%, var(--border)); background: var(--danger-soft); color: var(--danger); }
+.pbc-progress-badge--muted { background: var(--surface-soft); color: var(--muted); }
+.pbc-progress-empty { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 32px 18px; }
+.pbc-progress-empty strong { color: var(--foreground); }
+.pbc-progress-empty > div { display: flex; justify-content: center; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
+.pbc-progress-page-disabled { display: inline-flex; min-height: 36px; align-items: center; padding: 6px 12px; color: var(--muted-2); }
+.pbc-progress-create-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
+.pbc-progress-create-copy { min-height: 66px; margin: 0 0 18px; font-size: 13.5px; line-height: 1.55; color: var(--muted); }
+.pbc-progress-guided-note { display: inline-flex; min-height: 40px; align-items: center; padding: 9px 12px; border: 1px dashed var(--border); border-radius: 10px; background: var(--surface-soft); font-size: 12.5px; font-weight: 700; color: var(--muted); }
+.pbc-progress-create-actions { display: flex; justify-content: flex-end; margin-top: 18px; }
+.pbc-progress-skeleton { overflow: hidden; }
+.pbc-progress-skeleton__line,
+.pbc-progress-skeleton__value,
+.pbc-progress-skeleton__block { display: block; border-radius: 8px; background: linear-gradient(90deg, var(--surface-soft), var(--border-soft), var(--surface-soft)); background-size: 220% 100%; animation: pbc-progress-pulse 1.4s ease-in-out infinite; }
+.pbc-progress-skeleton__line { width: 42%; height: 12px; }
+.pbc-progress-skeleton__value { width: 68%; height: 28px; margin-top: 10px; }
+.pbc-progress-skeleton__block { width: 100%; height: 140px; margin-top: 18px; }
+@keyframes pbc-progress-pulse { to { background-position: -220% 0; } }
 
 /* ── 입력 필드 ─────────────────────────────────────────── */
 .pbc-field { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
@@ -814,6 +859,7 @@
   .pbc-qhead { display: none; }
   .pbc-qrow { grid-template-columns: 40px minmax(0, 1fr) 116px 24px; grid-row-gap: 8px; }
   .pbc-qrow__scope, .pbc-qrow__days, .pbc-qrow__date { display: none; }
+  .pbc-progress-series-grid { grid-template-columns: 1fr; }
 }
 
 @media (max-width: 1023.98px) {
@@ -850,6 +896,8 @@
   .pbc-iconbtn,
   .pbc-iconbtn--compact { min-width: 44px; min-height: 44px; }
   .pbc-btn--sm { min-width: 44px; min-height: 44px; }
+  .pbc-progress-filters { grid-template-columns: minmax(0, 1fr) minmax(180px, 240px); }
+  .pbc-progress-filters__actions { grid-column: 1 / -1; }
 }
 
 @media (max-width: 720px) {
@@ -894,6 +942,12 @@
   .pbc-checkfield { padding-top: 0; }
   .pbc-listitem { align-items: flex-start; flex-direction: column; }
   .pbc-listitem__sub { white-space: normal; }
+  .pbc-progress-filters { grid-template-columns: 1fr; }
+  .pbc-progress-filters__actions { grid-column: auto; flex-wrap: wrap; }
+  .pbc-progress-series__money { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .pbc-progress-series__foot { align-items: flex-start; flex-direction: column; }
+  .pbc-progress-create-grid { grid-template-columns: 1fr; }
+  .pbc-progress-create-copy { min-height: 0; }
 }
 
 @media (max-width: 560px) {
@@ -904,7 +958,7 @@
 }
 
 @media (max-width: 359.98px) {
-  .pbc-mobile-nav { width: 100%; grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .pbc-mobile-nav { width: 100%; grid-template-columns: repeat(5, minmax(0, 1fr)); }
   .pbc-mobile-nav__item { min-width: 0; min-height: 44px; flex-direction: column; gap: 1px; padding: 4px 2px; font-size: 10px; }
   .pbc-mobile-nav__item svg { flex-shrink: 0; }
   .pbc-mobile-nav__item span { max-width: 100%; overflow: hidden; text-overflow: ellipsis; }

@@ -10,12 +10,19 @@ import type { UserProfile } from '@/lib/user-profiles'
 type NavItem = {
   href: string
   label: string
-  icon: 'overview' | 'quote' | 'settings' | 'inventory'
+  mobileLabel?: string
+  icon: 'overview' | 'quote' | 'progressInvoice' | 'settings' | 'inventory'
 }
 
 const navItems: NavItem[] = [
   { href: '/quotes', label: 'Overview', icon: 'overview' },
-  { href: '/quotes/new', label: 'New Quote', icon: 'quote' },
+  { href: '/quotes/new', label: 'New Quote', mobileLabel: 'New', icon: 'quote' },
+  {
+    href: '/progress-invoices',
+    label: 'Progress Invoices',
+    mobileLabel: 'Progress',
+    icon: 'progressInvoice',
+  },
   { href: '/settings', label: 'Settings', icon: 'settings' },
   { href: '/settings/inventory', label: 'Inventory', icon: 'inventory' },
 ]
@@ -58,6 +65,7 @@ function getServerHydratedSnapshot() {
 
 function NavIcon({ icon }: { icon: NavItem['icon'] }) {
   if (icon === 'quote') return Icons.quote({ size: 18 })
+  if (icon === 'progressInvoice') return Icons.progressInvoice({ size: 18 })
   if (icon === 'settings') return Icons.settings({ size: 18 })
   if (icon === 'inventory') return Icons.layers({ size: 18 })
   return Icons.overview({ size: 18 })
@@ -191,7 +199,7 @@ export function AppHeader({ userProfile }: { userProfile: UserProfile }) {
                   className={`pbc-mobile-nav__item ${isActive ? 'is-active' : ''}`}
                 >
                   <NavIcon icon={item.icon} />
-                  <span>{item.href === '/quotes/new' ? 'New' : item.label}</span>
+                  <span>{item.mobileLabel ?? item.label}</span>
                 </IntentLink>
               )
             })}
