@@ -255,6 +255,74 @@ describe('Progress Invoice Jobber query client', () => {
     })
   })
 
+  it.each([
+    'JobberPaymentsACHPaymentRecord',
+    'JobberPaymentsCreditCardPaymentRecord',
+    'JobberPaymentsRefundPaymentRecord',
+  ])('requires transactionId for matching concrete type %s', async (typename) => {
+    vi.stubGlobal('fetch', vi.fn<typeof fetch>(async () => response({ paymentRecord: {
+      ...paymentDetail(),
+      __typename: typename,
+      transactionId: undefined,
+    } })))
+
+    await expect(fetchJobberPaymentDetail('payment-1', options))
+      .rejects.toThrow('Invalid Jobber payment detail response')
+  })
+
+  it.each([
+    'JobberPaymentsACHPaymentRecord',
+    'JobberPaymentsCreditCardPaymentRecord',
+    'JobberPaymentsRefundPaymentRecord',
+  ])('preserves explicit null transactionId for matching concrete type %s', async (typename) => {
+    vi.stubGlobal('fetch', vi.fn<typeof fetch>(async () => response({ paymentRecord: {
+      ...paymentDetail(),
+      __typename: typename,
+      transactionId: null,
+    } })))
+
+    await expect(fetchJobberPaymentDetail('payment-1', options)).resolves.toMatchObject({
+      typename,
+      transactionId: null,
+      checkNumber: null,
+    })
+  })
+
+  it('requires checkNumber for CheckPaymentRecord and preserves explicit null', async () => {
+    vi.stubGlobal('fetch', vi.fn<typeof fetch>(async () => response({ paymentRecord: {
+      ...paymentDetail(),
+      __typename: 'CheckPaymentRecord',
+      checkNumber: undefined,
+    } })))
+    await expect(fetchJobberPaymentDetail('payment-1', options))
+      .rejects.toThrow('Invalid Jobber payment detail response')
+
+    vi.stubGlobal('fetch', vi.fn<typeof fetch>(async () => response({ paymentRecord: {
+      ...paymentDetail(),
+      __typename: 'CheckPaymentRecord',
+      checkNumber: null,
+    } })))
+    await expect(fetchJobberPaymentDetail('payment-1', options)).resolves.toMatchObject({
+      transactionId: null,
+      checkNumber: null,
+    })
+  })
+
+  it('strips impossible inline-fragment values from nonmatching concrete types', async () => {
+    vi.stubGlobal('fetch', vi.fn<typeof fetch>(async () => response({ paymentRecord: {
+      ...paymentDetail(),
+      __typename: 'BankTransferPaymentRecord',
+      transactionId: 'impossible-transaction',
+      checkNumber: 'impossible-check',
+    } })))
+
+    await expect(fetchJobberPaymentDetail('payment-1', options)).resolves.toMatchObject({
+      typename: 'BankTransferPaymentRecord',
+      transactionId: null,
+      checkNumber: null,
+    })
+  })
+
   it.each(['NaN', 'Infinity', '-Infinity', '1e999999'])('rejects non-finite monetary text: %s', async (amount) => {
     vi.stubGlobal('fetch', vi.fn<typeof fetch>(async () => response({
       invoice: { id: 'invoice-1', paymentRecords: terminal([{

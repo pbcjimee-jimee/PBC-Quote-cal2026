@@ -353,11 +353,24 @@ function normalizePayment(
     effectiveReceiptAmount: effective.toString(),
     entryDate: concrete?.entryDate ?? evidence.legacy?.entryDate ?? evidence.refund?.entryDate ?? '',
     method: concrete?.paymentType ?? evidence.legacy?.jobberPaymentPaymentMethod ?? null,
-    reference: concrete?.transactionId ?? concrete?.checkNumber ?? concrete?.details ?? null,
+    reference: paymentReference(concrete),
     externalStatus,
     externalUpdatedAt: null,
     treatment,
   })
+}
+
+function paymentReference(payment: JobberPaymentDetail | undefined): string | null {
+  if (payment === undefined) return null
+  if (payment.typename === 'CheckPaymentRecord') return payment.checkNumber ?? payment.details
+  if (
+    payment.typename === 'JobberPaymentsACHPaymentRecord'
+    || payment.typename === 'JobberPaymentsCreditCardPaymentRecord'
+    || payment.typename === 'JobberPaymentsRefundPaymentRecord'
+  ) {
+    return payment.transactionId ?? payment.details
+  }
+  return payment.details
 }
 
 function directionForAdjustment(adjustmentType: string): JobberPaymentDirection {

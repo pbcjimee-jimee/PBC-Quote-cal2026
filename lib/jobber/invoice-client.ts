@@ -66,6 +66,11 @@ const PAYMENT_DETAIL_QUERY = `query JobberPaymentDetail($paymentId: EncodedId!) 
     ... on JobberPaymentsRefundPaymentRecord { transactionId }
   }
 }`
+const TRANSACTION_ID_PAYMENT_TYPENAMES = new Set([
+  'JobberPaymentsACHPaymentRecord',
+  'JobberPaymentsCreditCardPaymentRecord',
+  'JobberPaymentsRefundPaymentRecord',
+])
 const INVOICE_SEARCH_QUERY = `query JobberInvoiceSearch($term: String!, $first: Int!, $after: String) {
   invoices(searchTerm: $term, first: $first, after: $after) {
     nodes { id invoiceNumber invoiceStatus jobberWebUri }
@@ -158,9 +163,10 @@ export async function fetchJobberPaymentDetail(
   const payment = nullableObject(data.paymentRecord, 'Invalid Jobber payment detail response')
   if (payment === null) return null
   assertParentId(payment, jobberPaymentId, 'Jobber payment response did not match the requested ID')
+  const typename = stringField(payment.__typename, 'Invalid Jobber payment detail response')
   return {
     id: stringField(payment.id, 'Invalid Jobber payment detail response'),
-    typename: stringField(payment.__typename, 'Invalid Jobber payment detail response'),
+    typename,
     adjustmentType: stringField(payment.adjustmentType, 'Invalid Jobber payment detail response'),
     amount: decimalField(payment.amount, 'Invalid Jobber payment detail response'),
     rawAmount: decimalField(payment.rawAmount, 'Invalid Jobber payment detail response'),
@@ -168,8 +174,12 @@ export async function fetchJobberPaymentDetail(
     paymentType: requiredNullableString(payment, 'paymentType', 'Invalid Jobber payment detail response'),
     paymentOrigin: requiredNullableString(payment, 'paymentOrigin', 'Invalid Jobber payment detail response'),
     details: requiredNullableString(payment, 'details', 'Invalid Jobber payment detail response'),
-    transactionId: nullableString(payment.transactionId, 'Invalid Jobber payment detail response'),
-    checkNumber: nullableString(payment.checkNumber, 'Invalid Jobber payment detail response'),
+    transactionId: TRANSACTION_ID_PAYMENT_TYPENAMES.has(typename)
+      ? requiredNullableString(payment, 'transactionId', 'Invalid Jobber payment detail response')
+      : null,
+    checkNumber: typename === 'CheckPaymentRecord'
+      ? requiredNullableString(payment, 'checkNumber', 'Invalid Jobber payment detail response')
+      : null,
   }
 }
 

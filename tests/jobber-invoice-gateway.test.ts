@@ -353,16 +353,32 @@ function paymentRows() {
 }
 
 function paymentDetailFor(id: string) {
-  if (id === 'refund-child') return { __typename: 'JobberPaymentsRefundPaymentRecord', id, adjustmentType: 'REFUND', amount: '10', rawAmount: '10', entryDate: '2026-07-12T00:00:00Z', paymentType: 'JOBBER_PAYMENTS', paymentOrigin: null, details: null, transactionId: 'refund-tx', checkNumber: null }
+  if (id === 'refund-child') return { typename: 'JobberPaymentsRefundPaymentRecord', id, adjustmentType: 'REFUND', amount: '10', rawAmount: '10', entryDate: '2026-07-12T00:00:00Z', paymentType: 'JOBBER_PAYMENTS', paymentOrigin: null, details: null, transactionId: 'refund-tx', checkNumber: null }
   const legacy = paymentRows().find((row) => row.id === id)
   if (!legacy) return null
   return {
-    __typename: 'BankTransferPaymentRecord', id, adjustmentType: legacy.adjustmentType,
+    typename: id === 'p-payment'
+      ? 'JobberPaymentsCreditCardPaymentRecord'
+      : id === 'p-check'
+        ? 'CheckPaymentRecord'
+        : 'BankTransferPaymentRecord',
+    id,
+    adjustmentType: legacy.adjustmentType,
     amount: id === 'p-conflict' ? '11' : legacy.amount, rawAmount: `-${legacy.amount}`,
     entryDate: legacy.entryDate,
     paymentType: id === 'p-null' ? null : id === 'p-deposit' ? 'CASH' : id === 'p-reversal' ? 'ACH_BANK_PAYMENT' : id === 'p-check' ? 'CHECK' : id === 'p-details' ? 'OTHER' : 'JOBBER_PAYMENTS',
-    paymentOrigin: null, details: id === 'p-details' ? 'detail reference' : null,
-    transactionId: id === 'p-payment' ? 'tx-p-payment' : null, checkNumber: id === 'p-check' ? 'CHK-1' : null,
+    paymentOrigin: null,
+    details: id === 'p-details' ? 'detail reference' : null,
+    transactionId: id === 'p-payment'
+      ? 'tx-p-payment'
+      : id === 'p-details'
+        ? 'impossible-transaction'
+        : null,
+    checkNumber: id === 'p-check'
+      ? 'CHK-1'
+      : id === 'p-details'
+        ? 'impossible-check'
+        : null,
   }
 }
 
