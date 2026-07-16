@@ -22,7 +22,7 @@ read_clients read_jobs read_invoices read_jobber_payments
 
 Sanitized live reads confirmed account identity, invoice identity and detail, client contact fields, billing address, job and property relationships, cursor shapes, invoice payment pages, and direct payment lookup. A scan of 10 recent invoices resolved 17 payment IDs through `paymentRecord(id:)`; all observed records were `BankTransferPaymentRecord` values with `PAYMENT` or `DEPOSIT`, and all had negative `rawAmount`. No live refund, failed ACH reversal, dispute, or partial-refund sample was observed. Refund and reversal fixture rows are explicitly synthetic schema cases, not claimed live observations.
 
-The token endpoint omitted `scope` on refresh. A known stored scope must therefore be preserved when a later refresh omits it. A missing stored scope fails invoice acquisition before refresh/network access; it is never inferred from successful data access.
+The token endpoint omitted `scope` on refresh. A known stored scope must therefore be preserved when a later refresh omits it, and an explicit stored scope is validated before invoice access. When scope metadata was never returned and is therefore absent, static scope validation is unavailable; the pinned read-only GraphQL request remains the authority and a Jobber authorization failure is mapped safely. Missing metadata never grants a Jobber mutation or widens the existing Quote mutation allowlist.
 
 ## Exact query documents
 

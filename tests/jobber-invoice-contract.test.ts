@@ -40,6 +40,17 @@ describe('Jobber invoice read contract', () => {
     )).toThrow('Jobber connection is missing required read scopes: read_jobber_payments')
   })
 
+  it('allows missing scope metadata because Jobber OAuth does not include it in the token response', () => {
+    expect(() => assertJobberRequiredReadScopes(
+      null,
+      JOBBER_INVOICE_CONTRACT_FIXTURE.requiredReadScopes,
+    )).not.toThrow()
+    expect(() => assertJobberRequiredReadScopes(
+      undefined,
+      JOBBER_INVOICE_CONTRACT_FIXTURE.requiredReadScopes,
+    )).not.toThrow()
+  })
+
   it('records direct invoice search exactly as confirmed by the pinned schema', () => {
     expect(getJobberInvoiceReadContract('2025-04-16').supportsDirectInvoiceSearch)
       .toBe(JOBBER_INVOICE_CONTRACT_FIXTURE.supportsDirectInvoiceSearch)

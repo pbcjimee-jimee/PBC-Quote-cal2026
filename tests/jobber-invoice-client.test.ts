@@ -183,6 +183,66 @@ describe('Progress Invoice Jobber query client', () => {
     await expect(fetchJobberPaymentRefundsPage('payment-1', { first: 50, after: null }, options)).resolves.toBeNull()
   })
 
+  it('accepts a concrete payment record ID for the same Jobber payment interface node', async () => {
+    const interfaceId = Buffer.from('gid://Jobber/PaymentRecord/268645963').toString('base64')
+    const concreteId = Buffer.from('gid://Jobber/BankTransferPaymentRecord/268645963').toString('base64')
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(response({
+        paymentRecord: { id: concreteId, refunds: terminal() },
+      }))
+      .mockResolvedValueOnce(response({
+        paymentRecord: { ...paymentDetail(), id: concreteId },
+      }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(fetchJobberPaymentRefundsPage(
+      interfaceId,
+      { first: 50, after: null },
+      options,
+    )).resolves.toEqual(terminal())
+    await expect(fetchJobberPaymentDetail(interfaceId, options)).resolves.toMatchObject({
+      id: concreteId,
+      typename: 'BankTransferPaymentRecord',
+    })
+  })
+
+  it.each([
+    {
+      name: 'different numeric record',
+      expected: 'gid://Jobber/PaymentRecord/268645963',
+      actual: 'gid://Jobber/BankTransferPaymentRecord/268645964',
+    },
+    {
+      name: 'two concrete record types',
+      expected: 'gid://Jobber/CashPaymentRecord/268645963',
+      actual: 'gid://Jobber/BankTransferPaymentRecord/268645963',
+    },
+    {
+      name: 'non-payment record type',
+      expected: 'gid://Jobber/PaymentRecord/268645963',
+      actual: 'gid://Jobber/Invoice/268645963',
+    },
+    {
+      name: 'non-numeric record ID',
+      expected: 'gid://Jobber/PaymentRecord/not-numeric',
+      actual: 'gid://Jobber/BankTransferPaymentRecord/not-numeric',
+    },
+    {
+      name: 'non-Jobber global ID',
+      expected: 'gid://Other/PaymentRecord/268645963',
+      actual: 'gid://Other/BankTransferPaymentRecord/268645963',
+    },
+  ])('rejects a mismatched payment interface identity: $name', async ({ expected, actual }) => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(response({
+      paymentRecord: { ...paymentDetail(), id: Buffer.from(actual).toString('base64') },
+    })))
+
+    await expect(fetchJobberPaymentDetail(
+      Buffer.from(expected).toString('base64'),
+      options,
+    )).rejects.toThrow('Jobber payment response did not match the requested ID')
+  })
+
   it.each([
     ['missing version', { data: { account: { id: 'a' } }, extensions: {} }],
     ['mismatched version', { data: { account: { id: 'a' } }, extensions: { versioning: { version: '2026-01-01' } } }],

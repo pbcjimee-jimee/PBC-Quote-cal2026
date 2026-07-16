@@ -78,6 +78,9 @@ export function assertJobberRequiredReadScopes(
   scope: string | null | undefined,
   requiredScopes: readonly string[],
 ): void {
+  // Jobber's OAuth token response does not guarantee scope metadata; GraphQL remains the authority.
+  if (!scope?.trim()) return
+
   const grantedScopes = new Set((scope ?? '')
     .split(/[\s,]+/)
     .map((item) => item.trim().toLowerCase())

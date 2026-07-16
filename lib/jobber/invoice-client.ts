@@ -150,7 +150,7 @@ export async function fetchJobberPaymentRefundsPage(
   const data = await request(PAYMENT_REFUNDS_QUERY, { paymentId: jobberPaymentId, first: page.first, after: page.after }, options)
   const payment = nullableObject(data.paymentRecord, 'Invalid Jobber payment refunds response')
   if (payment === null) return null
-  assertParentId(payment, jobberPaymentId, 'Jobber payment response did not match the requested ID')
+  assertPaymentRecordParentId(payment, jobberPaymentId, 'Jobber payment response did not match the requested ID')
   if (payment.refunds === null) return null
   return parseConnection(payment.refunds, 'Invalid Jobber payment refunds connection', parseRefund)
 }
@@ -162,7 +162,7 @@ export async function fetchJobberPaymentDetail(
   const data = await request(PAYMENT_DETAIL_QUERY, { paymentId: jobberPaymentId }, options)
   const payment = nullableObject(data.paymentRecord, 'Invalid Jobber payment detail response')
   if (payment === null) return null
-  assertParentId(payment, jobberPaymentId, 'Jobber payment response did not match the requested ID')
+  assertPaymentRecordParentId(payment, jobberPaymentId, 'Jobber payment response did not match the requested ID')
   const typename = stringField(payment.__typename, 'Invalid Jobber payment detail response')
   return {
     id: stringField(payment.id, 'Invalid Jobber payment detail response'),
@@ -417,6 +417,38 @@ function parseConnection<T extends { readonly id: string }>(
 
 function assertParentId(parent: Record<string, unknown>, expected: string, message: string): void {
   if (parent.id !== expected) throw new JobberInvoiceApiError(message, 502)
+}
+
+function assertPaymentRecordParentId(
+  parent: Record<string, unknown>,
+  expected: string,
+  message: string,
+): void {
+  if (typeof parent.id !== 'string' || !paymentRecordIdsMatch(expected, parent.id)) {
+    throw new JobberInvoiceApiError(message, 502)
+  }
+}
+
+function paymentRecordIdsMatch(expected: string, actual: string): boolean {
+  if (expected === actual) return true
+  const expectedGid = decodeJobberGlobalId(expected)
+  const actualGid = decodeJobberGlobalId(actual)
+  if (!expectedGid || !actualGid || expectedGid.recordId !== actualGid.recordId) return false
+
+  return (
+    expectedGid.type === 'PaymentRecord'
+    && actualGid.type.endsWith('PaymentRecord')
+  ) || (
+    actualGid.type === 'PaymentRecord'
+    && expectedGid.type.endsWith('PaymentRecord')
+  )
+}
+
+function decodeJobberGlobalId(value: string): { type: string; recordId: string } | null {
+  const match = /^gid:\/\/Jobber\/([^/]+)\/(\d+)$/.exec(
+    Buffer.from(value, 'base64').toString('utf8'),
+  )
+  return match ? { type: match[1]!, recordId: match[2]! } : null
 }
 
 function objectValue(value: unknown, message: string): Record<string, unknown> {
