@@ -1,0 +1,19 @@
+{
+  "data": {
+    "invoice": {
+      "id": "invoice-1",
+      "paymentRecords": {
+        "nodes": [{
+          "id": "payment-1",
+          "amount": 300.5,
+          "entryDate": "2026-07-02T00:00:00Z",
+          "adjustmentType": "PAYMENT",
+          "jobberPaymentPaymentMethod": null,
+          "jobberPaymentTransactionStatus": null
+        }],
+        "pageInfo": { "endCursor": "payment-cursor-1", "hasNextPage": true }
+      }
+    }
+  },
+  "extensions": { "versioning": { "version": "2025-04-16" } }
+}

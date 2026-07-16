@@ -49,6 +49,7 @@ describe('Jobber read-only regression guard', () => {
     expect(directGraphqlReferences).toEqual([
       'lib/jobber/client.ts',
       'lib/jobber/config.ts',
+      'lib/jobber/invoice-client.ts',
     ])
   })
 
@@ -70,5 +71,20 @@ describe('Jobber read-only regression guard', () => {
       .map(({ file }) => file)
 
     expect(mutationDocuments).toEqual([])
+  })
+
+  it('keeps Progress Invoice Jobber code isolated from Quote modules and mutation documents', () => {
+    const progressJobberFiles = [
+      'lib/jobber/invoice-client.ts',
+      'lib/jobber/invoice-gateway.ts',
+      'app/api/jobber/progress-invoices/invoices/search/route.ts',
+    ]
+
+    for (const file of progressJobberFiles) {
+      const source = readFileSync(join(projectRoot, file), 'utf8')
+      expect(source).not.toMatch(/@\/lib\/jobber\/(client|mapper|quote-lookup|quote-line-payload)/)
+      expect(source).not.toMatch(/@\/lib\/actions\/quotes/)
+      expect(source).not.toMatch(/\bmutation\b/i)
+    }
   })
 })

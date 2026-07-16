@@ -1,0 +1,12 @@
+{
+  "data": {
+    "job": {
+      "id": "job-1",
+      "invoices": {
+        "nodes": [{ "id": "invoice-1", "invoiceNumber": "INV-1", "invoiceStatus": "awaiting_payment" }],
+        "pageInfo": { "endCursor": "invoice-cursor-1", "hasNextPage": true }
+      }
+    }
+  },
+  "extensions": { "versioning": { "version": "2025-04-16" } }
+}
