@@ -45,6 +45,61 @@ const KNOWN_PAYMENT_STATUSES = new Set([
 ])
 const INELIGIBLE_PAYMENT_STATUSES = new Set(['IN_DISPUTE', 'PENDING', 'FAILED', 'DISPUTED'])
 
+export type JobberInvoiceSafeErrorCode =
+  | 'JOBBER_NOT_CONNECTED'
+  | 'JOBBER_AUTH_FAILED'
+  | 'JOBBER_SCOPE_MISSING'
+  | 'JOBBER_NOT_FOUND'
+  | 'JOBBER_RATE_LIMITED'
+  | 'JOBBER_SCHEMA_MISMATCH'
+  | 'JOBBER_RESPONSE_INVALID'
+  | 'JOBBER_TEMPORARY_FAILURE'
+
+export interface ClassifiedJobberInvoiceError {
+  readonly code: JobberInvoiceSafeErrorCode
+  readonly status: 400 | 401 | 403 | 404 | 429 | 502 | 503
+  readonly message: string
+}
+
+export function classifyJobberInvoiceError(error: unknown): ClassifiedJobberInvoiceError {
+  if (error instanceof JobberInvoiceApiError) {
+    if (error.status === 401) {
+      return { code: 'JOBBER_AUTH_FAILED', status: 401, message: 'Jobber authorization failed' }
+    }
+    if (error.status === 403) {
+      return { code: 'JOBBER_SCOPE_MISSING', status: 403, message: 'Jobber invoice read access is unavailable' }
+    }
+    if (error.status === 404) {
+      return { code: 'JOBBER_NOT_FOUND', status: 404, message: 'Jobber record was not found' }
+    }
+    if (error.status === 429) {
+      return { code: 'JOBBER_RATE_LIMITED', status: 429, message: 'Jobber rate limit reached' }
+    }
+    if (/version|contract|schema|invalid|response/i.test(error.message)) {
+      return { code: 'JOBBER_SCHEMA_MISMATCH', status: 502, message: 'Jobber response contract changed' }
+    }
+    return { code: 'JOBBER_TEMPORARY_FAILURE', status: 503, message: 'Jobber is temporarily unavailable' }
+  }
+
+  const message = error instanceof Error ? error.message : ''
+  if (/not connected|token is unavailable/i.test(message)) {
+    return { code: 'JOBBER_NOT_CONNECTED', status: 503, message: 'Jobber is not connected' }
+  }
+  if (/scope|access is unavailable/i.test(message)) {
+    return { code: 'JOBBER_SCOPE_MISSING', status: 403, message: 'Jobber invoice read access is unavailable' }
+  }
+  if (/not found|identity is unavailable/i.test(message)) {
+    return { code: 'JOBBER_NOT_FOUND', status: 404, message: 'Jobber record was not found' }
+  }
+  if (/select a Jobber|selected Jobber/i.test(message)) {
+    return { code: 'JOBBER_RESPONSE_INVALID', status: 400, message: 'A valid Jobber selection is required' }
+  }
+  if (/pinned contract|schema|version/i.test(message)) {
+    return { code: 'JOBBER_SCHEMA_MISMATCH', status: 502, message: 'Jobber response contract changed' }
+  }
+  return { code: 'JOBBER_TEMPORARY_FAILURE', status: 503, message: 'Jobber is temporarily unavailable' }
+}
+
 export async function listJobberInvoicesForJob(input: {
   readonly jobberJobId: string
 }): Promise<JobberInvoiceCandidateList> {

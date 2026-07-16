@@ -24,7 +24,7 @@ const percentageSchema = decimalStringSchema.refine(
 )
 const gstRateSchema = z.literal('0.10')
 const uuidSchema = z.string().uuid()
-const externalIdSchema = z.string().trim().min(1)
+export const progressJobberExternalIdSchema = z.string().trim().min(1).max(512)
 const expectedVersionSchema = z.number().int().positive()
 const dateSchema = z.iso.date()
 
@@ -137,26 +137,22 @@ export const progressInvoiceCreatePrefillSchema = z.union([
 export const linkProgressJobberInvoiceSchema = z.strictObject({
   seriesId: uuidSchema,
   expectedVersion: expectedVersionSchema,
-  selectedJobberInvoiceId: externalIdSchema,
-  selectedJobberJobId: externalIdSchema.optional(),
-  selectedJobberPropertyId: externalIdSchema.optional(),
-  observedJobberSnapshotId: uuidSchema,
+  selectedJobberInvoiceId: progressJobberExternalIdSchema,
+  selectedJobberJobId: progressJobberExternalIdSchema.optional(),
+  selectedJobberPropertyId: progressJobberExternalIdSchema.optional(),
   correlationKey: uuidSchema,
 })
 
 export const refreshProgressJobberInvoiceSchema = z.strictObject({
   seriesId: uuidSchema,
   expectedVersion: expectedVersionSchema,
-  selectedJobberJobId: externalIdSchema.optional(),
-  selectedJobberPropertyId: externalIdSchema.optional(),
-  acknowledgeStaleObservation: z.boolean(),
   idempotencyKey: uuidSchema,
 })
 
 export const acceptProgressJobberInvoiceNumberSchema = z.strictObject({
   seriesId: uuidSchema,
   expectedVersion: expectedVersionSchema,
-  observedJobberSnapshotId: uuidSchema,
+  observationId: uuidSchema,
   numberSource: z.enum(['original', 'latest']),
   idempotencyKey: uuidSchema,
 })
@@ -351,6 +347,15 @@ export type CreateProgressInvoiceSeriesInput = z.infer<
 >
 export type UpdateProgressInvoiceSeriesInput = z.infer<
   typeof updateProgressInvoiceSeriesSchema
+>
+export type LinkProgressJobberInvoiceInput = z.infer<
+  typeof linkProgressJobberInvoiceSchema
+>
+export type RefreshProgressJobberInvoiceInput = z.infer<
+  typeof refreshProgressJobberInvoiceSchema
+>
+export type AcceptProgressJobberInvoiceNumberInput = z.infer<
+  typeof acceptProgressJobberInvoiceNumberSchema
 >
 export type CreateProgressAdjustmentInput = z.infer<
   typeof createProgressAdjustmentSchema

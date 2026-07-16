@@ -333,22 +333,26 @@ export interface Database {
           billing_address: string | null
           client_company_name: string | null
           client_email: string | null
-          client_name: string
+          client_email_candidates: Json
+          client_name: string | null
           client_phone: string | null
+          client_phone_candidates: Json
           created_at: string
           created_by: string
           due_date: string | null
           effective_graphql_version: string
+          external_created_at: string | null
           external_updated_at: string | null
           fetched_at: string
           id: string
           invoice_balance: number | null
+          invoice_payments_total: number | null
           invoice_subtotal: number | null
           invoice_tax: number | null
           invoice_total: number | null
           issued_date: string | null
           jobber_account_id: string
-          jobber_client_id: string
+          jobber_client_id: string | null
           jobber_invoice_id: string
           jobber_job_ids: Json
           jobber_property_ids: Json
@@ -357,6 +361,7 @@ export interface Database {
           normalized_status: string
           observed_invoice_number: string
           original_invoice_number: string
+          payment_eligibility_policy_version: string | null
           property_address: string | null
           raw_status: string
           received_date: string | null
@@ -371,22 +376,26 @@ export interface Database {
           billing_address?: string | null
           client_company_name?: string | null
           client_email?: string | null
-          client_name: string
+          client_email_candidates?: Json
+          client_name?: string | null
           client_phone?: string | null
+          client_phone_candidates?: Json
           created_at?: string
           created_by: string
           due_date?: string | null
           effective_graphql_version: string
+          external_created_at?: string | null
           external_updated_at?: string | null
           fetched_at: string
           id?: string
           invoice_balance?: number | null
+          invoice_payments_total?: number | null
           invoice_subtotal?: number | null
           invoice_tax?: number | null
           invoice_total?: number | null
           issued_date?: string | null
           jobber_account_id: string
-          jobber_client_id: string
+          jobber_client_id?: string | null
           jobber_invoice_id: string
           jobber_job_ids?: Json
           jobber_property_ids?: Json
@@ -395,6 +404,7 @@ export interface Database {
           normalized_status: string
           observed_invoice_number: string
           original_invoice_number: string
+          payment_eligibility_policy_version?: string | null
           property_address?: string | null
           raw_status: string
           received_date?: string | null
@@ -409,22 +419,26 @@ export interface Database {
           billing_address?: string | null
           client_company_name?: string | null
           client_email?: string | null
-          client_name?: string
+          client_email_candidates?: Json
+          client_name?: string | null
           client_phone?: string | null
+          client_phone_candidates?: Json
           created_at?: string
           created_by?: string
           due_date?: string | null
           effective_graphql_version?: string
+          external_created_at?: string | null
           external_updated_at?: string | null
           fetched_at?: string
           id?: string
           invoice_balance?: number | null
+          invoice_payments_total?: number | null
           invoice_subtotal?: number | null
           invoice_tax?: number | null
           invoice_total?: number | null
           issued_date?: string | null
           jobber_account_id?: string
-          jobber_client_id?: string
+          jobber_client_id?: string | null
           jobber_invoice_id?: string
           jobber_job_ids?: Json
           jobber_property_ids?: Json
@@ -433,6 +447,7 @@ export interface Database {
           normalized_status?: string
           observed_invoice_number?: string
           original_invoice_number?: string
+          payment_eligibility_policy_version?: string | null
           property_address?: string | null
           raw_status?: string
           received_date?: string | null
@@ -987,14 +1002,19 @@ export interface Database {
         Row: {
           created_at: string
           created_by: string
+          direction: string | null
           effective_receipt_amount: number
           external_status: string | null
           external_updated_at: string | null
           id: string
+          jobber_source: string | null
           observed_amount: number
+          payment_eligibility_treatment: string | null
           payment_id: string
           payment_method: string | null
           predecessor_revision_id: string | null
+          raw_adjustment_type: string | null
+          raw_signed_amount: number | null
           reason: string | null
           received_date: string
           reference: string | null
@@ -1006,14 +1026,19 @@ export interface Database {
         Insert: {
           created_at?: string
           created_by: string
+          direction?: string | null
           effective_receipt_amount: number
           external_status?: string | null
           external_updated_at?: string | null
           id?: string
+          jobber_source?: string | null
           observed_amount: number
+          payment_eligibility_treatment?: string | null
           payment_id: string
           payment_method?: string | null
           predecessor_revision_id?: string | null
+          raw_adjustment_type?: string | null
+          raw_signed_amount?: number | null
           reason?: string | null
           received_date: string
           reference?: string | null
@@ -1025,14 +1050,19 @@ export interface Database {
         Update: {
           created_at?: string
           created_by?: string
+          direction?: string | null
           effective_receipt_amount?: number
           external_status?: string | null
           external_updated_at?: string | null
           id?: string
+          jobber_source?: string | null
           observed_amount?: number
+          payment_eligibility_treatment?: string | null
           payment_id?: string
           payment_method?: string | null
           predecessor_revision_id?: string | null
+          raw_adjustment_type?: string | null
+          raw_signed_amount?: number | null
           reason?: string | null
           received_date?: string
           reference?: string | null
@@ -1629,6 +1659,26 @@ export interface Database {
     }
     Views: Record<string, never>
     Functions: {
+      accept_progress_jobber_invoice_number: {
+        Args: { payload: Json }
+        Returns: {
+          conflict: boolean
+          current: Json
+          id: string
+          version: number
+        }[]
+      }
+      apply_progress_invoice_jobber_refresh: {
+        Args: { payload: Json }
+        Returns: {
+          inserted_payments: number
+          revised_payments: number
+          series_id: string
+          series_version: number
+          snapshot_id: string
+          unconfirmed_payments: number
+        }[]
+      }
       approve_progress_adjustment: {
         Args: { payload: Json }
         Returns: Array<{
@@ -1657,6 +1707,18 @@ export interface Database {
         Args: { payload: Json }
         Returns: Array<{ id: string; version: number }>
       }
+      get_progress_invoice_jobber_context: {
+        Args: { payload: Json }
+        Returns: {
+          current_snapshot_id: string
+          jobber_account_id: string
+          jobber_invoice_id: string
+          selected_jobber_job_id: string
+          selected_jobber_property_id: string
+          series_id: string
+          series_version: number
+        }[]
+      }
       get_progress_invoice_series: {
         Args: { payload: Json }
         Returns: Json
@@ -1668,6 +1730,14 @@ export interface Database {
       list_progress_invoice_series: {
         Args: { payload: Json }
         Returns: Json
+      }
+      link_progress_jobber_invoice: {
+        Args: { payload: Json }
+        Returns: {
+          quote_id: string
+          series_id: string
+          version: number
+        }[]
       }
       create_quote_with_children: {
         Args: { payload: Json }
@@ -1710,6 +1780,13 @@ export interface Database {
       progress_require_expected_version: {
         Args: { current_version: number; payload: Json }
         Returns: number
+      }
+      record_progress_jobber_refresh_failure: {
+        Args: { payload: Json }
+        Returns: {
+          series_id: string
+          version: number
+        }[]
       }
       save_business_invoice_profile: {
         Args: { payload: Json }

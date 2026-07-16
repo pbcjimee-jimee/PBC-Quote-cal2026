@@ -1,7 +1,7 @@
 CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA extensions;
 CREATE EXTENSION IF NOT EXISTS dblink WITH SCHEMA extensions;
 
-SELECT plan(103);
+SELECT plan(178);
 
 DELETE FROM public.business_invoice_profiles;
 DELETE FROM auth.users
@@ -1682,6 +1682,2032 @@ SELECT is(
 );
 
 RESET ROLE;
+
+-- Task 7: Jobber observation persistence authority and date semantics
+SELECT has_column(
+  'public',
+  'progress_jobber_invoice_snapshots',
+  'invoice_payments_total',
+  'immutable observations preserve Jobber invoice payments total'
+);
+
+SELECT has_column(
+  'public',
+  'progress_jobber_invoice_snapshots',
+  'client_email_candidates',
+  'immutable observations preserve all Jobber email candidates'
+);
+
+SELECT has_column(
+  'public',
+  'progress_jobber_invoice_snapshots',
+  'client_phone_candidates',
+  'immutable observations preserve all Jobber phone candidates'
+);
+
+SELECT is(
+  has_function_privilege(
+    'service_role',
+    'public.link_progress_jobber_invoice(jsonb)',
+    'EXECUTE'
+  )
+    AND has_function_privilege(
+      'service_role',
+      'public.apply_progress_invoice_jobber_refresh(jsonb)',
+      'EXECUTE'
+    )
+    AND has_function_privilege(
+      'service_role',
+      'public.record_progress_jobber_refresh_failure(jsonb)',
+      'EXECUTE'
+    ),
+  true,
+  'service role alone receives authoritative Jobber persistence commands'
+);
+
+SELECT is(
+  has_function_privilege(
+    'authenticated',
+    'public.get_progress_invoice_jobber_context(jsonb)',
+    'EXECUTE'
+  )
+    AND has_function_privilege(
+      'authenticated',
+      'public.accept_progress_jobber_invoice_number(jsonb)',
+      'EXECUTE'
+    ),
+  true,
+  'authenticated callers receive only narrow context and acceptance commands'
+);
+
+SELECT is(
+  NOT has_function_privilege(
+    'authenticated',
+    'public.link_progress_jobber_invoice(jsonb)',
+    'EXECUTE'
+  )
+    AND NOT has_function_privilege(
+      'authenticated',
+      'public.apply_progress_invoice_jobber_refresh(jsonb)',
+      'EXECUTE'
+    )
+    AND NOT has_function_privilege(
+      'authenticated',
+      'public.record_progress_jobber_refresh_failure(jsonb)',
+      'EXECUTE'
+    ),
+  true,
+  'authenticated browsers cannot submit authoritative Jobber observations'
+);
+
+SELECT is(
+  NOT has_function_privilege(
+    'service_role',
+    'public.get_progress_invoice_jobber_context(jsonb)',
+    'EXECUTE'
+  )
+    AND NOT has_function_privilege(
+      'service_role',
+      'public.accept_progress_jobber_invoice_number(jsonb)',
+      'EXECUTE'
+    ),
+  true,
+  'service role is not an alternate authenticated context or number command surface'
+);
+
+SELECT is(
+  public.progress_jobber_sydney_date('2026-01-01'),
+  '2026-01-01'::DATE,
+  'Jobber date-only metadata remains the same calendar date'
+);
+
+SELECT is(
+  public.progress_jobber_sydney_date('2026-01-01T13:30:00Z'),
+  '2026-01-02'::DATE,
+  'Jobber UTC timestamp crosses the AEDT calendar boundary explicitly'
+);
+
+SELECT is(
+  public.progress_jobber_sydney_date('2026-07-01T14:30:00Z'),
+  '2026-07-02'::DATE,
+  'Jobber UTC timestamp crosses the AEST calendar boundary explicitly'
+);
+
+SELECT throws_ok(
+  $$SELECT public.progress_jobber_sydney_date('2026-07-01T14:30:00')$$,
+  'P0001',
+  'PROGRESS_JOBBER_ERROR',
+  'timezone-less Jobber date-times are rejected'
+);
+
+SELECT is(
+  EXISTS (
+    SELECT 1
+    FROM pg_catalog.pg_constraint AS constraint_row
+    WHERE constraint_row.conname = 'progress_invoice_series_jobber_sync_error_code_check'
+      AND constraint_row.conrelid = 'public.progress_invoice_series'::regclass
+  ),
+  true,
+  'series sync errors are constrained to the bounded safe allowlist'
+);
+
+CREATE FUNCTION pg_temp.task7_payment(
+  requested_id TEXT,
+  requested_amount TEXT,
+  requested_method TEXT,
+  requested_reference TEXT,
+  requested_direction TEXT DEFAULT 'receipt',
+  requested_treatment TEXT DEFAULT 'active'
+)
+RETURNS JSONB
+LANGUAGE sql
+IMMUTABLE
+AS $$
+  SELECT jsonb_build_object(
+    'jobber_payment_id', requested_id,
+    'source', 'payment_record',
+    'raw_adjustment_type', CASE
+      WHEN requested_direction = 'refund' THEN 'REFUND'
+      WHEN requested_direction = 'reversal' THEN 'FAILED_ACH_PAYMENT'
+      ELSE 'PAYMENT'
+    END,
+    'raw_signed_amount', requested_amount,
+    'absolute_amount', ltrim(requested_amount, '-'),
+    'direction', requested_direction,
+    'effective_amount', requested_amount,
+    'entry_date', '2026-01-02',
+    'method', requested_method,
+    'reference', requested_reference,
+    'external_status', 'SUCCEEDED',
+    'external_updated_at', NULL,
+    'treatment', requested_treatment
+  );
+$$;
+
+CREATE FUNCTION pg_temp.task7_observation(
+  requested_fingerprint TEXT,
+  requested_invoice_number TEXT,
+  requested_payments JSONB
+)
+RETURNS JSONB
+LANGUAGE sql
+IMMUTABLE
+AS $$
+  SELECT jsonb_build_object(
+    'account_id', 'task7-account',
+    'invoice_id', 'task7-invoice',
+    'invoice_number', requested_invoice_number,
+    'raw_status', 'awaiting_payment',
+    'normalized_status', 'awaiting_payment',
+    'jobber_web_uri', 'https://secure.getjobber.com/invoices/task7-invoice',
+    'invoice_subtotal', '1000.00',
+    'invoice_tax_amount', '100.00',
+    'invoice_total', '1100.00',
+    'invoice_balance', '825.00',
+    'invoice_payments_total', '275.00',
+    'invoice_issued_date', '2026-01-01T13:30:00Z',
+    'invoice_due_date', '2026-01-15',
+    'invoice_received_date', NULL,
+    'external_created_at', '2026-01-01T00:00:00Z',
+    'external_updated_at', '2026-01-02T00:00:00Z',
+    'client_id', 'task7-client',
+    'client_name', 'Task 7 Builder',
+    'client_company_name', 'Task 7 Builder Pty Ltd',
+    'client_email', 'accounts@example.test',
+    'client_phone', NULL,
+    'client_email_candidates', jsonb_build_array('accounts@example.test'),
+    'client_phone_candidates', jsonb_build_array(
+      jsonb_build_object('number', '0400000000', 'primary', true),
+      jsonb_build_object('number', '0411111111', 'primary', true)
+    ),
+    'billing_address', '1 Billing Street, Sydney NSW 2000, Australia',
+    'job_ids', jsonb_build_array('task7-job-1', 'task7-job-2'),
+    'property_ids', jsonb_build_array('task7-property-1', 'task7-property-2'),
+    'site_address_candidates', jsonb_build_array(
+      jsonb_build_object(
+        'property_id', 'task7-property-1',
+        'address', '4 Curra Close, Frenchs Forest NSW 2086, Australia'
+      ),
+      jsonb_build_object('property_id', 'task7-property-2', 'address', NULL)
+    ),
+    'selected_job_id', 'task7-job-2',
+    'selected_property_id', 'task7-property-1',
+    'effective_graphql_version', '2025-04-16',
+    'payment_eligibility_policy_version', '2026-07-v1',
+    'fetched_at', '2026-01-02T01:00:00Z',
+    'response_fingerprint', requested_fingerprint,
+    'warnings', '[]'::JSONB,
+    'payments', requested_payments
+  );
+$$;
+
+CREATE FUNCTION pg_temp.task7_link_payload(
+  requested_series_id UUID,
+  requested_version INT,
+  requested_key UUID,
+  requested_fingerprint TEXT,
+  requested_observation JSONB
+)
+RETURNS JSONB
+LANGUAGE sql
+IMMUTABLE
+AS $$
+  SELECT jsonb_build_object(
+    'actor_id', '00000000-0000-0000-0000-000000008101',
+    'series_id', requested_series_id,
+    'expected_version', requested_version,
+    'correlation_key', requested_key,
+    'request_fingerprint', requested_fingerprint,
+    'observation', requested_observation
+  );
+$$;
+
+CREATE FUNCTION pg_temp.task7_create_series(requested_label TEXT)
+RETURNS UUID
+LANGUAGE plpgsql
+AS $$
+DECLARE
+  created_id UUID;
+BEGIN
+  INSERT INTO public.progress_invoice_series (
+    source_type,
+    base_contract_ex_gst,
+    recipient_name,
+    recipient_address,
+    site_name,
+    site_address,
+    default_description,
+    created_by,
+    updated_by
+  ) VALUES (
+    'jobber_invoice',
+    1000.00,
+    requested_label || ' Recipient',
+    requested_label || ' Address',
+    requested_label || ' Site',
+    requested_label || ' Site Address',
+    requested_label,
+    '00000000-0000-0000-0000-000000008101',
+    '00000000-0000-0000-0000-000000008101'
+  )
+  RETURNING id INTO created_id;
+
+  RETURN created_id;
+END;
+$$;
+
+CREATE TEMP TABLE task7_series_result (id UUID PRIMARY KEY);
+WITH inserted AS (
+  INSERT INTO public.progress_invoice_series (
+    source_type,
+    base_contract_ex_gst,
+    recipient_name,
+    recipient_address,
+    site_name,
+    site_address,
+    default_description,
+    created_by,
+    updated_by
+  ) VALUES (
+    'jobber_invoice',
+    1000.00,
+    'Task 7 Initial Recipient',
+    'Task 7 Initial Address',
+    'Task 7 Initial Site',
+    'Task 7 Initial Site Address',
+    'Task 7 Jobber Invoice',
+    '00000000-0000-0000-0000-000000008101',
+    '00000000-0000-0000-0000-000000008101'
+  )
+  RETURNING id
+)
+INSERT INTO task7_series_result (id)
+SELECT id FROM inserted;
+
+-- Task 5 assertions are complete. Repoint its temporary result holder so the
+-- existing Task 7 expressions below operate on an isolated, claim-free series.
+UPDATE task5_standalone_result
+SET id = (SELECT id FROM task7_series_result);
+
+CREATE TEMP TABLE task7_initial_link_payload AS
+SELECT pg_temp.task7_link_payload(
+  series.id,
+  series.version,
+  '82000000-0000-4000-8000-000000000001',
+  repeat('1', 64),
+  pg_temp.task7_observation(
+    repeat('a', 64),
+    'INV-100',
+    jsonb_build_array(pg_temp.task7_payment('task7-payment-1', '275.00', NULL, NULL))
+  )
+) AS payload
+FROM public.progress_invoice_series AS series
+WHERE series.id = (SELECT id FROM task5_standalone_result);
+
+CREATE TEMP TABLE task7_link_result AS
+SELECT *
+FROM public.link_progress_jobber_invoice(
+  (SELECT payload FROM task7_initial_link_payload)
+);
+
+-- Task 7 behavior assertion 1
+SELECT is(
+  (SELECT series_id FROM task7_link_result),
+  (SELECT id FROM task5_standalone_result),
+  'first Jobber link returns the linked series'
+);
+
+-- Task 7 behavior assertion 2
+SELECT is(
+  (
+    SELECT jsonb_build_object(
+      'issued', snapshot.issued_date,
+      'payments_total', snapshot.invoice_payments_total,
+      'emails', snapshot.client_email_candidates,
+      'phones', snapshot.client_phone_candidates
+    )
+    FROM public.progress_jobber_invoice_snapshots AS snapshot
+    WHERE snapshot.id = (
+      SELECT series.current_jobber_snapshot_id
+      FROM public.progress_invoice_series AS series
+      WHERE series.id = (SELECT id FROM task5_standalone_result)
+    )
+  ),
+  jsonb_build_object(
+    'issued', '2026-01-02'::DATE,
+    'payments_total', 275.00::NUMERIC,
+    'emails', jsonb_build_array('accounts@example.test'),
+    'phones', jsonb_build_array(
+      jsonb_build_object('number', '0400000000', 'primary', true),
+      jsonb_build_object('number', '0411111111', 'primary', true)
+    )
+  ),
+  'first link stores complete immutable observation evidence'
+);
+
+-- Task 7 behavior assertion 3
+SELECT is(
+  (
+    SELECT jsonb_build_object(
+      'original', series.original_jobber_invoice_number,
+      'accepted', series.accepted_numbering_base,
+      'recipient', series.recipient_name,
+      'email', series.recipient_email,
+      'phone', series.recipient_phone,
+      'site', series.site_address
+    )
+    FROM public.progress_invoice_series AS series
+    WHERE series.id = (SELECT id FROM task5_standalone_result)
+  ),
+  jsonb_build_object(
+    'original', 'INV-100',
+    'accepted', 'INV-100',
+    'recipient', 'Task 7 Builder',
+    'email', 'accounts@example.test',
+    'phone', NULL,
+    'site', '4 Curra Close, Frenchs Forest NSW 2086, Australia'
+  ),
+  'first link separates numbering and applies only deterministic editable prefill'
+);
+
+-- Task 7 behavior assertion 4
+SELECT is(
+  (
+    SELECT jsonb_build_object(
+      'payment_version', payment.version,
+      'revision_number', revision.revision_number,
+      'pointer', payment.current_revision_id = revision.id,
+      'method', revision.payment_method,
+      'reference', revision.reference,
+      'status', revision.status
+    )
+    FROM public.progress_payments AS payment
+    JOIN public.progress_payment_revisions AS revision
+      ON revision.id = payment.current_revision_id
+     AND revision.payment_id = payment.id
+    WHERE payment.series_id = (SELECT id FROM task5_standalone_result)
+      AND payment.jobber_payment_id = 'task7-payment-1'
+  ),
+  jsonb_build_object(
+    'payment_version', 1,
+    'revision_number', 1,
+    'pointer', true,
+    'method', NULL,
+    'reference', NULL,
+    'status', 'active'
+  ),
+  'new Jobber payment identity, revision one, and current pointer commit together'
+);
+
+-- Task 7 behavior assertion 5
+SELECT is(
+  (
+    SELECT jsonb_build_object(
+      'receipts', series.current_actual_receipts,
+      'credit', series.current_credit_balance,
+      'state', series.current_payment_state
+    )
+    FROM public.progress_invoice_series AS series
+    WHERE series.id = (SELECT id FROM task5_standalone_result)
+  ),
+  jsonb_build_object('receipts', 275.00::NUMERIC, 'credit', 275.00::NUMERIC, 'state', 'credit_balance'),
+  'signed Jobber receipts feed the cached financial read model'
+);
+
+-- Task 7 behavior assertion 6
+SELECT is(
+  (
+    SELECT count(*)::INT = 1
+      AND bool_and(event.actor_id = '00000000-0000-0000-0000-000000008101'::UUID)
+      AND bool_and(event.safe_field_changes = jsonb_build_object(
+        'identity_changed', true,
+        'selector_changed', true,
+        'snapshot_advanced', true
+      ))
+      AND bool_and(event.safe_field_changes::TEXT !~ 'Task 7 Builder|275.00|accounts@example')
+    FROM public.progress_invoice_events AS event
+    WHERE event.series_id = (SELECT id FROM task5_standalone_result)
+      AND event.command_name = 'link_progress_jobber_invoice'
+      AND event.correlation_key = '82000000-0000-4000-8000-000000000001'
+  ),
+  true,
+  'link audit is actor-attributed and contains no PII or financial values'
+);
+
+SELECT *
+FROM public.link_progress_jobber_invoice(
+  (SELECT payload FROM task7_initial_link_payload)
+);
+
+-- Task 7 behavior assertion 7
+SELECT is(
+  (
+    SELECT jsonb_build_object(
+      'snapshots', (
+        SELECT count(*) FROM public.progress_jobber_invoice_snapshots
+        WHERE series_id = series.id
+      ),
+      'revisions', (
+        SELECT count(*)
+        FROM public.progress_payment_revisions AS revision
+        JOIN public.progress_payments AS payment ON payment.id = revision.payment_id
+        WHERE payment.series_id = series.id
+      ),
+      'events', (
+        SELECT count(*) FROM public.progress_invoice_events
+        WHERE series_id = series.id
+          AND command_name = 'link_progress_jobber_invoice'
+          AND correlation_key = '82000000-0000-4000-8000-000000000001'
+      )
+    )
+    FROM public.progress_invoice_series AS series
+    WHERE series.id = (SELECT id FROM task5_standalone_result)
+  ),
+  jsonb_build_object('snapshots', 1, 'revisions', 1, 'events', 1),
+  'exact link replay returns before locks and appends no evidence'
+);
+
+-- Task 7 behavior assertion 8
+SELECT throws_ok(
+  format(
+    'SELECT * FROM public.link_progress_jobber_invoice(%L::JSONB)',
+    (
+      (SELECT payload FROM task7_initial_link_payload)
+      || jsonb_build_object('request_fingerprint', repeat('2', 64))
+    )::TEXT
+  ),
+  'P0001',
+  'IDEMPOTENCY_KEY_REUSED',
+  'same link key with a different request fingerprint is rejected atomically'
+);
+
+UPDATE public.progress_invoice_series
+SET recipient_name = 'User Edited Recipient',
+    recipient_address = 'User Edited Billing Address',
+    site_address = 'User Edited Site Address',
+    updated_by = '00000000-0000-0000-0000-000000008101'
+WHERE id = (SELECT id FROM task5_standalone_result);
+
+CREATE TEMP TABLE task7_refresh_result AS
+SELECT *
+FROM public.apply_progress_invoice_jobber_refresh(jsonb_build_object(
+  'actor_id', '00000000-0000-0000-0000-000000008101',
+  'series_id', (SELECT id FROM task5_standalone_result),
+  'expected_version', (
+    SELECT version FROM public.progress_invoice_series
+    WHERE id = (SELECT id FROM task5_standalone_result)
+  ),
+  'idempotency_key', '82000000-0000-4000-8000-000000000002',
+  'request_fingerprint', repeat('3', 64),
+  'observation', pg_temp.task7_observation(
+    repeat('b', 64),
+    'INV-101',
+    jsonb_build_array(pg_temp.task7_payment(
+      'task7-payment-1', '300.00', 'EFT', 'RECEIPT-300'
+    ))
+  )
+));
+
+-- Task 7 behavior assertion 9
+SELECT is(
+  (
+    SELECT jsonb_build_object(
+      'inserted', inserted_payments,
+      'revised', revised_payments,
+      'unconfirmed', unconfirmed_payments
+    ) FROM task7_refresh_result
+  ),
+  jsonb_build_object('inserted', 0, 'revised', 1, 'unconfirmed', 0),
+  'changed payment evidence appends exactly one revision'
+);
+
+-- Task 7 behavior assertion 10
+SELECT is(
+  (
+    SELECT jsonb_build_object(
+      'snapshot_count', count(*),
+      'original', min(snapshot.original_invoice_number),
+      'latest', max(snapshot.observed_invoice_number)
+    )
+    FROM public.progress_jobber_invoice_snapshots AS snapshot
+    WHERE snapshot.series_id = (SELECT id FROM task5_standalone_result)
+  ),
+  jsonb_build_object('snapshot_count', 2, 'original', 'INV-100', 'latest', 'INV-101'),
+  'changed observation advances immutable latest evidence while preserving original numbering'
+);
+
+-- Task 7 behavior assertion 11
+SELECT is(
+  (
+    SELECT jsonb_build_object(
+      'recipient', series.recipient_name,
+      'billing', series.recipient_address,
+      'site', series.site_address,
+      'accepted', series.accepted_numbering_base
+    )
+    FROM public.progress_invoice_series AS series
+    WHERE series.id = (SELECT id FROM task5_standalone_result)
+  ),
+  jsonb_build_object(
+    'recipient', 'User Edited Recipient',
+    'billing', 'User Edited Billing Address',
+    'site', 'User Edited Site Address',
+    'accepted', 'INV-100'
+  ),
+  'refresh preserves user-edited snapshots and accepted numbering'
+);
+
+-- Task 7 behavior assertion 12
+SELECT is(
+  (
+    SELECT jsonb_build_object(
+      'version', payment.version,
+      'revision', revision.revision_number,
+      'effective', revision.effective_receipt_amount,
+      'method', revision.payment_method,
+      'reference', revision.reference
+    )
+    FROM public.progress_payments AS payment
+    JOIN public.progress_payment_revisions AS revision
+      ON revision.id = payment.current_revision_id
+    WHERE payment.series_id = (SELECT id FROM task5_standalone_result)
+      AND payment.jobber_payment_id = 'task7-payment-1'
+  ),
+  jsonb_build_object(
+    'version', 2,
+    'revision', 2,
+    'effective', 300.00::NUMERIC,
+    'method', 'EFT',
+    'reference', 'RECEIPT-300'
+  ),
+  'amount, method, and reference changes advance one stable payment version'
+);
+
+-- Task 7 behavior assertion 13
+SELECT is(
+  (
+    SELECT jsonb_build_object(
+      'receipts', current_actual_receipts,
+      'credit', current_credit_balance,
+      'state', current_payment_state
+    )
+    FROM public.progress_invoice_series
+    WHERE id = (SELECT id FROM task5_standalone_result)
+  ),
+  jsonb_build_object('receipts', 300.00::NUMERIC, 'credit', 300.00::NUMERIC, 'state', 'credit_balance'),
+  'changed signed effect is reflected in the read model'
+);
+
+CREATE TEMP TABLE task7_disappearance_result AS
+SELECT *
+FROM public.apply_progress_invoice_jobber_refresh(jsonb_build_object(
+  'actor_id', '00000000-0000-0000-0000-000000008101',
+  'series_id', (SELECT id FROM task5_standalone_result),
+  'expected_version', (
+    SELECT version FROM public.progress_invoice_series
+    WHERE id = (SELECT id FROM task5_standalone_result)
+  ),
+  'idempotency_key', '82000000-0000-4000-8000-000000000003',
+  'request_fingerprint', repeat('4', 64),
+  'observation', pg_temp.task7_observation(repeat('c', 64), 'INV-101', '[]'::JSONB)
+));
+
+-- Task 7 behavior assertion 14
+SELECT is(
+  (SELECT unconfirmed_payments FROM task7_disappearance_result),
+  1,
+  'first complete-observation disappearance appends one Unconfirmed revision'
+);
+
+-- Task 7 behavior assertion 15
+SELECT is(
+  (
+    SELECT jsonb_build_object(
+      'version', payment.version,
+      'revision', revision.revision_number,
+      'effective', revision.effective_receipt_amount,
+      'sync', revision.sync_state,
+      'status', revision.status
+    )
+    FROM public.progress_payments AS payment
+    JOIN public.progress_payment_revisions AS revision
+      ON revision.id = payment.current_revision_id
+    WHERE payment.series_id = (SELECT id FROM task5_standalone_result)
+      AND payment.jobber_payment_id = 'task7-payment-1'
+  ),
+  jsonb_build_object(
+    'version', 3,
+    'revision', 3,
+    'effective', 0.00::NUMERIC,
+    'sync', 'disappeared',
+    'status', 'unconfirmed'
+  ),
+  'disappearance preserves identity with a zero-effect current revision'
+);
+
+-- Task 7 behavior assertion 16
+SELECT is(
+  (
+    SELECT jsonb_build_object(
+      'receipts', current_actual_receipts,
+      'state', current_payment_state
+    )
+    FROM public.progress_invoice_series
+    WHERE id = (SELECT id FROM task5_standalone_result)
+  ),
+  jsonb_build_object('receipts', 0.00::NUMERIC, 'state', 'unpaid'),
+  'Unconfirmed disappeared evidence does not count as a receipt'
+);
+
+SELECT *
+FROM public.apply_progress_invoice_jobber_refresh(jsonb_build_object(
+  'actor_id', '00000000-0000-0000-0000-000000008101',
+  'series_id', (SELECT id FROM task5_standalone_result),
+  'expected_version', (
+    SELECT version FROM public.progress_invoice_series
+    WHERE id = (SELECT id FROM task5_standalone_result)
+  ),
+  'idempotency_key', '82000000-0000-4000-8000-000000000004',
+  'request_fingerprint', repeat('4', 64),
+  'observation', pg_temp.task7_observation(repeat('c', 64), 'INV-101', '[]'::JSONB)
+));
+
+-- Task 7 behavior assertion 17
+SELECT is(
+  (
+    SELECT jsonb_build_object(
+      'snapshot_count', (
+        SELECT count(*) FROM public.progress_jobber_invoice_snapshots
+        WHERE series_id = payment.series_id
+      ),
+      'payment_version', payment.version,
+      'revision_count', (
+        SELECT count(*) FROM public.progress_payment_revisions
+        WHERE payment_id = payment.id
+      )
+    )
+    FROM public.progress_payments AS payment
+    WHERE payment.series_id = (SELECT id FROM task5_standalone_result)
+      AND payment.jobber_payment_id = 'task7-payment-1'
+  ),
+  jsonb_build_object('snapshot_count', 3, 'payment_version', 3, 'revision_count', 3),
+  'unchanged fingerprint under a new key reuses evidence and adds no payment revision'
+);
+
+SELECT *
+FROM public.apply_progress_invoice_jobber_refresh(jsonb_build_object(
+  'actor_id', '00000000-0000-0000-0000-000000008101',
+  'series_id', (SELECT id FROM task5_standalone_result),
+  'expected_version', (
+    SELECT version FROM public.progress_invoice_series
+    WHERE id = (SELECT id FROM task5_standalone_result)
+  ),
+  'idempotency_key', '82000000-0000-4000-8000-000000000005',
+  'request_fingerprint', repeat('5', 64),
+  'observation', pg_temp.task7_observation(
+    repeat('d', 64),
+    'INV-101',
+    jsonb_build_array(pg_temp.task7_payment(
+      'task7-payment-1', '300.00', 'EFT', 'RECEIPT-300'
+    ))
+  )
+));
+
+-- Task 7 behavior assertion 18
+SELECT is(
+  (
+    SELECT jsonb_build_object(
+      'version', payment.version,
+      'revision', revision.revision_number,
+      'status', revision.status,
+      'receipts', series.current_actual_receipts
+    )
+    FROM public.progress_payments AS payment
+    JOIN public.progress_payment_revisions AS revision
+      ON revision.id = payment.current_revision_id
+    JOIN public.progress_invoice_series AS series ON series.id = payment.series_id
+    WHERE payment.series_id = (SELECT id FROM task5_standalone_result)
+      AND payment.jobber_payment_id = 'task7-payment-1'
+  ),
+  jsonb_build_object(
+    'version', 4,
+    'revision', 4,
+    'status', 'active',
+    'receipts', 300.00::NUMERIC
+  ),
+  'reappearing payment appends one active revision and restores receipts'
+);
+
+SELECT *
+FROM public.link_progress_jobber_invoice(
+  pg_temp.task7_link_payload(
+    (SELECT id FROM task5_standalone_result),
+    (
+      SELECT version FROM public.progress_invoice_series
+      WHERE id = (SELECT id FROM task5_standalone_result)
+    ),
+    '82000000-0000-4000-8000-000000000014',
+    repeat('9', 64),
+    pg_temp.task7_observation(
+      repeat('d', 64),
+      'INV-101',
+      jsonb_build_array(pg_temp.task7_payment(
+        'task7-payment-1', '300.00', 'EFT', 'RECEIPT-300'
+      ))
+    )
+  )
+);
+
+SELECT is(
+  (
+    SELECT safe_field_changes
+    FROM public.progress_invoice_events
+    WHERE series_id = (SELECT id FROM task5_standalone_result)
+      AND command_name = 'link_progress_jobber_invoice'
+      AND correlation_key = '82000000-0000-4000-8000-000000000014'
+  ),
+  jsonb_build_object(
+    'identity_changed', false,
+    'selector_changed', false,
+    'snapshot_advanced', true
+  ),
+  'same-identity relink records unchanged selectors instead of a hardcoded change'
+);
+
+INSERT INTO public.progress_payments (
+  id,
+  series_id,
+  source,
+  version,
+  created_by,
+  updated_by
+) VALUES (
+  '00000000-0000-0000-0000-000000008701',
+  (SELECT id FROM task5_standalone_result),
+  'manual',
+  4,
+  '00000000-0000-0000-0000-000000008101',
+  '00000000-0000-0000-0000-000000008101'
+);
+
+INSERT INTO public.progress_payment_revisions (
+  id,
+  payment_id,
+  revision_number,
+  received_date,
+  observed_amount,
+  effective_receipt_amount,
+  payment_method,
+  reference,
+  sync_state,
+  status,
+  created_by
+) VALUES (
+  '00000000-0000-0000-0000-000000008702',
+  '00000000-0000-0000-0000-000000008701',
+  1,
+  '2026-01-02',
+  25.00,
+  25.00,
+  'EFT',
+  'MANUAL-25',
+  'manual',
+  'active',
+  '00000000-0000-0000-0000-000000008101'
+);
+
+UPDATE public.progress_payments
+SET current_revision_id = '00000000-0000-0000-0000-000000008702'
+WHERE id = '00000000-0000-0000-0000-000000008701';
+
+UPDATE public.progress_payments
+SET matched_manual_payment_id = '00000000-0000-0000-0000-000000008701'
+WHERE series_id = (SELECT id FROM task5_standalone_result)
+  AND jobber_payment_id = 'task7-payment-1';
+
+CREATE TEMP TABLE task7_manual_before AS
+SELECT
+  to_jsonb(manual_payment) AS payment_row,
+  to_jsonb(manual_revision) AS revision_row,
+  jobber_payment.matched_manual_payment_id
+FROM public.progress_payments AS manual_payment
+JOIN public.progress_payment_revisions AS manual_revision
+  ON manual_revision.id = manual_payment.current_revision_id
+JOIN public.progress_payments AS jobber_payment
+  ON jobber_payment.series_id = manual_payment.series_id
+ AND jobber_payment.jobber_payment_id = 'task7-payment-1'
+WHERE manual_payment.id = '00000000-0000-0000-0000-000000008701';
+
+CREATE TEMP TABLE task7_suggestion_refresh_payload AS
+SELECT jsonb_build_object(
+  'actor_id', '00000000-0000-0000-0000-000000008101',
+  'series_id', (SELECT id FROM task5_standalone_result),
+  'expected_version', (
+    SELECT version FROM public.progress_invoice_series
+    WHERE id = (SELECT id FROM task5_standalone_result)
+  ),
+  'idempotency_key', '82000000-0000-4000-8000-000000000015',
+  'request_fingerprint', repeat('a', 64),
+  'observation', pg_temp.task7_observation(
+    repeat('e', 64),
+    'INV-101',
+    jsonb_build_array(pg_temp.task7_payment(
+      'task7-payment-1', '300.00', 'EFT', 'RECEIPT-300'
+    ))
+  ) || jsonb_build_object(
+    'client_email', 'billing@example.test',
+    'client_email_candidates', jsonb_build_array('billing@example.test'),
+    'client_phone', '0400000000',
+    'client_phone_candidates', jsonb_build_array(
+      jsonb_build_object('number', '0400000000', 'primary', true)
+    ),
+    'site_address_candidates', jsonb_build_array(
+      jsonb_build_object(
+        'property_id', 'task7-property-1',
+        'address', '6 Curra Close, Frenchs Forest NSW 2086, Australia'
+      ),
+      jsonb_build_object('property_id', 'task7-property-2', 'address', NULL)
+    )
+  )
+) AS payload;
+
+CREATE TEMP TABLE task7_suggestion_refresh_result AS
+SELECT *
+FROM public.apply_progress_invoice_jobber_refresh(
+  (SELECT payload FROM task7_suggestion_refresh_payload)
+);
+
+SELECT is(
+  (
+    SELECT safe_field_changes
+    FROM public.progress_invoice_events
+    WHERE series_id = (SELECT id FROM task5_standalone_result)
+      AND command_name = 'apply_progress_invoice_jobber_refresh'
+      AND correlation_key = '82000000-0000-4000-8000-000000000015'
+  ),
+  jsonb_build_object(
+    'snapshot_advanced', true,
+    'invoice_number_changed', false,
+    'recipient_suggestion_changed', true,
+    'site_suggestion_changed', true
+  ),
+  'contact-only and selected-site candidate changes surface bounded suggestion flags'
+);
+
+SELECT is(
+  (
+    SELECT jsonb_build_object(
+      'payment_unchanged', before.payment_row = to_jsonb(manual_payment),
+      'revision_unchanged', before.revision_row = to_jsonb(manual_revision),
+      'pointer_unchanged',
+        manual_payment.current_revision_id = '00000000-0000-0000-0000-000000008702',
+      'match_unchanged',
+        jobber_payment.matched_manual_payment_id = before.matched_manual_payment_id
+    )
+    FROM task7_manual_before AS before
+    JOIN public.progress_payments AS manual_payment
+      ON manual_payment.id = '00000000-0000-0000-0000-000000008701'
+    JOIN public.progress_payment_revisions AS manual_revision
+      ON manual_revision.id = manual_payment.current_revision_id
+    JOIN public.progress_payments AS jobber_payment
+      ON jobber_payment.series_id = manual_payment.series_id
+     AND jobber_payment.jobber_payment_id = 'task7-payment-1'
+  ),
+  jsonb_build_object(
+    'payment_unchanged', true,
+    'revision_unchanged', true,
+    'pointer_unchanged', true,
+    'match_unchanged', true
+  ),
+  'refresh preserves the complete Manual payment row, revision, version, pointer, and match'
+);
+
+CREATE TEMP TABLE task7_before_refresh_replay AS
+SELECT jsonb_build_object(
+  'version', series.version,
+  'snapshot', series.current_jobber_snapshot_id,
+  'snapshots', (
+    SELECT count(*) FROM public.progress_jobber_invoice_snapshots
+    WHERE series_id = series.id
+  ),
+  'payment_revisions', (
+    SELECT count(*)
+    FROM public.progress_payment_revisions AS revision
+    JOIN public.progress_payments AS payment ON payment.id = revision.payment_id
+    WHERE payment.series_id = series.id
+  ),
+  'events', (
+    SELECT count(*) FROM public.progress_invoice_events
+    WHERE series_id = series.id
+      AND command_name = 'apply_progress_invoice_jobber_refresh'
+      AND correlation_key = '82000000-0000-4000-8000-000000000015'
+  )
+) AS state
+FROM public.progress_invoice_series AS series
+WHERE series.id = (SELECT id FROM task5_standalone_result);
+
+SELECT *
+FROM public.apply_progress_invoice_jobber_refresh(
+  (SELECT payload FROM task7_suggestion_refresh_payload)
+);
+
+SELECT is(
+  (
+    SELECT jsonb_build_object(
+      'version', series.version,
+      'snapshot', series.current_jobber_snapshot_id,
+      'snapshots', (
+        SELECT count(*) FROM public.progress_jobber_invoice_snapshots
+        WHERE series_id = series.id
+      ),
+      'payment_revisions', (
+        SELECT count(*)
+        FROM public.progress_payment_revisions AS revision
+        JOIN public.progress_payments AS payment ON payment.id = revision.payment_id
+        WHERE payment.series_id = series.id
+      ),
+      'events', (
+        SELECT count(*) FROM public.progress_invoice_events
+        WHERE series_id = series.id
+          AND command_name = 'apply_progress_invoice_jobber_refresh'
+          AND correlation_key = '82000000-0000-4000-8000-000000000015'
+      )
+    )
+    FROM public.progress_invoice_series AS series
+    WHERE series.id = (SELECT id FROM task5_standalone_result)
+  ),
+  (SELECT state FROM task7_before_refresh_replay),
+  'exact refresh replay returns before locks and appends no observation, revision, or event'
+);
+
+SELECT throws_ok(
+  format(
+    'SELECT * FROM public.apply_progress_invoice_jobber_refresh(%L::JSONB)',
+    (
+      (SELECT payload FROM task7_suggestion_refresh_payload)
+      || jsonb_build_object('request_fingerprint', repeat('b', 64))
+    )::TEXT
+  ),
+  'P0001',
+  'IDEMPOTENCY_KEY_REUSED',
+  'same refresh key with a different request fingerprint is rejected'
+);
+
+SELECT is(
+  (
+    SELECT jsonb_build_object(
+      'version', series.version,
+      'snapshot', series.current_jobber_snapshot_id,
+      'snapshots', (
+        SELECT count(*) FROM public.progress_jobber_invoice_snapshots
+        WHERE series_id = series.id
+      ),
+      'payment_revisions', (
+        SELECT count(*)
+        FROM public.progress_payment_revisions AS revision
+        JOIN public.progress_payments AS payment ON payment.id = revision.payment_id
+        WHERE payment.series_id = series.id
+      ),
+      'events', (
+        SELECT count(*) FROM public.progress_invoice_events
+        WHERE series_id = series.id
+          AND command_name = 'apply_progress_invoice_jobber_refresh'
+          AND correlation_key = '82000000-0000-4000-8000-000000000015'
+      )
+    )
+    FROM public.progress_invoice_series AS series
+    WHERE series.id = (SELECT id FROM task5_standalone_result)
+  ),
+  (SELECT state FROM task7_before_refresh_replay),
+  'rejected refresh key reuse leaves series, observation, ledger, and audit unchanged'
+);
+
+CREATE TEMP TABLE task7_before_failure AS
+SELECT
+  series.current_jobber_snapshot_id,
+  series.last_jobber_sync_attempt_at,
+  series.last_successful_jobber_sync_at,
+  series.last_jobber_sync_error_code,
+  series.version,
+  payment.version AS payment_version,
+  payment.current_revision_id
+FROM public.progress_invoice_series AS series
+JOIN public.progress_payments AS payment ON payment.series_id = series.id
+WHERE series.id = (SELECT id FROM task5_standalone_result)
+  AND payment.jobber_payment_id = 'task7-payment-1';
+
+SELECT throws_ok(
+  format(
+    'SELECT * FROM public.record_progress_jobber_refresh_failure(%L::JSONB)',
+    jsonb_build_object(
+      'actor_id', '00000000-0000-0000-0000-000000008101',
+      'series_id', (SELECT id FROM task5_standalone_result),
+      'expected_version', (SELECT version FROM task7_before_failure),
+      'jobber_account_id', 'wrong-account',
+      'jobber_invoice_id', 'task7-invoice',
+      'idempotency_key', '82000000-0000-4000-8000-000000000016',
+      'error_code', 'JOBBER_RATE_LIMITED'
+    )::TEXT
+  ),
+  'P0001',
+  'PROGRESS_VERSION_CONFLICT',
+  'failure recording rejects a wrong locked account or invoice identity'
+);
+
+SELECT is(
+  (
+    SELECT jsonb_build_object(
+      'attempt_preserved',
+        series.last_jobber_sync_attempt_at = before_failure.last_jobber_sync_attempt_at,
+      'success_preserved',
+        series.last_successful_jobber_sync_at = before_failure.last_successful_jobber_sync_at,
+      'error_preserved',
+        series.last_jobber_sync_error_code IS NOT DISTINCT FROM
+          before_failure.last_jobber_sync_error_code,
+      'version_preserved', series.version = before_failure.version,
+      'event_absent', NOT EXISTS (
+        SELECT 1 FROM public.progress_invoice_events
+        WHERE series_id = series.id
+          AND correlation_key = '82000000-0000-4000-8000-000000000016'
+      )
+    )
+    FROM public.progress_invoice_series AS series
+    JOIN task7_before_failure AS before_failure ON true
+    WHERE series.id = (SELECT id FROM task5_standalone_result)
+  ),
+  jsonb_build_object(
+    'attempt_preserved', true,
+    'success_preserved', true,
+    'error_preserved', true,
+    'version_preserved', true,
+    'event_absent', true
+  ),
+  'wrong-identity failure guard rolls back attempt metadata and audit state'
+);
+
+SELECT *
+FROM public.record_progress_jobber_refresh_failure(jsonb_build_object(
+  'actor_id', '00000000-0000-0000-0000-000000008101',
+  'series_id', (SELECT id FROM task5_standalone_result),
+  'expected_version', (SELECT version FROM task7_before_failure),
+  'jobber_account_id', 'task7-account',
+  'jobber_invoice_id', 'task7-invoice',
+  'idempotency_key', '82000000-0000-4000-8000-000000000006',
+  'error_code', 'JOBBER_RATE_LIMITED'
+));
+
+-- Task 7 behavior assertion 19
+SELECT is(
+  (
+    SELECT jsonb_build_object(
+      'snapshot_preserved',
+        series.current_jobber_snapshot_id = before_failure.current_jobber_snapshot_id,
+      'success_preserved',
+        series.last_successful_jobber_sync_at = before_failure.last_successful_jobber_sync_at,
+      'version_preserved', series.version = before_failure.version,
+      'payment_preserved',
+        payment.version = before_failure.payment_version
+          AND payment.current_revision_id = before_failure.current_revision_id
+    )
+    FROM public.progress_invoice_series AS series
+    JOIN task7_before_failure AS before_failure ON true
+    JOIN public.progress_payments AS payment ON payment.series_id = series.id
+    WHERE series.id = (SELECT id FROM task5_standalone_result)
+      AND payment.jobber_payment_id = 'task7-payment-1'
+  ),
+  jsonb_build_object(
+    'snapshot_preserved', true,
+    'success_preserved', true,
+    'version_preserved', true,
+    'payment_preserved', true
+  ),
+  'failure recording preserves observation, ledger, last success, and series version'
+);
+
+-- Task 7 behavior assertion 20
+SELECT is(
+  (
+    SELECT last_jobber_sync_error_code = 'JOBBER_RATE_LIMITED'
+      AND last_jobber_sync_attempt_at IS NOT NULL
+    FROM public.progress_invoice_series
+    WHERE id = (SELECT id FROM task5_standalone_result)
+  ),
+  true,
+  'failure recording updates only bounded attempt metadata'
+);
+
+-- Task 7 behavior assertion 21
+SELECT is(
+  (
+    SELECT count(*)::INT = 1
+      AND bool_and(event.safe_field_changes = jsonb_build_object(
+        'error_code', 'JOBBER_RATE_LIMITED'
+      ))
+      AND bool_and(event.safe_field_changes::TEXT !~ 'task7-account|task7-invoice|300.00')
+    FROM public.progress_invoice_events AS event
+    WHERE event.series_id = (SELECT id FROM task5_standalone_result)
+      AND event.command_name = 'record_progress_jobber_refresh_failure'
+      AND event.correlation_key = '82000000-0000-4000-8000-000000000006'
+  ),
+  true,
+  'failure audit stores only the safe code'
+);
+
+SET ROLE authenticated;
+SELECT set_config(
+  'request.jwt.claim.sub',
+  '00000000-0000-0000-0000-000000008101',
+  false
+);
+
+CREATE TEMP TABLE task7_accept_result AS
+SELECT *
+FROM public.accept_progress_jobber_invoice_number(jsonb_build_object(
+  'series_id', (SELECT id FROM task5_standalone_result),
+  'expected_version', (
+    SELECT version FROM public.progress_invoice_series
+    WHERE id = (SELECT id FROM task5_standalone_result)
+  ),
+  'observation_id', (
+    SELECT current_jobber_snapshot_id FROM public.progress_invoice_series
+    WHERE id = (SELECT id FROM task5_standalone_result)
+  ),
+  'number_source', 'latest',
+  'idempotency_key', '82000000-0000-4000-8000-000000000007'
+));
+
+-- Task 7 behavior assertion 22
+SELECT is(
+  (
+    SELECT accepted_numbering_base
+    FROM public.progress_invoice_series
+    WHERE id = (SELECT id FROM task5_standalone_result)
+  ),
+  'INV-101',
+  'accepted numbering is derived from the current series-owned observation'
+);
+
+-- Task 7 behavior assertion 23
+SELECT throws_ok(
+  format(
+    'SELECT * FROM public.accept_progress_jobber_invoice_number(%L::JSONB)',
+    jsonb_build_object(
+      'series_id', (SELECT id FROM task5_standalone_result),
+      'expected_version', (
+        SELECT version FROM public.progress_invoice_series
+        WHERE id = (SELECT id FROM task5_standalone_result)
+      ),
+      'observation_id', '00000000-0000-4000-8000-000000000099',
+      'number_source', 'latest',
+      'idempotency_key', '82000000-0000-4000-8000-000000000008'
+    )::TEXT
+  ),
+  'P0001',
+  'PROGRESS_JOBBER_ERROR',
+  'foreign or stale observation cannot supply an accepted number'
+);
+
+-- Task 7 behavior assertion 24
+SELECT is(
+  (
+    SELECT jsonb_build_object(
+      'account', context.jobber_account_id,
+      'invoice', context.jobber_invoice_id,
+      'job', context.selected_jobber_job_id,
+      'property', context.selected_jobber_property_id
+    )
+    FROM public.get_progress_invoice_jobber_context(jsonb_build_object(
+      'series_id', (SELECT id FROM task5_standalone_result)
+    )) AS context
+  ),
+  jsonb_build_object(
+    'account', 'task7-account',
+    'invoice', 'task7-invoice',
+    'job', 'task7-job-2',
+    'property', 'task7-property-1'
+  ),
+  'authenticated refresh context returns only locked identity and selectors'
+);
+
+SELECT throws_ok(
+  $$SELECT * FROM public.get_progress_invoice_jobber_context(
+    '{"series_id":"not-a-uuid"}'::JSONB
+  )$$,
+  '22023',
+  'PROGRESS_VALIDATION_FAILED',
+  'authenticated context maps malformed UUID text to one validation error'
+);
+
+SELECT throws_ok(
+  $$SELECT * FROM public.get_progress_invoice_jobber_context(
+    '{"series_id":123}'::JSONB
+  )$$,
+  '22023',
+  'PROGRESS_VALIDATION_FAILED',
+  'authenticated context rejects a numeric JSON series ID before casting'
+);
+
+SELECT throws_ok(
+  format(
+    'SELECT * FROM public.accept_progress_jobber_invoice_number(%L::JSONB)',
+    jsonb_build_object(
+      'series_id', (SELECT id FROM task5_standalone_result),
+      'expected_version', '1',
+      'observation_id', (
+        SELECT current_jobber_snapshot_id FROM public.progress_invoice_series
+        WHERE id = (SELECT id FROM task5_standalone_result)
+      ),
+      'number_source', 'latest',
+      'idempotency_key', '82000000-0000-4000-8000-000000000017'
+    )::TEXT
+  ),
+  '22023',
+  'PROGRESS_VALIDATION_FAILED',
+  'accepted-number command rejects string expected_version before numeric casting'
+);
+
+SELECT throws_ok(
+  format(
+    'SELECT * FROM public.accept_progress_jobber_invoice_number(%L::JSONB)',
+    jsonb_build_object(
+      'series_id', (SELECT id FROM task5_standalone_result),
+      'expected_version', 2147483648,
+      'observation_id', (
+        SELECT current_jobber_snapshot_id FROM public.progress_invoice_series
+        WHERE id = (SELECT id FROM task5_standalone_result)
+      ),
+      'number_source', 'latest',
+      'idempotency_key', '82000000-0000-4000-8000-000000000018'
+    )::TEXT
+  ),
+  '22023',
+  'PROGRESS_VALIDATION_FAILED',
+  'accepted-number command rejects expected_version integer overflow safely'
+);
+
+SELECT throws_ok(
+  format(
+    'SELECT * FROM public.accept_progress_jobber_invoice_number(%L::JSONB)',
+    jsonb_build_object(
+      'series_id', (SELECT id FROM task5_standalone_result),
+      'expected_version', (
+        SELECT version FROM public.progress_invoice_series
+        WHERE id = (SELECT id FROM task5_standalone_result)
+      ),
+      'observation_id', 'not-a-uuid',
+      'number_source', 'latest',
+      'idempotency_key', '82000000-0000-4000-8000-000000000019'
+    )::TEXT
+  ),
+  '22023',
+  'PROGRESS_VALIDATION_FAILED',
+  'accepted-number command rejects malformed observation UUID text safely'
+);
+
+RESET ROLE;
+
+SELECT throws_ok(
+  format(
+    'SELECT * FROM public.link_progress_jobber_invoice(%L::JSONB)',
+    (
+      pg_temp.task7_link_payload(
+        (SELECT id FROM task5_standalone_result),
+        (
+          SELECT version FROM public.progress_invoice_series
+          WHERE id = (SELECT id FROM task5_standalone_result)
+        ),
+        '82000000-0000-4000-8000-000000000020',
+        repeat('c', 64),
+        pg_temp.task7_observation(
+          repeat('f', 64),
+          'INV-101',
+          jsonb_build_array(pg_temp.task7_payment(
+            'task7-payment-1', '300.00', 'EFT', 'RECEIPT-300'
+          ))
+        )
+      ) || jsonb_build_object('actor_id', 'not-a-uuid')
+    )::TEXT
+  ),
+  '22023',
+  'PROGRESS_VALIDATION_FAILED',
+  'service link rejects malformed actor UUID text before authority lookup'
+);
+
+SELECT throws_ok(
+  format(
+    'SELECT * FROM public.apply_progress_invoice_jobber_refresh(%L::JSONB)',
+    jsonb_build_object(
+      'actor_id', '00000000-0000-0000-0000-000000008101',
+      'series_id', (SELECT id FROM task5_standalone_result),
+      'expected_version', (
+        SELECT version FROM public.progress_invoice_series
+        WHERE id = (SELECT id FROM task5_standalone_result)
+      ),
+      'idempotency_key', 123,
+      'request_fingerprint', repeat('c', 64),
+      'observation', pg_temp.task7_observation(
+        repeat('f', 64),
+        'INV-101',
+        jsonb_build_array(pg_temp.task7_payment(
+          'task7-payment-1', '300.00', 'EFT', 'RECEIPT-300'
+        ))
+      )
+    )::TEXT
+  ),
+  '22023',
+  'PROGRESS_VALIDATION_FAILED',
+  'service refresh rejects numeric JSON idempotency keys before casting'
+);
+
+SELECT throws_ok(
+  format(
+    'SELECT public.progress_validate_jobber_observation(%L::JSONB)',
+    (
+      pg_temp.task7_observation(repeat('f', 64), 'INV-STRICT', '[]'::JSONB)
+      || jsonb_build_object(
+        'client_email', NULL,
+        'client_email_candidates', jsonb_build_array(
+          'Accounts@example.test',
+          'accounts@example.test'
+        )
+      )
+    )::TEXT
+  ),
+  'P0001',
+  'PROGRESS_JOBBER_ERROR',
+  'normalized email candidates reject case-insensitive duplicates'
+);
+
+SELECT throws_ok(
+  format(
+    'SELECT public.progress_validate_jobber_observation(%L::JSONB)',
+    (
+      pg_temp.task7_observation(repeat('f', 64), 'INV-STRICT', '[]'::JSONB)
+      || jsonb_build_object(
+        'client_email', NULL,
+        'client_email_candidates', jsonb_build_array(123)
+      )
+    )::TEXT
+  ),
+  'P0001',
+  'PROGRESS_JOBBER_ERROR',
+  'normalized email candidates require bounded strings'
+);
+
+SELECT throws_ok(
+  format(
+    'SELECT public.progress_validate_jobber_observation(%L::JSONB)',
+    (
+      pg_temp.task7_observation(repeat('f', 64), 'INV-STRICT', '[]'::JSONB)
+      || jsonb_build_object(
+        'client_phone', '0400000000',
+        'client_phone_candidates', jsonb_build_array(
+          jsonb_build_object(
+            'number', '0400000000',
+            'primary', true,
+            'raw_label', 'secret'
+          )
+        )
+      )
+    )::TEXT
+  ),
+  '22023',
+  'PROGRESS_PAYLOAD_UNKNOWN_KEYS',
+  'normalized phone candidates enforce exact number/primary keys'
+);
+
+SELECT throws_ok(
+  format(
+    'SELECT public.progress_validate_jobber_observation(%L::JSONB)',
+    (
+      pg_temp.task7_observation(repeat('f', 64), 'INV-STRICT', '[]'::JSONB)
+      || jsonb_build_object(
+        'site_address_candidates', jsonb_build_array(
+          jsonb_build_object('property_id', 'task7-property-1', 'address', 123),
+          jsonb_build_object('property_id', 'task7-property-2', 'address', NULL)
+        )
+      )
+    )::TEXT
+  ),
+  'P0001',
+  'PROGRESS_JOBBER_ERROR',
+  'normalized site candidates require nullable bounded string addresses'
+);
+
+SELECT throws_ok(
+  format(
+    'SELECT public.progress_validate_jobber_observation(%L::JSONB)',
+    (
+      pg_temp.task7_observation(repeat('f', 64), 'INV-STRICT', '[]'::JSONB)
+      || jsonb_build_object(
+        'warnings', jsonb_build_array(
+          jsonb_build_object(
+            'code', 'unknown_payment_status',
+            'payment_id', 123
+          )
+        )
+      )
+    )::TEXT
+  ),
+  'P0001',
+  'PROGRESS_JOBBER_ERROR',
+  'normalized warnings require bounded string payment IDs when present'
+);
+
+SELECT throws_ok(
+  format(
+    'SELECT public.progress_validate_jobber_observation(%L::JSONB)',
+    pg_temp.task7_observation(
+      repeat('f', 64),
+      'INV-STRICT',
+      jsonb_build_array(
+        pg_temp.task7_payment('strict-payment', '10.00', 'EFT', 'STRICT') - 'method'
+      )
+    )::TEXT
+  ),
+  'P0001',
+  'PROGRESS_JOBBER_ERROR',
+  'normalized payments require every exact field including nullable method'
+);
+
+SELECT throws_ok(
+  format(
+    'SELECT public.progress_validate_jobber_observation(%L::JSONB)',
+    pg_temp.task7_observation(
+      repeat('f', 64),
+      'INV-STRICT',
+      jsonb_build_array(
+        pg_temp.task7_payment('strict-payment', '10.00', 'EFT', 'STRICT')
+          || jsonb_build_object('method', 123)
+      )
+    )::TEXT
+  ),
+  'P0001',
+  'PROGRESS_JOBBER_ERROR',
+  'normalized nullable payment strings reject numeric JSON values'
+);
+
+SELECT throws_ok(
+  format(
+    'SELECT public.progress_validate_jobber_observation(%L::JSONB)',
+    pg_temp.task7_observation(
+      repeat('f', 64),
+      'INV-STRICT',
+      jsonb_build_array(
+        pg_temp.task7_payment('duplicate-payment', '10.00', 'EFT', 'ONE'),
+        pg_temp.task7_payment('duplicate-payment', '10.00', 'EFT', 'TWO')
+      )
+    )::TEXT
+  ),
+  'P0001',
+  'PROGRESS_JOBBER_ERROR',
+  'normalized payments reject duplicate stable Jobber IDs'
+);
+
+SELECT throws_ok(
+  format(
+    'SELECT public.progress_validate_jobber_observation(%L::JSONB)',
+    (
+      pg_temp.task7_observation(repeat('f', 64), 'INV-STRICT', '[]'::JSONB)
+      || jsonb_build_object(
+        'job_ids', jsonb_build_array('task7-only-job'),
+        'selected_job_id', NULL
+      )
+    )::TEXT
+  ),
+  'P0001',
+  'PROGRESS_JOBBER_ERROR',
+  'a sole Jobber job candidate must be selected explicitly by the normalized contract'
+);
+
+SELECT throws_ok(
+  format(
+    'SELECT public.progress_validate_jobber_observation(%L::JSONB)',
+    (
+      pg_temp.task7_observation(repeat('f', 64), 'INV-STRICT', '[]'::JSONB)
+      || jsonb_build_object(
+        'property_ids', jsonb_build_array('task7-only-property'),
+        'site_address_candidates', jsonb_build_array(
+          jsonb_build_object(
+            'property_id', 'task7-only-property',
+            'address', 'Only Site Address'
+          )
+        ),
+        'selected_property_id', NULL
+      )
+    )::TEXT
+  ),
+  'P0001',
+  'PROGRESS_JOBBER_ERROR',
+  'a sole Jobber property candidate must be selected explicitly by the normalized contract'
+);
+
+INSERT INTO public.progress_claims (
+  series_id,
+  sequence,
+  kind,
+  suffix,
+  tax_invoice_number,
+  created_by,
+  updated_by
+) VALUES (
+  (SELECT id FROM task5_standalone_result),
+  1,
+  'progress',
+  'P01',
+  'INV-101-P01',
+  '00000000-0000-0000-0000-000000008101',
+  '00000000-0000-0000-0000-000000008101'
+);
+
+-- Task 7 behavior assertion 25
+SELECT throws_ok(
+  format(
+    'SELECT * FROM public.link_progress_jobber_invoice(%L::JSONB)',
+    pg_temp.task7_link_payload(
+      (SELECT id FROM task5_standalone_result),
+      (
+        SELECT version FROM public.progress_invoice_series
+        WHERE id = (SELECT id FROM task5_standalone_result)
+      ),
+      '82000000-0000-4000-8000-000000000009',
+      repeat('6', 64),
+      pg_temp.task7_observation(repeat('e', 64), 'INV-102', '[]'::JSONB)
+    )::TEXT
+  ),
+  'P0001',
+  'PROGRESS_JOBBER_LINK_LOCKED',
+  'any existing Claim permanently locks relink and selector correction'
+);
+
+SET ROLE authenticated;
+SELECT set_config(
+  'request.jwt.claim.sub',
+  '00000000-0000-0000-0000-000000008101',
+  false
+);
+
+-- Task 7 behavior assertion 26
+SELECT throws_ok(
+  format(
+    'SELECT * FROM public.accept_progress_jobber_invoice_number(%L::JSONB)',
+    jsonb_build_object(
+      'series_id', (SELECT id FROM task5_standalone_result),
+      'expected_version', (
+        SELECT version FROM public.progress_invoice_series
+        WHERE id = (SELECT id FROM task5_standalone_result)
+      ),
+      'observation_id', (
+        SELECT current_jobber_snapshot_id FROM public.progress_invoice_series
+        WHERE id = (SELECT id FROM task5_standalone_result)
+      ),
+      'number_source', 'original',
+      'idempotency_key', '82000000-0000-4000-8000-000000000010'
+    )::TEXT
+  ),
+  'P0001',
+  'PROGRESS_JOBBER_LINK_LOCKED',
+  'any existing Claim permanently locks accepted-number changes'
+);
+
+RESET ROLE;
+
+-- Task 7 behavior assertion 27
+SELECT lives_ok(
+  format(
+    'SELECT * FROM public.link_progress_jobber_invoice(%L::JSONB)',
+    (SELECT payload::TEXT FROM task7_initial_link_payload)
+  ),
+  'exact pre-lock replay remains valid after a Claim exists'
+);
+
+-- Task 7 behavior assertion 28
+SELECT throws_ok(
+  format(
+    'SELECT * FROM public.record_progress_jobber_refresh_failure(%L::JSONB)',
+    jsonb_build_object(
+      'actor_id', '00000000-0000-0000-0000-000000008101',
+      'series_id', (SELECT id FROM task5_standalone_result),
+      'expected_version', (
+        SELECT version FROM public.progress_invoice_series
+        WHERE id = (SELECT id FROM task5_standalone_result)
+      ),
+      'jobber_account_id', 'task7-account',
+      'jobber_invoice_id', 'task7-invoice',
+      'idempotency_key', '82000000-0000-4000-8000-000000000011',
+      'error_code', 'JOBBER_RATE_LIMITED',
+      'raw_message', 'forged secret'
+    )::TEXT
+  ),
+  '22023',
+  'PROGRESS_PAYLOAD_UNKNOWN_KEYS',
+  'failure RPC rejects raw-message and unknown payload fields'
+);
+
+CREATE TEMP TABLE task7_adjusted_overflow_series (id UUID PRIMARY KEY);
+WITH inserted AS (
+  INSERT INTO public.progress_invoice_series (
+    source_type,
+    base_contract_ex_gst,
+    recipient_name,
+    recipient_address,
+    site_name,
+    site_address,
+    default_description,
+    created_by,
+    updated_by
+  ) VALUES (
+    'jobber_invoice',
+    999999999999.99,
+    'Overflow Recipient',
+    'Overflow Address',
+    'Overflow Site',
+    'Overflow Site Address',
+    'Overflow Test',
+    '00000000-0000-0000-0000-000000008101',
+    '00000000-0000-0000-0000-000000008101'
+  )
+  RETURNING id
+)
+INSERT INTO task7_adjusted_overflow_series (id)
+SELECT id FROM inserted;
+
+-- Task 7 behavior assertion 29
+SELECT throws_ok(
+  format(
+    'SELECT * FROM public.link_progress_jobber_invoice(%L::JSONB)',
+    pg_temp.task7_link_payload(
+      (SELECT id FROM task7_adjusted_overflow_series),
+      1,
+      '82000000-0000-4000-8000-000000000012',
+      repeat('7', 64),
+      pg_temp.task7_observation(repeat('f', 64), 'INV-OVERFLOW', '[]'::JSONB)
+        || jsonb_build_object(
+          'account_id', 'overflow-account',
+          'invoice_id', 'overflow-invoice'
+        )
+    )::TEXT
+  ),
+  'P0001',
+  'PROGRESS_JOBBER_ERROR',
+  'adjusted-contract cache overflow raises one safe error'
+);
+
+-- Task 7 behavior assertion 30
+SELECT is(
+  (
+    SELECT jsonb_build_object(
+      'linked', series.jobber_invoice_id IS NOT NULL,
+      'version', series.version,
+      'snapshots', (
+        SELECT count(*) FROM public.progress_jobber_invoice_snapshots
+        WHERE series_id = series.id
+      ),
+      'payments', (
+        SELECT count(*) FROM public.progress_payments WHERE series_id = series.id
+      ),
+      'events', (
+        SELECT count(*) FROM public.progress_invoice_events WHERE series_id = series.id
+      )
+    )
+    FROM public.progress_invoice_series AS series
+    WHERE series.id = (SELECT id FROM task7_adjusted_overflow_series)
+  ),
+  jsonb_build_object(
+    'linked', false,
+    'version', 1,
+    'snapshots', 0,
+    'payments', 0,
+    'events', 0
+  ),
+  'late adjusted-contract overflow rolls back link, observation, ledger, and audit'
+);
+
+CREATE TEMP TABLE task7_receipt_overflow_series (id UUID PRIMARY KEY);
+WITH inserted AS (
+  INSERT INTO public.progress_invoice_series (
+    source_type,
+    base_contract_ex_gst,
+    recipient_name,
+    recipient_address,
+    site_name,
+    site_address,
+    default_description,
+    created_by,
+    updated_by
+  ) VALUES (
+    'jobber_invoice',
+    100.00,
+    'Receipt Overflow Recipient',
+    'Receipt Overflow Address',
+    'Receipt Overflow Site',
+    'Receipt Overflow Site Address',
+    'Receipt Overflow Test',
+    '00000000-0000-0000-0000-000000008101',
+    '00000000-0000-0000-0000-000000008101'
+  )
+  RETURNING id
+)
+INSERT INTO task7_receipt_overflow_series (id)
+SELECT id FROM inserted;
+
+-- Task 7 behavior assertion 31
+SELECT throws_ok(
+  format(
+    'SELECT * FROM public.link_progress_jobber_invoice(%L::JSONB)',
+    pg_temp.task7_link_payload(
+      (SELECT id FROM task7_receipt_overflow_series),
+      1,
+      '82000000-0000-4000-8000-000000000013',
+      repeat('8', 64),
+      pg_temp.task7_observation(
+        repeat('0', 64),
+        'INV-RECEIPT-OVERFLOW',
+        jsonb_build_array(
+          pg_temp.task7_payment('overflow-payment-1', '600000000000.00', 'EFT', 'ONE'),
+          pg_temp.task7_payment('overflow-payment-2', '600000000000.00', 'EFT', 'TWO')
+        )
+      ) || jsonb_build_object(
+        'account_id', 'receipt-overflow-account',
+        'invoice_id', 'receipt-overflow-invoice'
+      )
+    )::TEXT
+  ),
+  'P0001',
+  'PROGRESS_JOBBER_ERROR',
+  'aggregate signed receipt overflow is rejected before cached assignment'
+);
+
+SELECT is(
+  (
+    SELECT jsonb_build_object(
+      'linked', series.jobber_invoice_id IS NOT NULL,
+      'version', series.version,
+      'snapshots', (
+        SELECT count(*) FROM public.progress_jobber_invoice_snapshots
+        WHERE series_id = series.id
+      ),
+      'payments', (
+        SELECT count(*) FROM public.progress_payments WHERE series_id = series.id
+      ),
+      'events', (
+        SELECT count(*) FROM public.progress_invoice_events WHERE series_id = series.id
+      )
+    )
+    FROM public.progress_invoice_series AS series
+    WHERE series.id = (SELECT id FROM task7_receipt_overflow_series)
+  ),
+  jsonb_build_object(
+    'linked', false,
+    'version', 1,
+    'snapshots', 0,
+    'payments', 0,
+    'events', 0
+  ),
+  'aggregate receipt overflow rolls back link, observations, ledger, and audit'
+);
+
+CREATE TEMP TABLE task7_negative_series AS
+SELECT pg_temp.task7_create_series('Task 7 Negative Receipts') AS id;
+
+SELECT *
+FROM public.link_progress_jobber_invoice(
+  pg_temp.task7_link_payload(
+    (SELECT id FROM task7_negative_series),
+    1,
+    '82000000-0000-4000-8000-000000000021',
+    repeat('d', 64),
+    pg_temp.task7_observation(
+      repeat('1', 64),
+      'INV-NEGATIVE',
+      jsonb_build_array(
+        pg_temp.task7_payment('negative-receipt', '50.00', 'EFT', 'RECEIPT'),
+        pg_temp.task7_payment(
+          'negative-refund', '-80.00', 'EFT', 'REFUND', 'refund'
+        ),
+        pg_temp.task7_payment(
+          'negative-reversal', '-20.00', 'EFT', 'REVERSAL', 'reversal'
+        )
+      )
+    ) || jsonb_build_object(
+      'account_id', 'negative-account',
+      'invoice_id', 'negative-invoice'
+    )
+  )
+);
+
+SELECT is(
+  (
+    SELECT jsonb_agg(
+      jsonb_build_object(
+        'id', payment.jobber_payment_id,
+        'direction', revision.direction,
+        'effect', revision.effective_receipt_amount
+      )
+      ORDER BY payment.jobber_payment_id
+    )
+    FROM public.progress_payments AS payment
+    JOIN public.progress_payment_revisions AS revision
+      ON revision.id = payment.current_revision_id
+    WHERE payment.series_id = (SELECT id FROM task7_negative_series)
+  ),
+  jsonb_build_array(
+    jsonb_build_object(
+      'id', 'negative-receipt', 'direction', 'receipt', 'effect', 50.00::NUMERIC
+    ),
+    jsonb_build_object(
+      'id', 'negative-refund', 'direction', 'refund', 'effect', -80.00::NUMERIC
+    ),
+    jsonb_build_object(
+      'id', 'negative-reversal', 'direction', 'reversal', 'effect', -20.00::NUMERIC
+    )
+  ),
+  'refund and failed-payment reversal revisions preserve their signed effects'
+);
+
+SELECT is(
+  (
+    SELECT jsonb_build_object(
+      'receipts', current_actual_receipts,
+      'outstanding', current_outstanding_receivable,
+      'credit', current_credit_balance,
+      'state', current_payment_state
+    )
+    FROM public.progress_invoice_series
+    WHERE id = (SELECT id FROM task7_negative_series)
+  ),
+  jsonb_build_object(
+    'receipts', -50.00::NUMERIC,
+    'outstanding', 50.00::NUMERIC,
+    'credit', 0.00::NUMERIC,
+    'state', 'unpaid'
+  ),
+  'negative net receipts remain a signed deficit without creating phantom overdue'
+);
+
+CREATE TEMP TABLE task7_duplicate_first_series AS
+SELECT pg_temp.task7_create_series('Task 7 Duplicate First Link') AS id;
+
+SELECT throws_ok(
+  format(
+    'SELECT * FROM public.link_progress_jobber_invoice(%L::JSONB)',
+    pg_temp.task7_link_payload(
+      (SELECT id FROM task7_duplicate_first_series),
+      1,
+      '82000000-0000-4000-8000-000000000022',
+      repeat('e', 64),
+      pg_temp.task7_observation(repeat('2', 64), 'INV-DUPLICATE', '[]'::JSONB)
+    )::TEXT
+  ),
+  'P0001',
+  'PROGRESS_JOBBER_ERROR',
+  'first link rejects an account and invoice identity owned by another active series'
+);
+
+SELECT is(
+  (
+    SELECT jsonb_build_object(
+      'linked', jobber_invoice_id IS NOT NULL,
+      'version', version,
+      'snapshots', (
+        SELECT count(*) FROM public.progress_jobber_invoice_snapshots
+        WHERE series_id = series.id
+      ),
+      'payments', (
+        SELECT count(*) FROM public.progress_payments WHERE series_id = series.id
+      ),
+      'events', (
+        SELECT count(*) FROM public.progress_invoice_events WHERE series_id = series.id
+      )
+    )
+    FROM public.progress_invoice_series AS series
+    WHERE series.id = (SELECT id FROM task7_duplicate_first_series)
+  ),
+  jsonb_build_object(
+    'linked', false,
+    'version', 1,
+    'snapshots', 0,
+    'payments', 0,
+    'events', 0
+  ),
+  'duplicate first-link conflict leaves the target series wholly unchanged'
+);
+
+CREATE TEMP TABLE task7_duplicate_relink_series AS
+SELECT pg_temp.task7_create_series('Task 7 Duplicate Relink') AS id;
+
+SELECT *
+FROM public.link_progress_jobber_invoice(
+  pg_temp.task7_link_payload(
+    (SELECT id FROM task7_duplicate_relink_series),
+    1,
+    '82000000-0000-4000-8000-000000000023',
+    repeat('f', 64),
+    pg_temp.task7_observation(repeat('3', 64), 'INV-ORIGINAL', '[]'::JSONB)
+      || jsonb_build_object(
+        'account_id', 'relink-original-account',
+        'invoice_id', 'relink-original-invoice'
+      )
+  )
+);
+
+CREATE TEMP TABLE task7_before_duplicate_relink AS
+SELECT jsonb_build_object(
+  'series', to_jsonb(series),
+  'snapshots', (
+    SELECT count(*) FROM public.progress_jobber_invoice_snapshots
+    WHERE series_id = series.id
+  ),
+  'payments', (
+    SELECT count(*) FROM public.progress_payments WHERE series_id = series.id
+  ),
+  'events', (
+    SELECT count(*) FROM public.progress_invoice_events WHERE series_id = series.id
+  )
+) AS state
+FROM public.progress_invoice_series AS series
+WHERE series.id = (SELECT id FROM task7_duplicate_relink_series);
+
+SELECT throws_ok(
+  format(
+    'SELECT * FROM public.link_progress_jobber_invoice(%L::JSONB)',
+    pg_temp.task7_link_payload(
+      (SELECT id FROM task7_duplicate_relink_series),
+      (
+        SELECT version FROM public.progress_invoice_series
+        WHERE id = (SELECT id FROM task7_duplicate_relink_series)
+      ),
+      '82000000-0000-4000-8000-000000000024',
+      repeat('0', 64),
+      pg_temp.task7_observation(repeat('4', 64), 'INV-DUPLICATE', '[]'::JSONB)
+    )::TEXT
+  ),
+  'P0001',
+  'PROGRESS_JOBBER_ERROR',
+  'relink rejects an account and invoice identity owned by another active series'
+);
+
+SELECT is(
+  (
+    SELECT jsonb_build_object(
+      'series', to_jsonb(series),
+      'snapshots', (
+        SELECT count(*) FROM public.progress_jobber_invoice_snapshots
+        WHERE series_id = series.id
+      ),
+      'payments', (
+        SELECT count(*) FROM public.progress_payments WHERE series_id = series.id
+      ),
+      'events', (
+        SELECT count(*) FROM public.progress_invoice_events WHERE series_id = series.id
+      )
+    )
+    FROM public.progress_invoice_series AS series
+    WHERE series.id = (SELECT id FROM task7_duplicate_relink_series)
+  ),
+  (SELECT state FROM task7_before_duplicate_relink),
+  'duplicate relink conflict preserves the original identity and all evidence atomically'
+);
 
 SELECT is(
   (

@@ -1,5 +1,5 @@
 import type { ActionErrorCode, ActionResult } from '@/lib/actions/types'
-import { createClient } from '@/lib/supabase/server'
+import { createClient, createServiceClient } from '@/lib/supabase/server'
 import type { Json } from '@/lib/supabase/types'
 
 export interface SaveBusinessInvoiceProfilePayload {
@@ -248,6 +248,76 @@ export interface ProgressAdjustmentRpcDetail {
   version: number
 }
 
+export interface ProgressInvoiceJobberContextRpcResult {
+  series_id: string
+  series_version: number
+  jobber_account_id: string
+  jobber_invoice_id: string
+  selected_jobber_job_id: string | null
+  selected_jobber_property_id: string | null
+  current_snapshot_id: string | null
+}
+
+export interface LinkProgressJobberInvoiceRpcResult {
+  series_id: string
+  version: number
+  quote_id: string | null
+}
+
+export interface RecordProgressJobberRefreshFailureRpcResult {
+  series_id: string
+  version: number
+}
+
+export interface RefreshProgressJobberInvoiceRpcResult {
+  series_id: string
+  snapshot_id: string
+  series_version: number
+  inserted_payments: number
+  revised_payments: number
+  unconfirmed_payments: number
+}
+
+export interface GetProgressInvoiceJobberContextPayload {
+  series_id: string
+}
+
+export interface AcceptProgressJobberInvoiceNumberPayload {
+  series_id: string
+  expected_version: number
+  observation_id: string
+  number_source: 'original' | 'latest'
+  idempotency_key: string
+}
+
+export interface LinkProgressJobberInvoicePayload {
+  actor_id: string
+  series_id: string
+  expected_version: number
+  correlation_key: string
+  request_fingerprint: string
+  observation: Json
+}
+
+export interface RefreshProgressJobberInvoicePayload {
+  actor_id: string
+  series_id: string
+  expected_version: number
+  idempotency_key: string
+  request_fingerprint: string
+  observation: Json
+}
+
+export interface RecordProgressJobberRefreshFailurePayload {
+  actor_id: string
+  series_id: string
+  expected_version: number
+  jobber_account_id: string
+  jobber_invoice_id: string
+  idempotency_key: string
+  error_code: string
+}
+
 export interface ProgressInvoiceCommandMap {
   save_business_invoice_profile: {
     payload: SaveBusinessInvoiceProfilePayload
@@ -279,6 +349,16 @@ export interface ProgressInvoiceCommandMap {
     result: ProgressInvoiceQuotePrefillRpcResult
     current: never
   }
+  get_progress_invoice_jobber_context: {
+    payload: GetProgressInvoiceJobberContextPayload
+    result: ProgressInvoiceJobberContextRpcResult
+    current: never
+  }
+  accept_progress_jobber_invoice_number: {
+    payload: AcceptProgressJobberInvoiceNumberPayload
+    result: VersionedMutationRpcResult
+    current: ProgressInvoiceSeriesRpcDetail
+  }
   create_progress_adjustment: {
     payload: CreateProgressAdjustmentPayload
     result: AdjustmentMutationRpcResult
@@ -301,6 +381,21 @@ export interface ProgressInvoiceCommandMap {
   }
 }
 
+export interface ProgressInvoiceJobberPersistenceCommandMap {
+  link_progress_jobber_invoice: {
+    payload: LinkProgressJobberInvoicePayload
+    result: LinkProgressJobberInvoiceRpcResult
+  }
+  apply_progress_invoice_jobber_refresh: {
+    payload: RefreshProgressJobberInvoicePayload
+    result: RefreshProgressJobberInvoiceRpcResult
+  }
+  record_progress_jobber_refresh_failure: {
+    payload: RecordProgressJobberRefreshFailurePayload
+    result: RecordProgressJobberRefreshFailureRpcResult
+  }
+}
+
 export interface ProgressInvoiceRpcError {
   message?: unknown
   code?: unknown
@@ -315,8 +410,17 @@ export interface ProgressInvoiceRpcExecutor {
   ): Promise<{ data: unknown; error: ProgressInvoiceRpcError | null }>
 }
 
+export interface ProgressInvoiceServiceRpcExecutor {
+  execute(
+    command: keyof ProgressInvoiceJobberPersistenceCommandMap,
+    payload: Json
+  ): Promise<{ data: unknown; error: ProgressInvoiceRpcError | null }>
+}
+
 type AuthenticatedSupabaseClient = Awaited<ReturnType<typeof createClient>>
 type ProgressInvoiceAuthenticatedClient = Pick<AuthenticatedSupabaseClient, 'rpc'>
+type ServiceSupabaseClient = Awaited<ReturnType<typeof createServiceClient>>
+type ProgressInvoiceServiceClient = Pick<ServiceSupabaseClient, 'rpc'>
 type ProgressInvoiceCommand = keyof ProgressInvoiceCommandMap
 type CommandPayload<TCommand extends ProgressInvoiceCommand> =
   ProgressInvoiceCommandMap[TCommand]['payload']
@@ -324,6 +428,11 @@ type CommandResult<TCommand extends ProgressInvoiceCommand> =
   ProgressInvoiceCommandMap[TCommand]['result']
 type CommandCurrent<TCommand extends ProgressInvoiceCommand> =
   ProgressInvoiceCommandMap[TCommand]['current']
+type ProgressInvoiceServiceCommand = keyof ProgressInvoiceJobberPersistenceCommandMap
+type ServiceCommandPayload<TCommand extends ProgressInvoiceServiceCommand> =
+  ProgressInvoiceJobberPersistenceCommandMap[TCommand]['payload']
+type ServiceCommandResult<TCommand extends ProgressInvoiceServiceCommand> =
+  ProgressInvoiceJobberPersistenceCommandMap[TCommand]['result']
 
 const DOMAIN_ERROR_CODES: Readonly<Record<string, { code: ActionErrorCode; error: string }>> = {
   PROGRESS_AUTH_REQUIRED: { code: 'AUTH_REQUIRED', error: 'PROGRESS_AUTH_REQUIRED' },
@@ -383,6 +492,71 @@ function parseVersioned(value: unknown): VersionedMutationRpcResult | null {
   const id = stringField(candidate, 'id')
   const version = positiveIntegerField(candidate, 'version')
   return id && version ? { id, version } : null
+}
+
+function parseJobberContext(value: unknown): ProgressInvoiceJobberContextRpcResult | null {
+  const candidate = singleton(value)
+  if (!isRecord(candidate)) return null
+  const seriesId = stringField(candidate, 'series_id')
+  const seriesVersion = positiveIntegerField(candidate, 'series_version')
+  const accountId = stringField(candidate, 'jobber_account_id')
+  const invoiceId = stringField(candidate, 'jobber_invoice_id')
+  const jobId = nullableStringField(candidate, 'selected_jobber_job_id')
+  const propertyId = nullableStringField(candidate, 'selected_jobber_property_id')
+  const snapshotId = nullableStringField(candidate, 'current_snapshot_id')
+  if (!seriesId || !seriesVersion || !accountId || !invoiceId || jobId === undefined
+    || propertyId === undefined || snapshotId === undefined) return null
+  return {
+    series_id: seriesId,
+    series_version: seriesVersion,
+    jobber_account_id: accountId,
+    jobber_invoice_id: invoiceId,
+    selected_jobber_job_id: jobId,
+    selected_jobber_property_id: propertyId,
+    current_snapshot_id: snapshotId,
+  }
+}
+
+function parseLinkJobberResult(value: unknown): LinkProgressJobberInvoiceRpcResult | null {
+  const candidate = singleton(value)
+  if (!isRecord(candidate)) return null
+  const seriesId = stringField(candidate, 'series_id')
+  const version = positiveIntegerField(candidate, 'version')
+  const quoteId = nullableStringField(candidate, 'quote_id')
+  return seriesId && version && quoteId !== undefined
+    ? { series_id: seriesId, version, quote_id: quoteId }
+    : null
+}
+
+function parseJobberFailureResult(
+  value: unknown
+): RecordProgressJobberRefreshFailureRpcResult | null {
+  const candidate = singleton(value)
+  if (!isRecord(candidate)) return null
+  const seriesId = stringField(candidate, 'series_id')
+  const version = positiveIntegerField(candidate, 'version')
+  return seriesId && version ? { series_id: seriesId, version } : null
+}
+
+function parseRefreshJobberResult(value: unknown): RefreshProgressJobberInvoiceRpcResult | null {
+  const candidate = singleton(value)
+  if (!isRecord(candidate)) return null
+  const seriesId = stringField(candidate, 'series_id')
+  const snapshotId = stringField(candidate, 'snapshot_id')
+  const seriesVersion = positiveIntegerField(candidate, 'series_version')
+  const inserted = nonNegativeIntegerField(candidate, 'inserted_payments')
+  const revised = nonNegativeIntegerField(candidate, 'revised_payments')
+  const unconfirmed = nonNegativeIntegerField(candidate, 'unconfirmed_payments')
+  if (!seriesId || !snapshotId || !seriesVersion || inserted === null || revised === null
+    || unconfirmed === null) return null
+  return {
+    series_id: seriesId,
+    snapshot_id: snapshotId,
+    series_version: seriesVersion,
+    inserted_payments: inserted,
+    revised_payments: revised,
+    unconfirmed_payments: unconfirmed,
+  }
 }
 
 function parseAdjustment(value: unknown): AdjustmentMutationRpcResult | null {
@@ -693,6 +867,8 @@ function parseSuccess<TCommand extends ProgressInvoiceCommand>(
   if (command === 'list_progress_invoice_series') return parseDashboard(value) as CommandResult<TCommand> | null
   if (command === 'get_progress_invoice_series') return parseSeriesRead(value) as CommandResult<TCommand> | null
   if (command === 'get_progress_invoice_quote_prefill') return parseQuotePrefill(value) as CommandResult<TCommand> | null
+  if (command === 'get_progress_invoice_jobber_context') return parseJobberContext(value) as CommandResult<TCommand> | null
+  if (command === 'accept_progress_jobber_invoice_number') return parseVersioned(value) as CommandResult<TCommand> | null
   return parseAdjustment(value) as CommandResult<TCommand> | null
 }
 
@@ -710,10 +886,12 @@ export class ProgressInvoiceRepository {
       && command !== 'create_progress_invoice_series'
       && command !== 'list_progress_invoice_series'
       && command !== 'get_progress_invoice_series'
-      && command !== 'get_progress_invoice_quote_prefill') {
+      && command !== 'get_progress_invoice_quote_prefill'
+      && command !== 'get_progress_invoice_jobber_context') {
       const candidate = singleton(data)
       if (isRecord(candidate) && candidate.conflict === true) {
         const current = command === 'update_progress_invoice_series'
+          || command === 'accept_progress_jobber_invoice_number'
           ? parseSeriesDetail(candidate.current)
           : parseAdjustmentDetail(candidate.current)
         if (!current) return { ok: false, error: 'PROGRESS_RESPONSE_INVALID' }
@@ -734,9 +912,51 @@ export class ProgressInvoiceRepository {
 export function createProgressInvoiceRpcExecutor(
   client: ProgressInvoiceAuthenticatedClient
 ): ProgressInvoiceRpcExecutor {
+  type Rpc = (
+    command: string,
+    args: { payload: Json }
+  ) => PromiseLike<{ data: unknown; error: ProgressInvoiceRpcError | null }>
+  const rpc = client.rpc as unknown as Rpc
   return {
     async execute(command, payload) {
-      const { data, error } = await client.rpc(command, { payload })
+      const { data, error } = await rpc(command, { payload })
+      return { data, error }
+    },
+  }
+}
+
+export class ProgressInvoiceJobberPersistenceRepository {
+  constructor(private readonly executor: ProgressInvoiceServiceRpcExecutor) {}
+
+  async call<TCommand extends ProgressInvoiceServiceCommand>(
+    command: TCommand,
+    payload: ServiceCommandPayload<TCommand>
+  ): Promise<ActionResult<ServiceCommandResult<TCommand>>> {
+    const { data, error } = await this.executor.execute(command, toJson(payload))
+    if (error) return mapRpcError(error)
+
+    const result = command === 'apply_progress_invoice_jobber_refresh'
+      ? parseRefreshJobberResult(data)
+      : command === 'link_progress_jobber_invoice'
+        ? parseLinkJobberResult(data)
+        : parseJobberFailureResult(data)
+    return result
+      ? { ok: true, data: result as ServiceCommandResult<TCommand> }
+      : { ok: false, error: 'PROGRESS_RESPONSE_INVALID' }
+  }
+}
+
+export function createProgressInvoiceServiceRpcExecutor(
+  client: ProgressInvoiceServiceClient
+): ProgressInvoiceServiceRpcExecutor {
+  type Rpc = (
+    command: string,
+    args: { payload: Json }
+  ) => PromiseLike<{ data: unknown; error: ProgressInvoiceRpcError | null }>
+  const rpc = client.rpc as unknown as Rpc
+  return {
+    async execute(command, payload) {
+      const { data, error } = await rpc(command, { payload })
       return { data, error }
     },
   }
@@ -745,4 +965,13 @@ export function createProgressInvoiceRpcExecutor(
 export async function createProgressInvoiceRepository(): Promise<ProgressInvoiceRepository> {
   const client = await createClient()
   return new ProgressInvoiceRepository(createProgressInvoiceRpcExecutor(client))
+}
+
+export async function createProgressInvoiceJobberPersistenceRepository(): Promise<
+  ProgressInvoiceJobberPersistenceRepository
+> {
+  const client = await createServiceClient()
+  return new ProgressInvoiceJobberPersistenceRepository(
+    createProgressInvoiceServiceRpcExecutor(client)
+  )
 }

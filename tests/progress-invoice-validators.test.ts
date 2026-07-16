@@ -110,13 +110,11 @@ describe('Progress Invoice command schemas', () => {
       seriesId: 'not-a-uuid',
       expectedVersion: 1,
       selectedJobberInvoiceId: 'invoice-node',
-      observedJobberSnapshotId: UUID,
       correlationKey: UUID_2,
     }).success).toBe(false)
     expect(refreshProgressJobberInvoiceSchema.safeParse({
       seriesId: UUID,
       expectedVersion: 1,
-      acknowledgeStaleObservation: false,
       idempotencyKey: 'not-a-uuid',
     }).success).toBe(false)
   })
@@ -128,7 +126,6 @@ describe('Progress Invoice command schemas', () => {
       selectedJobberInvoiceId: 'invoice-node',
       selectedJobberJobId: 'job-node',
       selectedJobberPropertyId: 'property-node',
-      observedJobberSnapshotId: UUID_2,
       correlationKey: '33333333-3333-4333-8333-333333333333',
     }).success).toBe(true)
 
@@ -138,7 +135,6 @@ describe('Progress Invoice command schemas', () => {
       jobberAccountId: 'client-authoritative-account',
       jobberInvoiceId: 'invoice-node',
       jobberClientId: 'client-authoritative-client',
-      observedJobberSnapshotId: UUID_2,
       originalObservedInvoiceNumber: 'INV-100',
       acceptedInvoiceNumberBase: 'INV-100',
       correlationKey: '33333333-3333-4333-8333-333333333333',
@@ -147,17 +143,48 @@ describe('Progress Invoice command schemas', () => {
     expect(acceptProgressJobberInvoiceNumberSchema.safeParse({
       seriesId: UUID,
       expectedVersion: 1,
-      observedJobberSnapshotId: UUID_2,
+      observationId: UUID_2,
       numberSource: 'original',
       idempotencyKey: '33333333-3333-4333-8333-333333333333',
     }).success).toBe(true)
     expect(acceptProgressJobberInvoiceNumberSchema.safeParse({
       seriesId: UUID,
       expectedVersion: 1,
-      observedJobberSnapshotId: UUID_2,
+      observationId: UUID_2,
       acceptedInvoiceNumberBase: 'INV-100',
+      numberSource: 'latest',
       idempotencyKey: '33333333-3333-4333-8333-333333333333',
     }).success).toBe(false)
+  })
+
+  it('bounds external Jobber IDs and keeps refresh free of selector or authority fields', () => {
+    expect(linkProgressJobberInvoiceSchema.safeParse({
+      seriesId: UUID,
+      expectedVersion: 1,
+      selectedJobberInvoiceId: 'i'.repeat(513),
+      correlationKey: UUID_2,
+    }).success).toBe(false)
+
+    expect(refreshProgressJobberInvoiceSchema.safeParse({
+      seriesId: UUID,
+      expectedVersion: 1,
+      idempotencyKey: UUID_2,
+    }).success).toBe(true)
+
+    for (const forged of [
+      { selectedJobberJobId: 'job-node' },
+      { selectedJobberPropertyId: 'property-node' },
+      { acknowledgeStaleObservation: true },
+      { payments: [] },
+      { accountId: 'account-node' },
+    ]) {
+      expect(refreshProgressJobberInvoiceSchema.safeParse({
+        seriesId: UUID,
+        expectedVersion: 1,
+        idempotencyKey: UUID_2,
+        ...forged,
+      }).success).toBe(false)
+    }
   })
 
   it('omits expectedVersion for first profile creation and requires it when supplied', () => {

@@ -2,19 +2,27 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { beforeEach, describe, expect, expectTypeOf, it, vi } from 'vitest'
 
+vi.mock('server-only', () => ({}))
+
 const serverMocks = vi.hoisted(() => ({
   createClient: vi.fn(),
+  createServiceClient: vi.fn(),
 }))
 
 vi.mock('@/lib/supabase/server', () => ({
   createClient: serverMocks.createClient,
+  createServiceClient: serverMocks.createServiceClient,
 }))
 
 import {
   ProgressInvoiceRepository,
+  ProgressInvoiceJobberPersistenceRepository,
+  createProgressInvoiceJobberPersistenceRepository,
   createProgressInvoiceRepository,
   createProgressInvoiceRpcExecutor,
+  createProgressInvoiceServiceRpcExecutor,
   type ProgressInvoiceRpcExecutor,
+  type ProgressInvoiceServiceRpcExecutor,
   type SaveBusinessInvoiceProfilePayload,
 } from '@/lib/progress-invoices/repository'
 import type { createClient as createAuthenticatedClient } from '@/lib/supabase/server'
@@ -122,10 +130,49 @@ describe('ProgressInvoiceRepository', () => {
 
   it('keeps the production adapter authenticated and free of sensitive logging', () => {
     expect(repositorySource).toMatch(
-      /import\s*\{\s*createClient\s*\}\s*from\s*'@\/lib\/supabase\/server'/
+      /import\s*\{[^}]*createClient[^}]*createServiceClient[^}]*\}\s*from\s*'@\/lib\/supabase\/server'/
     )
-    expect(repositorySource).not.toMatch(/createServiceClient|SUPABASE_SERVICE_ROLE_KEY/)
+    expect(repositorySource).toMatch(/class\s+ProgressInvoiceJobberPersistenceRepository/)
+    expect(repositorySource).not.toMatch(/SUPABASE_SERVICE_ROLE_KEY/)
     expect(repositorySource).not.toMatch(/console\.|JSON\.stringify\s*\(\s*payload/)
+  })
+
+  it('keeps authoritative Jobber commands behind a separate service-role repository', async () => {
+    const serviceResult = {
+      series_id: '11111111-1111-4111-8111-111111111111',
+      snapshot_id: '22222222-2222-4222-8222-222222222222',
+      series_version: 2,
+      inserted_payments: 1,
+      revised_payments: 0,
+      unconfirmed_payments: 0,
+    }
+    const rpc = vi.fn().mockResolvedValue({ data: [serviceResult], error: null })
+    serverMocks.createServiceClient.mockReturnValue({ rpc })
+
+    const repository = await createProgressInvoiceJobberPersistenceRepository()
+    const result = await repository.call('apply_progress_invoice_jobber_refresh', {
+      actor_id: '33333333-3333-4333-8333-333333333333',
+      series_id: serviceResult.series_id,
+      expected_version: 1,
+      idempotency_key: '44444444-4444-4444-8444-444444444444',
+      request_fingerprint: 'a'.repeat(64),
+      observation: {},
+    })
+
+    expect(serverMocks.createServiceClient).toHaveBeenCalledOnce()
+    expect(serverMocks.createClient).not.toHaveBeenCalled()
+    expect(rpc).toHaveBeenCalledWith('apply_progress_invoice_jobber_refresh', {
+      payload: expect.objectContaining({ actor_id: '33333333-3333-4333-8333-333333333333' }),
+    })
+    expect(result).toEqual({ ok: true, data: serviceResult })
+  })
+
+  it('types authenticated and service-role executors as disjoint command sets', () => {
+    type ServiceExecutorInput = Parameters<typeof createProgressInvoiceServiceRpcExecutor>[0]
+
+    expectTypeOf(createProgressInvoiceServiceRpcExecutor).returns.toMatchTypeOf<ProgressInvoiceServiceRpcExecutor>()
+    expectTypeOf<ServiceExecutorInput>().toHaveProperty('rpc')
+    expectTypeOf<ProgressInvoiceRepository>().not.toMatchTypeOf<ProgressInvoiceJobberPersistenceRepository>()
   })
 
   it.each([
