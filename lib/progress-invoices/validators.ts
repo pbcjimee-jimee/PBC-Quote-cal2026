@@ -15,7 +15,7 @@ const moneySchema = decimalStringSchema.refine(
   { message: 'Money must have at most two decimal places' },
 )
 const positiveMoneySchema = moneySchema.refine(
-  (value) => new Decimal(value).isPositive(),
+  (value) => new Decimal(value).greaterThan(0),
   { message: 'Money must be positive' },
 )
 const percentageSchema = decimalStringSchema.refine(
@@ -88,6 +88,25 @@ export const createProgressInvoiceSeriesSchema = z.strictObject({
       message: 'Only PBC quote series may include a quote ID',
     })
   }
+})
+
+export const createStandaloneProgressInvoiceFromJobberSchema = z.strictObject({
+  selectedJobberInvoiceId: progressJobberExternalIdSchema,
+  selectedJobberJobId: progressJobberExternalIdSchema.optional(),
+  selectedJobberPropertyId: progressJobberExternalIdSchema.optional(),
+  baseContractExGst: positiveMoneySchema,
+  gstRate: gstRateSchema,
+  recipientName: requiredText(PROGRESS_INVOICE_TEXT_LIMITS.recipientName),
+  recipientCompany: optionalText(PROGRESS_INVOICE_TEXT_LIMITS.recipientCompany),
+  recipientAddress: requiredText(PROGRESS_INVOICE_TEXT_LIMITS.address),
+  recipientEmail: optionalText(PROGRESS_INVOICE_TEXT_LIMITS.email),
+  recipientPhone: optionalText(PROGRESS_INVOICE_TEXT_LIMITS.phone),
+  recipientAbn: optionalText(PROGRESS_INVOICE_TEXT_LIMITS.abn),
+  siteName: requiredText(PROGRESS_INVOICE_TEXT_LIMITS.siteName),
+  siteAddress: requiredText(PROGRESS_INVOICE_TEXT_LIMITS.siteAddress),
+  defaultDescription: requiredText(PROGRESS_INVOICE_TEXT_LIMITS.description),
+  reference: optionalText(PROGRESS_INVOICE_TEXT_LIMITS.reference),
+  correlationKey: uuidSchema,
 })
 
 export const updateProgressInvoiceSeriesSchema = z.strictObject({
@@ -344,6 +363,9 @@ export type SaveBusinessInvoiceProfileInput = z.infer<
 >
 export type CreateProgressInvoiceSeriesInput = z.infer<
   typeof createProgressInvoiceSeriesSchema
+>
+export type CreateStandaloneProgressInvoiceFromJobberInput = z.infer<
+  typeof createStandaloneProgressInvoiceFromJobberSchema
 >
 export type UpdateProgressInvoiceSeriesInput = z.infer<
   typeof updateProgressInvoiceSeriesSchema

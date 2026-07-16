@@ -1707,6 +1707,15 @@ export interface Database {
         Args: { payload: Json }
         Returns: Array<{ id: string; version: number }>
       }
+      create_progress_invoice_series_from_jobber: {
+        Args: { payload: Json }
+        Returns: {
+          imported_payments: number
+          series_id: string
+          snapshot_id: string
+          version: number
+        }[]
+      }
       get_progress_invoice_jobber_context: {
         Args: { payload: Json }
         Returns: {

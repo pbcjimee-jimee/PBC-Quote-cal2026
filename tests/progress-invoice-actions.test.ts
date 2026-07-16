@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+vi.mock('server-only', () => ({}))
+
 const mocks = vi.hoisted(() => ({
   requireAllowedUser: vi.fn(),
   revalidatePath: vi.fn(),
@@ -14,6 +16,7 @@ const mocks = vi.hoisted(() => ({
   updateDraftProgressAdjustment: vi.fn(),
   approveProgressAdjustment: vi.fn(),
   supersedeProgressAdjustment: vi.fn(),
+  createStandaloneProgressInvoiceFromJobberService: vi.fn(),
 }))
 
 vi.mock('@/lib/security/require-allowed-user', () => ({
@@ -41,6 +44,11 @@ vi.mock('@/lib/progress-invoices/adjustment-service', () => ({
   supersedeProgressAdjustment: mocks.supersedeProgressAdjustment,
 }))
 
+vi.mock('@/lib/progress-invoices/standalone-import-service', () => ({
+  createStandaloneProgressInvoiceFromJobberService:
+    mocks.createStandaloneProgressInvoiceFromJobberService,
+}))
+
 import {
   createProgressInvoiceSeries,
   getBusinessInvoiceProfile,
@@ -56,6 +64,7 @@ import {
   supersedeProgressAdjustment,
   updateDraftProgressAdjustment,
 } from '@/lib/actions/progress-invoice-adjustments'
+import { createStandaloneProgressInvoiceFromJobber } from '@/lib/actions/progress-invoice-jobber'
 
 const SERIES_ID = '11111111-1111-4111-8111-111111111111'
 const QUOTE_ID = '22222222-2222-4222-8222-222222222222'
@@ -106,6 +115,25 @@ const createAdjustmentInput = {
   correlationKey: CORRELATION_KEY,
 }
 
+const standaloneJobberInput = {
+  selectedJobberInvoiceId: 'invoice-1',
+  selectedJobberJobId: 'job-1',
+  selectedJobberPropertyId: 'property-1',
+  baseContractExGst: '17220.50',
+  gstRate: '0.10' as const,
+  recipientName: 'Edited Builder',
+  recipientCompany: null,
+  recipientAddress: 'Edited billing address',
+  recipientEmail: null,
+  recipientPhone: null,
+  recipientAbn: null,
+  siteName: 'Edited site',
+  siteAddress: 'Edited site address',
+  defaultDescription: 'Progress painting works',
+  reference: 'Jobber 2906',
+  correlationKey: CORRELATION_KEY,
+}
+
 describe('Progress Invoice Server Actions', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -113,6 +141,62 @@ describe('Progress Invoice Server Actions', () => {
       ok: true,
       user: { id: 'actor-1', email: 'owner@example.test' },
     })
+  })
+
+  it('authorizes before standalone Jobber gateway work and maps the exact success result', async () => {
+    mocks.createStandaloneProgressInvoiceFromJobberService.mockResolvedValue({
+      ok: true,
+      data: {
+        series_id: SERIES_ID,
+        version: 1,
+        snapshot_id: '55555555-5555-4555-8555-555555555555',
+        imported_payments: 3,
+      },
+    })
+
+    expect(await createStandaloneProgressInvoiceFromJobber(standaloneJobberInput)).toEqual({
+      ok: true,
+      data: { seriesId: SERIES_ID, version: 1, importedPayments: 3 },
+    })
+    expect(mocks.createStandaloneProgressInvoiceFromJobberService).toHaveBeenCalledWith(
+      standaloneJobberInput,
+      'actor-1',
+    )
+    expect(mocks.revalidatePath.mock.calls).toEqual([
+      ['/progress-invoices'],
+      [`/progress-invoices/${SERIES_ID}`],
+    ])
+  })
+
+  it('rejects standalone Jobber input and authorization failures before delegation', async () => {
+    expect(await createStandaloneProgressInvoiceFromJobber({
+      ...standaloneJobberInput,
+      observation: {},
+    })).toMatchObject({ ok: false, code: 'VALIDATION' })
+    expect(mocks.requireAllowedUser).not.toHaveBeenCalled()
+
+    mocks.requireAllowedUser.mockResolvedValue({ ok: false, error: 'User is not allowed' })
+    expect(await createStandaloneProgressInvoiceFromJobber(standaloneJobberInput)).toEqual({
+      ok: false,
+      error: 'User is not allowed',
+    })
+    expect(mocks.createStandaloneProgressInvoiceFromJobberService).not.toHaveBeenCalled()
+    expect(mocks.revalidatePath).not.toHaveBeenCalled()
+  })
+
+  it('preserves safe standalone service failures without revalidation', async () => {
+    mocks.createStandaloneProgressInvoiceFromJobberService.mockResolvedValue({
+      ok: false,
+      error: 'JOBBER_TEMPORARY_FAILURE',
+      code: 'JOBBER_ERROR',
+    })
+
+    expect(await createStandaloneProgressInvoiceFromJobber(standaloneJobberInput)).toEqual({
+      ok: false,
+      error: 'JOBBER_TEMPORARY_FAILURE',
+      code: 'JOBBER_ERROR',
+    })
+    expect(mocks.revalidatePath).not.toHaveBeenCalled()
   })
 
   it('validates create-series input before authentication', async () => {

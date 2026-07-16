@@ -23,6 +23,7 @@ import {
   createProgressInvoiceServiceRpcExecutor,
   type ProgressInvoiceRpcExecutor,
   type ProgressInvoiceServiceRpcExecutor,
+  type CreateStandaloneProgressInvoiceFromJobberPayload,
   type SaveBusinessInvoiceProfilePayload,
 } from '@/lib/progress-invoices/repository'
 import type { createClient as createAuthenticatedClient } from '@/lib/supabase/server'
@@ -165,6 +166,73 @@ describe('ProgressInvoiceRepository', () => {
       payload: expect.objectContaining({ actor_id: '33333333-3333-4333-8333-333333333333' }),
     })
     expect(result).toEqual({ ok: true, data: serviceResult })
+  })
+
+  it('calls the standalone Jobber import command and parses its complete result', async () => {
+    const serviceResult = {
+      series_id: '11111111-1111-4111-8111-111111111111',
+      version: 1,
+      snapshot_id: '22222222-2222-4222-8222-222222222222',
+      imported_payments: 3,
+    }
+    const rpc = vi.fn().mockResolvedValue({ data: [serviceResult], error: null })
+    serverMocks.createServiceClient.mockReturnValue({ rpc })
+    const commandPayload: CreateStandaloneProgressInvoiceFromJobberPayload = {
+      actor_id: '33333333-3333-4333-8333-333333333333',
+      correlation_key: '44444444-4444-4444-8444-444444444444',
+      request_fingerprint: 'a'.repeat(64),
+      series: {
+        source_type: 'jobber_invoice',
+        quote_id: null,
+        base_contract_ex_gst: '17220.50',
+        gst_rate: '0.10',
+        recipient_name: 'Edited Builder',
+        recipient_company: null,
+        recipient_address: 'Edited billing address',
+        recipient_email: null,
+        recipient_phone: null,
+        recipient_abn: null,
+        site_name: 'Edited site',
+        site_address: 'Edited site address',
+        default_description: 'Progress painting works',
+        reference: 'Jobber 2906',
+        correlation_key: '44444444-4444-4444-8444-444444444444',
+      },
+      observation: {},
+    }
+
+    const repository = await createProgressInvoiceJobberPersistenceRepository()
+    const result = await repository.call(
+      'create_progress_invoice_series_from_jobber',
+      commandPayload,
+    )
+
+    expect(rpc).toHaveBeenCalledWith('create_progress_invoice_series_from_jobber', {
+      payload: commandPayload,
+    })
+    expect(result).toEqual({ ok: true, data: serviceResult })
+  })
+
+  it.each([
+    {},
+    { series_id: 'series-1', version: 1, snapshot_id: 'snapshot-1' },
+    { series_id: 'series-1', version: 0, snapshot_id: 'snapshot-1', imported_payments: 0 },
+    { series_id: 'series-1', version: 1, snapshot_id: 'snapshot-1', imported_payments: -1 },
+    { series_id: 'series-1', version: 1, snapshot_id: 'snapshot-1', imported_payments: 1.5 },
+  ])('rejects malformed standalone Jobber import result %#', async (serviceResult) => {
+    const executor: ProgressInvoiceServiceRpcExecutor = {
+      execute: async () => ({ data: [serviceResult], error: null }),
+    }
+    const repository = new ProgressInvoiceJobberPersistenceRepository(executor)
+    const result = await repository.call('create_progress_invoice_series_from_jobber', {
+      actor_id: '33333333-3333-4333-8333-333333333333',
+      correlation_key: '44444444-4444-4444-8444-444444444444',
+      request_fingerprint: 'a'.repeat(64),
+      series: {} as never,
+      observation: {},
+    })
+
+    expect(result).toEqual({ ok: false, error: 'PROGRESS_RESPONSE_INVALID' })
   })
 
   it('types authenticated and service-role executors as disjoint command sets', () => {

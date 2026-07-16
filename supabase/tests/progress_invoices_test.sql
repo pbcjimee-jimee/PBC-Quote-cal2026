@@ -1,7 +1,7 @@
 CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA extensions;
 CREATE EXTENSION IF NOT EXISTS dblink WITH SCHEMA extensions;
 
-SELECT plan(178);
+SELECT plan(189);
 
 DELETE FROM public.business_invoice_profiles;
 DELETE FROM auth.users
@@ -78,6 +78,384 @@ BEGIN
   END;
 END;
 $$;
+
+CREATE FUNCTION pg_temp.task2_payment(
+  requested_id TEXT,
+  requested_amount TEXT,
+  requested_method TEXT,
+  requested_reference TEXT
+)
+RETURNS JSONB
+LANGUAGE sql
+IMMUTABLE
+AS $$
+  SELECT jsonb_build_object(
+    'jobber_payment_id', requested_id,
+    'source', 'payment_record',
+    'raw_adjustment_type', 'PAYMENT',
+    'raw_signed_amount', requested_amount,
+    'absolute_amount', requested_amount,
+    'direction', 'receipt',
+    'effective_amount', requested_amount,
+    'entry_date', '2026-01-02',
+    'method', requested_method,
+    'reference', requested_reference,
+    'external_status', 'SUCCEEDED',
+    'external_updated_at', NULL,
+    'treatment', 'active'
+  );
+$$;
+
+CREATE FUNCTION pg_temp.task2_observation(
+  requested_fingerprint TEXT,
+  requested_invoice_number TEXT,
+  requested_payments JSONB
+)
+RETURNS JSONB
+LANGUAGE sql
+IMMUTABLE
+AS $$
+  SELECT jsonb_build_object(
+    'account_id', 'task2-standalone-account',
+    'invoice_id', 'task2-standalone-invoice',
+    'invoice_number', requested_invoice_number,
+    'raw_status', 'awaiting_payment',
+    'normalized_status', 'awaiting_payment',
+    'jobber_web_uri', 'https://secure.getjobber.com/invoices/task2-standalone-invoice',
+    'invoice_subtotal', '1000.00',
+    'invoice_tax_amount', '100.00',
+    'invoice_total', '1100.00',
+    'invoice_balance', '825.00',
+    'invoice_payments_total', '275.00',
+    'invoice_issued_date', '2026-01-01T13:30:00Z',
+    'invoice_due_date', '2026-01-15',
+    'invoice_received_date', NULL,
+    'external_created_at', '2026-01-01T00:00:00Z',
+    'external_updated_at', '2026-01-02T00:00:00Z',
+    'client_id', 'task2-client',
+    'client_name', 'Task 2 Builder',
+    'client_company_name', 'Task 2 Builder Pty Ltd',
+    'client_email', 'accounts@example.test',
+    'client_phone', NULL,
+    'client_email_candidates', jsonb_build_array('accounts@example.test'),
+    'client_phone_candidates', jsonb_build_array(
+      jsonb_build_object('number', '0400000000', 'primary', true),
+      jsonb_build_object('number', '0411111111', 'primary', true)
+    ),
+    'billing_address', '1 Billing Street, Sydney NSW 2000, Australia',
+    'job_ids', jsonb_build_array('task2-job-1', 'task2-job-2'),
+    'property_ids', jsonb_build_array('task2-property-1', 'task2-property-2'),
+    'site_address_candidates', jsonb_build_array(
+      jsonb_build_object(
+        'property_id', 'task2-property-1',
+        'address', '4 Curra Close, Frenchs Forest NSW 2086, Australia'
+      ),
+      jsonb_build_object('property_id', 'task2-property-2', 'address', NULL)
+    ),
+    'selected_job_id', 'task2-job-2',
+    'selected_property_id', 'task2-property-1',
+    'effective_graphql_version', '2025-04-16',
+    'payment_eligibility_policy_version', '2026-07-v1',
+    'fetched_at', '2026-01-02T01:00:00Z',
+    'response_fingerprint', requested_fingerprint,
+    'warnings', '[]'::JSONB,
+    'payments', requested_payments
+  );
+$$;
+
+CREATE FUNCTION pg_temp.task2_standalone_import_payload(
+  requested_key UUID,
+  requested_fingerprint TEXT,
+  requested_observation JSONB,
+  requested_recipient_name TEXT DEFAULT 'Edited Builder'
+)
+RETURNS JSONB
+LANGUAGE sql
+IMMUTABLE
+AS $$
+  SELECT jsonb_build_object(
+    'actor_id', '00000000-0000-0000-0000-000000008001',
+    'correlation_key', requested_key,
+    'request_fingerprint', requested_fingerprint,
+    'series', jsonb_build_object(
+      'source_type', 'jobber_invoice',
+      'quote_id', NULL,
+      'base_contract_ex_gst', '17220.50',
+      'gst_rate', '0.10',
+      'recipient_name', requested_recipient_name,
+      'recipient_company', NULL,
+      'recipient_address', 'Edited billing address',
+      'recipient_email', NULL,
+      'recipient_phone', NULL,
+      'recipient_abn', NULL,
+      'site_name', 'Edited site',
+      'site_address', 'Edited site address',
+      'default_description', 'Progress painting works',
+      'reference', 'Jobber 2906',
+      'correlation_key', requested_key
+    ),
+    'observation', requested_observation
+  );
+$$;
+
+CREATE TEMP TABLE task2_standalone_import_payload AS
+SELECT pg_temp.task2_standalone_import_payload(
+  '82000000-0000-4000-8000-000000000101',
+  repeat('1', 64),
+  pg_temp.task2_observation(
+    repeat('5', 64),
+    'INV-STANDALONE',
+    jsonb_build_array(
+      pg_temp.task2_payment('standalone-payment-1', '125.00', 'EFT', 'ONE'),
+      pg_temp.task2_payment('standalone-payment-2', '150.00', 'CARD', 'TWO')
+    )
+  ) || jsonb_build_object(
+    'account_id', 'task2-standalone-account',
+    'invoice_id', 'task2-standalone-invoice'
+  )
+) AS payload;
+
+CREATE TEMP TABLE task2_standalone_import_result AS
+SELECT *
+FROM public.create_progress_invoice_series_from_jobber(
+  (SELECT payload FROM task2_standalone_import_payload)
+);
+
+SELECT is(
+  (
+    SELECT jsonb_build_object(
+      'version', result.version,
+      'snapshot_matches', result.snapshot_id = series.current_jobber_snapshot_id,
+      'imported_payments', result.imported_payments,
+      'series_rows', (
+        SELECT count(*) FROM public.progress_invoice_series
+        WHERE id = result.series_id
+      ),
+      'snapshot_rows', (
+        SELECT count(*) FROM public.progress_jobber_invoice_snapshots
+        WHERE series_id = result.series_id
+      ),
+      'payment_rows', (
+        SELECT count(*) FROM public.progress_payments
+        WHERE series_id = result.series_id
+      ),
+      'revision_rows', (
+        SELECT count(*)
+        FROM public.progress_payment_revisions AS revision
+        JOIN public.progress_payments AS payment ON payment.id = revision.payment_id
+        WHERE payment.series_id = result.series_id
+      )
+    )
+    FROM task2_standalone_import_result AS result
+    JOIN public.progress_invoice_series AS series ON series.id = result.series_id
+  ),
+  jsonb_build_object(
+    'version', 1,
+    'snapshot_matches', true,
+    'imported_payments', 2,
+    'series_rows', 1,
+    'snapshot_rows', 1,
+    'payment_rows', 2,
+    'revision_rows', 2
+  ),
+  'standalone import atomically creates one series, snapshot, and payment revisions'
+);
+
+SELECT is(
+  (
+    SELECT jsonb_agg(payment.jobber_payment_id ORDER BY payment.jobber_payment_id)
+    FROM public.progress_payments AS payment
+    WHERE payment.series_id = (SELECT series_id FROM task2_standalone_import_result)
+  ),
+  jsonb_build_array('standalone-payment-1', 'standalone-payment-2'),
+  'standalone import preserves stable Jobber payment identities'
+);
+
+SELECT is(
+  (
+    SELECT jsonb_build_object(
+      'series_recipient', series.recipient_name,
+      'series_address', series.recipient_address,
+      'series_site', series.site_name,
+      'series_site_address', series.site_address,
+      'snapshot_client', snapshot.client_name,
+      'snapshot_billing', snapshot.billing_address,
+      'snapshot_property', snapshot.property_address
+    )
+    FROM public.progress_invoice_series AS series
+    JOIN public.progress_jobber_invoice_snapshots AS snapshot
+      ON snapshot.id = series.current_jobber_snapshot_id
+    WHERE series.id = (SELECT series_id FROM task2_standalone_import_result)
+  ),
+  jsonb_build_object(
+    'series_recipient', 'Edited Builder',
+    'series_address', 'Edited billing address',
+    'series_site', 'Edited site',
+    'series_site_address', 'Edited site address',
+    'snapshot_client', 'Task 2 Builder',
+    'snapshot_billing', '1 Billing Street, Sydney NSW 2000, Australia',
+    'snapshot_property', '4 Curra Close, Frenchs Forest NSW 2086, Australia'
+  ),
+  'edited series fields remain distinct from immutable Jobber observation fields'
+);
+
+SELECT is(
+  (
+    SELECT to_jsonb(replayed)
+    FROM public.create_progress_invoice_series_from_jobber(
+      (SELECT payload FROM task2_standalone_import_payload)
+    ) AS replayed
+  ),
+  (SELECT to_jsonb(original) FROM task2_standalone_import_result AS original),
+  'exact standalone import retry returns the prior result'
+);
+
+SELECT is(
+  (
+    SELECT jsonb_build_object(
+      'series', count(DISTINCT series.id),
+      'snapshots', count(DISTINCT snapshot.id),
+      'payments', count(DISTINCT payment.id),
+      'events', count(DISTINCT event.id)
+    )
+    FROM public.progress_invoice_series AS series
+    LEFT JOIN public.progress_jobber_invoice_snapshots AS snapshot ON snapshot.series_id = series.id
+    LEFT JOIN public.progress_payments AS payment ON payment.series_id = series.id
+    LEFT JOIN public.progress_invoice_events AS event
+      ON event.series_id = series.id
+     AND event.command_name = 'create_progress_invoice_series_from_jobber'
+    WHERE series.id = (SELECT series_id FROM task2_standalone_import_result)
+  ),
+  jsonb_build_object('series', 1, 'snapshots', 1, 'payments', 2, 'events', 1),
+  'exact standalone import retry appends no extra rows'
+);
+
+SELECT throws_ok(
+  format(
+    'SELECT * FROM public.create_progress_invoice_series_from_jobber(%L::JSONB)',
+    pg_temp.task2_standalone_import_payload(
+      '82000000-0000-4000-8000-000000000101',
+      repeat('2', 64),
+      (SELECT payload -> 'observation' FROM task2_standalone_import_payload),
+      'Different Edited Builder'
+    )::TEXT
+  ),
+  'P0001',
+  'IDEMPOTENCY_KEY_REUSED',
+  'same standalone import key with different editable input is rejected'
+);
+
+SELECT throws_ok(
+  format(
+    'SELECT * FROM public.create_progress_invoice_series_from_jobber(%L::JSONB)',
+    pg_temp.task2_standalone_import_payload(
+      '82000000-0000-4000-8000-000000000102',
+      repeat('3', 64),
+      (SELECT payload -> 'observation' FROM task2_standalone_import_payload)
+    )::TEXT
+  ),
+  'P0001',
+  'PROGRESS_JOBBER_ERROR',
+  'duplicate non-void standalone Jobber identity is rejected'
+);
+
+SELECT is(
+  (
+    SELECT count(*)
+    FROM public.progress_invoice_series
+    WHERE jobber_account_id = 'task2-standalone-account'
+      AND jobber_invoice_id = 'task2-standalone-invoice'
+      AND status <> 'void'
+  ),
+  1::BIGINT,
+  'duplicate standalone identity rejection leaves no second series'
+);
+
+SELECT throws_ok(
+  format(
+    'SELECT * FROM public.create_progress_invoice_series_from_jobber(%L::JSONB)',
+    pg_temp.task2_standalone_import_payload(
+      '82000000-0000-4000-8000-000000000103',
+      repeat('4', 64),
+      (
+        pg_temp.task2_observation(
+          repeat('6', 64),
+          'INV-BAD-PAYMENT',
+          jsonb_build_array(
+            pg_temp.task2_payment('standalone-bad-payment', '10.00', 'EFT', 'BAD')
+              || jsonb_build_object('effective_amount', '999.00')
+          )
+        ) || jsonb_build_object(
+          'account_id', 'task2-bad-payment-account',
+          'invoice_id', 'task2-bad-payment-invoice'
+        )
+      )
+    )::TEXT
+  ),
+  'P0001',
+  'PROGRESS_JOBBER_ERROR',
+  'invalid standalone payment observation rejects the command'
+);
+
+SELECT is(
+  (
+    SELECT count(*) FROM public.progress_invoice_series
+    WHERE jobber_account_id = 'task2-bad-payment-account'
+  ),
+  0::BIGINT,
+  'invalid standalone payment observation rolls back the series'
+);
+
+SELECT is(
+  has_function_privilege(
+    'service_role',
+    'public.create_progress_invoice_series_from_jobber(jsonb)',
+    'EXECUTE'
+  )
+    AND NOT has_function_privilege(
+      'authenticated',
+      'public.create_progress_invoice_series_from_jobber(jsonb)',
+      'EXECUTE'
+    ),
+  true,
+  'standalone Jobber import RPC is executable only by service_role'
+);
+
+ALTER TABLE public.progress_invoice_events
+  DISABLE TRIGGER trg_progress_invoice_events_append_only;
+DELETE FROM public.progress_invoice_events
+WHERE series_id = (SELECT series_id FROM task2_standalone_import_result);
+ALTER TABLE public.progress_invoice_events
+  ENABLE TRIGGER trg_progress_invoice_events_append_only;
+
+BEGIN;
+SET CONSTRAINTS ALL DEFERRED;
+ALTER TABLE public.progress_payment_revisions
+  DISABLE TRIGGER trg_progress_payment_revisions_immutable;
+UPDATE public.progress_payments
+SET current_revision_id = NULL
+WHERE series_id = (SELECT series_id FROM task2_standalone_import_result);
+DELETE FROM public.progress_payment_revisions AS revision
+USING public.progress_payments AS payment
+WHERE revision.payment_id = payment.id
+  AND payment.series_id = (SELECT series_id FROM task2_standalone_import_result);
+DELETE FROM public.progress_payments
+WHERE series_id = (SELECT series_id FROM task2_standalone_import_result);
+ALTER TABLE public.progress_payment_revisions
+  ENABLE TRIGGER trg_progress_payment_revisions_immutable;
+COMMIT;
+
+UPDATE public.progress_invoice_series
+SET current_jobber_snapshot_id = NULL
+WHERE id = (SELECT series_id FROM task2_standalone_import_result);
+ALTER TABLE public.progress_jobber_invoice_snapshots
+  DISABLE TRIGGER trg_progress_jobber_snapshots_immutable;
+DELETE FROM public.progress_jobber_invoice_snapshots
+WHERE series_id = (SELECT series_id FROM task2_standalone_import_result);
+ALTER TABLE public.progress_jobber_invoice_snapshots
+  ENABLE TRIGGER trg_progress_jobber_snapshots_immutable;
+DELETE FROM public.progress_invoice_series
+WHERE id = (SELECT series_id FROM task2_standalone_import_result);
 
 SET ROLE anon;
 SELECT is(

@@ -8,6 +8,7 @@ import {
   createProgressAdjustmentSchema,
   createProgressClaimDraftSchema,
   createProgressInvoiceSeriesSchema,
+  createStandaloneProgressInvoiceFromJobberSchema,
   linkProgressJobberInvoiceSchema,
   matchProgressPaymentsSchema,
   progressInvoiceDocumentRequestSchema,
@@ -52,6 +53,51 @@ const businessProfile = {
 }
 
 describe('Progress Invoice command schemas', () => {
+  const standaloneJobberInput = {
+    selectedJobberInvoiceId: 'invoice-1',
+    selectedJobberJobId: 'job-1',
+    selectedJobberPropertyId: 'property-1',
+    baseContractExGst: '17220.50',
+    gstRate: '0.10' as const,
+    recipientName: ' Edited Builder ',
+    recipientCompany: ' ',
+    recipientAddress: 'Edited billing address',
+    recipientEmail: null,
+    recipientPhone: null,
+    recipientAbn: null,
+    siteName: 'Edited site',
+    siteAddress: 'Edited site address',
+    defaultDescription: 'Progress painting works',
+    reference: 'Jobber 2906',
+    correlationKey: UUID,
+  }
+
+  it('strictly validates and normalizes standalone Jobber create input', () => {
+    const parsed = createStandaloneProgressInvoiceFromJobberSchema.safeParse(standaloneJobberInput)
+
+    expect(parsed.success).toBe(true)
+    if (parsed.success) {
+      expect(parsed.data.recipientName).toBe('Edited Builder')
+      expect(parsed.data.recipientCompany).toBe('')
+    }
+    expect(createStandaloneProgressInvoiceFromJobberSchema.safeParse({
+      ...standaloneJobberInput,
+      accountId: 'forged-account',
+    }).success).toBe(false)
+    expect(createStandaloneProgressInvoiceFromJobberSchema.safeParse({
+      ...standaloneJobberInput,
+      selectedJobberInvoiceId: undefined,
+    }).success).toBe(false)
+    expect(createStandaloneProgressInvoiceFromJobberSchema.safeParse({
+      ...standaloneJobberInput,
+      baseContractExGst: 17220.5,
+    }).success).toBe(false)
+    expect(createStandaloneProgressInvoiceFromJobberSchema.safeParse({
+      ...standaloneJobberInput,
+      baseContractExGst: '0.00',
+    }).success).toBe(false)
+  })
+
   it('accepts decimal strings and rejects numbers for money and percentages', () => {
     expect(createProgressAdjustmentSchema.safeParse({
       seriesId: UUID,

@@ -318,6 +318,39 @@ export interface RecordProgressJobberRefreshFailurePayload {
   error_code: string
 }
 
+export interface StandaloneProgressInvoiceSeriesPayload {
+  source_type: 'jobber_invoice'
+  quote_id: null
+  base_contract_ex_gst: string
+  gst_rate: '0.10'
+  recipient_name: string
+  recipient_company: string | null
+  recipient_address: string
+  recipient_email: string | null
+  recipient_phone: string | null
+  recipient_abn: string | null
+  site_name: string
+  site_address: string
+  default_description: string
+  reference: string | null
+  correlation_key: string
+}
+
+export interface CreateStandaloneProgressInvoiceFromJobberPayload {
+  actor_id: string
+  correlation_key: string
+  request_fingerprint: string
+  series: StandaloneProgressInvoiceSeriesPayload
+  observation: Json
+}
+
+export interface CreateStandaloneProgressInvoiceFromJobberRpcResult {
+  series_id: string
+  version: number
+  snapshot_id: string
+  imported_payments: number
+}
+
 export interface ProgressInvoiceCommandMap {
   save_business_invoice_profile: {
     payload: SaveBusinessInvoiceProfilePayload
@@ -382,6 +415,10 @@ export interface ProgressInvoiceCommandMap {
 }
 
 export interface ProgressInvoiceJobberPersistenceCommandMap {
+  create_progress_invoice_series_from_jobber: {
+    payload: CreateStandaloneProgressInvoiceFromJobberPayload
+    result: CreateStandaloneProgressInvoiceFromJobberRpcResult
+  }
   link_progress_jobber_invoice: {
     payload: LinkProgressJobberInvoicePayload
     result: LinkProgressJobberInvoiceRpcResult
@@ -557,6 +594,24 @@ function parseRefreshJobberResult(value: unknown): RefreshProgressJobberInvoiceR
     inserted_payments: inserted,
     revised_payments: revised,
     unconfirmed_payments: unconfirmed,
+  }
+}
+
+function parseStandaloneJobberImportResult(
+  value: unknown,
+): CreateStandaloneProgressInvoiceFromJobberRpcResult | null {
+  const candidate = singleton(value)
+  if (!isRecord(candidate)) return null
+  const seriesId = stringField(candidate, 'series_id')
+  const version = positiveIntegerField(candidate, 'version')
+  const snapshotId = stringField(candidate, 'snapshot_id')
+  const importedPayments = nonNegativeIntegerField(candidate, 'imported_payments')
+  if (!seriesId || !version || !snapshotId || importedPayments === null) return null
+  return {
+    series_id: seriesId,
+    version,
+    snapshot_id: snapshotId,
+    imported_payments: importedPayments,
   }
 }
 
@@ -936,7 +991,9 @@ export class ProgressInvoiceJobberPersistenceRepository {
     const { data, error } = await this.executor.execute(command, toJson(payload))
     if (error) return mapRpcError(error)
 
-    const result = command === 'apply_progress_invoice_jobber_refresh'
+    const result = command === 'create_progress_invoice_series_from_jobber'
+      ? parseStandaloneJobberImportResult(data)
+      : command === 'apply_progress_invoice_jobber_refresh'
       ? parseRefreshJobberResult(data)
       : command === 'link_progress_jobber_invoice'
         ? parseLinkJobberResult(data)
