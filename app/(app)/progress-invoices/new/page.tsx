@@ -1,4 +1,5 @@
 import { IntentLink } from '@/components/navigation/intent-link'
+import { StandaloneProgressInvoiceForm } from '@/components/progress-invoices/standalone-progress-invoice-form'
 import { Icons } from '@/components/ui/icons'
 
 export default function NewProgressInvoicePage() {
@@ -15,11 +16,11 @@ export default function NewProgressInvoicePage() {
       <div className="pbc-page">
         <div className="pbc-pagehead">
           <h1>Start a Progress Invoice series</h1>
-          <p>Choose the source now. The full save-and-link form will open here as the next workspace step.</p>
+          <p>Start from a PBC Quote or import one existing Jobber invoice into a standalone local series.</p>
         </div>
 
         <div className="pbc-alert pbc-alert--warning">
-          This guided landing page is read-only. It does not create, link or update Jobber data.
+          Standalone creation reads Jobber once when you save. The new series is then managed in PBC.
         </div>
 
         <div className="pbc-progress-create-grid">
@@ -38,18 +39,7 @@ export default function NewProgressInvoicePage() {
             </IntentLink>
           </section>
 
-          <section className="pbc-card pbc-card--pad">
-            <div className="pbc-seclabel">
-              <span className="pbc-seclabel__title">
-                <span className="pbc-seclabel__icon">{Icons.progressInvoice({ size: 16 })}</span>
-                Standalone
-              </span>
-            </div>
-            <p className="pbc-progress-create-copy">
-              Create without a PBC quote, then review the builder, site, contract Ex GST and optional Jobber invoice link.
-            </p>
-            <span className="pbc-progress-guided-note">Standalone entry form is the next implementation step.</span>
-          </section>
+          <StandaloneProgressInvoiceForm />
         </div>
 
         <div className="pbc-progress-create-actions">

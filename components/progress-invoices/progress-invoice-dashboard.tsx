@@ -68,12 +68,12 @@ function formatJobberFreshness(
   syncedAt: string | null,
   errorCode: string | null,
 ): string {
-  if (errorCode) return 'Jobber sync needs attention'
-  if (!syncedAt) return 'Jobber not synced'
+  if (errorCode) return 'Jobber import needs attention'
+  if (!syncedAt) return 'Jobber not imported'
 
   const date = new Date(syncedAt)
-  if (Number.isNaN(date.getTime())) return 'Jobber sync date unavailable'
-  return `Jobber synced ${new Intl.DateTimeFormat('en-AU', {
+  if (Number.isNaN(date.getTime())) return 'Jobber import date unavailable'
+  return `Imported from Jobber ${new Intl.DateTimeFormat('en-AU', {
     day: 'numeric',
     month: 'short',
     year: 'numeric',

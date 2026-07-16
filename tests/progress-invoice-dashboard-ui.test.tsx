@@ -6,6 +6,7 @@ import type { ProgressInvoiceDashboardDto } from '@/lib/progress-invoices/series
 
 const mocks = vi.hoisted(() => ({
   listProgressInvoiceSeries: vi.fn(),
+  createStandaloneProgressInvoiceFromJobber: vi.fn(),
 }))
 
 vi.mock('next/navigation', () => ({
@@ -14,6 +15,11 @@ vi.mock('next/navigation', () => ({
 
 vi.mock('@/lib/actions/progress-invoice-series', () => ({
   listProgressInvoiceSeries: mocks.listProgressInvoiceSeries,
+}))
+
+vi.mock('@/lib/actions/progress-invoice-jobber', () => ({
+  createStandaloneProgressInvoiceFromJobber:
+    mocks.createStandaloneProgressInvoiceFromJobber,
 }))
 
 import ProgressInvoicesPage, {
@@ -146,6 +152,42 @@ describe('Progress Invoice dashboard foundation', () => {
     expect(markup).toContain('4 Curra Close, Frenchs Forest')
     expect(markup).toContain('Part paid')
     expect(markup).toContain('50.00%')
+    expect(markup).toContain('Imported from Jobber 16 July 2026')
+    expect(markup).not.toContain('Jobber synced')
+
+    const notImportedMarkup = renderToStaticMarkup(createElement(ProgressInvoiceDashboard, {
+      result: {
+        ok: true,
+        data: {
+          ...dashboardData,
+          items: [{
+            ...dashboardData.items[0]!,
+            lastSuccessfulJobberSyncAt: null,
+          }],
+        },
+      },
+      filters: {
+        query: '', statuses: [], page: 1, pageSize: 20, quoteId: null,
+      },
+    }))
+    const attentionMarkup = renderToStaticMarkup(createElement(ProgressInvoiceDashboard, {
+      result: {
+        ok: true,
+        data: {
+          ...dashboardData,
+          items: [{
+            ...dashboardData.items[0]!,
+            lastJobberSyncErrorCode: 'JOBBER_TEMPORARY_FAILURE',
+          }],
+        },
+      },
+      filters: {
+        query: '', statuses: [], page: 1, pageSize: 20, quoteId: null,
+      },
+    }))
+
+    expect(notImportedMarkup).toContain('Jobber not imported')
+    expect(attentionMarkup).toContain('Jobber import needs attention')
   })
 
   it('renders usable search, status filters, and pagination', () => {
@@ -205,7 +247,7 @@ describe('Progress Invoice dashboard foundation', () => {
     expect(errorMarkup).not.toContain('raw database detail')
   })
 
-  it('provides loading and guided non-404 creation landing states', () => {
+  it('provides loading and working non-404 creation states', () => {
     const loadingMarkup = renderToStaticMarkup(createElement(ProgressInvoicesLoading))
     const newMarkup = renderToStaticMarkup(createElement(NewProgressInvoicePage))
 
@@ -214,7 +256,14 @@ describe('Progress Invoice dashboard foundation', () => {
     expect(newMarkup).toContain('Start a Progress Invoice series')
     expect(newMarkup).toContain('Existing PBC Quote')
     expect(newMarkup).toContain('Standalone')
+    expect(newMarkup).toContain('Jobber Invoice Number')
+    expect(newMarkup).toContain('Create Progress Invoice series')
     expect(newMarkup).toContain('href="/quotes"')
     expect(newMarkup).toContain('href="/progress-invoices"')
+    expect(newMarkup).not.toContain('guided landing page is read-only')
+    expect(newMarkup).not.toContain('next implementation step')
+    expect(newMarkup).not.toContain('Refresh Jobber')
+    expect(newMarkup).not.toContain('Sync Jobber')
+    expect(newMarkup).not.toContain('Auto sync')
   })
 })
