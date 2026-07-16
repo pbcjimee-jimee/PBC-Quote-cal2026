@@ -110,6 +110,16 @@ describe('Progress Invoice dashboard foundation', () => {
     })
   })
 
+  it('accepts the PostgreSQL integer page boundary and rejects larger values', () => {
+    expect(parseProgressInvoiceDashboardSearchParams({
+      page: '2147483647',
+    }).page).toBe(2147483647)
+
+    expect(parseProgressInvoiceDashboardSearchParams({
+      page: '2147483648',
+    }).page).toBe(1)
+  })
+
   it('renders Claimed and Received as separate financial facts', () => {
     const markup = renderToStaticMarkup(createElement(ProgressInvoiceDashboard, {
       result: { ok: true, data: dashboardData },

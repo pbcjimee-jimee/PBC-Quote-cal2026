@@ -953,8 +953,10 @@
 @media (max-width: 560px) {
   .pbc-mobile-header__inner { flex-wrap: wrap; gap: 4px; padding: 8px 12px; }
   .pbc-mobile-header__brand { width: 100%; }
-  .pbc-mobile-nav { width: 100%; }
-  .pbc-mobile-nav__item { padding-inline: 4px; }
+  .pbc-mobile-nav { width: 100%; grid-template-columns: repeat(5, minmax(0, 1fr)); }
+  .pbc-mobile-nav__item { min-width: 0; min-height: 44px; flex-direction: column; gap: 1px; padding: 4px 2px; font-size: 10px; }
+  .pbc-mobile-nav__item svg { flex-shrink: 0; }
+  .pbc-mobile-nav__item span { max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
 }
 
 @media (max-width: 359.98px) {

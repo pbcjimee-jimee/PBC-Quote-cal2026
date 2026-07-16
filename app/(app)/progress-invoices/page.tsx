@@ -13,6 +13,7 @@ import {
 } from '@/lib/progress-invoices/validators'
 
 const DASHBOARD_PAGE_SIZE = 20
+const MAX_DATABASE_PAGE = 2_147_483_647
 const DEFAULT_FILTERS: ProgressInvoiceListInput = {
   query: '',
   statuses: [],
@@ -46,7 +47,7 @@ function safePage(value: string | string[] | undefined): number {
   const raw = firstValue(value)
   if (!/^[1-9]\d*$/.test(raw)) return 1
   const parsed = Number(raw)
-  return Number.isSafeInteger(parsed) ? parsed : 1
+  return Number.isSafeInteger(parsed) && parsed <= MAX_DATABASE_PAGE ? parsed : 1
 }
 
 export function parseProgressInvoiceDashboardSearchParams(

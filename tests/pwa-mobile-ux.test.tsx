@@ -116,12 +116,13 @@ describe('PWA mobile UX', () => {
 
   it('stacks narrow mobile navigation icons above visible labels without shrinking targets', () => {
     const css = readFileSync('app/styles/components.css', 'utf8')
-    const narrowResponsive = getMediaBlock(css, 'max-width: 359.98px')
+    const mobile390Responsive = getMediaBlock(css, 'max-width: 560px')
 
     expect(css).toMatch(/\.pbc-mobile-nav\s*{[^}]*grid-template-columns:\s*repeat\(5,\s*minmax\(0,\s*1fr\)\)/)
-    expect(narrowResponsive).toMatch(/\.pbc-mobile-nav\s*{[^}]*grid-template-columns:\s*repeat\(5,\s*minmax\(0,\s*1fr\)\)/)
-    expect(narrowResponsive).toMatch(/\.pbc-mobile-nav__item\s*{[^}]*min-width:\s*0[^}]*min-height:\s*44px[^}]*flex-direction:\s*column/)
-    expect(narrowResponsive).not.toMatch(/\.pbc-mobile-nav__item\s+span\s*{[^}]*(display:\s*none|visibility:\s*hidden)/)
+    expect(mobile390Responsive).toMatch(/\.pbc-mobile-nav\s*{[^}]*grid-template-columns:\s*repeat\(5,\s*minmax\(0,\s*1fr\)\)/)
+    expect(mobile390Responsive).toMatch(/\.pbc-mobile-nav__item\s*{[^}]*min-width:\s*0[^}]*min-height:\s*44px[^}]*flex-direction:\s*column/)
+    expect(mobile390Responsive).toMatch(/\.pbc-mobile-nav__item\s+span\s*{[^}]*max-width:\s*100%[^}]*overflow:\s*hidden[^}]*text-overflow:\s*ellipsis/)
+    expect(mobile390Responsive).not.toMatch(/\.pbc-mobile-nav__item\s+span\s*{[^}]*(display:\s*none|visibility:\s*hidden)/)
   })
 
   it('keeps component-specific 1080px layouts while moving shell transitions to lg', () => {
