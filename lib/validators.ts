@@ -269,6 +269,7 @@ export const productImportSchema = z.object({
 export const productServiceSearchSchema = z.object({
   query: z.string().max(100).default(''),
   limit: z.number().int().positive().max(300).default(100),
+  match: z.enum(['all', 'name']).default('all'),
 })
 
 export const productServiceCreateSchema = z.object({

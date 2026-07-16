@@ -524,21 +524,23 @@ export function deleteDevInventoryItem(id: string): InventoryItemRecord | null {
   })
 }
 
-export function searchDevProductServices(query: string, limit = 100): ProductServiceRecord[] {
+export function searchDevProductServices(
+  query: string,
+  limit = 100,
+  match: 'all' | 'name' = 'all'
+): ProductServiceRecord[] {
   const tokens = searchTokens(query)
   const activeServices = productServices.filter((service) => service.active)
   if (tokens.length === 0) return activeServices.slice(0, limit)
 
   return activeServices
     .filter((service) => {
-      const haystack = [
-        service.name,
-        service.description,
-        service.category,
-      ]
-        .filter(Boolean)
-        .join(' ')
-        .toLowerCase()
+      const haystack = match === 'name'
+        ? service.name.toLowerCase()
+        : [service.name, service.description, service.category]
+            .filter(Boolean)
+            .join(' ')
+            .toLowerCase()
 
       return tokens.every((token) => haystack.includes(token))
     })
