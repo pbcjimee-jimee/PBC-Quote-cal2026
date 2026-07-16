@@ -151,6 +151,7 @@ function ComparisonPanel({ preview }: { preview: JobberInvoicePreviewDto }) {
 export function StandaloneProgressInvoiceForm() {
   const router = useRouter()
   const saveAttemptRef = useRef<SaveAttempt | null>(null)
+  const previewRequestGenerationRef = useRef(0)
   const [invoiceNumber, setInvoiceNumber] = useState('')
   const [selectedInvoiceId, setSelectedInvoiceId] = useState<string | null>(null)
   const [searchState, setSearchState] = useState<SearchState>({ status: 'idle' })
@@ -163,6 +164,7 @@ export function StandaloneProgressInvoiceForm() {
     selectedJobberJobId?: string,
     selectedJobberPropertyId?: string,
   ): Promise<void> {
+    const requestGeneration = ++previewRequestGenerationRef.current
     setPreviewState({ status: 'loading' })
     setDraft(null)
     setSaveState({ status: 'idle' })
@@ -178,7 +180,9 @@ export function StandaloneProgressInvoiceForm() {
         `/api/jobber/progress-invoices/invoices/${encodeURIComponent(invoiceId)}${query ? `?${query}` : ''}`,
         { method: 'GET', cache: 'no-store', headers: { Accept: 'application/json' } },
       )
-      const parsed = parseJobberInvoicePreviewResponse(await response.json())
+      const body = await response.json()
+      if (requestGeneration !== previewRequestGenerationRef.current) return
+      const parsed = parseJobberInvoicePreviewResponse(body)
       if (!parsed.ok) {
         setPreviewState({ status: 'error', message: parsed.error })
         return
@@ -188,6 +192,7 @@ export function StandaloneProgressInvoiceForm() {
         setDraft(buildStandaloneDraft(parsed.data))
       }
     } catch {
+      if (requestGeneration !== previewRequestGenerationRef.current) return
       setPreviewState({
         status: 'error',
         message: 'The Jobber invoice preview could not be loaded. Try again.',
@@ -203,6 +208,7 @@ export function StandaloneProgressInvoiceForm() {
       return
     }
 
+    previewRequestGenerationRef.current += 1
     setSearchState({ status: 'searching' })
     setSelectedInvoiceId(null)
     setPreviewState({ status: 'idle' })
