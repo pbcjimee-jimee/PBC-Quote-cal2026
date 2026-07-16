@@ -146,6 +146,55 @@ describe('progress invoice series service read boundary', () => {
     })
   })
 
+  it('reloads the last available page when the requested page is out of range', async () => {
+    const rpc = vi.fn()
+      .mockResolvedValueOnce({
+        data: { items: [], page: 999, page_size: 20, total: 21 },
+        error: null,
+      })
+      .mockResolvedValueOnce({
+        data: { items: [dashboardItem], page: 2, page_size: 20, total: 21 },
+        error: null,
+      })
+    mocks.createClient.mockResolvedValue({ from: directReadClient(dashboardItem), rpc })
+
+    const result = await listProgressInvoiceSeries({
+      query: 'Builder',
+      statuses: ['active'],
+      page: 999,
+      pageSize: 20,
+      quoteId: null,
+    })
+
+    expect(rpc).toHaveBeenNthCalledWith(1, 'list_progress_invoice_series', {
+      payload: {
+        query: 'Builder',
+        statuses: ['active'],
+        page: 999,
+        page_size: 20,
+        quote_id: null,
+      },
+    })
+    expect(rpc).toHaveBeenNthCalledWith(2, 'list_progress_invoice_series', {
+      payload: {
+        query: 'Builder',
+        statuses: ['active'],
+        page: 2,
+        page_size: 20,
+        quote_id: null,
+      },
+    })
+    expect(result).toMatchObject({
+      ok: true,
+      data: {
+        items: [{ id: SERIES_ID }],
+        page: 2,
+        pageSize: 20,
+        total: 21,
+      },
+    })
+  })
+
   it('reads series detail through an RPC that preserves large decimal strings and cents', async () => {
     const rpc = vi.fn().mockResolvedValue({ data: { series: detail }, error: null })
     const from = directReadClient({

@@ -280,7 +280,7 @@ export async function listProgressInvoiceSeries(
   input: ProgressInvoiceListInput
 ): Promise<ActionResult<ProgressInvoiceDashboardDto>> {
   const repository = await createProgressInvoiceRepository()
-  const result = await repository.call('list_progress_invoice_series', {
+  let result = await repository.call('list_progress_invoice_series', {
     query: input.query,
     statuses: [...input.statuses],
     page: input.page,
@@ -288,6 +288,17 @@ export async function listProgressInvoiceSeries(
     quote_id: input.quoteId,
   })
   if (!result.ok) return result
+  const totalPages = Math.max(1, Math.ceil(result.data.total / result.data.page_size))
+  if (result.data.total > 0 && result.data.page > totalPages) {
+    result = await repository.call('list_progress_invoice_series', {
+      query: input.query,
+      statuses: [...input.statuses],
+      page: totalPages,
+      page_size: input.pageSize,
+      quote_id: input.quoteId,
+    })
+    if (!result.ok) return result
+  }
   return {
     ok: true,
     data: {

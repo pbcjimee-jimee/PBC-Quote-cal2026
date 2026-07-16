@@ -91,7 +91,7 @@ describe('Jobber read-only regression guard', () => {
   it('marks both dedicated Progress Invoice Jobber modules as server-only', () => {
     for (const file of ['lib/jobber/invoice-client.ts', 'lib/jobber/invoice-gateway.ts']) {
       const source = readFileSync(join(projectRoot, file), 'utf8')
-      expect(source.startsWith("import 'server-only'\n")).toBe(true)
+      expect(source).toMatch(/^import 'server-only'\r?\n/)
     }
   })
 })

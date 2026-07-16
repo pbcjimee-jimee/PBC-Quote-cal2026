@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { searchJobberInvoiceCandidates } from '@/lib/jobber/invoice-gateway'
+import {
+  classifyJobberInvoiceError,
+  searchJobberInvoiceCandidates,
+} from '@/lib/jobber/invoice-gateway'
 import { requireAllowedUser } from '@/lib/security/require-allowed-user'
 
 const NO_STORE_HEADERS = { 'Cache-Control': 'no-store' }
@@ -23,11 +26,13 @@ export async function GET(request: NextRequest) {
   try {
     const data = await searchJobberInvoiceCandidates({ term })
     return NextResponse.json({ ok: true, data }, { headers: NO_STORE_HEADERS })
-  } catch {
+  } catch (error) {
+    const safe = classifyJobberInvoiceError(error)
     return NextResponse.json({
       ok: false,
-      error: 'Unable to search Jobber invoices',
-    }, { status: 502, headers: NO_STORE_HEADERS })
+      error: safe.message,
+      code: safe.code,
+    }, { status: safe.status, headers: NO_STORE_HEADERS })
   }
 }
 

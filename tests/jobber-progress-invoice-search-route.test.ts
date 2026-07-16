@@ -4,10 +4,14 @@ import { NextRequest } from 'next/server'
 const mocks = vi.hoisted(() => ({
   requireAllowedUser: vi.fn(),
   searchJobberInvoiceCandidates: vi.fn(),
+  classifyJobberInvoiceError: vi.fn(),
 }))
 
 vi.mock('@/lib/security/require-allowed-user', () => ({ requireAllowedUser: mocks.requireAllowedUser }))
-vi.mock('@/lib/jobber/invoice-gateway', () => ({ searchJobberInvoiceCandidates: mocks.searchJobberInvoiceCandidates }))
+vi.mock('@/lib/jobber/invoice-gateway', () => ({
+  classifyJobberInvoiceError: mocks.classifyJobberInvoiceError,
+  searchJobberInvoiceCandidates: mocks.searchJobberInvoiceCandidates,
+}))
 
 import { GET } from '@/app/api/jobber/progress-invoices/invoices/search/route'
 
@@ -15,6 +19,11 @@ beforeEach(() => {
   vi.clearAllMocks()
   mocks.requireAllowedUser.mockResolvedValue({ ok: true, user: { id: 'user-1', email: 'owner@example.invalid' } })
   mocks.searchJobberInvoiceCandidates.mockResolvedValue({ accountId: 'account-1', invoices: [] })
+  mocks.classifyJobberInvoiceError.mockReturnValue({
+    code: 'JOBBER_TEMPORARY_FAILURE',
+    status: 503,
+    message: 'Jobber is temporarily unavailable',
+  })
 })
 
 describe('Progress Invoice Jobber invoice search route', () => {
@@ -59,11 +68,39 @@ describe('Progress Invoice Jobber invoice search route', () => {
     expect(mocks.searchJobberInvoiceCandidates).toHaveBeenCalledWith({ term: 'INV-1' })
   })
 
-  it('maps gateway failures to safe no-store JSON without raw response data', async () => {
+  it('classifies gateway failures without exposing raw response data', async () => {
     mocks.searchJobberInvoiceCandidates.mockRejectedValue(new Error('secret upstream fragment'))
     const response = await GET(new NextRequest('http://localhost/api/jobber/progress-invoices/invoices/search?term=INV'))
-    expect(response.status).toBe(502)
+    expect(response.status).toBe(503)
     expect(response.headers.get('Cache-Control')).toBe('no-store')
-    expect(await response.json()).toEqual({ ok: false, error: 'Unable to search Jobber invoices' })
+    expect(await response.json()).toEqual({
+      ok: false,
+      error: 'Jobber is temporarily unavailable',
+      code: 'JOBBER_TEMPORARY_FAILURE',
+    })
+    expect(mocks.classifyJobberInvoiceError).toHaveBeenCalledWith(
+      expect.objectContaining({ message: 'secret upstream fragment' }),
+    )
+  })
+
+  it('preserves the safe scope-missing classification', async () => {
+    const error = new Error('scope detail')
+    mocks.searchJobberInvoiceCandidates.mockRejectedValue(error)
+    mocks.classifyJobberInvoiceError.mockReturnValue({
+      code: 'JOBBER_SCOPE_MISSING',
+      status: 403,
+      message: 'Jobber invoice read access is unavailable',
+    })
+
+    const response = await GET(new NextRequest('http://localhost/api/jobber/progress-invoices/invoices/search?term=INV'))
+
+    expect(response.status).toBe(403)
+    expect(response.headers.get('Cache-Control')).toBe('no-store')
+    expect(await response.json()).toEqual({
+      ok: false,
+      error: 'Jobber invoice read access is unavailable',
+      code: 'JOBBER_SCOPE_MISSING',
+    })
+    expect(mocks.classifyJobberInvoiceError).toHaveBeenCalledWith(error)
   })
 })
