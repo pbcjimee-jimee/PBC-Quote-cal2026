@@ -1,4 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
+vi.mock('server-only', () => ({}))
+
 import {
   fetchJobberAccountIdentity,
   fetchJobberInvoiceDetail,
@@ -190,6 +192,98 @@ describe('Progress Invoice Jobber query client', () => {
     await expect(fetchJobberAccountIdentity(options)).rejects.toThrow()
   })
 
+  it('wraps malformed and non-JSON upstream bodies in a stable typed error', async () => {
+    const upstreamFragment = '<html>secret upstream failure</html>'
+    vi.stubGlobal('fetch', vi.fn<typeof fetch>(async () => ({
+      ok: true,
+      status: 200,
+      json: vi.fn(async () => { throw new SyntaxError(upstreamFragment) }),
+    } as unknown as Response)))
+
+    const error = await fetchJobberAccountIdentity(options).catch((caught: unknown) => caught)
+
+    expect(error).toBeInstanceOf(JobberInvoiceApiError)
+    expect(error).toMatchObject({ message: 'Invalid Jobber GraphQL response', status: 502 })
+    expect(String(error)).not.toContain(upstreamFragment)
+  })
+
+  it.each([
+    ['non-array errors', { message: 'bad shape' }],
+    ['null error item', [null]],
+    ['missing error message', [{ extensions: { code: 'THROTTLED' } }]],
+    ['non-object extensions', [{ message: 'bad', extensions: 'THROTTLED' }]],
+    ['non-string extension code', [{ message: 'bad', extensions: { code: 429 } }]],
+  ])('rejects malformed GraphQL errors: %s', async (_name, errors) => {
+    vi.stubGlobal('fetch', vi.fn<typeof fetch>(async () => new Response(JSON.stringify({
+      data: { account: { id: 'account-1' } },
+      errors,
+      extensions: version,
+    }))))
+
+    await expect(fetchJobberAccountIdentity(options)).rejects.toMatchObject({
+      message: 'Invalid Jobber GraphQL errors',
+      status: 502,
+    })
+  })
+
+  it.each(['issuedDate', 'dueDate', 'receivedDate'])('rejects a missing queried nullable invoice field: %s', async (field) => {
+    const detail = { ...invoiceDetail() } as Record<string, unknown>
+    delete detail[field]
+    vi.stubGlobal('fetch', vi.fn<typeof fetch>(async () => response({ invoice: detail })))
+
+    await expect(fetchJobberInvoiceDetail('invoice-1', options)).rejects.toThrow('Invalid Jobber invoice detail response')
+  })
+
+  it('rejects missing queried nullable payment fields but allows absent conditional fragment fields', async () => {
+    const legacy = {
+      id: 'payment-1', amount: 10, entryDate: '2026-07-02T00:00:00Z', adjustmentType: 'PAYMENT',
+      jobberPaymentTransactionStatus: null,
+    }
+    vi.stubGlobal('fetch', vi.fn<typeof fetch>(async () => response({
+      invoice: { id: 'invoice-1', paymentRecords: terminal([legacy]) },
+    })))
+    await expect(fetchJobberInvoicePaymentsPage('invoice-1', { first: 50, after: null }, options))
+      .rejects.toThrow('Invalid Jobber invoice payment')
+
+    vi.stubGlobal('fetch', vi.fn<typeof fetch>(async () => response({ paymentRecord: {
+      __typename: 'BankTransferPaymentRecord', id: 'payment-1', adjustmentType: 'PAYMENT', amount: 10,
+      rawAmount: -10, entryDate: '2026-07-02T00:00:00Z', paymentType: null, paymentOrigin: null, details: null,
+    } })))
+    await expect(fetchJobberPaymentDetail('payment-1', options)).resolves.toMatchObject({
+      transactionId: null,
+      checkNumber: null,
+    })
+  })
+
+  it.each(['NaN', 'Infinity', '-Infinity', '1e999999'])('rejects non-finite monetary text: %s', async (amount) => {
+    vi.stubGlobal('fetch', vi.fn<typeof fetch>(async () => response({
+      invoice: { id: 'invoice-1', paymentRecords: terminal([{
+        id: 'payment-1', amount, entryDate: '2026-07-02T00:00:00Z', adjustmentType: 'PAYMENT',
+        jobberPaymentPaymentMethod: null, jobberPaymentTransactionStatus: null,
+      }]) },
+    })))
+
+    await expect(fetchJobberInvoicePaymentsPage('invoice-1', { first: 50, after: null }, options))
+      .rejects.toThrow('Invalid Jobber invoice payment')
+  })
+
+  it('rejects non-finite numeric money returned by a custom fetch implementation', async () => {
+    vi.stubGlobal('fetch', vi.fn<typeof fetch>(async () => ({
+      ok: true,
+      status: 200,
+      json: vi.fn(async () => ({
+        data: { invoice: { id: 'invoice-1', paymentRecords: terminal([{
+          id: 'payment-1', amount: Number.POSITIVE_INFINITY, entryDate: '2026-07-02T00:00:00Z',
+          adjustmentType: 'PAYMENT', jobberPaymentPaymentMethod: null, jobberPaymentTransactionStatus: null,
+        }]) } },
+        extensions: version,
+      })),
+    } as unknown as Response)))
+
+    await expect(fetchJobberInvoicePaymentsPage('invoice-1', { first: 50, after: null }, options))
+      .rejects.toThrow('Invalid Jobber invoice payment')
+  })
+
   it('rejects wrong parents and malformed connection shapes', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => response({ job: { id: 'wrong', invoices: terminal() } })))
     await expect(fetchJobberJobInvoicesPage('job-1', { first: 50, after: null }, options))
@@ -212,6 +306,27 @@ describe('Progress Invoice Jobber query client', () => {
     vi.stubGlobal('fetch', vi.fn(async () => new Response('', { status: 429 })))
     await expect(fetchJobberAccountIdentity({ ...options, retryDelayMs: 0, maxThrottleRetries: 1 }))
       .rejects.toMatchObject({ status: 429 })
+  })
+
+  it.each([-1, 0.5, Number.NaN, Number.POSITIVE_INFINITY, 6])(
+    'rejects invalid maxThrottleRetries=%s before network work',
+    async (maxThrottleRetries) => {
+      const fetchMock = vi.fn<typeof fetch>()
+      vi.stubGlobal('fetch', fetchMock)
+
+      await expect(fetchJobberAccountIdentity({ ...options, maxThrottleRetries }))
+        .rejects.toThrow('maxThrottleRetries must be an integer between 0 and 5')
+      expect(fetchMock).not.toHaveBeenCalled()
+    },
+  )
+
+  it('accepts the retry bounds 0 and 5', async () => {
+    const fetchMock = vi.fn<typeof fetch>(async () => response({ account: { id: 'account-1' } }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(fetchJobberAccountIdentity({ ...options, maxThrottleRetries: 0 })).resolves.toEqual({ id: 'account-1' })
+    await expect(fetchJobberAccountIdentity({ ...options, maxThrottleRetries: 5 })).resolves.toEqual({ id: 'account-1' })
+    expect(fetchMock).toHaveBeenCalledTimes(2)
   })
 
   it('surfaces 401 as a typed error for whole-operation restart at the gateway', async () => {

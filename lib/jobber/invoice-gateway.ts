@@ -1,3 +1,5 @@
+import 'server-only'
+
 import { createHash } from 'node:crypto'
 import Decimal from 'decimal.js'
 import { getJobberConfig } from './config'
@@ -253,7 +255,13 @@ async function normalizePayments(
 ): Promise<readonly NormalizedJobberPayment[]> {
   const evidence = new Map<string, PaymentEvidence>()
   for (const row of rows) {
-    evidence.set(row.id, { legacy: row, conflict: false })
+    const existing = evidence.get(row.id)
+    evidence.set(row.id, {
+      ...existing,
+      legacy: row,
+      conflict: (existing?.conflict ?? false)
+        || (existing?.refund !== undefined && !sameLegacyRefund(row, existing.refund)),
+    })
     const refunds = await fetchAllJobberPages(async (after) => {
       const page = await fetchJobberPaymentRefundsPage(row.id, { first: PAGE_SIZE, after }, options)
       if (page === null) {

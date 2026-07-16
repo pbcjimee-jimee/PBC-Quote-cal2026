@@ -1,3 +1,5 @@
+import 'server-only'
+
 import Decimal from 'decimal.js'
 import { JOBBER_GRAPHQL_URL } from './config'
 import type {
@@ -70,6 +72,7 @@ const INVOICE_SEARCH_QUERY = `query JobberInvoiceSearch($term: String!, $first: 
     pageInfo { endCursor hasNextPage }
   }
 }`
+const MAX_THROTTLE_RETRIES = 5
 
 export class JobberInvoiceApiError extends Error {
   constructor(message: string, readonly status: number) {
@@ -162,9 +165,9 @@ export async function fetchJobberPaymentDetail(
     amount: decimalField(payment.amount, 'Invalid Jobber payment detail response'),
     rawAmount: decimalField(payment.rawAmount, 'Invalid Jobber payment detail response'),
     entryDate: stringField(payment.entryDate, 'Invalid Jobber payment detail response'),
-    paymentType: nullableString(payment.paymentType, 'Invalid Jobber payment detail response'),
-    paymentOrigin: nullableString(payment.paymentOrigin, 'Invalid Jobber payment detail response'),
-    details: nullableString(payment.details, 'Invalid Jobber payment detail response'),
+    paymentType: requiredNullableString(payment, 'paymentType', 'Invalid Jobber payment detail response'),
+    paymentOrigin: requiredNullableString(payment, 'paymentOrigin', 'Invalid Jobber payment detail response'),
+    details: requiredNullableString(payment, 'details', 'Invalid Jobber payment detail response'),
     transactionId: nullableString(payment.transactionId, 'Invalid Jobber payment detail response'),
     checkNumber: nullableString(payment.checkNumber, 'Invalid Jobber payment detail response'),
   }
@@ -197,6 +200,9 @@ async function request(
   options: JobberInvoiceClientOptions,
 ): Promise<Record<string, unknown>> {
   const maxRetries = options.maxThrottleRetries ?? 2
+  if (!Number.isInteger(maxRetries) || maxRetries < 0 || maxRetries > MAX_THROTTLE_RETRIES) {
+    throw new Error(`maxThrottleRetries must be an integer between 0 and ${MAX_THROTTLE_RETRIES}`)
+  }
   for (let attempt = 0; attempt <= maxRetries; attempt += 1) {
     const response = await fetch(JOBBER_GRAPHQL_URL, {
       method: 'POST',
@@ -218,10 +224,17 @@ async function request(
       throw new JobberInvoiceApiError(`Jobber invoice request failed with status ${response.status}`, response.status)
     }
 
-    const envelope = objectValue(await response.json(), 'Invalid Jobber GraphQL response')
+    let responseBody: unknown
+    try {
+      responseBody = await response.json()
+    } catch {
+      throw new JobberInvoiceApiError('Invalid Jobber GraphQL response', 502)
+    }
+    const envelope = objectValue(responseBody, 'Invalid Jobber GraphQL response')
     assertResponseVersion(envelope.extensions, options.graphqlVersion)
-    if (Array.isArray(envelope.errors) && envelope.errors.length > 0) {
-      if (hasThrottledError(envelope.errors)) {
+    const errors = parseGraphqlErrors(envelope)
+    if (errors.length > 0) {
+      if (hasThrottledError(errors)) {
         if (attempt === maxRetries) throw new JobberInvoiceApiError('Jobber rate limit exceeded', 429)
         await delay(options.retryDelayMs ?? 25)
         continue
@@ -241,10 +254,32 @@ function assertResponseVersion(value: unknown, expected: string): void {
   }
 }
 
-function hasThrottledError(errors: unknown[]): boolean {
+function hasThrottledError(errors: readonly unknown[]): boolean {
   return errors.some((value) => {
     if (!isObject(value) || !isObject(value.extensions)) return false
     return value.extensions.code === 'THROTTLED'
+  })
+}
+
+function parseGraphqlErrors(envelope: Record<string, unknown>): readonly Record<string, unknown>[] {
+  if (!Object.hasOwn(envelope, 'errors')) return []
+  if (!Array.isArray(envelope.errors)) {
+    throw new JobberInvoiceApiError('Invalid Jobber GraphQL errors', 502)
+  }
+
+  return envelope.errors.map((error) => {
+    if (!isObject(error) || typeof error.message !== 'string') {
+      throw new JobberInvoiceApiError('Invalid Jobber GraphQL errors', 502)
+    }
+    if (Object.hasOwn(error, 'extensions')) {
+      if (!isObject(error.extensions)) {
+        throw new JobberInvoiceApiError('Invalid Jobber GraphQL errors', 502)
+      }
+      if (Object.hasOwn(error.extensions, 'code') && typeof error.extensions.code !== 'string') {
+        throw new JobberInvoiceApiError('Invalid Jobber GraphQL errors', 502)
+      }
+    }
+    return error
   })
 }
 
@@ -264,9 +299,9 @@ function parseSearchCandidate(value: unknown): JobberInvoiceCandidate {
 }
 
 function parseInvoiceDetail(invoice: Record<string, unknown>): JobberInvoiceDetail {
-  const amounts = nullableObject(invoice.amounts, 'Invalid Jobber invoice amounts')
-  const client = nullableObject(invoice.client, 'Invalid Jobber invoice client')
-  const billingAddress = nullableObject(invoice.billingAddress, 'Invalid Jobber invoice billing address')
+  const amounts = requiredNullableObject(invoice, 'amounts', 'Invalid Jobber invoice amounts')
+  const client = requiredNullableObject(invoice, 'client', 'Invalid Jobber invoice client')
+  const billingAddress = requiredNullableObject(invoice, 'billingAddress', 'Invalid Jobber invoice billing address')
   return {
     id: stringField(invoice.id, 'Invalid Jobber invoice detail response'),
     invoiceNumber: stringField(invoice.invoiceNumber, 'Invalid Jobber invoice detail response'),
@@ -279,9 +314,9 @@ function parseInvoiceDetail(invoice: Record<string, unknown>): JobberInvoiceDeta
       invoiceBalance: decimalField(amounts.invoiceBalance, 'Invalid Jobber invoice amounts'),
       paymentsTotal: decimalField(amounts.paymentsTotal, 'Invalid Jobber invoice amounts'),
     },
-    issuedDate: nullableString(invoice.issuedDate, 'Invalid Jobber invoice detail response'),
-    dueDate: nullableString(invoice.dueDate, 'Invalid Jobber invoice detail response'),
-    receivedDate: nullableString(invoice.receivedDate, 'Invalid Jobber invoice detail response'),
+    issuedDate: requiredNullableString(invoice, 'issuedDate', 'Invalid Jobber invoice detail response'),
+    dueDate: requiredNullableString(invoice, 'dueDate', 'Invalid Jobber invoice detail response'),
+    receivedDate: requiredNullableString(invoice, 'receivedDate', 'Invalid Jobber invoice detail response'),
     createdAt: stringField(invoice.createdAt, 'Invalid Jobber invoice detail response'),
     updatedAt: stringField(invoice.updatedAt, 'Invalid Jobber invoice detail response'),
     client: client === null ? null : parseClient(client),
@@ -296,7 +331,7 @@ function parseClient(client: Record<string, unknown>): JobberInvoiceClient {
   return {
     id: stringField(client.id, 'Invalid Jobber invoice client'),
     name: stringField(client.name, 'Invalid Jobber invoice client'),
-    companyName: nullableString(client.companyName, 'Invalid Jobber invoice client'),
+    companyName: requiredNullableString(client, 'companyName', 'Invalid Jobber invoice client'),
     defaultEmails: Object.freeze(client.defaultEmails.map((email) => stringField(email, 'Invalid Jobber invoice client'))),
     phones: Object.freeze(client.phones.map((phone) => {
       const value = objectValue(phone, 'Invalid Jobber invoice client')
@@ -324,8 +359,8 @@ function parsePaymentRecord(value: unknown): JobberInvoicePaymentRecord {
     amount: decimalField(node.amount, 'Invalid Jobber invoice payment'),
     entryDate: stringField(node.entryDate, 'Invalid Jobber invoice payment'),
     adjustmentType: stringField(node.adjustmentType, 'Invalid Jobber invoice payment'),
-    jobberPaymentPaymentMethod: nullableString(node.jobberPaymentPaymentMethod, 'Invalid Jobber invoice payment'),
-    jobberPaymentTransactionStatus: nullableString(node.jobberPaymentTransactionStatus, 'Invalid Jobber invoice payment'),
+    jobberPaymentPaymentMethod: requiredNullableString(node, 'jobberPaymentPaymentMethod', 'Invalid Jobber invoice payment'),
+    jobberPaymentTransactionStatus: requiredNullableString(node, 'jobberPaymentTransactionStatus', 'Invalid Jobber invoice payment'),
   }
 }
 
@@ -335,18 +370,18 @@ function parseRefund(value: unknown): JobberPaymentRefund {
     id: stringField(node.id, 'Invalid Jobber payment refund'),
     amount: decimalField(node.amount, 'Invalid Jobber payment refund'),
     entryDate: stringField(node.entryDate, 'Invalid Jobber payment refund'),
-    jobberPaymentTransactionStatus: nullableString(node.jobberPaymentTransactionStatus, 'Invalid Jobber payment refund'),
+    jobberPaymentTransactionStatus: requiredNullableString(node, 'jobberPaymentTransactionStatus', 'Invalid Jobber payment refund'),
   }
 }
 
 function parseAddress(value: Record<string, unknown>): JobberAddress {
   return {
-    street1: nullableString(value.street1, 'Invalid Jobber address'),
-    street2: nullableString(value.street2, 'Invalid Jobber address'),
-    city: nullableString(value.city, 'Invalid Jobber address'),
-    province: nullableString(value.province, 'Invalid Jobber address'),
-    postalCode: nullableString(value.postalCode, 'Invalid Jobber address'),
-    country: nullableString(value.country, 'Invalid Jobber address'),
+    street1: requiredNullableString(value, 'street1', 'Invalid Jobber address'),
+    street2: requiredNullableString(value, 'street2', 'Invalid Jobber address'),
+    city: requiredNullableString(value, 'city', 'Invalid Jobber address'),
+    province: requiredNullableString(value, 'province', 'Invalid Jobber address'),
+    postalCode: requiredNullableString(value, 'postalCode', 'Invalid Jobber address'),
+    country: requiredNullableString(value, 'country', 'Invalid Jobber address'),
   }
 }
 
@@ -384,6 +419,15 @@ function nullableObject(value: unknown, message: string): Record<string, unknown
   return objectValue(value, message)
 }
 
+function requiredNullableObject(
+  record: Record<string, unknown>,
+  key: string,
+  message: string,
+): Record<string, unknown> | null {
+  if (!Object.hasOwn(record, key)) throw new JobberInvoiceApiError(message, 502)
+  return nullableObject(record[key], message)
+}
+
 function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
@@ -398,10 +442,18 @@ function nullableString(value: unknown, message: string): string | null {
   return stringField(value, message)
 }
 
+function requiredNullableString(record: Record<string, unknown>, key: string, message: string): string | null {
+  if (!Object.hasOwn(record, key)) throw new JobberInvoiceApiError(message, 502)
+  return nullableString(record[key], message)
+}
+
 function decimalField(value: unknown, message: string): string {
   if (typeof value !== 'number' && typeof value !== 'string') throw new JobberInvoiceApiError(message, 502)
   try {
-    return new Decimal(String(value)).toString()
+    if (!Number.isFinite(Number(value))) throw new Error('Non-finite money')
+    const decimal = new Decimal(String(value))
+    if (!decimal.isFinite()) throw new Error('Non-finite money')
+    return decimal.toString()
   } catch {
     throw new JobberInvoiceApiError(message, 502)
   }

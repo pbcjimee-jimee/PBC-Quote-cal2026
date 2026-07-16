@@ -26,6 +26,21 @@ describe('Progress Invoice Jobber invoice search route', () => {
     expect(mocks.searchJobberInvoiceCandidates).not.toHaveBeenCalled()
   })
 
+  it.each([
+    ['missing', 'http://localhost/api/jobber/progress-invoices/invoices/search'],
+    ['duplicate', 'http://localhost/api/jobber/progress-invoices/invoices/search?term=INV&term=OTHER'],
+    ['extra', 'http://localhost/api/jobber/progress-invoices/invoices/search?term=INV&page=2'],
+    ['malformed percent', 'http://localhost/api/jobber/progress-invoices/invoices/search?term=%E0%A4%A'],
+    ['invalid UTF-8', 'http://localhost/api/jobber/progress-invoices/invoices/search?term=%FF'],
+  ])('rejects %s query input before auth or gateway work', async (_name, url) => {
+    const response = await GET(new NextRequest(url))
+
+    expect(response.status).toBe(400)
+    expect(response.headers.get('Cache-Control')).toBe('no-store')
+    expect(mocks.requireAllowedUser).not.toHaveBeenCalled()
+    expect(mocks.searchJobberInvoiceCandidates).not.toHaveBeenCalled()
+  })
+
   it('requires an allowed user before gateway/token/network work', async () => {
     mocks.requireAllowedUser.mockResolvedValue({ ok: false, error: 'Authentication required' })
     const response = await GET(new NextRequest('http://localhost/api/jobber/progress-invoices/invoices/search?term=INV'))
@@ -45,7 +60,7 @@ describe('Progress Invoice Jobber invoice search route', () => {
   })
 
   it('maps gateway failures to safe no-store JSON without raw response data', async () => {
-    mocks.searchJobberInvoiceCandidates.mockRejectedValue(new Error('Unable to search Jobber invoices'))
+    mocks.searchJobberInvoiceCandidates.mockRejectedValue(new Error('secret upstream fragment'))
     const response = await GET(new NextRequest('http://localhost/api/jobber/progress-invoices/invoices/search?term=INV'))
     expect(response.status).toBe(502)
     expect(response.headers.get('Cache-Control')).toBe('no-store')

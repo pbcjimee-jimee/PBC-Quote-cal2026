@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+vi.mock('server-only', () => ({}))
 
 const mocks = vi.hoisted(() => ({
   getJobberConfig: vi.fn(),
@@ -169,11 +170,16 @@ describe('Progress Invoice Jobber observation normalization', () => {
       { id: 'property-2', address: address('2 Street') },
     ]))
     mocks.fetchJobberInvoicePaymentsPage.mockResolvedValue(connection(paymentRows()))
-    mocks.fetchJobberPaymentRefundsPage.mockImplementation(async (id: string) => (
-      id === 'p-refunded'
-        ? connection([{ id: 'refund-child', amount: '10', entryDate: '2026-07-12T00:00:00Z', jobberPaymentTransactionStatus: 'SUCCEEDED' }])
-        : null
-    ))
+    mocks.fetchJobberPaymentRefundsPage.mockImplementation(async (id: string) => {
+      if (id === 'p-refunded') {
+        return connection([
+          { id: 'refund-child', amount: '10', entryDate: '2026-07-12T00:00:00Z', jobberPaymentTransactionStatus: 'SUCCEEDED' },
+          { id: 'same-id-refund', amount: '12', entryDate: '2026-07-13T00:00:00Z', jobberPaymentTransactionStatus: 'SUCCEEDED' },
+          { id: 'same-id-conflict', amount: '15', entryDate: '2026-07-14T00:00:00Z', jobberPaymentTransactionStatus: 'SUCCEEDED' },
+        ])
+      }
+      return null
+    })
     mocks.fetchJobberPaymentDetail.mockImplementation(async (id: string) => paymentDetailFor(id))
   })
 
@@ -202,7 +208,7 @@ describe('Progress Invoice Jobber observation normalization', () => {
     })
     expect(result.jobs.map(({ id }) => id)).toEqual(['job-1', 'job-2'])
     expect(result.properties.map(({ id }) => id)).toEqual(['property-1', 'property-2'])
-    expect(result.payments).toHaveLength(21)
+    expect(result.payments).toHaveLength(25)
     expect(result.payments.map(({ id }) => id)).not.toContain('invoice-received-date')
     expect(paymentEffects(result.payments)).toMatchObject({
       'p-payment': ['receipt', '100', 'active'],
@@ -220,7 +226,11 @@ describe('Progress Invoice Jobber observation normalization', () => {
       'p-dispute': ['receipt', '0', 'unconfirmed'],
       'p-unknown-status': ['receipt', '0', 'unconfirmed'],
       'p-refunded': ['receipt', '80', 'active'],
+      'p-partially-refunded': ['receipt', '70', 'active'],
+      'p-disputed': ['receipt', '0', 'unconfirmed'],
       'refund-child': ['refund', '-10', 'active'],
+      'same-id-refund': ['refund', '-12', 'active'],
+      'same-id-conflict': ['ambiguous', '0', 'unconfirmed'],
       'p-null': ['receipt', '20', 'active'],
       'p-jobber-null': ['receipt', '0', 'unconfirmed'],
       'p-check': ['receipt', '15', 'active'],
@@ -231,8 +241,11 @@ describe('Progress Invoice Jobber observation normalization', () => {
     expect(result.payments.find(({ id }) => id === 'p-payment')).toMatchObject({ method: 'JOBBER_PAYMENTS', reference: 'tx-p-payment' })
     expect(result.payments.find(({ id }) => id === 'p-check')).toMatchObject({ method: 'CHECK', reference: 'CHK-1' })
     expect(result.payments.find(({ id }) => id === 'p-details')).toMatchObject({ method: 'OTHER', reference: 'detail reference' })
+    expect(result.payments.filter(({ id }) => id === 'same-id-refund')).toHaveLength(1)
+    expect(result.payments.filter(({ id }) => id === 'same-id-conflict')).toHaveLength(1)
     expect(result.warnings).toEqual(expect.arrayContaining([
       { code: 'ambiguous_payment_evidence', paymentId: 'p-conflict' },
+      { code: 'ambiguous_payment_evidence', paymentId: 'same-id-conflict' },
       { code: 'ambiguous_payment_adjustment', paymentId: 'p-correction' },
       { code: 'missing_jobber_payment_status', paymentId: 'p-jobber-null' },
       { code: 'unknown_payment_adjustment_type', paymentId: 'p-unknown' },
@@ -259,6 +272,32 @@ describe('Progress Invoice Jobber observation normalization', () => {
     expect(first.warnings).toContainEqual({ code: 'no_invoice_properties' })
     expect(first.fetchedAt).not.toBe(second.fetchedAt)
     expect(first.responseFingerprint).toBe(second.responseFingerprint)
+  })
+
+  it('changes the fingerprint for meaningful invoice, selection, and payment changes', async () => {
+    const base = await fetchJobberInvoiceObservation({
+      jobberInvoiceId: 'invoice-1', selectedJobberJobId: 'job-1', selectedJobberPropertyId: 'property-1',
+    })
+    const changedSelection = await fetchJobberInvoiceObservation({
+      jobberInvoiceId: 'invoice-1', selectedJobberJobId: 'job-2', selectedJobberPropertyId: 'property-2',
+    })
+    mocks.fetchJobberInvoiceDetail.mockResolvedValueOnce({ ...invoiceDetail(), invoiceNumber: 'INV-CHANGED' })
+    const changedInvoice = await fetchJobberInvoiceObservation({
+      jobberInvoiceId: 'invoice-1', selectedJobberJobId: 'job-1', selectedJobberPropertyId: 'property-1',
+    })
+    mocks.fetchJobberInvoicePaymentsPage.mockResolvedValueOnce(connection(paymentRows().map((row) => (
+      row.id === 'p-payment' ? { ...row, amount: '101' } : row
+    ))))
+    mocks.fetchJobberPaymentDetail.mockImplementationOnce(async (id: string) => (
+      id === 'p-payment' ? { ...paymentDetailFor(id), amount: '101' } : paymentDetailFor(id)
+    ))
+    const changedPayment = await fetchJobberInvoiceObservation({
+      jobberInvoiceId: 'invoice-1', selectedJobberJobId: 'job-1', selectedJobberPropertyId: 'property-1',
+    })
+
+    expect(changedSelection.responseFingerprint).not.toBe(base.responseFingerprint)
+    expect(changedInvoice.responseFingerprint).not.toBe(base.responseFingerprint)
+    expect(changedPayment.responseFingerprint).not.toBe(base.responseFingerprint)
   })
 })
 
@@ -292,12 +331,22 @@ function paymentRows() {
     ['p-invoice', 'INVOICE', '5', null], ['p-initial', 'INITIAL_BALANCE', '5', null], ['p-bad-debt', 'BAD_DEBT', '5', null],
     ['p-voided', 'VOIDED', '5', null], ['p-pending', 'PAYMENT', '5', 'PENDING'], ['p-failed', 'PAYMENT', '5', 'FAILED'],
     ['p-dispute', 'PAYMENT', '5', 'IN_DISPUTE'], ['p-unknown-status', 'PAYMENT', '5', 'FUTURE_STATUS'],
-    ['p-refunded', 'PAYMENT', '80', 'REFUNDED'], ['p-null', 'PAYMENT', '20', null],
+    ['p-refunded', 'PAYMENT', '80', 'REFUNDED'], ['p-partially-refunded', 'PAYMENT', '70', 'PARTIALLY_REFUNDED'],
+    ['p-disputed', 'PAYMENT', '6', 'DISPUTED'], ['same-id-refund', 'REFUND', '12', 'SUCCEEDED'],
+    ['same-id-conflict', 'REFUND', '14', 'SUCCEEDED'],
+    ['p-null', 'PAYMENT', '20', null],
     ['p-jobber-null', 'PAYMENT', '5', null], ['p-check', 'PAYMENT', '15', null], ['p-details', 'PAYMENT', '16', null],
     ['p-conflict', 'PAYMENT', '10', null],
   ]
   return values.map(([id, adjustmentType, amount, status], index) => ({
-    id, adjustmentType, amount, entryDate: `2026-07-${String(index + 1).padStart(2, '0')}T00:00:00Z`,
+    id,
+    adjustmentType,
+    amount,
+    entryDate: id === 'same-id-refund'
+      ? '2026-07-13T00:00:00Z'
+      : id === 'same-id-conflict'
+        ? '2026-07-14T00:00:00Z'
+        : `2026-07-${String(index + 1).padStart(2, '0')}T00:00:00Z`,
     jobberPaymentPaymentMethod: id === 'p-payment' ? 'LEGACY_METHOD' : null,
     jobberPaymentTransactionStatus: status,
   }))
