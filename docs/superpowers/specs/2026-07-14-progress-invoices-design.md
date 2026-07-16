@@ -102,6 +102,8 @@ There is currently no Jobber invoice gateway, progress-invoice schema, document 
 | Issued edits | Edit the same claim identity; create and retain an internal revision and change history |
 | Numbering | Jobber invoice number plus P01, P02, or FINAL suffix; original Jobber number stored separately |
 | Template rotation | Statuses are Pending, Active, Failed, and Superseded. Activating a verified Pending version atomically moves the prior Active version to Superseded; old template rows, paths, hashes, and revision references remain immutable. |
+| Over-claimed Credit | Reject the approval atomically with `RECONCILIATION_REQUIRED`; leave the Credit Draft and persist no reconciliation/status/version/read-model/audit/idempotency mutation. |
+| Creation provenance | `source_type` and the original Quote link are immutable after creation. Only deleting the referenced Quote may clear `quote_id` through `ON DELETE SET NULL` while `source_type = pbc_quote` remains. |
 
 ## Goals
 
@@ -266,6 +268,8 @@ Represents one contract and Progress Invoice sequence:
 - current totals cached only as a transactionally maintained read model.
 
 A PBC-quote series must reference an existing Quote when it is created. The stored Quote link remains optional afterward: deleting the Quote sets `quote_id` to null while retaining `source_type = pbc_quote` and the series' immutable financial history.
+
+Creation provenance cannot be edited after creation. An update command never accepts `source_type` or `quote_id`, and the database rejects either key at the direct RPC boundary. A different origin requires a new series. The Quote foreign-key delete action above is the sole intentional exception for `quote_id`.
 
 A series may be drafted before a Jobber invoice exists, but a Claim draft cannot be created until exactly one Jobber account/invoice identity and accepted numbering base are linked.
 
@@ -470,7 +474,7 @@ Bank details and complete document payloads are referenced by version and are no
 - Cumulative percentage must be greater than 0 and no greater than 100.
 - Due date cannot precede issue date.
 - A new issue cannot exceed the adjusted contract total.
-- A Credit that reduces the adjusted contract below already issued claims places the series in Reconciliation Required and blocks another issue.
+- A Credit approval that would reduce the adjusted contract below already issued Current claims is rejected and rolled back atomically with `RECONCILIATION_REQUIRED`. The Credit remains Draft; the series does not enter Reconciliation Required merely because the rejected approval was attempted. Claims must first be revised or voided before retrying.
 - At most one non-void FINAL may exist, it must consume the full residual Ex GST and GST balances, and no later Claim may be created.
 - Financial writes use transactional RPCs with an expected version.
 - Actor identity is obtained from auth.uid(), never trusted from client input.
@@ -930,7 +934,7 @@ The UI displays document revision, generated time, template version, and whether
 | Draft | First claim successfully issued | Active |
 | Active | FINAL leaves zero unclaimed balance | Completed |
 | Completed | Later adjustment or proposed financial revision reopens a balance | Reconciliation Required |
-| Draft or Active | Credit makes prior claims exceed contract | Reconciliation Required |
+| Draft or Active | Credit approval would make prior claims exceed contract | No transition; approval rolls back and Credit remains Draft |
 | Reconciliation Required | Revision chain restores validity before FINAL | Active |
 | Reconciliation Required | Revised FINAL chain restores zero balance | Completed |
 | Any non-void | Explicit void with reason | Void |
@@ -1194,7 +1198,7 @@ The detailed implementation plan will decompose this design into test-first task
 | Jobber schema or scopes differ | Verify GraphiQL at pinned version before implementation |
 | Issued edit destroys evidence | Immutable superseded revisions and append-only events |
 | Earlier-claim edit makes later claims inconsistent | Publish only a validated atomic series-revision set with cascade revisions |
-| Credit causes over-claim | Enter Reconciliation Required and block another issue |
+| Credit approval would cause over-claim | Reject and roll back the command; require Claim revision or Void before retry |
 | Long descriptions break A4 | Add continuation pages instead of truncation or unreadable fonts |
 | Spreadsheet content becomes executable | Force user values to text and reject active or unexpected workbook content |
 | Private financial files leak | Private buckets, authorization, signed URLs, opaque paths, and no client caching |

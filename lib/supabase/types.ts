@@ -1629,6 +1629,32 @@ export interface Database {
     }
     Views: Record<string, never>
     Functions: {
+      approve_progress_adjustment: {
+        Args: { payload: Json }
+        Returns: Array<{
+          conflict: boolean
+          current: Json
+          id: string
+          replacement_id: string
+          series_id: string
+          version: number
+        }>
+      }
+      create_progress_adjustment: {
+        Args: { payload: Json }
+        Returns: Array<{
+          conflict: boolean
+          current: Json
+          id: string
+          replacement_id: string
+          series_id: string
+          version: number
+        }>
+      }
+      create_progress_invoice_series: {
+        Args: { payload: Json }
+        Returns: Array<{ id: string; version: number }>
+      }
       create_quote_with_children: {
         Args: { payload: Json }
         Returns: string
@@ -1695,6 +1721,37 @@ export interface Database {
           updated_by: string
           version: number
         }[]
+      }
+      supersede_progress_adjustment: {
+        Args: { payload: Json }
+        Returns: Array<{
+          conflict: boolean
+          current: Json
+          id: string
+          replacement_id: string
+          series_id: string
+          version: number
+        }>
+      }
+      update_progress_adjustment_draft: {
+        Args: { payload: Json }
+        Returns: Array<{
+          conflict: boolean
+          current: Json
+          id: string
+          replacement_id: string
+          series_id: string
+          version: number
+        }>
+      }
+      update_progress_invoice_series: {
+        Args: { payload: Json }
+        Returns: Array<{
+          conflict: boolean
+          current: Json
+          id: string
+          version: number
+        }>
       }
       update_quote_with_children: {
         Args: { payload: Json }

@@ -73,13 +73,26 @@ const seriesEditableShape = {
 export const createProgressInvoiceSeriesSchema = z.strictObject({
   ...seriesEditableShape,
   correlationKey: uuidSchema,
+}).superRefine((series, context) => {
+  if (series.sourceType === 'pbc_quote' && !series.pbcQuoteId) {
+    context.addIssue({
+      code: 'custom',
+      path: ['pbcQuoteId'],
+      message: 'PBC quote series require a quote ID',
+    })
+  }
+  if (series.sourceType !== 'pbc_quote' && series.pbcQuoteId != null) {
+    context.addIssue({
+      code: 'custom',
+      path: ['pbcQuoteId'],
+      message: 'Only PBC quote series may include a quote ID',
+    })
+  }
 })
 
 export const updateProgressInvoiceSeriesSchema = z.strictObject({
   seriesId: uuidSchema,
   expectedVersion: expectedVersionSchema,
-  pbcQuoteId: seriesEditableShape.pbcQuoteId,
-  sourceType: seriesEditableShape.sourceType.optional(),
   baseContractExGst: seriesEditableShape.baseContractExGst.optional(),
   gstRate: seriesEditableShape.gstRate.optional(),
   recipientName: seriesEditableShape.recipientName.optional(),
@@ -94,6 +107,18 @@ export const updateProgressInvoiceSeriesSchema = z.strictObject({
   reference: seriesEditableShape.reference,
   correlationKey: uuidSchema,
 })
+
+export const progressInvoiceListSchema = z.strictObject({
+  search: z.string().trim().max(160).optional(),
+  status: z.enum(['draft', 'active', 'completed', 'reconciliation_required', 'void']).optional(),
+})
+
+export const progressInvoiceSeriesIdSchema = uuidSchema
+
+export const progressInvoiceCreatePrefillSchema = z.union([
+  z.strictObject({ quoteId: uuidSchema }),
+  z.strictObject({ standalone: z.literal(true) }),
+])
 
 export const linkProgressJobberInvoiceSchema = z.strictObject({
   seriesId: uuidSchema,
@@ -315,6 +340,15 @@ export type UpdateProgressInvoiceSeriesInput = z.infer<
 >
 export type CreateProgressAdjustmentInput = z.infer<
   typeof createProgressAdjustmentSchema
+>
+export type UpdateProgressAdjustmentDraftInput = z.infer<
+  typeof updateProgressAdjustmentDraftSchema
+>
+export type ApproveProgressAdjustmentInput = z.infer<
+  typeof approveProgressAdjustmentSchema
+>
+export type SupersedeProgressAdjustmentInput = z.infer<
+  typeof supersedeProgressAdjustmentSchema
 >
 export type CreateProgressClaimDraftInput = z.infer<
   typeof createProgressClaimDraftSchema

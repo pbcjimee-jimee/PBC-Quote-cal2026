@@ -43,10 +43,182 @@ export interface BusinessInvoiceProfileRpcResult {
   updated_at: string
 }
 
+export type ProgressInvoiceSeriesStatus =
+  | 'draft'
+  | 'active'
+  | 'completed'
+  | 'reconciliation_required'
+  | 'void'
+
+export interface ProgressInvoiceSeriesRpcDetail {
+  id: string
+  quote_id: string | null
+  source_type: 'pbc_quote' | 'jobber_job' | 'jobber_invoice'
+  version: number
+  base_contract_ex_gst: string
+  gst_rate: '0.10'
+  recipient_name: string
+  recipient_company: string
+  recipient_address: string
+  recipient_email: string
+  recipient_phone: string
+  recipient_abn: string
+  site_name: string
+  site_address: string
+  default_description: string
+  reference: string
+  status: ProgressInvoiceSeriesStatus
+  accepted_numbering_base: string | null
+  jobber_link_locked_at: string | null
+  current_adjusted_contract_ex_gst: string
+  current_adjusted_contract_gst: string
+  current_adjusted_contract_inc_gst: string
+  current_claimed_ex_gst: string
+  current_claimed_gst: string
+  current_claimed_inc_gst: string
+  current_unclaimed_ex_gst: string
+  current_unclaimed_gst: string
+  current_unclaimed_inc_gst: string
+  current_cumulative_percentage: string
+}
+
+export interface CreateProgressInvoiceSeriesPayload {
+  source_type: 'pbc_quote' | 'jobber_job' | 'jobber_invoice'
+  quote_id?: string | null
+  base_contract_ex_gst: string
+  gst_rate: '0.10'
+  recipient_name: string
+  recipient_company?: string | null
+  recipient_address: string
+  recipient_email?: string | null
+  recipient_phone?: string | null
+  recipient_abn?: string | null
+  site_name: string
+  site_address: string
+  default_description: string
+  reference?: string | null
+  correlation_key: string
+}
+
+export interface UpdateProgressInvoiceSeriesPayload {
+  series_id: string
+  expected_version: number
+  base_contract_ex_gst?: string
+  gst_rate?: '0.10'
+  recipient_name?: string
+  recipient_company?: string | null
+  recipient_address?: string
+  recipient_email?: string | null
+  recipient_phone?: string | null
+  recipient_abn?: string | null
+  site_name?: string
+  site_address?: string
+  default_description?: string
+  reference?: string | null
+  correlation_key: string
+}
+
+interface AdjustmentPayload {
+  type: 'variation' | 'credit'
+  effective_date: string
+  description: string
+  amount_ex_gst: string
+  gst_rate: '0.10'
+  quote_item_id?: string | null
+}
+
+export interface CreateProgressAdjustmentPayload extends AdjustmentPayload {
+  series_id: string
+  correlation_key: string
+}
+
+export interface UpdateProgressAdjustmentPayload {
+  adjustment_id: string
+  expected_version: number
+  type?: 'variation' | 'credit'
+  effective_date?: string
+  description?: string
+  amount_ex_gst?: string
+  gst_rate?: '0.10'
+  quote_item_id?: string | null
+  correlation_key: string
+}
+
+export interface ApproveProgressAdjustmentPayload {
+  adjustment_id: string
+  expected_version: number
+  correlation_key: string
+}
+
+export interface SupersedeProgressAdjustmentPayload {
+  adjustment_id: string
+  expected_version: number
+  reason: string
+  replacement: AdjustmentPayload
+  correlation_key: string
+}
+
+export interface VersionedMutationRpcResult {
+  id: string
+  version: number
+}
+
+export interface AdjustmentMutationRpcResult extends VersionedMutationRpcResult {
+  series_id: string
+  replacement_id?: string
+}
+
+export interface ProgressAdjustmentRpcDetail {
+  id: string
+  series_id: string
+  type: 'variation' | 'credit'
+  status: 'draft' | 'approved' | 'rejected' | 'superseded' | 'void'
+  effective_date: string
+  display_order: number
+  description: string
+  amount_ex_gst: string
+  gst_rate: '0.10'
+  superseded_adjustment_id: string | null
+  reason: string | null
+  quote_item_id: string | null
+  version: number
+}
+
 export interface ProgressInvoiceCommandMap {
   save_business_invoice_profile: {
     payload: SaveBusinessInvoiceProfilePayload
     result: BusinessInvoiceProfileRpcResult
+    current: never
+  }
+  create_progress_invoice_series: {
+    payload: CreateProgressInvoiceSeriesPayload
+    result: VersionedMutationRpcResult
+    current: never
+  }
+  update_progress_invoice_series: {
+    payload: UpdateProgressInvoiceSeriesPayload
+    result: VersionedMutationRpcResult
+    current: ProgressInvoiceSeriesRpcDetail
+  }
+  create_progress_adjustment: {
+    payload: CreateProgressAdjustmentPayload
+    result: AdjustmentMutationRpcResult
+    current: never
+  }
+  update_progress_adjustment_draft: {
+    payload: UpdateProgressAdjustmentPayload
+    result: AdjustmentMutationRpcResult
+    current: ProgressAdjustmentRpcDetail
+  }
+  approve_progress_adjustment: {
+    payload: ApproveProgressAdjustmentPayload
+    result: AdjustmentMutationRpcResult
+    current: ProgressAdjustmentRpcDetail
+  }
+  supersede_progress_adjustment: {
+    payload: SupersedeProgressAdjustmentPayload
+    result: AdjustmentMutationRpcResult
+    current: ProgressAdjustmentRpcDetail
   }
 }
 
@@ -66,252 +238,256 @@ export interface ProgressInvoiceRpcExecutor {
 
 type AuthenticatedSupabaseClient = Awaited<ReturnType<typeof createClient>>
 type ProgressInvoiceAuthenticatedClient = Pick<AuthenticatedSupabaseClient, 'rpc'>
-
 type ProgressInvoiceCommand = keyof ProgressInvoiceCommandMap
 type CommandPayload<TCommand extends ProgressInvoiceCommand> =
   ProgressInvoiceCommandMap[TCommand]['payload']
 type CommandResult<TCommand extends ProgressInvoiceCommand> =
   ProgressInvoiceCommandMap[TCommand]['result']
+type CommandCurrent<TCommand extends ProgressInvoiceCommand> =
+  ProgressInvoiceCommandMap[TCommand]['current']
 
-interface ParsedRpcError {
-  message: string
-  code: string
-}
-
-const DOMAIN_ERROR_CODES: Readonly<
-  Record<string, { code: ActionErrorCode; error: string }>
-> = {
-  PROGRESS_AUTH_REQUIRED: {
-    code: 'AUTH_REQUIRED',
-    error: 'PROGRESS_AUTH_REQUIRED',
-  },
-  PROGRESS_FORBIDDEN: {
-    code: 'FORBIDDEN',
-    error: 'PROGRESS_FORBIDDEN',
-  },
-  PROGRESS_VERSION_CONFLICT: {
-    code: 'VERSION_CONFLICT',
-    error: 'PROGRESS_VERSION_CONFLICT',
-  },
-  PROGRESS_NOT_FOUND: {
-    code: 'NOT_FOUND',
-    error: 'PROGRESS_NOT_FOUND',
-  },
+const DOMAIN_ERROR_CODES: Readonly<Record<string, { code: ActionErrorCode; error: string }>> = {
+  PROGRESS_AUTH_REQUIRED: { code: 'AUTH_REQUIRED', error: 'PROGRESS_AUTH_REQUIRED' },
+  PROGRESS_FORBIDDEN: { code: 'FORBIDDEN', error: 'PROGRESS_FORBIDDEN' },
+  PROGRESS_VERSION_CONFLICT: { code: 'VERSION_CONFLICT', error: 'PROGRESS_VERSION_CONFLICT' },
+  PROGRESS_NOT_FOUND: { code: 'NOT_FOUND', error: 'PROGRESS_NOT_FOUND' },
   PROGRESS_RECONCILIATION_REQUIRED: {
     code: 'RECONCILIATION_REQUIRED',
     error: 'PROGRESS_RECONCILIATION_REQUIRED',
   },
-  PROGRESS_JOBBER_ERROR: {
-    code: 'JOBBER_ERROR',
-    error: 'PROGRESS_JOBBER_ERROR',
-  },
-  PROGRESS_DOCUMENT_ERROR: {
-    code: 'DOCUMENT_ERROR',
-    error: 'PROGRESS_DOCUMENT_ERROR',
-  },
-  PROGRESS_STORAGE_ERROR: {
-    code: 'STORAGE_ERROR',
-    error: 'PROGRESS_STORAGE_ERROR',
-  },
-  IDEMPOTENCY_KEY_REUSED: {
-    code: 'VALIDATION',
-    error: 'IDEMPOTENCY_KEY_REUSED',
-  },
+  PROGRESS_JOBBER_ERROR: { code: 'JOBBER_ERROR', error: 'PROGRESS_JOBBER_ERROR' },
+  PROGRESS_DOCUMENT_ERROR: { code: 'DOCUMENT_ERROR', error: 'PROGRESS_DOCUMENT_ERROR' },
+  PROGRESS_STORAGE_ERROR: { code: 'STORAGE_ERROR', error: 'PROGRESS_STORAGE_ERROR' },
+  IDEMPOTENCY_KEY_REUSED: { code: 'VALIDATION', error: 'IDEMPOTENCY_KEY_REUSED' },
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
-function readString(record: Record<string, unknown>, key: string): string | null {
-  const value = record[key]
-  return typeof value === 'string' ? value : null
+function singleton(value: unknown): unknown {
+  return Array.isArray(value) && value.length === 1 ? value[0] : value
 }
 
-function readPositiveInteger(
-  record: Record<string, unknown>,
-  key: string
-): number | null {
-  const value = record[key]
-  return typeof value === 'number' && Number.isSafeInteger(value) && value > 0
-    ? value
-    : null
+function stringField(record: Record<string, unknown>, key: string): string | null {
+  return typeof record[key] === 'string' ? record[key] : null
 }
 
-function parseBusinessInvoiceProfile(
-  value: unknown
-): BusinessInvoiceProfileRpcResult | null {
-  const candidate = Array.isArray(value)
-    ? value.length === 1
-      ? value[0]
-      : null
-    : value
+function nullableStringField(record: Record<string, unknown>, key: string): string | null | undefined {
+  const value = record[key]
+  return value === null ? null : typeof value === 'string' ? value : undefined
+}
+
+function positiveIntegerField(record: Record<string, unknown>, key: string): number | null {
+  const value = record[key]
+  return typeof value === 'number' && Number.isSafeInteger(value) && value > 0 ? value : null
+}
+
+function parseVersioned(value: unknown): VersionedMutationRpcResult | null {
+  const candidate = singleton(value)
   if (!isRecord(candidate)) return null
+  const id = stringField(candidate, 'id')
+  const version = positiveIntegerField(candidate, 'version')
+  return id && version ? { id, version } : null
+}
 
-  const id = readString(candidate, 'id')
-  const legalName = readString(candidate, 'legal_name')
-  const tradingName = readString(candidate, 'trading_name')
-  const abn = readString(candidate, 'abn')
-  const contractorLicence = readString(candidate, 'contractor_licence')
-  const businessAddress = readString(candidate, 'business_address')
-  const phone = readString(candidate, 'phone')
-  const email = readString(candidate, 'email')
-  const bankName = readString(candidate, 'bank_name')
-  const bsb = readString(candidate, 'bsb')
-  const bankAccountName = readString(candidate, 'bank_account_name')
-  const bankAccountNumber = readString(candidate, 'bank_account_number')
-  const gstRate = readString(candidate, 'gst_rate')
-  const businessTimezone = readString(candidate, 'business_timezone')
-  const defaultPaymentTermDays = candidate.default_payment_term_days
-  const version = readPositiveInteger(candidate, 'version')
-  const createdBy = readString(candidate, 'created_by')
-  const updatedBy = readString(candidate, 'updated_by')
-  const createdAt = readString(candidate, 'created_at')
-  const updatedAt = readString(candidate, 'updated_at')
-
-  if (
-    id === null ||
-    legalName === null ||
-    tradingName === null ||
-    abn === null ||
-    contractorLicence === null ||
-    businessAddress === null ||
-    phone === null ||
-    email === null ||
-    bankName === null ||
-    bsb === null ||
-    bankAccountName === null ||
-    bankAccountNumber === null ||
-    gstRate !== '0.10' ||
-    businessTimezone !== 'Australia/Sydney' ||
-    typeof defaultPaymentTermDays !== 'number' ||
-    !Number.isSafeInteger(defaultPaymentTermDays) ||
-    defaultPaymentTermDays < 0 ||
-    defaultPaymentTermDays > 365 ||
-    version === null ||
-    createdBy === null ||
-    updatedBy === null ||
-    createdAt === null ||
-    updatedAt === null
-  ) {
-    return null
+function parseAdjustment(value: unknown): AdjustmentMutationRpcResult | null {
+  const candidate = singleton(value)
+  if (!isRecord(candidate)) return null
+  const base = parseVersioned(candidate)
+  const seriesId = stringField(candidate, 'series_id')
+  const replacementId = nullableStringField(candidate, 'replacement_id')
+  if (!base || !seriesId || replacementId === undefined) return null
+  return {
+    ...base,
+    series_id: seriesId,
+    ...(replacementId === null ? {} : { replacement_id: replacementId }),
   }
+}
 
+function parseAdjustmentDetail(value: unknown): ProgressAdjustmentRpcDetail | null {
+  if (!isRecord(value)) return null
+  const id = stringField(value, 'id')
+  const seriesId = stringField(value, 'series_id')
+  const type = stringField(value, 'type')
+  const status = stringField(value, 'status')
+  const effectiveDate = stringField(value, 'effective_date')
+  const description = stringField(value, 'description')
+  const amount = stringField(value, 'amount_ex_gst')
+  const supersededId = nullableStringField(value, 'superseded_adjustment_id')
+  const reason = nullableStringField(value, 'reason')
+  const quoteItemId = nullableStringField(value, 'quote_item_id')
+  const version = positiveIntegerField(value, 'version')
+  const displayOrder = value.display_order
+  const validType = type === 'variation' || type === 'credit'
+  const validStatus = status === 'draft' || status === 'approved' || status === 'rejected'
+    || status === 'superseded' || status === 'void'
+  if (!id || !seriesId || !validType || !validStatus || !effectiveDate || !description || !amount
+    || supersededId === undefined || reason === undefined || quoteItemId === undefined
+    || !version || typeof displayOrder !== 'number' || !Number.isSafeInteger(displayOrder)
+    || displayOrder < 0 || value.gst_rate !== '0.10') return null
   return {
     id,
-    legal_name: legalName,
-    trading_name: tradingName,
-    abn,
-    contractor_licence: contractorLicence,
-    business_address: businessAddress,
-    phone,
-    email,
-    bank_name: bankName,
-    bsb,
-    bank_account_name: bankAccountName,
-    bank_account_number: bankAccountNumber,
-    gst_rate: gstRate,
-    business_timezone: businessTimezone,
-    default_payment_term_days: defaultPaymentTermDays,
+    series_id: seriesId,
+    type,
+    status,
+    effective_date: effectiveDate,
+    display_order: displayOrder,
+    description,
+    amount_ex_gst: amount,
+    gst_rate: '0.10',
+    superseded_adjustment_id: supersededId,
+    reason,
+    quote_item_id: quoteItemId,
     version,
-    created_by: createdBy,
-    updated_by: updatedBy,
-    created_at: createdAt,
-    updated_at: updatedAt,
   }
 }
 
-function serializeProfilePayload(
-  payload: SaveBusinessInvoiceProfilePayload
-): Json {
-  const serialized: Record<string, Json | undefined> = {
-    legal_name: payload.legal_name,
-    abn: payload.abn,
-    business_address: payload.business_address,
-    phone: payload.phone,
-    email: payload.email,
-    bank_name: payload.bank_name,
-    bsb: payload.bsb,
-    bank_account_name: payload.bank_account_name,
-    bank_account_number: payload.bank_account_number,
-    gst_rate: payload.gst_rate,
-    business_timezone: payload.business_timezone,
-    default_payment_term_days: payload.default_payment_term_days,
-  }
-
-  if (payload.trading_name !== undefined) {
-    serialized.trading_name = payload.trading_name
-  }
-  if (payload.contractor_licence !== undefined) {
-    serialized.contractor_licence = payload.contractor_licence
-  }
-  if (payload.expected_version !== undefined) {
-    serialized.expected_version = payload.expected_version
-  }
-
-  return serialized
-}
-
-function parseRpcError(value: ProgressInvoiceRpcError): ParsedRpcError {
+function parseBusinessInvoiceProfile(value: unknown): BusinessInvoiceProfileRpcResult | null {
+  const candidate = singleton(value)
+  if (!isRecord(candidate)) return null
+  const requiredStrings = [
+    'id', 'legal_name', 'trading_name', 'abn', 'contractor_licence',
+    'business_address', 'phone', 'email', 'bank_name', 'bsb',
+    'bank_account_name', 'bank_account_number', 'created_by', 'updated_by',
+    'created_at', 'updated_at',
+  ] as const
+  const values = Object.fromEntries(requiredStrings.map((key) => [key, stringField(candidate, key)]))
+  if (Object.values(values).some((value) => value === null)) return null
+  if (candidate.gst_rate !== '0.10' || candidate.business_timezone !== 'Australia/Sydney') return null
+  const version = positiveIntegerField(candidate, 'version')
+  const days = candidate.default_payment_term_days
+  if (!version || typeof days !== 'number' || !Number.isSafeInteger(days) || days < 0 || days > 365) return null
   return {
-    message: typeof value.message === 'string' ? value.message : '',
-    code: typeof value.code === 'string' ? value.code : '',
+    id: values.id as string,
+    legal_name: values.legal_name as string,
+    trading_name: values.trading_name as string,
+    abn: values.abn as string,
+    contractor_licence: values.contractor_licence as string,
+    business_address: values.business_address as string,
+    phone: values.phone as string,
+    email: values.email as string,
+    bank_name: values.bank_name as string,
+    bsb: values.bsb as string,
+    bank_account_name: values.bank_account_name as string,
+    bank_account_number: values.bank_account_number as string,
+    gst_rate: '0.10',
+    business_timezone: 'Australia/Sydney',
+    default_payment_term_days: days,
+    version,
+    created_by: values.created_by as string,
+    updated_by: values.updated_by as string,
+    created_at: values.created_at as string,
+    updated_at: values.updated_at as string,
+  }
+}
+
+function parseSeriesDetail(value: unknown): ProgressInvoiceSeriesRpcDetail | null {
+  if (!isRecord(value)) return null
+  const id = stringField(value, 'id')
+  const quoteId = nullableStringField(value, 'quote_id')
+  const sourceType = stringField(value, 'source_type')
+  const version = positiveIntegerField(value, 'version')
+  const status = stringField(value, 'status')
+  const acceptedBase = nullableStringField(value, 'accepted_numbering_base')
+  const linkLockedAt = nullableStringField(value, 'jobber_link_locked_at')
+  const stringKeys = [
+    'base_contract_ex_gst', 'recipient_name', 'recipient_company', 'recipient_address',
+    'recipient_email', 'recipient_phone', 'recipient_abn', 'site_name', 'site_address',
+    'default_description', 'reference', 'current_adjusted_contract_ex_gst',
+    'current_adjusted_contract_gst', 'current_adjusted_contract_inc_gst',
+    'current_claimed_ex_gst', 'current_claimed_gst', 'current_claimed_inc_gst',
+    'current_unclaimed_ex_gst', 'current_unclaimed_gst', 'current_unclaimed_inc_gst',
+    'current_cumulative_percentage',
+  ] as const
+  const fields = Object.fromEntries(stringKeys.map((key) => [key, stringField(value, key)]))
+  const validSource = sourceType === 'pbc_quote' || sourceType === 'jobber_job' || sourceType === 'jobber_invoice'
+  const validStatus = status === 'draft' || status === 'active' || status === 'completed'
+    || status === 'reconciliation_required' || status === 'void'
+  if (!id || quoteId === undefined || !validSource || !version || !validStatus
+    || acceptedBase === undefined || linkLockedAt === undefined
+    || value.gst_rate !== '0.10' || Object.values(fields).some((field) => field === null)) return null
+  return {
+    id,
+    quote_id: quoteId,
+    source_type: sourceType,
+    version,
+    base_contract_ex_gst: fields.base_contract_ex_gst as string,
+    gst_rate: '0.10',
+    recipient_name: fields.recipient_name as string,
+    recipient_company: fields.recipient_company as string,
+    recipient_address: fields.recipient_address as string,
+    recipient_email: fields.recipient_email as string,
+    recipient_phone: fields.recipient_phone as string,
+    recipient_abn: fields.recipient_abn as string,
+    site_name: fields.site_name as string,
+    site_address: fields.site_address as string,
+    default_description: fields.default_description as string,
+    reference: fields.reference as string,
+    status,
+    accepted_numbering_base: acceptedBase,
+    jobber_link_locked_at: linkLockedAt,
+    current_adjusted_contract_ex_gst: fields.current_adjusted_contract_ex_gst as string,
+    current_adjusted_contract_gst: fields.current_adjusted_contract_gst as string,
+    current_adjusted_contract_inc_gst: fields.current_adjusted_contract_inc_gst as string,
+    current_claimed_ex_gst: fields.current_claimed_ex_gst as string,
+    current_claimed_gst: fields.current_claimed_gst as string,
+    current_claimed_inc_gst: fields.current_claimed_inc_gst as string,
+    current_unclaimed_ex_gst: fields.current_unclaimed_ex_gst as string,
+    current_unclaimed_gst: fields.current_unclaimed_gst as string,
+    current_unclaimed_inc_gst: fields.current_unclaimed_inc_gst as string,
+    current_cumulative_percentage: fields.current_cumulative_percentage as string,
+  }
+}
+
+function parseRpcError(error: ProgressInvoiceRpcError): { message: string; code: string } {
+  return {
+    message: typeof error.message === 'string' ? error.message : '',
+    code: typeof error.code === 'string' ? error.code : '',
   }
 }
 
 function mapRpcError(error: ProgressInvoiceRpcError): ActionResult<never> {
   const parsed = parseRpcError(error)
-  const domainError = DOMAIN_ERROR_CODES[parsed.message]
-  if (domainError) {
-    return { ok: false, ...domainError }
-  }
-
+  const domain = DOMAIN_ERROR_CODES[parsed.message]
+  if (domain) return { ok: false, ...domain }
   if (['28000', '28P01', 'PGRST301', 'PGRST302'].includes(parsed.code)) {
-    return {
-      ok: false,
-      error: 'PROGRESS_AUTH_REQUIRED',
-      code: 'AUTH_REQUIRED',
-    }
+    return { ok: false, error: 'PROGRESS_AUTH_REQUIRED', code: 'AUTH_REQUIRED' }
   }
-
-  if (parsed.code === '42501') {
-    return {
-      ok: false,
-      error: 'PROGRESS_FORBIDDEN',
-      code: 'FORBIDDEN',
-    }
-  }
-
-  if (parsed.code === 'PGRST116') {
-    return {
-      ok: false,
-      error: 'PROGRESS_NOT_FOUND',
-      code: 'NOT_FOUND',
-    }
-  }
-
+  if (parsed.code === '42501') return { ok: false, error: 'PROGRESS_FORBIDDEN', code: 'FORBIDDEN' }
+  if (parsed.code === 'PGRST116') return { ok: false, error: 'PROGRESS_NOT_FOUND', code: 'NOT_FOUND' }
   if (parsed.code.startsWith('22') || parsed.code.startsWith('23')) {
     return {
       ok: false,
-      error:
-        parsed.code === '23505'
-          ? 'PROGRESS_UNIQUE_CONFLICT'
-          : 'PROGRESS_VALIDATION_FAILED',
+      error: parsed.code === '23505' ? 'PROGRESS_UNIQUE_CONFLICT' : 'PROGRESS_VALIDATION_FAILED',
       code: 'VALIDATION',
     }
   }
-
   return { ok: false, error: 'PROGRESS_REQUEST_FAILED' }
 }
 
-function parseCommandResult<TCommand extends ProgressInvoiceCommand>(
+function toJson(value: unknown): Json {
+  if (value === null || typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+    return value
+  }
+  if (Array.isArray(value)) return value.map(toJson)
+  if (!isRecord(value)) throw new Error('Progress Invoice payload is not JSON serializable')
+  const result: Record<string, Json | undefined> = {}
+  for (const [key, entry] of Object.entries(value)) {
+    if (entry !== undefined) result[key] = toJson(entry)
+  }
+  return result
+}
+
+function parseSuccess<TCommand extends ProgressInvoiceCommand>(
   command: TCommand,
   value: unknown
 ): CommandResult<TCommand> | null {
-  if (command === 'save_business_invoice_profile') {
-    return parseBusinessInvoiceProfile(value) as CommandResult<TCommand> | null
+  if (command === 'save_business_invoice_profile') return parseBusinessInvoiceProfile(value) as CommandResult<TCommand> | null
+  if (command === 'create_progress_invoice_series' || command === 'update_progress_invoice_series') {
+    return parseVersioned(value) as CommandResult<TCommand> | null
   }
-  return null
+  return parseAdjustment(value) as CommandResult<TCommand> | null
 }
 
 export class ProgressInvoiceRepository {
@@ -320,20 +496,28 @@ export class ProgressInvoiceRepository {
   async call<TCommand extends ProgressInvoiceCommand>(
     command: TCommand,
     payload: CommandPayload<TCommand>
-  ): Promise<ActionResult<CommandResult<TCommand>>> {
-    const rpcPayload = serializeProfilePayload(
-      payload as SaveBusinessInvoiceProfilePayload
-    )
-    const { data, error } = await this.executor.execute(command, rpcPayload)
-
+  ): Promise<ActionResult<CommandResult<TCommand>, CommandCurrent<TCommand>>> {
+    const { data, error } = await this.executor.execute(command, toJson(payload))
     if (error) return mapRpcError(error)
 
-    const result = parseCommandResult(command, data)
-    if (result === null) {
-      return { ok: false, error: 'PROGRESS_RESPONSE_INVALID' }
+    if (command !== 'save_business_invoice_profile' && command !== 'create_progress_invoice_series') {
+      const candidate = singleton(data)
+      if (isRecord(candidate) && candidate.conflict === true) {
+        const current = command === 'update_progress_invoice_series'
+          ? parseSeriesDetail(candidate.current)
+          : parseAdjustmentDetail(candidate.current)
+        if (!current) return { ok: false, error: 'PROGRESS_RESPONSE_INVALID' }
+        return {
+          ok: false,
+          error: 'PROGRESS_VERSION_CONFLICT',
+          code: 'VERSION_CONFLICT',
+          current,
+        } as ActionResult<CommandResult<TCommand>, CommandCurrent<TCommand>>
+      }
     }
 
-    return { ok: true, data: result }
+    const result = parseSuccess(command, data)
+    return result ? { ok: true, data: result } : { ok: false, error: 'PROGRESS_RESPONSE_INVALID' }
   }
 }
 

@@ -165,4 +165,12 @@ formula_5 = (380 × D + material_market) / 0.70      (총액 30%)
 
 ---
 
+## 13. Progress Invoice 조정·출처 불변식
+
+- 이미 발행된 Current Claim 합계보다 조정 계약금액을 낮추는 Credit 승인은 원자적으로 거부하고 `RECONCILIATION_REQUIRED`를 반환한다. Credit은 Draft로 유지하며 Series status/version/read model, 조정 합계, audit/idempotency 결과를 부분 변경하지 않는다. 관련 Claim을 먼저 revise 또는 void한 뒤 다시 승인한다.
+- Series 생성 후 `source_type`은 변경할 수 없고 원래 `quote_id`를 update command로 relink 또는 clear할 수 없다. 연결된 Quote 삭제의 `ON DELETE SET NULL`만 예외이며, 이때도 `source_type = 'pbc_quote'`는 유지한다. 다른 출처가 필요하면 새 Series를 만든다.
+- 첫 Claim 번호 예약 후 Jobber account/invoice/accepted-numbering fields가 잠기는 기존 link-lock 규칙은 생성 출처 불변식과 별도로 유지한다.
+
+---
+
 > 문서 변경 이력은 `PROGRESS.md` 참조.
