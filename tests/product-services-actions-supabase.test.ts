@@ -137,6 +137,17 @@ describe('product service actions against Supabase', () => {
     expect(request.limit).toHaveBeenCalledWith(8)
   })
 
+  it('restricts quote title searches to product service names before applying the result limit', async () => {
+    const request = createThenableRequest({ data: [productServiceRow], error: null })
+    mocks.createClient.mockResolvedValueOnce({ from: vi.fn(() => request) })
+
+    const result = await searchProductServices({ query: 'wall', limit: 300, match: 'name' })
+
+    expect(result.ok).toBe(true)
+    expect(request.or).toHaveBeenCalledWith('name.ilike.%wall%')
+    expect(request.limit).toHaveBeenCalledWith(300)
+  })
+
   it('lists product services without unit cost leakage controls beyond the catalog page', async () => {
     const request = createThenableRequest({ data: [productServiceRow], error: null })
     mocks.createClient.mockResolvedValueOnce({ from: vi.fn(() => request) })

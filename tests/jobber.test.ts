@@ -98,6 +98,12 @@ describe('jobber config', () => {
     expect(() => assertJobberReadOnlyScopes('clients quotes:read')).toThrow('Jobber OAuth scopes must be read-only')
     expect(() => assertJobberReadOnlyScopes('spreadsheet quotes:read')).toThrow('Jobber OAuth scopes must be read-only')
   })
+
+  it('accepts the scope format returned by the connected Jobber app', () => {
+    expect(() => assertJobberReadOnlyScopes(
+      'read_clients read_quotes write_quotes read_jobs read_scheduled_items read_invoices read_jobber_payments read_users'
+    )).not.toThrow()
+  })
 })
 
 describe('jobber oauth', () => {

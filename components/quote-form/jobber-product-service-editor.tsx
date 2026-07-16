@@ -111,7 +111,6 @@ export function getProductServiceMatches(
       const haystack = productService.name.toLowerCase()
       return lookupTokens.every((token) => haystack.includes(token))
     })
-    .slice(0, 6)
 }
 
 export function reorderJobberQuoteLines(
@@ -224,7 +223,7 @@ export function JobberProductServiceEditor({
 
     let cancelled = false
     const timeoutId = window.setTimeout(async () => {
-      const result = await searchProductServices({ query: activeLookupQuery, limit: 6 })
+      const result = await searchProductServices({ query: activeLookupQuery, limit: 300, match: 'name' })
       if (!cancelled) setCatalogMatches(result.ok ? result.data : [])
     }, 180)
 

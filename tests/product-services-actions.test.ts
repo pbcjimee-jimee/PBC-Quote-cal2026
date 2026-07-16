@@ -55,6 +55,23 @@ describe('product service actions', () => {
     }
   })
 
+  it('searches only product service names for quote title suggestions', async () => {
+    await importProductServicesCSV({
+      csvText: [
+        'Name,Description,Category,Unit Price,Unit Cost,Bookable,Duration Minutes,Quantity Enabled,Minimum Quantity,Maximum Quantity,Taxable,Active',
+        '"Wall painting","Two coats on prepared surfaces",Service,25,0,false,,true,,,true,true',
+        '"Surface preparation","Prepare walls before painting",Service,15,0,false,,true,,,true,true',
+      ].join('\n'),
+    })
+
+    const result = await searchProductServices({ query: 'wall', limit: 300, match: 'name' })
+
+    expect(result.ok).toBe(true)
+    if (result.ok) {
+      expect(result.data.map((productService) => productService.name)).toEqual(['Wall painting'])
+    }
+  })
+
   it('creates a manual product service and lists it first', async () => {
     const result = await createProductService({
       name: 'Detailed prep',

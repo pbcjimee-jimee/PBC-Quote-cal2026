@@ -298,6 +298,30 @@ describe('JobberProductServiceEditor', () => {
     expect(matches.map((match) => match.name)).toEqual(['Ceiling'])
   })
 
+  it('returns every matching catalog title for the scrollable dropdown', () => {
+    const productServices: ProductServiceRecord[] = Array.from({ length: 8 }, (_, index) => ({
+      id: `service-${index + 1}`,
+      name: `Interior Wall Service ${index + 1}`,
+      description: 'Wall preparation and painting',
+      category: 'Service',
+      unitPrice: '100.00',
+      unitCost: '0.00',
+      bookable: false,
+      durationMinutes: null,
+      quantityEnabled: true,
+      minimumQuantity: null,
+      maximumQuantity: null,
+      taxable: true,
+      active: true,
+      createdAt: '2026-05-19T00:00:00.000Z',
+      updatedAt: '2026-05-19T00:00:00.000Z',
+    }))
+
+    const matches = getProductServiceMatches('wall', productServices)
+
+    expect(matches.map((match) => match.name)).toEqual(productServices.map((item) => item.name))
+  })
+
   it('returns an exact product service name match so a fully typed catalog entry can still be applied', () => {
     const matches = getProductServiceMatches('Ceiling', [
       {

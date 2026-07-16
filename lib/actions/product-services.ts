@@ -312,7 +312,10 @@ export async function searchProductServices(input: unknown): Promise<ActionResul
 
   if (isDevNoAuthMode()) {
     const { searchDevProductServices } = await import('@/lib/dev-data')
-    return { ok: true, data: searchDevProductServices(parsed.data.query, parsed.data.limit) }
+    return {
+      ok: true,
+      data: searchDevProductServices(parsed.data.query, parsed.data.limit, parsed.data.match),
+    }
   }
 
   const tokens = searchTokens(parsed.data.query)
@@ -330,7 +333,11 @@ export async function searchProductServices(input: unknown): Promise<ActionResul
     .limit(parsed.data.limit)
 
   for (const token of tokens) {
-    request = request.or(productServiceSearchOr(token))
+    request = request.or(
+      parsed.data.match === 'name'
+        ? `name.ilike.%${token}%`
+        : productServiceSearchOr(token)
+    )
   }
 
   const { data, error } = await request
