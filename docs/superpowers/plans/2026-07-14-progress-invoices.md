@@ -4,6 +4,8 @@
 
 **Goal:** Deliver a production-gated Progress Invoice module that links one Jobber invoice to one claim series, keeps claimed amounts separate from receipts, supports user-controlled percentage or amount entry, Variation/Credit and partial payments, and generates matching official Tax Invoice XLSX/PDF documents from the approved sample design.
 
+> **2026-07-17 execution amendment:** The Standalone portion of Task 17 is superseded by `docs/superpowers/plans/2026-07-17-progress-invoice-standalone-import.md`. It uses invoice-number search and one atomic Save-time import, then continues from app-owned data without exposing Refresh/Sync UI. Existing Quote Jobber behavior remains unchanged.
+
 **Architecture:** Supabase owns immutable series, claim, revision-set, payment, Jobber-observation, audit, and document records. Pure Decimal.js services calculate claims and payment positions. A server-only, query-only Jobber gateway normalizes complete paginated observations. A canonical revision snapshot feeds a template-preserving OOXML renderer and an independent A4 PDF renderer; both artifacts must validate and persist before one database transaction can make a new revision set current.
 
 **Tech Stack:** Next.js 16 App Router, React 19, TypeScript strict, Node.js 20.16 or newer, Supabase/Postgres/RLS/Storage, Decimal.js, Zod, Vitest, Jobber GraphQL at the effective pinned API version, fflate, @xmldom/xmldom, pdf-lib, @pdf-lib/fontkit, pdfjs-dist, and @napi-rs/canvas 0.1.88 for PDF visual verification
@@ -2509,6 +2511,8 @@ git commit -m "feat: configure progress invoice business profile"
 ~~~
 
 ### Task 17: Add dashboard, creation flow, navigation, and Quote entry points
+
+The Standalone implementation steps in this task are superseded by the approved 2026-07-17 execution amendment linked above. Retain this task's navigation, dashboard, PBC Quote entry-point, and Quote non-regression requirements.
 
 **Files:**
 - Create: app/(app)/progress-invoices/page.tsx
