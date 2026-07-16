@@ -2,7 +2,7 @@ CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA extensions;
 
 BEGIN;
 
-SELECT plan(33);
+SELECT plan(46);
 
 CREATE FUNCTION pg_temp.capture_sqlstate(command TEXT)
 RETURNS TEXT
@@ -100,6 +100,28 @@ SELECT
   '2026-07-01 00:00:00+00'::TIMESTAMPTZ + value * interval '1 second'
 FROM generate_series(1, 126) AS fixture(value);
 
+INSERT INTO public.quotes (
+  id, customer_name, customer_address, work_type, working_days,
+  formula1_total, formula2_total, formula3_total, formula4_total, formula5_total,
+  selected_min, selected_max, interior_selected_min, interior_selected_max,
+  exterior_selected_min, exterior_selected_max, roof_selected_min, roof_selected_max,
+  subtotal, final_total, pricing_settings_snapshot,
+  created_by, updated_by
+) VALUES (
+  '92000000-0000-4000-8000-000000000001',
+  'Exact Quote Builder',
+  '3 Quote Boundary Street',
+  'Exact quote works',
+  1,
+  1, 1, 1, 1, 1,
+  1, 5, 1, 5, 1, 5, 1, 5,
+  99999999.99,
+  12345678.91,
+  '{}'::JSONB,
+  '00000000-0000-0000-0000-000000009101',
+  '00000000-0000-0000-0000-000000009101'
+);
+
 SELECT is(
   (
     SELECT bool_and(
@@ -111,7 +133,8 @@ SELECT is(
       SELECT to_regprocedure(signature)::OID AS function_oid
       FROM unnest(ARRAY[
         'public.list_progress_invoice_series(jsonb)',
-        'public.get_progress_invoice_series(jsonb)'
+        'public.get_progress_invoice_series(jsonb)',
+        'public.get_progress_invoice_quote_prefill(jsonb)'
       ]) AS rpc(signature)
     ) AS read_rpcs
   ),
@@ -121,6 +144,160 @@ SELECT is(
 
 SET ROLE authenticated;
 SET request.jwt.claim.sub = '00000000-0000-0000-0000-000000009101';
+
+CREATE TEMP TABLE fix_read_state_before AS
+SELECT
+  (SELECT count(*) FROM public.progress_invoice_series) AS series_count,
+  (SELECT count(*) FROM public.progress_invoice_events) AS event_count,
+  (SELECT count(*) FROM public.quotes) AS quote_count;
+
+SELECT is(
+  pg_temp.capture_sqlstate(format(
+    'SELECT public.list_progress_invoice_series(%L::JSONB)',
+    jsonb_build_object(
+      'query', repeat('q', 161), 'statuses', '[]'::JSONB,
+      'page', 1, 'page_size', 20, 'quote_id', NULL
+    )::TEXT
+  )),
+  '23514',
+  'list RPC rejects a query longer than the Zod 160-character bound before reading'
+);
+
+SELECT is(
+  pg_temp.capture_sqlstate($sql$
+    SELECT public.list_progress_invoice_series(
+      '{"query":"","statuses":[],"page":1.5,"page_size":20,"quote_id":null}'::JSONB
+    )
+  $sql$),
+  '23514',
+  'list RPC rejects a fractional page instead of accepting PostgreSQL integer coercion'
+);
+
+SELECT is(
+  pg_temp.capture_sqlstate($sql$
+    SELECT public.list_progress_invoice_series(
+      '{"query":"","statuses":[],"page":1,"page_size":1.5,"quote_id":null}'::JSONB
+    )
+  $sql$),
+  '23514',
+  'list RPC rejects a fractional page size instead of accepting PostgreSQL integer coercion'
+);
+
+SELECT is(
+  pg_temp.capture_sqlstate($sql$
+    SELECT public.list_progress_invoice_series(
+      '{"query":"","statuses":[],"page":1,"page_size":101,"quote_id":null}'::JSONB
+    )
+  $sql$),
+  '23514',
+  'list RPC rejects page size above 100'
+);
+
+SELECT is(
+  pg_temp.capture_sqlstate($sql$
+    SELECT public.list_progress_invoice_series(
+      '{"query":"","statuses":[],"page":2147483648,"page_size":20,"quote_id":null}'::JSONB
+    )
+  $sql$),
+  '23514',
+  'list RPC rejects page values unsafe for its integer result contract before casting'
+);
+
+SELECT is(
+  pg_temp.capture_sqlstate($sql$
+    SELECT public.list_progress_invoice_series(
+      '{"query":"","statuses":["pending"],"page":1,"page_size":20,"quote_id":null}'::JSONB
+    )
+  $sql$),
+  '23514',
+  'list RPC rejects unknown lifecycle and payment states'
+);
+
+SELECT is(
+  pg_temp.capture_sqlstate($sql$
+    SELECT public.list_progress_invoice_series(
+      '{"query":"","statuses":[],"page":1,"page_size":20,"quote_id":null,"extra":true}'::JSONB
+    )
+  $sql$),
+  '22023',
+  'list RPC rejects unknown keys'
+);
+
+CREATE TEMP TABLE fix_list_valid_bounds AS
+SELECT public.list_progress_invoice_series(jsonb_build_object(
+  'query', repeat('x', 160),
+  'statuses', jsonb_build_array(
+    'draft', 'active', 'completed', 'reconciliation_required', 'void',
+    'unpaid', 'part_paid', 'paid', 'overdue', 'credit_balance'
+  ),
+  'page', 1,
+  'page_size', 100,
+  'quote_id', NULL
+)) AS result;
+
+SELECT is(
+  (SELECT (result ->> 'page')::INT = 1 AND (result ->> 'page_size')::INT = 100 FROM fix_list_valid_bounds),
+  true,
+  'list RPC accepts the exact query, status-count, page, and page-size boundaries'
+);
+
+SELECT is(
+  (
+    SELECT (SELECT count(*) FROM public.progress_invoice_series) = before.series_count
+      AND (SELECT count(*) FROM public.progress_invoice_events) = before.event_count
+      AND (SELECT count(*) FROM public.quotes) = before.quote_count
+    FROM fix_read_state_before AS before
+  ),
+  true,
+  'rejected list inputs leave series, Quote, and audit state unchanged'
+);
+
+CREATE TEMP TABLE fix_quote_prefill AS
+SELECT public.get_progress_invoice_quote_prefill(jsonb_build_object(
+  'quote_id', '92000000-0000-4000-8000-000000000001'
+)) AS result;
+
+SELECT is(
+  (
+    SELECT jsonb_typeof(result #> '{quote,subtotal}') = 'string'
+      AND result #>> '{quote,subtotal}' = '99999999.99'
+      AND jsonb_typeof(result #> '{quote,final_total}') = 'string'
+      AND result #>> '{quote,final_total}' = '12345678.91'
+    FROM fix_quote_prefill
+  ),
+  true,
+  'Quote prefill serializes large valid money and exact cents before PostgREST'
+);
+
+SELECT is(
+  (
+    SELECT (result -> 'quote') ?& ARRAY[
+      'id', 'customer_name', 'customer_address', 'work_type', 'subtotal', 'final_total'
+    ]
+      AND NOT (result -> 'quote') ?| ARRAY[
+        'pricing_settings_snapshot', 'jobber_quote_id', 'created_by', 'updated_by'
+      ]
+    FROM fix_quote_prefill
+  ),
+  true,
+  'Quote prefill exposes only its purpose-specific safe fields'
+);
+
+SELECT is(
+  public.get_progress_invoice_quote_prefill(jsonb_build_object(
+    'quote_id', '92000000-0000-4000-8000-000000000099'
+  )) -> 'quote',
+  'null'::JSONB,
+  'Quote prefill returns a safe null result when the Quote does not exist'
+);
+
+SELECT is(
+  pg_temp.capture_sqlstate($sql$
+    SELECT public.get_progress_invoice_quote_prefill('{"quote_id":"not-a-uuid"}'::JSONB)
+  $sql$),
+  '22023',
+  'Quote prefill rejects unsafe UUID cast input with the safe validation contract'
+);
 
 CREATE TEMP TABLE fix_list_page AS
 SELECT public.list_progress_invoice_series(jsonb_build_object(

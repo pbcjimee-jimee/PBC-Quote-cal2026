@@ -164,6 +164,19 @@ export interface ProgressInvoiceSeriesReadRpcResult {
   series: ProgressInvoiceSeriesRpcDetail | null
 }
 
+export interface ProgressInvoiceQuotePrefillRpcDetail {
+  id: string
+  customer_name: string
+  customer_address: string
+  work_type: string
+  subtotal: string
+  final_total: string
+}
+
+export interface ProgressInvoiceQuotePrefillRpcResult {
+  quote: ProgressInvoiceQuotePrefillRpcDetail | null
+}
+
 interface AdjustmentPayload {
   type: 'variation' | 'credit'
   effective_date: string
@@ -259,6 +272,11 @@ export interface ProgressInvoiceCommandMap {
   get_progress_invoice_series: {
     payload: { series_id: string }
     result: ProgressInvoiceSeriesReadRpcResult
+    current: never
+  }
+  get_progress_invoice_quote_prefill: {
+    payload: { quote_id: string }
+    result: ProgressInvoiceQuotePrefillRpcResult
     current: never
   }
   create_progress_adjustment: {
@@ -599,6 +617,31 @@ function parseSeriesRead(value: unknown): ProgressInvoiceSeriesReadRpcResult | n
   return series ? { series } : null
 }
 
+function parseQuotePrefill(value: unknown): ProgressInvoiceQuotePrefillRpcResult | null {
+  const candidate = singleton(value)
+  if (!isRecord(candidate) || !('quote' in candidate)) return null
+  if (candidate.quote === null) return { quote: null }
+  if (!isRecord(candidate.quote)) return null
+  const id = stringField(candidate.quote, 'id')
+  const customerName = stringField(candidate.quote, 'customer_name')
+  const customerAddress = stringField(candidate.quote, 'customer_address')
+  const workType = stringField(candidate.quote, 'work_type')
+  const subtotal = moneyField(candidate.quote, 'subtotal')
+  const finalTotal = moneyField(candidate.quote, 'final_total')
+  if (!id || customerName === null || customerAddress === null || workType === null
+    || !subtotal || !finalTotal) return null
+  return {
+    quote: {
+      id,
+      customer_name: customerName,
+      customer_address: customerAddress,
+      work_type: workType,
+      subtotal,
+      final_total: finalTotal,
+    },
+  }
+}
+
 function parseRpcError(error: ProgressInvoiceRpcError): { message: string; code: string } {
   return {
     message: typeof error.message === 'string' ? error.message : '',
@@ -649,6 +692,7 @@ function parseSuccess<TCommand extends ProgressInvoiceCommand>(
   if (command === 'update_progress_invoice_series') return parseSeriesMutation(value) as CommandResult<TCommand> | null
   if (command === 'list_progress_invoice_series') return parseDashboard(value) as CommandResult<TCommand> | null
   if (command === 'get_progress_invoice_series') return parseSeriesRead(value) as CommandResult<TCommand> | null
+  if (command === 'get_progress_invoice_quote_prefill') return parseQuotePrefill(value) as CommandResult<TCommand> | null
   return parseAdjustment(value) as CommandResult<TCommand> | null
 }
 
@@ -665,7 +709,8 @@ export class ProgressInvoiceRepository {
     if (command !== 'save_business_invoice_profile'
       && command !== 'create_progress_invoice_series'
       && command !== 'list_progress_invoice_series'
-      && command !== 'get_progress_invoice_series') {
+      && command !== 'get_progress_invoice_series'
+      && command !== 'get_progress_invoice_quote_prefill') {
       const candidate = singleton(data)
       if (isRecord(candidate) && candidate.conflict === true) {
         const current = command === 'update_progress_invoice_series'

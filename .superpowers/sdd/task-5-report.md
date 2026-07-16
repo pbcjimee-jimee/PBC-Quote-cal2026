@@ -224,3 +224,95 @@ All protected blobs remain identical to `aa55d71`:
 - Quote revalidation uses only database-resolved linkage and never trusts a client Quote ID.
 - Optional-field/date failures occur before mutation, and database tests prove row, version, event, status, and replacement rollback invariants.
 - No protected Quote file, dependency manifest, remote state, production database, or unrelated backlog/decision record was changed.
+
+---
+
+# Review fix round 2 — close Progress Invoice read boundaries
+
+## RED evidence
+
+Focused tests were added before production changes:
+
+```powershell
+npm.cmd run test:run -- tests/progress-invoice-series-service.test.ts tests/progress-invoice-actions-supabase.test.ts tests/progress-invoice-series-migration.test.ts
+```
+
+Expected RED result: **3 files failed; 6 failed / 11 passed tests**. The failures proved that:
+
+- the list RPC lacked query-length and pre-cast integer validation;
+- the purpose-specific Quote-prefill RPC and generated/refined command type did not exist;
+- the service still called `.from('quotes')`;
+- the repository had no Quote-prefill parser and accepted the old direct-read shape;
+- numeric Quote money was converted after crossing into JavaScript;
+- the named adjustment SQL remained compressed.
+
+The first new database fixture omitted later-added required Quote selection columns and failed setup. After correcting the fixture, the valid database RED showed:
+
+```text
+query length 161       have NO_ERROR, want 23514
+fractional page        have 22P02, want 23514
+fractional page_size   have 22P02, want 23514
+oversized page         have 22003, want 23514
+Quote-prefill RPC      function does not exist
+```
+
+The valid RED ran 10 assertions before stopping at the missing RPC. This matched the diagnosed causes: validation occurred after unsafe casts, and Quote prefill had no database read boundary.
+
+## GREEN implementation
+
+- `list_progress_invoice_series` now validates JSON element types, 160-character query length, at most 10 allowed statuses, numeric integrality, page/page-size ranges, and Zod-equivalent UUID form before any `INT`/UUID cast.
+- Page offset arithmetic uses `BIGINT` operands so an accepted `INT` page cannot overflow during pagination.
+- Added authenticated-only `get_progress_invoice_quote_prefill(jsonb)`, returning only ID/customer/address/work type and `subtotal`/`final_total` serialized to canonical two-decimal text in PostgreSQL.
+- Added a string-only Quote-prefill repository parser. Numeric JSON now returns `PROGRESS_RESPONSE_INVALID`; missing Quote maps to the existing safe `NOT_FOUND` action result.
+- Removed the direct Quote table read and `string | number` money conversion from the service. Standalone prefill remains local and unchanged.
+- Added the new RPC to the minimal refined Supabase function types.
+- Finished the named adjustment validation/create/supersede SQL formatting without behavior changes.
+
+## Verification
+
+```text
+Focused service/repository/static tests PASS — 3 files, 17 tests
+Fresh focused pgTAP                    PASS — 1 file, 46 tests
+Fresh full pgTAP                       PASS — 5 files, 233 tests
+TypeScript typecheck                   PASS
+ESLint                                 PASS — 0 warnings
+Full Vitest                            PASS — 76 passed / 1 skipped files; 672 passed / 5 skipped tests
+Next.js production build              PASS
+Public-schema DB lint                  PASS — results=[] / no schema errors
+git diff --check                       PASS
+```
+
+Two static formatting assertions initially used `\s`, which also matches intended newlines. They were narrowed to horizontal whitespace and then passed; this was a test-expression correction, not a production failure or a repeated implementation attempt.
+
+`npm.cmd run test:rls:local` remained environment-gated and reported **1 file / 5 tests skipped**. The authenticated pgTAP boundary verifies the new RPC grant and real execution. Database advisors exited successfully with only pre-existing Quote mutable-search-path and legacy non-progress permissive-policy warnings; no new Task 5 warning was introduced. Local migration history remains aligned.
+
+## Security and boundary self-review
+
+- Both read RPCs reject null `auth.uid()`, use `SECURITY DEFINER` with empty `search_path`, fully qualify relations, revoke `PUBLIC`/`anon`/`authenticated`/`service_role`, then grant only `authenticated` execution.
+- List values are validated before casts; fractional and oversized values return the safe validation contract without touching rows or events.
+- Quote prefill returns an explicit safe allowlist and excludes Quote snapshots, Jobber IDs, actor IDs, and mutation metadata.
+- Both money fields are formatted with `to_char(..., '.00')` before PostgREST; the repository accepts strings only.
+- No raw SQL interpolation, direct Quote Jobber fetch/write-back import, service-role key, dependency, remote state, or production migration was introduced.
+
+## Round 2 changed files
+
+- `lib/progress-invoices/repository.ts`
+- `lib/progress-invoices/series-service.ts`
+- `lib/supabase/types.ts`
+- `supabase/migrations/20260714231100_add_progress_invoice_series_rpcs.sql`
+- `supabase/tests/progress_invoice_series_fix_test.sql`
+- `tests/progress-invoice-actions-supabase.test.ts`
+- `tests/progress-invoice-series-migration.test.ts`
+- `tests/progress-invoice-series-service.test.ts`
+- `.superpowers/sdd/task-5-report.md`
+
+## Protected Quote boundary
+
+The four protected files remain blob-identical to `aa55d71`:
+
+| File | Blob hash |
+|---|---|
+| `app/api/jobber/quote/[quoteId]/route.ts` | `b85b2e63f011a05477d00991405c1b00721e555b` |
+| `lib/actions/quotes.ts` | `211c5670e53bb52ab2e640e8cb155d042e4b8d8b` |
+| `tests/jobber-quote-route-refresh.test.ts` | `d605ac525d378e31e37f5333b45437be9671be48` |
+| `tests/quote-actions-supabase.test.ts` | `0052829c84f21316b7d201384ca35d89967ec50e` |

@@ -1,5 +1,3 @@
-import Decimal from 'decimal.js'
-
 import type { ActionResult } from '@/lib/actions/types'
 import { createClient } from '@/lib/supabase/server'
 import {
@@ -116,14 +114,6 @@ export interface ProgressInvoiceCreatePrefill {
     comparisonIncGst: string
     defaultDescription: string
   }
-}
-
-function money(value: string | number): string {
-  return new Decimal(value).toFixed(2)
-}
-
-function text(value: string | null): string {
-  return value ?? ''
 }
 
 function mapProfile(row: BusinessInvoiceProfileRpcResult): BusinessInvoiceProfileDto {
@@ -331,24 +321,22 @@ export async function getProgressInvoiceCreatePrefill(
   input: { quoteId: string } | { standalone: true }
 ): Promise<ActionResult<ProgressInvoiceCreatePrefill>> {
   if ('standalone' in input) return { ok: true, data: { sourceType: 'standalone', quote: null } }
-  const client = await createClient()
-  const { data, error } = await client.from('quotes')
-    .select('id,customer_name,customer_address,work_type,subtotal,final_total')
-    .eq('id', input.quoteId)
-    .maybeSingle()
-  if (error) return { ok: false, error: 'PROGRESS_REQUEST_FAILED' }
-  if (!data) return { ok: false, error: 'PROGRESS_NOT_FOUND', code: 'NOT_FOUND' }
+  const repository = await createProgressInvoiceRepository()
+  const result = await repository.call('get_progress_invoice_quote_prefill', { quote_id: input.quoteId })
+  if (!result.ok) return result
+  if (!result.data.quote) return { ok: false, error: 'PROGRESS_NOT_FOUND', code: 'NOT_FOUND' }
+  const quote = result.data.quote
   return {
     ok: true,
     data: {
       sourceType: 'pbc_quote',
       quote: {
-        id: data.id,
-        customerName: text(data.customer_name),
-        customerAddress: text(data.customer_address),
-        baseContractExGst: money(data.subtotal),
-        comparisonIncGst: money(data.final_total),
-        defaultDescription: text(data.work_type),
+        id: quote.id,
+        customerName: quote.customer_name,
+        customerAddress: quote.customer_address,
+        baseContractExGst: quote.subtotal,
+        comparisonIncGst: quote.final_total,
+        defaultDescription: quote.work_type,
       },
     },
   }

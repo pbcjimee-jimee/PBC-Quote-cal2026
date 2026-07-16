@@ -9,11 +9,13 @@ vi.mock('@/lib/supabase/server', () => ({
 }))
 
 import {
+  getProgressInvoiceCreatePrefill,
   getProgressInvoiceSeries,
   listProgressInvoiceSeries,
 } from '@/lib/progress-invoices/series-service'
 
 const SERIES_ID = '11111111-1111-4111-8111-111111111111'
+const QUOTE_ID = '22222222-2222-4222-8222-222222222222'
 
 const dashboardItem = {
   id: SERIES_ID,
@@ -190,5 +192,79 @@ describe('progress invoice series service read boundary', () => {
       ok: false,
       error: 'PROGRESS_RESPONSE_INVALID',
     })
+  })
+
+  it('reads Quote prefill through the authenticated RPC with exact decimal strings', async () => {
+    const rpc = vi.fn().mockResolvedValue({
+      data: {
+        quote: {
+          id: QUOTE_ID,
+          customer_name: 'Exact Builder',
+          customer_address: '1 Exact Street',
+          work_type: 'Exact works',
+          subtotal: '99999999.99',
+          final_total: '12345678.91',
+        },
+      },
+      error: null,
+    })
+    const from = directReadClient({ subtotal: 99999999.99, final_total: 12345678.91 })
+    mocks.createClient.mockResolvedValue({ from, rpc })
+
+    expect(await getProgressInvoiceCreatePrefill({ quoteId: QUOTE_ID })).toEqual({
+      ok: true,
+      data: {
+        sourceType: 'pbc_quote',
+        quote: {
+          id: QUOTE_ID,
+          customerName: 'Exact Builder',
+          customerAddress: '1 Exact Street',
+          baseContractExGst: '99999999.99',
+          comparisonIncGst: '12345678.91',
+          defaultDescription: 'Exact works',
+        },
+      },
+    })
+    expect(rpc).toHaveBeenCalledWith('get_progress_invoice_quote_prefill', {
+      payload: { quote_id: QUOTE_ID },
+    })
+    expect(from).not.toHaveBeenCalled()
+  })
+
+  it('rejects numeric Quote prefill JSON and maps a missing Quote safely', async () => {
+    const rpc = vi.fn()
+      .mockResolvedValueOnce({
+        data: {
+          quote: {
+            id: QUOTE_ID,
+            customer_name: 'Rounded Builder',
+            customer_address: '',
+            work_type: '',
+            subtotal: 99999999.99,
+            final_total: 12345678.91,
+          },
+        },
+        error: null,
+      })
+      .mockResolvedValueOnce({ data: { quote: null }, error: null })
+    mocks.createClient.mockResolvedValue({ from: directReadClient({}), rpc })
+
+    expect(await getProgressInvoiceCreatePrefill({ quoteId: QUOTE_ID })).toEqual({
+      ok: false,
+      error: 'PROGRESS_RESPONSE_INVALID',
+    })
+    expect(await getProgressInvoiceCreatePrefill({ quoteId: QUOTE_ID })).toEqual({
+      ok: false,
+      error: 'PROGRESS_NOT_FOUND',
+      code: 'NOT_FOUND',
+    })
+  })
+
+  it('keeps standalone prefill local without opening a database boundary', async () => {
+    expect(await getProgressInvoiceCreatePrefill({ standalone: true })).toEqual({
+      ok: true,
+      data: { sourceType: 'standalone', quote: null },
+    })
+    expect(mocks.createClient).not.toHaveBeenCalled()
   })
 })

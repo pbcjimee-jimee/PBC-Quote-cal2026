@@ -95,6 +95,47 @@ describe('Progress Invoice authenticated RPC repository', () => {
     })
   })
 
+  it('parses Quote prefill amounts only when PostgreSQL serialized them as strings', async () => {
+    const { ProgressInvoiceRepository } = await import('@/lib/progress-invoices/repository')
+    const valid = new ProgressInvoiceRepository(executorReturning({
+      data: {
+        quote: {
+          id: QUOTE_ID,
+          customer_name: 'Exact Builder',
+          customer_address: '',
+          work_type: '',
+          subtotal: '99999999.99',
+          final_total: '12345678.91',
+        },
+      },
+      error: null,
+    }))
+    const numeric = new ProgressInvoiceRepository(executorReturning({
+      data: {
+        quote: {
+          id: QUOTE_ID,
+          customer_name: 'Rounded Builder',
+          customer_address: '',
+          work_type: '',
+          subtotal: 99999999.99,
+          final_total: 12345678.91,
+        },
+      },
+      error: null,
+    }))
+
+    expect(await valid.call('get_progress_invoice_quote_prefill', { quote_id: QUOTE_ID })).toEqual({
+      ok: true,
+      data: expect.objectContaining({
+        quote: expect.objectContaining({ subtotal: '99999999.99', final_total: '12345678.91' }),
+      }),
+    })
+    expect(await numeric.call('get_progress_invoice_quote_prefill', { quote_id: QUOTE_ID })).toEqual({
+      ok: false,
+      error: 'PROGRESS_RESPONSE_INVALID',
+    })
+  })
+
   it('returns a stale series current DTO instead of leaking database detail', async () => {
     const current = {
       id: SERIES_ID,
