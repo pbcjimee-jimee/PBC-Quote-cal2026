@@ -1635,6 +1635,7 @@ export interface Database {
           conflict: boolean
           current: Json
           id: string
+          quote_id: string | null
           replacement_id: string
           series_id: string
           version: number
@@ -1646,6 +1647,7 @@ export interface Database {
           conflict: boolean
           current: Json
           id: string
+          quote_id: string | null
           replacement_id: string
           series_id: string
           version: number
@@ -1654,6 +1656,14 @@ export interface Database {
       create_progress_invoice_series: {
         Args: { payload: Json }
         Returns: Array<{ id: string; version: number }>
+      }
+      get_progress_invoice_series: {
+        Args: { payload: Json }
+        Returns: Json
+      }
+      list_progress_invoice_series: {
+        Args: { payload: Json }
+        Returns: Json
       }
       create_quote_with_children: {
         Args: { payload: Json }
@@ -1728,6 +1738,7 @@ export interface Database {
           conflict: boolean
           current: Json
           id: string
+          quote_id: string | null
           replacement_id: string
           series_id: string
           version: number
@@ -1739,6 +1750,7 @@ export interface Database {
           conflict: boolean
           current: Json
           id: string
+          quote_id: string | null
           replacement_id: string
           series_id: string
           version: number
@@ -1750,6 +1762,7 @@ export interface Database {
           conflict: boolean
           current: Json
           id: string
+          quote_id: string | null
           version: number
         }>
       }

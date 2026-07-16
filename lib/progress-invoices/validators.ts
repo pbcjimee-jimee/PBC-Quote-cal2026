@@ -109,8 +109,22 @@ export const updateProgressInvoiceSeriesSchema = z.strictObject({
 })
 
 export const progressInvoiceListSchema = z.strictObject({
-  search: z.string().trim().max(160).optional(),
-  status: z.enum(['draft', 'active', 'completed', 'reconciliation_required', 'void']).optional(),
+  query: z.string().max(160),
+  statuses: z.array(z.enum([
+    'draft',
+    'active',
+    'completed',
+    'reconciliation_required',
+    'void',
+    'unpaid',
+    'part_paid',
+    'paid',
+    'overdue',
+    'credit_balance',
+  ])).max(10),
+  page: z.number().int().positive(),
+  pageSize: z.number().int().min(1).max(100),
+  quoteId: uuidSchema.nullable(),
 })
 
 export const progressInvoiceSeriesIdSchema = uuidSchema

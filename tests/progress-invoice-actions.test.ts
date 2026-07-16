@@ -150,17 +150,24 @@ describe('Progress Invoice Server Actions', () => {
   })
 
   it('delegates purpose-specific reads without exposing raw rows', async () => {
-    const dashboard = { series: [], summary: { count: 0 } }
+    const listInput = {
+      query: 'Builder',
+      statuses: ['active', 'overdue'],
+      page: 2,
+      pageSize: 25,
+      quoteId: null,
+    }
+    const dashboard = { items: [], page: 2, pageSize: 25, total: 0 }
     const detail = { id: SERIES_ID, version: 1 }
     const prefill = { sourceType: 'standalone', quote: null }
     mocks.listProgressInvoiceSeries.mockResolvedValue({ ok: true, data: dashboard })
     mocks.getProgressInvoiceSeries.mockResolvedValue({ ok: true, data: detail })
     mocks.getProgressInvoiceCreatePrefill.mockResolvedValue({ ok: true, data: prefill })
 
-    expect(await listProgressInvoiceSeries({ search: 'Builder' })).toEqual({ ok: true, data: dashboard })
+    expect(await listProgressInvoiceSeries(listInput)).toEqual({ ok: true, data: dashboard })
     expect(await getProgressInvoiceSeries(SERIES_ID)).toEqual({ ok: true, data: detail })
     expect(await getProgressInvoiceCreatePrefill({ standalone: true })).toEqual({ ok: true, data: prefill })
-    expect(mocks.listProgressInvoiceSeries).toHaveBeenCalledWith({ search: 'Builder' })
+    expect(mocks.listProgressInvoiceSeries).toHaveBeenCalledWith(listInput)
     expect(mocks.getProgressInvoiceSeries).toHaveBeenCalledWith(SERIES_ID)
     expect(mocks.getProgressInvoiceCreatePrefill).toHaveBeenCalledWith({ standalone: true })
   })
@@ -205,13 +212,18 @@ describe('Progress Invoice Server Actions', () => {
     }
     mocks.updateProgressInvoiceSeries.mockResolvedValue({
       ok: true,
-      data: { id: SERIES_ID, version: 2 },
+      data: { id: SERIES_ID, version: 2, quoteId: QUOTE_ID },
     })
 
     expect(await updateProgressInvoiceSeries(valid)).toEqual({
       ok: true,
       data: { id: SERIES_ID, version: 2 },
     })
+    expect(mocks.revalidatePath.mock.calls).toEqual([
+      ['/progress-invoices'],
+      [`/progress-invoices/${SERIES_ID}`],
+      [`/quotes/${QUOTE_ID}`],
+    ])
     expect(await updateProgressInvoiceSeries({ ...valid, sourceType: 'jobber_invoice' })).toMatchObject({
       ok: false,
       code: 'VALIDATION',
@@ -220,6 +232,24 @@ describe('Progress Invoice Server Actions', () => {
       ok: false,
       code: 'VALIDATION',
     })
+  })
+
+  it('does not revalidate a Quote path when a standalone series update has no linked Quote', async () => {
+    mocks.updateProgressInvoiceSeries.mockResolvedValue({
+      ok: true,
+      data: { id: SERIES_ID, version: 2, quoteId: null },
+    })
+
+    expect(await updateProgressInvoiceSeries({
+      seriesId: SERIES_ID,
+      expectedVersion: 1,
+      recipientName: 'Standalone Recipient',
+      correlationKey: CORRELATION_KEY,
+    })).toEqual({ ok: true, data: { id: SERIES_ID, version: 2 } })
+    expect(mocks.revalidatePath.mock.calls).toEqual([
+      ['/progress-invoices'],
+      [`/progress-invoices/${SERIES_ID}`],
+    ])
   })
 
   it('preserves safe service errors and stale current DTOs', async () => {
@@ -248,15 +278,15 @@ describe('Progress Invoice Server Actions', () => {
   it('runs the adjustment lifecycle through focused services and revalidates the series', async () => {
     mocks.createProgressAdjustment.mockResolvedValue({
       ok: true,
-      data: { id: ADJUSTMENT_ID, seriesId: SERIES_ID, version: 1 },
+      data: { id: ADJUSTMENT_ID, seriesId: SERIES_ID, version: 1, quoteId: QUOTE_ID },
     })
     mocks.updateDraftProgressAdjustment.mockResolvedValue({
       ok: true,
-      data: { id: ADJUSTMENT_ID, seriesId: SERIES_ID, version: 2 },
+      data: { id: ADJUSTMENT_ID, seriesId: SERIES_ID, version: 2, quoteId: QUOTE_ID },
     })
     mocks.approveProgressAdjustment.mockResolvedValue({
       ok: true,
-      data: { id: ADJUSTMENT_ID, seriesId: SERIES_ID, version: 3 },
+      data: { id: ADJUSTMENT_ID, seriesId: SERIES_ID, version: 3, quoteId: QUOTE_ID },
     })
     mocks.supersedeProgressAdjustment.mockResolvedValue({
       ok: true,
@@ -265,22 +295,26 @@ describe('Progress Invoice Server Actions', () => {
         replacementId: '55555555-5555-4555-8555-555555555555',
         seriesId: SERIES_ID,
         version: 4,
+        quoteId: QUOTE_ID,
       },
     })
 
-    await createProgressAdjustment(createAdjustmentInput)
-    await updateDraftProgressAdjustment({
+    expect(await createProgressAdjustment(createAdjustmentInput)).toEqual({
+      ok: true,
+      data: { id: ADJUSTMENT_ID, seriesId: SERIES_ID, version: 1 },
+    })
+    expect(await updateDraftProgressAdjustment({
       adjustmentId: ADJUSTMENT_ID,
       expectedVersion: 1,
       amountExGst: '125.00',
       correlationKey: CORRELATION_KEY,
-    })
-    await approveProgressAdjustment({
+    })).toEqual({ ok: true, data: { id: ADJUSTMENT_ID, seriesId: SERIES_ID, version: 2 } })
+    expect(await approveProgressAdjustment({
       adjustmentId: ADJUSTMENT_ID,
       expectedVersion: 2,
       correlationKey: CORRELATION_KEY,
-    })
-    await supersedeProgressAdjustment({
+    })).toEqual({ ok: true, data: { id: ADJUSTMENT_ID, seriesId: SERIES_ID, version: 3 } })
+    expect(await supersedeProgressAdjustment({
       adjustmentId: ADJUSTMENT_ID,
       expectedVersion: 3,
       reason: 'Correct the approved amount',
@@ -292,6 +326,14 @@ describe('Progress Invoice Server Actions', () => {
         gstRate: '0.10',
       },
       correlationKey: CORRELATION_KEY,
+    })).toEqual({
+      ok: true,
+      data: {
+        id: ADJUSTMENT_ID,
+        replacementId: '55555555-5555-4555-8555-555555555555',
+        seriesId: SERIES_ID,
+        version: 4,
+      },
     })
 
     expect(mocks.createProgressAdjustment).toHaveBeenCalledWith(createAdjustmentInput)
@@ -300,6 +342,24 @@ describe('Progress Invoice Server Actions', () => {
     expect(mocks.supersedeProgressAdjustment).toHaveBeenCalledOnce()
     expect(mocks.revalidatePath).toHaveBeenCalledWith('/progress-invoices')
     expect(mocks.revalidatePath).toHaveBeenCalledWith(`/progress-invoices/${SERIES_ID}`)
+    expect(mocks.revalidatePath).toHaveBeenCalledTimes(12)
+    expect(mocks.revalidatePath).toHaveBeenCalledWith(`/quotes/${QUOTE_ID}`)
+  })
+
+  it('keeps adjustment revalidation scoped to Progress Invoice paths for a null Quote link', async () => {
+    mocks.createProgressAdjustment.mockResolvedValue({
+      ok: true,
+      data: { id: ADJUSTMENT_ID, seriesId: SERIES_ID, version: 1, quoteId: null },
+    })
+
+    expect(await createProgressAdjustment(createAdjustmentInput)).toEqual({
+      ok: true,
+      data: { id: ADJUSTMENT_ID, seriesId: SERIES_ID, version: 1 },
+    })
+    expect(mocks.revalidatePath.mock.calls).toEqual([
+      ['/progress-invoices'],
+      [`/progress-invoices/${SERIES_ID}`],
+    ])
   })
 
   it('does not revalidate when a Credit approval requires reconciliation', async () => {

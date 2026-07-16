@@ -18,6 +18,10 @@ export interface ProgressAdjustmentMutationResult {
   replacementId?: string
 }
 
+export interface ProgressAdjustmentServiceMutationResult extends ProgressAdjustmentMutationResult {
+  quoteId: string | null
+}
+
 export interface ProgressAdjustmentDetail {
   id: string
   seriesId: string
@@ -34,12 +38,13 @@ export interface ProgressAdjustmentDetail {
   version: number
 }
 
-function mapResult(result: AdjustmentMutationRpcResult): ProgressAdjustmentMutationResult {
+function mapResult(result: AdjustmentMutationRpcResult): ProgressAdjustmentServiceMutationResult {
   return {
     id: result.id,
     seriesId: result.series_id,
     version: result.version,
     ...(result.replacement_id ? { replacementId: result.replacement_id } : {}),
+    quoteId: result.quote_id,
   }
 }
 
@@ -63,7 +68,7 @@ function mapDetail(detail: ProgressAdjustmentRpcDetail): ProgressAdjustmentDetai
 
 function mapMutation(
   result: ActionResult<AdjustmentMutationRpcResult, ProgressAdjustmentRpcDetail>
-): ActionResult<ProgressAdjustmentMutationResult, ProgressAdjustmentDetail> {
+): ActionResult<ProgressAdjustmentServiceMutationResult, ProgressAdjustmentDetail> {
   if (result.ok) return { ok: true, data: mapResult(result.data) }
   return result.current
     ? { ...result, current: mapDetail(result.current) }
@@ -72,7 +77,7 @@ function mapMutation(
 
 export async function createProgressAdjustment(
   input: CreateProgressAdjustmentInput
-): Promise<ActionResult<ProgressAdjustmentMutationResult>> {
+): Promise<ActionResult<ProgressAdjustmentServiceMutationResult>> {
   const repository = await createProgressInvoiceRepository()
   const result = await repository.call('create_progress_adjustment', {
     series_id: input.seriesId,
@@ -89,7 +94,7 @@ export async function createProgressAdjustment(
 
 export async function updateDraftProgressAdjustment(
   input: UpdateProgressAdjustmentDraftInput
-): Promise<ActionResult<ProgressAdjustmentMutationResult, ProgressAdjustmentDetail>> {
+): Promise<ActionResult<ProgressAdjustmentServiceMutationResult, ProgressAdjustmentDetail>> {
   const repository = await createProgressInvoiceRepository()
   const result = await repository.call('update_progress_adjustment_draft', {
     adjustment_id: input.adjustmentId,
@@ -107,7 +112,7 @@ export async function updateDraftProgressAdjustment(
 
 export async function approveProgressAdjustment(
   input: ApproveProgressAdjustmentInput
-): Promise<ActionResult<ProgressAdjustmentMutationResult, ProgressAdjustmentDetail>> {
+): Promise<ActionResult<ProgressAdjustmentServiceMutationResult, ProgressAdjustmentDetail>> {
   const repository = await createProgressInvoiceRepository()
   const result = await repository.call('approve_progress_adjustment', {
     adjustment_id: input.adjustmentId,
@@ -119,7 +124,7 @@ export async function approveProgressAdjustment(
 
 export async function supersedeProgressAdjustment(
   input: SupersedeProgressAdjustmentInput
-): Promise<ActionResult<ProgressAdjustmentMutationResult, ProgressAdjustmentDetail>> {
+): Promise<ActionResult<ProgressAdjustmentServiceMutationResult, ProgressAdjustmentDetail>> {
   const repository = await createProgressInvoiceRepository()
   const result = await repository.call('supersede_progress_adjustment', {
     adjustment_id: input.adjustmentId,

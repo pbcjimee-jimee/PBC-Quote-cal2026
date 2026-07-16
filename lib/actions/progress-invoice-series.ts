@@ -37,9 +37,10 @@ async function authorize(): Promise<ActionResult<true>> {
   return allowed.ok ? { ok: true, data: true } : allowed
 }
 
-function revalidateSeries(id: string): void {
+function revalidateSeries(id: string, quoteId?: string | null): void {
   revalidatePath('/progress-invoices')
   revalidatePath(`/progress-invoices/${id}`)
+  if (quoteId) revalidatePath(`/quotes/${quoteId}`)
 }
 
 export async function getBusinessInvoiceProfile(): Promise<ActionResult<BusinessInvoiceProfileDto | null>> {
@@ -109,6 +110,7 @@ export async function updateProgressInvoiceSeries(
   const authorized = await authorize()
   if (!authorized.ok) return authorized
   const result = await updateSeries(parsed.data)
-  if (result.ok) revalidateSeries(result.data.id)
-  return result
+  if (!result.ok) return result
+  revalidateSeries(result.data.id, result.data.quoteId)
+  return { ok: true, data: { id: result.data.id, version: result.data.version } }
 }

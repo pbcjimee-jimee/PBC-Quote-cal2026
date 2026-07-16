@@ -50,6 +50,13 @@ export type ProgressInvoiceSeriesStatus =
   | 'reconciliation_required'
   | 'void'
 
+export type ProgressInvoicePaymentState =
+  | 'unpaid'
+  | 'part_paid'
+  | 'paid'
+  | 'overdue'
+  | 'credit_balance'
+
 export interface ProgressInvoiceSeriesRpcDetail {
   id: string
   quote_id: string | null
@@ -118,6 +125,45 @@ export interface UpdateProgressInvoiceSeriesPayload {
   correlation_key: string
 }
 
+export interface ProgressInvoiceListPayload {
+  query: string
+  statuses: string[]
+  page: number
+  page_size: number
+  quote_id: string | null
+}
+
+export interface ProgressInvoiceDashboardRpcItem {
+  id: string
+  source_type: 'pbc_quote' | 'jobber_job' | 'jobber_invoice'
+  quote_id: string | null
+  recipient_name: string
+  recipient_company: string
+  site_name: string
+  status: ProgressInvoiceSeriesStatus
+  current_adjusted_contract_ex_gst: string
+  current_claimed_inc_gst: string
+  current_actual_receipts: string
+  current_outstanding_receivable: string
+  current_unclaimed_inc_gst: string
+  current_cumulative_percentage: string
+  current_payment_state: ProgressInvoicePaymentState
+  last_successful_jobber_sync_at: string | null
+  last_jobber_sync_error_code: string | null
+  version: number
+}
+
+export interface ProgressInvoiceDashboardRpcResult {
+  items: ProgressInvoiceDashboardRpcItem[]
+  page: number
+  page_size: number
+  total: number
+}
+
+export interface ProgressInvoiceSeriesReadRpcResult {
+  series: ProgressInvoiceSeriesRpcDetail | null
+}
+
 interface AdjustmentPayload {
   type: 'variation' | 'credit'
   effective_date: string
@@ -163,9 +209,14 @@ export interface VersionedMutationRpcResult {
   version: number
 }
 
+export interface ProgressInvoiceSeriesMutationRpcResult extends VersionedMutationRpcResult {
+  quote_id: string | null
+}
+
 export interface AdjustmentMutationRpcResult extends VersionedMutationRpcResult {
   series_id: string
   replacement_id?: string
+  quote_id: string | null
 }
 
 export interface ProgressAdjustmentRpcDetail {
@@ -197,8 +248,18 @@ export interface ProgressInvoiceCommandMap {
   }
   update_progress_invoice_series: {
     payload: UpdateProgressInvoiceSeriesPayload
-    result: VersionedMutationRpcResult
+    result: ProgressInvoiceSeriesMutationRpcResult
     current: ProgressInvoiceSeriesRpcDetail
+  }
+  list_progress_invoice_series: {
+    payload: ProgressInvoiceListPayload
+    result: ProgressInvoiceDashboardRpcResult
+    current: never
+  }
+  get_progress_invoice_series: {
+    payload: { series_id: string }
+    result: ProgressInvoiceSeriesReadRpcResult
+    current: never
   }
   create_progress_adjustment: {
     payload: CreateProgressAdjustmentPayload
@@ -283,6 +344,21 @@ function positiveIntegerField(record: Record<string, unknown>, key: string): num
   return typeof value === 'number' && Number.isSafeInteger(value) && value > 0 ? value : null
 }
 
+function nonNegativeIntegerField(record: Record<string, unknown>, key: string): number | null {
+  const value = record[key]
+  return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 ? value : null
+}
+
+function moneyField(record: Record<string, unknown>, key: string): string | null {
+  const value = stringField(record, key)
+  return value && /^-?(?:0|[1-9]\d*)\.\d{2}$/.test(value) ? value : null
+}
+
+function percentageField(record: Record<string, unknown>, key: string): string | null {
+  const value = stringField(record, key)
+  return value && /^(?:0|[1-9]\d*)\.\d{6}$/.test(value) ? value : null
+}
+
 function parseVersioned(value: unknown): VersionedMutationRpcResult | null {
   const candidate = singleton(value)
   if (!isRecord(candidate)) return null
@@ -297,12 +373,22 @@ function parseAdjustment(value: unknown): AdjustmentMutationRpcResult | null {
   const base = parseVersioned(candidate)
   const seriesId = stringField(candidate, 'series_id')
   const replacementId = nullableStringField(candidate, 'replacement_id')
-  if (!base || !seriesId || replacementId === undefined) return null
+  const quoteId = nullableStringField(candidate, 'quote_id')
+  if (!base || !seriesId || replacementId === undefined || quoteId === undefined) return null
   return {
     ...base,
     series_id: seriesId,
     ...(replacementId === null ? {} : { replacement_id: replacementId }),
+    quote_id: quoteId,
   }
+}
+
+function parseSeriesMutation(value: unknown): ProgressInvoiceSeriesMutationRpcResult | null {
+  const candidate = singleton(value)
+  if (!isRecord(candidate)) return null
+  const base = parseVersioned(candidate)
+  const quoteId = nullableStringField(candidate, 'quote_id')
+  return base && quoteId !== undefined ? { ...base, quote_id: quoteId } : null
 }
 
 function parseAdjustmentDetail(value: unknown): ProgressAdjustmentRpcDetail | null {
@@ -391,53 +477,126 @@ function parseSeriesDetail(value: unknown): ProgressInvoiceSeriesRpcDetail | nul
   const status = stringField(value, 'status')
   const acceptedBase = nullableStringField(value, 'accepted_numbering_base')
   const linkLockedAt = nullableStringField(value, 'jobber_link_locked_at')
-  const stringKeys = [
-    'base_contract_ex_gst', 'recipient_name', 'recipient_company', 'recipient_address',
+  const textKeys = [
+    'recipient_name', 'recipient_company', 'recipient_address',
     'recipient_email', 'recipient_phone', 'recipient_abn', 'site_name', 'site_address',
-    'default_description', 'reference', 'current_adjusted_contract_ex_gst',
+    'default_description', 'reference',
+  ] as const
+  const moneyKeys = [
+    'base_contract_ex_gst', 'current_adjusted_contract_ex_gst',
     'current_adjusted_contract_gst', 'current_adjusted_contract_inc_gst',
     'current_claimed_ex_gst', 'current_claimed_gst', 'current_claimed_inc_gst',
     'current_unclaimed_ex_gst', 'current_unclaimed_gst', 'current_unclaimed_inc_gst',
-    'current_cumulative_percentage',
   ] as const
-  const fields = Object.fromEntries(stringKeys.map((key) => [key, stringField(value, key)]))
+  const textFields = Object.fromEntries(textKeys.map((key) => [key, stringField(value, key)]))
+  const moneyFields = Object.fromEntries(moneyKeys.map((key) => [key, moneyField(value, key)]))
+  const cumulativePercentage = percentageField(value, 'current_cumulative_percentage')
   const validSource = sourceType === 'pbc_quote' || sourceType === 'jobber_job' || sourceType === 'jobber_invoice'
   const validStatus = status === 'draft' || status === 'active' || status === 'completed'
     || status === 'reconciliation_required' || status === 'void'
   if (!id || quoteId === undefined || !validSource || !version || !validStatus
     || acceptedBase === undefined || linkLockedAt === undefined
-    || value.gst_rate !== '0.10' || Object.values(fields).some((field) => field === null)) return null
+    || value.gst_rate !== '0.10' || !cumulativePercentage
+    || Object.values(textFields).some((field) => field === null)
+    || Object.values(moneyFields).some((field) => field === null)) return null
   return {
     id,
     quote_id: quoteId,
     source_type: sourceType,
     version,
-    base_contract_ex_gst: fields.base_contract_ex_gst as string,
+    base_contract_ex_gst: moneyFields.base_contract_ex_gst as string,
     gst_rate: '0.10',
-    recipient_name: fields.recipient_name as string,
-    recipient_company: fields.recipient_company as string,
-    recipient_address: fields.recipient_address as string,
-    recipient_email: fields.recipient_email as string,
-    recipient_phone: fields.recipient_phone as string,
-    recipient_abn: fields.recipient_abn as string,
-    site_name: fields.site_name as string,
-    site_address: fields.site_address as string,
-    default_description: fields.default_description as string,
-    reference: fields.reference as string,
+    recipient_name: textFields.recipient_name as string,
+    recipient_company: textFields.recipient_company as string,
+    recipient_address: textFields.recipient_address as string,
+    recipient_email: textFields.recipient_email as string,
+    recipient_phone: textFields.recipient_phone as string,
+    recipient_abn: textFields.recipient_abn as string,
+    site_name: textFields.site_name as string,
+    site_address: textFields.site_address as string,
+    default_description: textFields.default_description as string,
+    reference: textFields.reference as string,
     status,
     accepted_numbering_base: acceptedBase,
     jobber_link_locked_at: linkLockedAt,
-    current_adjusted_contract_ex_gst: fields.current_adjusted_contract_ex_gst as string,
-    current_adjusted_contract_gst: fields.current_adjusted_contract_gst as string,
-    current_adjusted_contract_inc_gst: fields.current_adjusted_contract_inc_gst as string,
-    current_claimed_ex_gst: fields.current_claimed_ex_gst as string,
-    current_claimed_gst: fields.current_claimed_gst as string,
-    current_claimed_inc_gst: fields.current_claimed_inc_gst as string,
-    current_unclaimed_ex_gst: fields.current_unclaimed_ex_gst as string,
-    current_unclaimed_gst: fields.current_unclaimed_gst as string,
-    current_unclaimed_inc_gst: fields.current_unclaimed_inc_gst as string,
-    current_cumulative_percentage: fields.current_cumulative_percentage as string,
+    current_adjusted_contract_ex_gst: moneyFields.current_adjusted_contract_ex_gst as string,
+    current_adjusted_contract_gst: moneyFields.current_adjusted_contract_gst as string,
+    current_adjusted_contract_inc_gst: moneyFields.current_adjusted_contract_inc_gst as string,
+    current_claimed_ex_gst: moneyFields.current_claimed_ex_gst as string,
+    current_claimed_gst: moneyFields.current_claimed_gst as string,
+    current_claimed_inc_gst: moneyFields.current_claimed_inc_gst as string,
+    current_unclaimed_ex_gst: moneyFields.current_unclaimed_ex_gst as string,
+    current_unclaimed_gst: moneyFields.current_unclaimed_gst as string,
+    current_unclaimed_inc_gst: moneyFields.current_unclaimed_inc_gst as string,
+    current_cumulative_percentage: cumulativePercentage,
   }
+}
+
+function parseDashboardItem(value: unknown): ProgressInvoiceDashboardRpcItem | null {
+  if (!isRecord(value)) return null
+  const id = stringField(value, 'id')
+  const sourceType = stringField(value, 'source_type')
+  const quoteId = nullableStringField(value, 'quote_id')
+  const recipientName = stringField(value, 'recipient_name')
+  const recipientCompany = stringField(value, 'recipient_company')
+  const siteName = stringField(value, 'site_name')
+  const status = stringField(value, 'status')
+  const paymentState = stringField(value, 'current_payment_state')
+  const lastSync = nullableStringField(value, 'last_successful_jobber_sync_at')
+  const syncError = nullableStringField(value, 'last_jobber_sync_error_code')
+  const version = positiveIntegerField(value, 'version')
+  const adjusted = moneyField(value, 'current_adjusted_contract_ex_gst')
+  const claimed = moneyField(value, 'current_claimed_inc_gst')
+  const received = moneyField(value, 'current_actual_receipts')
+  const outstanding = moneyField(value, 'current_outstanding_receivable')
+  const unclaimed = moneyField(value, 'current_unclaimed_inc_gst')
+  const cumulative = percentageField(value, 'current_cumulative_percentage')
+  const validSource = sourceType === 'pbc_quote' || sourceType === 'jobber_job' || sourceType === 'jobber_invoice'
+  const validStatus = status === 'draft' || status === 'active' || status === 'completed'
+    || status === 'reconciliation_required' || status === 'void'
+  const validPayment = paymentState === 'unpaid' || paymentState === 'part_paid'
+    || paymentState === 'paid' || paymentState === 'overdue' || paymentState === 'credit_balance'
+  if (!id || !validSource || quoteId === undefined || !recipientName || recipientCompany === null
+    || !siteName || !validStatus || !validPayment || lastSync === undefined || syncError === undefined
+    || !version || !adjusted || !claimed || !received || !outstanding || !unclaimed || !cumulative) return null
+  return {
+    id,
+    source_type: sourceType,
+    quote_id: quoteId,
+    recipient_name: recipientName,
+    recipient_company: recipientCompany,
+    site_name: siteName,
+    status,
+    current_adjusted_contract_ex_gst: adjusted,
+    current_claimed_inc_gst: claimed,
+    current_actual_receipts: received,
+    current_outstanding_receivable: outstanding,
+    current_unclaimed_inc_gst: unclaimed,
+    current_cumulative_percentage: cumulative,
+    current_payment_state: paymentState,
+    last_successful_jobber_sync_at: lastSync,
+    last_jobber_sync_error_code: syncError,
+    version,
+  }
+}
+
+function parseDashboard(value: unknown): ProgressInvoiceDashboardRpcResult | null {
+  const candidate = singleton(value)
+  if (!isRecord(candidate) || !Array.isArray(candidate.items)) return null
+  const page = positiveIntegerField(candidate, 'page')
+  const pageSize = positiveIntegerField(candidate, 'page_size')
+  const total = nonNegativeIntegerField(candidate, 'total')
+  const items = candidate.items.map(parseDashboardItem)
+  if (!page || !pageSize || total === null || items.some((item) => item === null)) return null
+  return { items: items as ProgressInvoiceDashboardRpcItem[], page, page_size: pageSize, total }
+}
+
+function parseSeriesRead(value: unknown): ProgressInvoiceSeriesReadRpcResult | null {
+  const candidate = singleton(value)
+  if (!isRecord(candidate) || !('series' in candidate)) return null
+  if (candidate.series === null) return { series: null }
+  const series = parseSeriesDetail(candidate.series)
+  return series ? { series } : null
 }
 
 function parseRpcError(error: ProgressInvoiceRpcError): { message: string; code: string } {
@@ -484,9 +643,12 @@ function parseSuccess<TCommand extends ProgressInvoiceCommand>(
   value: unknown
 ): CommandResult<TCommand> | null {
   if (command === 'save_business_invoice_profile') return parseBusinessInvoiceProfile(value) as CommandResult<TCommand> | null
-  if (command === 'create_progress_invoice_series' || command === 'update_progress_invoice_series') {
+  if (command === 'create_progress_invoice_series') {
     return parseVersioned(value) as CommandResult<TCommand> | null
   }
+  if (command === 'update_progress_invoice_series') return parseSeriesMutation(value) as CommandResult<TCommand> | null
+  if (command === 'list_progress_invoice_series') return parseDashboard(value) as CommandResult<TCommand> | null
+  if (command === 'get_progress_invoice_series') return parseSeriesRead(value) as CommandResult<TCommand> | null
   return parseAdjustment(value) as CommandResult<TCommand> | null
 }
 
@@ -500,7 +662,10 @@ export class ProgressInvoiceRepository {
     const { data, error } = await this.executor.execute(command, toJson(payload))
     if (error) return mapRpcError(error)
 
-    if (command !== 'save_business_invoice_profile' && command !== 'create_progress_invoice_series') {
+    if (command !== 'save_business_invoice_profile'
+      && command !== 'create_progress_invoice_series'
+      && command !== 'list_progress_invoice_series'
+      && command !== 'get_progress_invoice_series') {
       const candidate = singleton(data)
       if (isRecord(candidate) && candidate.conflict === true) {
         const current = command === 'update_progress_invoice_series'

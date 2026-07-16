@@ -80,6 +80,193 @@ AS $$
   );
 $$;
 
+CREATE FUNCTION public.progress_require_iso_date(value JSONB)
+RETURNS DATE
+LANGUAGE plpgsql
+STABLE
+STRICT
+SET search_path = ''
+AS $$
+DECLARE
+  parsed DATE;
+BEGIN
+  IF jsonb_typeof(value) IS DISTINCT FROM 'string'
+    OR value #>> '{}' !~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$' THEN
+    RAISE EXCEPTION 'PROGRESS_DATE_INVALID' USING ERRCODE = '22023';
+  END IF;
+
+  BEGIN
+    parsed := (value #>> '{}')::DATE;
+  EXCEPTION WHEN OTHERS THEN
+    RAISE EXCEPTION 'PROGRESS_DATE_INVALID' USING ERRCODE = '22023';
+  END;
+
+  IF pg_catalog.to_char(parsed, 'YYYY-MM-DD') IS DISTINCT FROM value #>> '{}' THEN
+    RAISE EXCEPTION 'PROGRESS_DATE_INVALID' USING ERRCODE = '22023';
+  END IF;
+  RETURN parsed;
+END;
+$$;
+
+CREATE FUNCTION public.progress_series_safe_changes(
+  before_row public.progress_invoice_series,
+  after_row public.progress_invoice_series
+)
+RETURNS JSONB
+LANGUAGE sql
+IMMUTABLE
+SET search_path = ''
+AS $$
+  SELECT COALESCE(jsonb_object_agg(change.key, change.value), '{}'::JSONB)
+  FROM jsonb_each(jsonb_build_object(
+    'base_contract_ex_gst', jsonb_build_object('before', pg_catalog.to_char(before_row.base_contract_ex_gst, 'FM999999999999990.00'), 'after', pg_catalog.to_char(after_row.base_contract_ex_gst, 'FM999999999999990.00')),
+    'gst_rate', jsonb_build_object('before', pg_catalog.to_char(before_row.gst_rate, 'FM0.00'), 'after', pg_catalog.to_char(after_row.gst_rate, 'FM0.00')),
+    'recipient_name', jsonb_build_object('before', before_row.recipient_name, 'after', after_row.recipient_name),
+    'recipient_company', jsonb_build_object('before', before_row.recipient_company, 'after', after_row.recipient_company),
+    'recipient_address', jsonb_build_object('before', before_row.recipient_address, 'after', after_row.recipient_address),
+    'recipient_email', jsonb_build_object('before', before_row.recipient_email, 'after', after_row.recipient_email),
+    'recipient_phone', jsonb_build_object('before', before_row.recipient_phone, 'after', after_row.recipient_phone),
+    'recipient_abn', jsonb_build_object('before', before_row.recipient_abn, 'after', after_row.recipient_abn),
+    'site_name', jsonb_build_object('before', before_row.site_name, 'after', after_row.site_name),
+    'site_address', jsonb_build_object('before', before_row.site_address, 'after', after_row.site_address),
+    'default_description', jsonb_build_object('before', before_row.default_description, 'after', after_row.default_description),
+    'reference', jsonb_build_object('before', before_row.reference, 'after', after_row.reference)
+  )) AS change(key, value)
+  WHERE change.value -> 'before' IS DISTINCT FROM change.value -> 'after';
+$$;
+
+CREATE FUNCTION public.progress_adjustment_safe_changes(
+  before_row public.progress_adjustments,
+  after_row public.progress_adjustments
+)
+RETURNS JSONB
+LANGUAGE sql
+IMMUTABLE
+SET search_path = ''
+AS $$
+  SELECT jsonb_build_object('adjustment_id', after_row.id)
+    || COALESCE(jsonb_object_agg(change.key, change.value), '{}'::JSONB)
+  FROM jsonb_each(jsonb_build_object(
+    'type', jsonb_build_object('before', before_row.type, 'after', after_row.type),
+    'effective_date', jsonb_build_object('before', pg_catalog.to_char(before_row.effective_date, 'YYYY-MM-DD'), 'after', pg_catalog.to_char(after_row.effective_date, 'YYYY-MM-DD')),
+    'description', jsonb_build_object('before', before_row.description, 'after', after_row.description),
+    'amount_ex_gst', jsonb_build_object('before', pg_catalog.to_char(before_row.amount_ex_gst, 'FM999999999999990.00'), 'after', pg_catalog.to_char(after_row.amount_ex_gst, 'FM999999999999990.00')),
+    'gst_rate', jsonb_build_object('before', pg_catalog.to_char(before_row.gst_rate, 'FM0.00'), 'after', pg_catalog.to_char(after_row.gst_rate, 'FM0.00')),
+    'quote_item_id', jsonb_build_object('before', before_row.quote_item_id, 'after', after_row.quote_item_id)
+  )) AS change(key, value)
+  WHERE change.value -> 'before' IS DISTINCT FROM change.value -> 'after';
+$$;
+
+CREATE FUNCTION public.list_progress_invoice_series(payload JSONB)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+  actor UUID := auth.uid();
+  unknown_keys TEXT[];
+  requested_query TEXT;
+  requested_statuses TEXT[];
+  lifecycle_statuses TEXT[];
+  payment_statuses TEXT[];
+  requested_page INT;
+  requested_page_size INT;
+  requested_quote_id UUID;
+  result JSONB;
+BEGIN
+  IF actor IS NULL THEN
+    RAISE EXCEPTION 'PROGRESS_AUTH_REQUIRED' USING ERRCODE = '28000';
+  END IF;
+  IF jsonb_typeof(payload) IS DISTINCT FROM 'object' THEN
+    RAISE EXCEPTION 'PROGRESS_PAYLOAD_INVALID' USING ERRCODE = '22023';
+  END IF;
+  SELECT pg_catalog.array_agg(keys.key ORDER BY keys.key) INTO unknown_keys
+  FROM jsonb_object_keys(payload) AS keys(key)
+  WHERE keys.key <> ALL (ARRAY['query', 'statuses', 'page', 'page_size', 'quote_id']::TEXT[]);
+  IF unknown_keys IS NOT NULL
+    OR jsonb_typeof(payload -> 'query') IS DISTINCT FROM 'string'
+    OR jsonb_typeof(payload -> 'statuses') IS DISTINCT FROM 'array'
+    OR jsonb_typeof(payload -> 'page') IS DISTINCT FROM 'number'
+    OR jsonb_typeof(payload -> 'page_size') IS DISTINCT FROM 'number'
+    OR (payload -> 'quote_id' <> 'null'::JSONB AND jsonb_typeof(payload -> 'quote_id') IS DISTINCT FROM 'string') THEN
+    RAISE EXCEPTION 'PROGRESS_PAYLOAD_TYPE_INVALID' USING ERRCODE = '22023';
+  END IF;
+
+  requested_query := payload ->> 'query';
+  requested_page := (payload ->> 'page')::INT;
+  requested_page_size := (payload ->> 'page_size')::INT;
+  requested_quote_id := CASE WHEN payload -> 'quote_id' = 'null'::JSONB THEN NULL ELSE (payload ->> 'quote_id')::UUID END;
+  SELECT COALESCE(pg_catalog.array_agg(status.value), ARRAY[]::TEXT[]) INTO requested_statuses
+  FROM jsonb_array_elements_text(payload -> 'statuses') AS status(value);
+  IF requested_page < 1 OR requested_page_size < 1 OR requested_page_size > 100
+    OR array_length(requested_statuses, 1) > 10
+    OR EXISTS (SELECT 1 FROM unnest(requested_statuses) AS status(value) WHERE value NOT IN ('draft','active','completed','reconciliation_required','void','unpaid','part_paid','paid','overdue','credit_balance')) THEN
+    RAISE EXCEPTION 'PROGRESS_VALIDATION_FAILED' USING ERRCODE = '23514';
+  END IF;
+  SELECT COALESCE(pg_catalog.array_agg(value), ARRAY[]::TEXT[]) INTO lifecycle_statuses
+  FROM unnest(requested_statuses) AS status(value) WHERE value IN ('draft','active','completed','reconciliation_required','void');
+  SELECT COALESCE(pg_catalog.array_agg(value), ARRAY[]::TEXT[]) INTO payment_statuses
+  FROM unnest(requested_statuses) AS status(value) WHERE value IN ('unpaid','part_paid','paid','overdue','credit_balance');
+
+  WITH matching AS (
+    SELECT series.*
+    FROM public.progress_invoice_series AS series
+    WHERE (requested_quote_id IS NULL OR series.quote_id = requested_quote_id)
+      AND (cardinality(lifecycle_statuses) = 0 OR series.status = ANY(lifecycle_statuses))
+      AND (cardinality(payment_statuses) = 0 OR series.current_payment_state = ANY(payment_statuses))
+      AND (requested_query = '' OR position(lower(requested_query) IN lower(concat_ws(' ', series.recipient_name, series.recipient_company, series.site_name, series.default_description, series.reference, series.original_jobber_invoice_number))) > 0)
+  ), paged AS (
+    SELECT matching.*
+    FROM matching
+    ORDER BY matching.updated_at DESC, matching.id DESC
+    OFFSET (requested_page - 1) * requested_page_size
+    LIMIT requested_page_size
+  )
+  SELECT jsonb_build_object(
+    'items', COALESCE((SELECT jsonb_agg(jsonb_build_object(
+      'id', paged.id, 'source_type', paged.source_type, 'quote_id', paged.quote_id,
+      'recipient_name', paged.recipient_name, 'recipient_company', COALESCE(paged.recipient_company, ''), 'site_name', paged.site_name,
+      'status', paged.status,
+      'current_adjusted_contract_ex_gst', pg_catalog.to_char(paged.current_adjusted_contract_ex_gst, 'FM999999999999990.00'),
+      'current_claimed_inc_gst', pg_catalog.to_char(paged.current_claimed_inc_gst, 'FM999999999999990.00'),
+      'current_actual_receipts', pg_catalog.to_char(paged.current_actual_receipts, 'FM999999999999990.00'),
+      'current_outstanding_receivable', pg_catalog.to_char(paged.current_outstanding_receivable, 'FM999999999999990.00'),
+      'current_unclaimed_inc_gst', pg_catalog.to_char(paged.current_unclaimed_inc_gst, 'FM999999999999990.00'),
+      'current_cumulative_percentage', pg_catalog.to_char(paged.current_cumulative_percentage, 'FM999999990.000000'),
+      'current_payment_state', paged.current_payment_state,
+      'last_successful_jobber_sync_at', paged.last_successful_jobber_sync_at,
+      'last_jobber_sync_error_code', paged.last_jobber_sync_error_code,
+      'version', paged.version
+    ) ORDER BY paged.updated_at DESC, paged.id DESC) FROM paged), '[]'::JSONB),
+    'page', requested_page, 'page_size', requested_page_size, 'total', (SELECT count(*) FROM matching)
+  ) INTO result;
+  RETURN result;
+END;
+$$;
+
+CREATE FUNCTION public.get_progress_invoice_series(payload JSONB)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+  actor UUID := auth.uid();
+  series_row public.progress_invoice_series%ROWTYPE;
+BEGIN
+  IF actor IS NULL THEN RAISE EXCEPTION 'PROGRESS_AUTH_REQUIRED' USING ERRCODE = '28000'; END IF;
+  IF jsonb_typeof(payload) IS DISTINCT FROM 'object'
+    OR (SELECT count(*) FROM jsonb_object_keys(payload)) <> 1
+    OR jsonb_typeof(payload -> 'series_id') IS DISTINCT FROM 'string' THEN
+    RAISE EXCEPTION 'PROGRESS_PAYLOAD_INVALID' USING ERRCODE = '22023';
+  END IF;
+  SELECT series.* INTO series_row FROM public.progress_invoice_series AS series
+  WHERE series.id = (payload ->> 'series_id')::UUID;
+  RETURN jsonb_build_object('series', CASE WHEN FOUND THEN public.progress_series_safe_dto(series_row) ELSE NULL END);
+END;
+$$;
+
 CREATE FUNCTION public.progress_validate_series_create_payload(payload JSONB)
 RETURNS VOID
 LANGUAGE plpgsql
@@ -365,7 +552,7 @@ END;
 $$;
 
 CREATE FUNCTION public.update_progress_invoice_series(payload JSONB)
-RETURNS TABLE (id UUID, version INT, conflict BOOLEAN, current JSONB)
+RETURNS TABLE (id UUID, version INT, quote_id UUID, conflict BOOLEAN, current JSONB)
 LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path = ''
@@ -374,6 +561,7 @@ DECLARE
   actor UUID := public.progress_require_actor();
   unknown_keys TEXT[];
   series_row public.progress_invoice_series%ROWTYPE;
+  prior_series public.progress_invoice_series%ROWTYPE;
   existing_result JSONB;
   fingerprint TEXT;
   correlation_key UUID;
@@ -431,21 +619,29 @@ BEGIN
   IF payload ? 'default_description' AND (NULLIF(btrim(payload ->> 'default_description'), '') IS NULL OR length(btrim(payload ->> 'default_description')) > 1200) THEN
     RAISE EXCEPTION 'PROGRESS_VALIDATION_FAILED' USING ERRCODE = '23514';
   END IF;
+  IF (payload ? 'recipient_company' AND length(btrim(COALESCE(payload ->> 'recipient_company', ''))) > 160)
+    OR (payload ? 'recipient_email' AND length(btrim(COALESCE(payload ->> 'recipient_email', ''))) > 254)
+    OR (payload ? 'recipient_phone' AND length(btrim(COALESCE(payload ->> 'recipient_phone', ''))) > 40)
+    OR (payload ? 'recipient_abn' AND length(btrim(COALESCE(payload ->> 'recipient_abn', ''))) > 14)
+    OR (payload ? 'reference' AND length(btrim(COALESCE(payload ->> 'reference', ''))) > 120) THEN
+    RAISE EXCEPTION 'PROGRESS_VALIDATION_FAILED' USING ERRCODE = '23514';
+  END IF;
 
   SELECT series.* INTO series_row FROM public.progress_invoice_series AS series
   WHERE series.id = (payload ->> 'series_id')::UUID FOR UPDATE;
   IF NOT FOUND THEN RAISE EXCEPTION 'PROGRESS_NOT_FOUND' USING ERRCODE = 'P0001'; END IF;
+  prior_series := series_row;
 
   correlation_key := (payload ->> 'correlation_key')::UUID;
   fingerprint := public.progress_request_fingerprint(payload);
   existing_result := public.progress_lock_idempotency(series_row.id, 'update_progress_invoice_series', correlation_key, fingerprint);
   IF existing_result IS NOT NULL THEN
-    RETURN QUERY SELECT (existing_result ->> 'id')::UUID, (existing_result ->> 'version')::INT, false, NULL::JSONB;
+    RETURN QUERY SELECT (existing_result ->> 'id')::UUID, (existing_result ->> 'version')::INT, (existing_result ->> 'quote_id')::UUID, false, NULL::JSONB;
     RETURN;
   END IF;
 
   IF (payload ->> 'expected_version')::NUMERIC <> series_row.version THEN
-    RETURN QUERY SELECT series_row.id, series_row.version, true, public.progress_series_safe_dto(series_row);
+    RETURN QUERY SELECT series_row.id, series_row.version, series_row.quote_id, true, public.progress_series_safe_dto(series_row);
     RETURN;
   END IF;
 
@@ -469,11 +665,11 @@ BEGIN
   PERFORM public.progress_recalculate_series_read_model(series_row.id);
   SELECT series.* INTO series_row FROM public.progress_invoice_series AS series WHERE series.id = series_row.id;
   PERFORM public.progress_append_event(
-    series_row.id, NULL, 'series_updated', 'user', NULL, NULL, '{}'::JSONB,
+    series_row.id, NULL, 'series_updated', 'user', NULL, NULL, public.progress_series_safe_changes(prior_series, series_row),
     'update_progress_invoice_series', correlation_key, fingerprint,
-    jsonb_build_object('id', series_row.id, 'version', series_row.version)
+    jsonb_build_object('id', series_row.id, 'version', series_row.version, 'quote_id', series_row.quote_id)
   );
-  RETURN QUERY SELECT series_row.id, series_row.version, false, NULL::JSONB;
+  RETURN QUERY SELECT series_row.id, series_row.version, series_row.quote_id, false, NULL::JSONB;
 END;
 $$;
 
@@ -493,7 +689,7 @@ BEGIN
   IF payload ? 'effective_date' AND jsonb_typeof(payload -> 'effective_date') IS DISTINCT FROM 'string' THEN
     RAISE EXCEPTION 'PROGRESS_PAYLOAD_TYPE_INVALID' USING ERRCODE = '22023';
   END IF;
-  IF payload ? 'effective_date' THEN PERFORM (payload ->> 'effective_date')::DATE; END IF;
+  IF payload ? 'effective_date' THEN PERFORM public.progress_require_iso_date(payload -> 'effective_date'); END IF;
   IF payload ? 'description' AND (jsonb_typeof(payload -> 'description') IS DISTINCT FROM 'string' OR NULLIF(btrim(payload ->> 'description'), '') IS NULL OR length(btrim(payload ->> 'description')) > 500) THEN
     RAISE EXCEPTION 'PROGRESS_VALIDATION_FAILED' USING ERRCODE = '23514';
   END IF;
@@ -512,7 +708,7 @@ END;
 $$;
 
 CREATE FUNCTION public.create_progress_adjustment(payload JSONB)
-RETURNS TABLE (id UUID, series_id UUID, version INT, replacement_id UUID, conflict BOOLEAN, current JSONB)
+RETURNS TABLE (id UUID, series_id UUID, quote_id UUID, version INT, replacement_id UUID, conflict BOOLEAN, current JSONB)
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = ''
 AS $$
 DECLARE
@@ -538,14 +734,14 @@ BEGIN
   fingerprint := public.progress_request_fingerprint(payload);
   existing_result := public.progress_lock_idempotency(series_row.id, 'create_progress_adjustment', correlation_key, fingerprint);
   IF existing_result IS NOT NULL THEN
-    RETURN QUERY SELECT (existing_result->>'id')::UUID, (existing_result->>'series_id')::UUID, (existing_result->>'version')::INT, NULL::UUID, false, NULL::JSONB;
+    RETURN QUERY SELECT (existing_result->>'id')::UUID, (existing_result->>'series_id')::UUID, (existing_result->>'quote_id')::UUID, (existing_result->>'version')::INT, NULL::UUID, false, NULL::JSONB;
     RETURN;
   END IF;
   INSERT INTO public.progress_adjustments (
     series_id, type, effective_date, display_order, description, amount_ex_gst, gst_rate,
     quote_item_id, created_by, updated_by
   ) VALUES (
-    series_row.id, payload->>'type', (payload->>'effective_date')::DATE,
+    series_row.id, payload->>'type', public.progress_require_iso_date(payload->'effective_date'),
     COALESCE((SELECT max(existing.display_order) + 1 FROM public.progress_adjustments existing WHERE existing.series_id = series_row.id), 0),
     btrim(payload->>'description'), (payload->>'amount_ex_gst')::NUMERIC, (payload->>'gst_rate')::NUMERIC,
     CASE WHEN payload->'quote_item_id' = 'null'::JSONB OR NOT (payload ? 'quote_item_id') THEN NULL ELSE (payload->>'quote_item_id')::UUID END,
@@ -554,18 +750,23 @@ BEGIN
   PERFORM public.progress_append_event(series_row.id, NULL, 'adjustment_created', 'user', NULL, NULL,
     jsonb_build_object('adjustment_id', adjustment_row.id, 'type', adjustment_row.type),
     'create_progress_adjustment', correlation_key, fingerprint,
-    jsonb_build_object('id', adjustment_row.id, 'series_id', series_row.id, 'version', adjustment_row.version));
-  RETURN QUERY SELECT adjustment_row.id, series_row.id, adjustment_row.version, NULL::UUID, false, NULL::JSONB;
+    jsonb_build_object('id', adjustment_row.id, 'series_id', series_row.id, 'quote_id', series_row.quote_id, 'version', adjustment_row.version));
+  RETURN QUERY SELECT adjustment_row.id, series_row.id, series_row.quote_id, adjustment_row.version, NULL::UUID, false, NULL::JSONB;
 END;
 $$;
 
 CREATE FUNCTION public.update_progress_adjustment_draft(payload JSONB)
-RETURNS TABLE (id UUID, series_id UUID, version INT, replacement_id UUID, conflict BOOLEAN, current JSONB)
+RETURNS TABLE (id UUID, series_id UUID, quote_id UUID, version INT, replacement_id UUID, conflict BOOLEAN, current JSONB)
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = ''
 AS $$
 DECLARE
   actor UUID := public.progress_require_actor(); unknown_keys TEXT[];
-  adjustment_row public.progress_adjustments%ROWTYPE; existing_result JSONB; fingerprint TEXT; correlation_key UUID;
+  adjustment_row public.progress_adjustments%ROWTYPE;
+  prior_adjustment public.progress_adjustments%ROWTYPE;
+  series_quote_id UUID;
+  existing_result JSONB;
+  fingerprint TEXT;
+  correlation_key UUID;
 BEGIN
   IF jsonb_typeof(payload) IS DISTINCT FROM 'object' THEN RAISE EXCEPTION 'PROGRESS_PAYLOAD_INVALID' USING ERRCODE='22023'; END IF;
   SELECT pg_catalog.array_agg(keys.key ORDER BY keys.key) INTO unknown_keys FROM jsonb_object_keys(payload) keys(key)
@@ -576,89 +777,191 @@ BEGIN
   PERFORM public.progress_validate_adjustment_payload(payload, false);
   SELECT adjustment.* INTO adjustment_row FROM public.progress_adjustments adjustment WHERE adjustment.id=(payload->>'adjustment_id')::UUID FOR UPDATE;
   IF NOT FOUND THEN RAISE EXCEPTION 'PROGRESS_NOT_FOUND' USING ERRCODE='P0001'; END IF;
+  prior_adjustment := adjustment_row;
+  SELECT series.quote_id INTO series_quote_id FROM public.progress_invoice_series AS series
+  WHERE series.id = adjustment_row.series_id FOR UPDATE;
   correlation_key := (payload->>'correlation_key')::UUID; fingerprint := public.progress_request_fingerprint(payload);
   existing_result := public.progress_lock_idempotency(adjustment_row.series_id,'update_progress_adjustment_draft',correlation_key,fingerprint);
-  IF existing_result IS NOT NULL THEN RETURN QUERY SELECT (existing_result->>'id')::UUID,(existing_result->>'series_id')::UUID,(existing_result->>'version')::INT,NULL::UUID,false,NULL::JSONB; RETURN; END IF;
+  IF existing_result IS NOT NULL THEN RETURN QUERY SELECT (existing_result->>'id')::UUID,(existing_result->>'series_id')::UUID,(existing_result->>'quote_id')::UUID,(existing_result->>'version')::INT,NULL::UUID,false,NULL::JSONB; RETURN; END IF;
   IF (payload->>'expected_version')::NUMERIC <> adjustment_row.version THEN
-    RETURN QUERY SELECT adjustment_row.id,adjustment_row.series_id,adjustment_row.version,NULL::UUID,true,public.progress_adjustment_safe_dto(adjustment_row); RETURN; END IF;
+    RETURN QUERY SELECT adjustment_row.id,adjustment_row.series_id,series_quote_id,adjustment_row.version,NULL::UUID,true,public.progress_adjustment_safe_dto(adjustment_row); RETURN; END IF;
   IF adjustment_row.status <> 'draft' THEN RAISE EXCEPTION 'PROGRESS_ADJUSTMENT_IMMUTABLE' USING ERRCODE='55000'; END IF;
   UPDATE public.progress_adjustments adjustment SET
     type=CASE WHEN payload?'type' THEN payload->>'type' ELSE adjustment.type END,
-    effective_date=CASE WHEN payload?'effective_date' THEN (payload->>'effective_date')::DATE ELSE adjustment.effective_date END,
+    effective_date=CASE WHEN payload?'effective_date' THEN public.progress_require_iso_date(payload->'effective_date') ELSE adjustment.effective_date END,
     description=CASE WHEN payload?'description' THEN btrim(payload->>'description') ELSE adjustment.description END,
     amount_ex_gst=CASE WHEN payload?'amount_ex_gst' THEN (payload->>'amount_ex_gst')::NUMERIC ELSE adjustment.amount_ex_gst END,
     gst_rate=CASE WHEN payload?'gst_rate' THEN (payload->>'gst_rate')::NUMERIC ELSE adjustment.gst_rate END,
     quote_item_id=CASE WHEN payload?'quote_item_id' THEN CASE WHEN payload->'quote_item_id'='null'::JSONB THEN NULL ELSE (payload->>'quote_item_id')::UUID END ELSE adjustment.quote_item_id END,
     version=adjustment.version+1, updated_by=actor
   WHERE adjustment.id=adjustment_row.id RETURNING adjustment.* INTO adjustment_row;
-  PERFORM public.progress_append_event(adjustment_row.series_id,NULL,'adjustment_draft_updated','user',NULL,NULL,jsonb_build_object('adjustment_id',adjustment_row.id),
-    'update_progress_adjustment_draft',correlation_key,fingerprint,jsonb_build_object('id',adjustment_row.id,'series_id',adjustment_row.series_id,'version',adjustment_row.version));
-  RETURN QUERY SELECT adjustment_row.id,adjustment_row.series_id,adjustment_row.version,NULL::UUID,false,NULL::JSONB;
+  PERFORM public.progress_append_event(adjustment_row.series_id,NULL,'adjustment_draft_updated','user',NULL,NULL,public.progress_adjustment_safe_changes(prior_adjustment, adjustment_row),
+    'update_progress_adjustment_draft',correlation_key,fingerprint,jsonb_build_object('id',adjustment_row.id,'series_id',adjustment_row.series_id,'quote_id',series_quote_id,'version',adjustment_row.version));
+  RETURN QUERY SELECT adjustment_row.id,adjustment_row.series_id,series_quote_id,adjustment_row.version,NULL::UUID,false,NULL::JSONB;
 END;
 $$;
 
 CREATE FUNCTION public.approve_progress_adjustment(payload JSONB)
-RETURNS TABLE (id UUID, series_id UUID, version INT, replacement_id UUID, conflict BOOLEAN, current JSONB)
-LANGUAGE plpgsql SECURITY DEFINER SET search_path = ''
+RETURNS TABLE (id UUID, series_id UUID, quote_id UUID, version INT, replacement_id UUID, conflict BOOLEAN, current JSONB)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
 AS $$
 DECLARE
-  actor UUID:=public.progress_require_actor(); unknown_keys TEXT[]; adjustment_row public.progress_adjustments%ROWTYPE;
-  existing_result JSONB; fingerprint TEXT; correlation_key UUID;
+  actor UUID := public.progress_require_actor();
+  unknown_keys TEXT[];
+  adjustment_row public.progress_adjustments%ROWTYPE;
+  series_quote_id UUID;
+  existing_result JSONB;
+  fingerprint TEXT;
+  correlation_key UUID;
 BEGIN
-  IF jsonb_typeof(payload) IS DISTINCT FROM 'object' THEN RAISE EXCEPTION 'PROGRESS_PAYLOAD_INVALID' USING ERRCODE='22023'; END IF;
-  SELECT pg_catalog.array_agg(keys.key ORDER BY keys.key) INTO unknown_keys FROM jsonb_object_keys(payload) keys(key)
-  WHERE keys.key <> ALL (ARRAY['adjustment_id','expected_version','correlation_key']::TEXT[]);
-  IF unknown_keys IS NOT NULL THEN RAISE EXCEPTION 'PROGRESS_PAYLOAD_UNKNOWN_KEYS' USING ERRCODE='22023'; END IF;
-  IF jsonb_typeof(payload->'adjustment_id') IS DISTINCT FROM 'string' OR jsonb_typeof(payload->'expected_version') IS DISTINCT FROM 'number' OR jsonb_typeof(payload->'correlation_key') IS DISTINCT FROM 'string' THEN RAISE EXCEPTION 'PROGRESS_PAYLOAD_TYPE_INVALID' USING ERRCODE='22023'; END IF;
-  SELECT adjustment.* INTO adjustment_row FROM public.progress_adjustments adjustment WHERE adjustment.id=(payload->>'adjustment_id')::UUID FOR UPDATE;
-  IF NOT FOUND THEN RAISE EXCEPTION 'PROGRESS_NOT_FOUND' USING ERRCODE='P0001'; END IF;
-  PERFORM 1 FROM public.progress_invoice_series series WHERE series.id=adjustment_row.series_id FOR UPDATE;
-  correlation_key := (payload->>'correlation_key')::UUID; fingerprint := public.progress_request_fingerprint(payload);
-  existing_result := public.progress_lock_idempotency(adjustment_row.series_id,'approve_progress_adjustment',correlation_key,fingerprint);
-  IF existing_result IS NOT NULL THEN RETURN QUERY SELECT (existing_result->>'id')::UUID,(existing_result->>'series_id')::UUID,(existing_result->>'version')::INT,NULL::UUID,false,NULL::JSONB; RETURN; END IF;
-  IF (payload->>'expected_version')::NUMERIC <> adjustment_row.version THEN RETURN QUERY SELECT adjustment_row.id,adjustment_row.series_id,adjustment_row.version,NULL::UUID,true,public.progress_adjustment_safe_dto(adjustment_row); RETURN; END IF;
-  IF adjustment_row.status <> 'draft' THEN RAISE EXCEPTION 'PROGRESS_ADJUSTMENT_IMMUTABLE' USING ERRCODE='55000'; END IF;
-  UPDATE public.progress_adjustments adjustment SET status='approved',version=adjustment.version+1,updated_by=actor
-  WHERE adjustment.id=adjustment_row.id RETURNING adjustment.* INTO adjustment_row;
+  IF jsonb_typeof(payload) IS DISTINCT FROM 'object' THEN
+    RAISE EXCEPTION 'PROGRESS_PAYLOAD_INVALID' USING ERRCODE = '22023';
+  END IF;
+  SELECT pg_catalog.array_agg(keys.key ORDER BY keys.key) INTO unknown_keys
+  FROM jsonb_object_keys(payload) AS keys(key)
+  WHERE keys.key <> ALL (ARRAY['adjustment_id', 'expected_version', 'correlation_key']::TEXT[]);
+  IF unknown_keys IS NOT NULL THEN
+    RAISE EXCEPTION 'PROGRESS_PAYLOAD_UNKNOWN_KEYS' USING ERRCODE = '22023';
+  END IF;
+  IF jsonb_typeof(payload -> 'adjustment_id') IS DISTINCT FROM 'string'
+    OR jsonb_typeof(payload -> 'expected_version') IS DISTINCT FROM 'number'
+    OR jsonb_typeof(payload -> 'correlation_key') IS DISTINCT FROM 'string' THEN
+    RAISE EXCEPTION 'PROGRESS_PAYLOAD_TYPE_INVALID' USING ERRCODE = '22023';
+  END IF;
+  SELECT adjustment.* INTO adjustment_row
+  FROM public.progress_adjustments AS adjustment
+  WHERE adjustment.id = (payload ->> 'adjustment_id')::UUID
+  FOR UPDATE;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'PROGRESS_NOT_FOUND' USING ERRCODE = 'P0001';
+  END IF;
+  SELECT series.quote_id INTO series_quote_id
+  FROM public.progress_invoice_series AS series
+  WHERE series.id = adjustment_row.series_id
+  FOR UPDATE;
+  correlation_key := (payload ->> 'correlation_key')::UUID;
+  fingerprint := public.progress_request_fingerprint(payload);
+  existing_result := public.progress_lock_idempotency(
+    adjustment_row.series_id, 'approve_progress_adjustment', correlation_key, fingerprint
+  );
+  IF existing_result IS NOT NULL THEN
+    RETURN QUERY SELECT
+      (existing_result ->> 'id')::UUID,
+      (existing_result ->> 'series_id')::UUID,
+      (existing_result ->> 'quote_id')::UUID,
+      (existing_result ->> 'version')::INT,
+      NULL::UUID, false, NULL::JSONB;
+    RETURN;
+  END IF;
+  IF (payload ->> 'expected_version')::NUMERIC <> adjustment_row.version THEN
+    RETURN QUERY SELECT adjustment_row.id, adjustment_row.series_id, series_quote_id,
+      adjustment_row.version, NULL::UUID, true, public.progress_adjustment_safe_dto(adjustment_row);
+    RETURN;
+  END IF;
+  IF adjustment_row.status <> 'draft' THEN
+    RAISE EXCEPTION 'PROGRESS_ADJUSTMENT_IMMUTABLE' USING ERRCODE = '55000';
+  END IF;
+  UPDATE public.progress_adjustments AS adjustment
+  SET status = 'approved', version = adjustment.version + 1, updated_by = actor
+  WHERE adjustment.id = adjustment_row.id
+  RETURNING adjustment.* INTO adjustment_row;
   PERFORM public.progress_recalculate_series_read_model(adjustment_row.series_id);
   UPDATE public.progress_invoice_series series
   SET version = series.version + 1, updated_by = actor
   WHERE series.id = adjustment_row.series_id;
-  PERFORM public.progress_append_event(adjustment_row.series_id,NULL,'adjustment_approved','user',NULL,NULL,jsonb_build_object('adjustment_id',adjustment_row.id,'type',adjustment_row.type),
-    'approve_progress_adjustment',correlation_key,fingerprint,jsonb_build_object('id',adjustment_row.id,'series_id',adjustment_row.series_id,'version',adjustment_row.version));
-  RETURN QUERY SELECT adjustment_row.id,adjustment_row.series_id,adjustment_row.version,NULL::UUID,false,NULL::JSONB;
+  PERFORM public.progress_append_event(
+    adjustment_row.series_id, NULL, 'adjustment_approved', 'user', NULL, NULL,
+    jsonb_build_object('adjustment_id', adjustment_row.id, 'type', adjustment_row.type),
+    'approve_progress_adjustment', correlation_key, fingerprint,
+    jsonb_build_object('id', adjustment_row.id, 'series_id', adjustment_row.series_id, 'quote_id', series_quote_id, 'version', adjustment_row.version)
+  );
+  RETURN QUERY SELECT adjustment_row.id, adjustment_row.series_id, series_quote_id,
+    adjustment_row.version, NULL::UUID, false, NULL::JSONB;
 END;
 $$;
 
 CREATE FUNCTION public.supersede_progress_adjustment(payload JSONB)
-RETURNS TABLE (id UUID, series_id UUID, version INT, replacement_id UUID, conflict BOOLEAN, current JSONB)
-LANGUAGE plpgsql SECURITY DEFINER SET search_path = ''
+RETURNS TABLE (id UUID, series_id UUID, quote_id UUID, version INT, replacement_id UUID, conflict BOOLEAN, current JSONB)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
 AS $$
 DECLARE
-  actor UUID:=public.progress_require_actor(); unknown_keys TEXT[]; original public.progress_adjustments%ROWTYPE; replacement public.progress_adjustments%ROWTYPE;
-  replacement_payload JSONB; existing_result JSONB; fingerprint TEXT; correlation_key UUID;
+  actor UUID := public.progress_require_actor();
+  unknown_keys TEXT[];
+  original public.progress_adjustments%ROWTYPE;
+  replacement public.progress_adjustments%ROWTYPE;
+  series_quote_id UUID;
+  replacement_payload JSONB;
+  existing_result JSONB;
+  fingerprint TEXT;
+  correlation_key UUID;
 BEGIN
-  IF jsonb_typeof(payload) IS DISTINCT FROM 'object' THEN RAISE EXCEPTION 'PROGRESS_PAYLOAD_INVALID' USING ERRCODE='22023'; END IF;
-  SELECT pg_catalog.array_agg(keys.key ORDER BY keys.key) INTO unknown_keys FROM jsonb_object_keys(payload) keys(key)
-  WHERE keys.key <> ALL (ARRAY['adjustment_id','expected_version','reason','replacement','correlation_key']::TEXT[]);
-  IF unknown_keys IS NOT NULL THEN RAISE EXCEPTION 'PROGRESS_PAYLOAD_UNKNOWN_KEYS' USING ERRCODE='22023'; END IF;
-  IF jsonb_typeof(payload->'adjustment_id') IS DISTINCT FROM 'string' OR jsonb_typeof(payload->'expected_version') IS DISTINCT FROM 'number' OR jsonb_typeof(payload->'reason') IS DISTINCT FROM 'string' OR jsonb_typeof(payload->'replacement') IS DISTINCT FROM 'object' OR jsonb_typeof(payload->'correlation_key') IS DISTINCT FROM 'string' THEN RAISE EXCEPTION 'PROGRESS_PAYLOAD_TYPE_INVALID' USING ERRCODE='22023'; END IF;
-  IF NULLIF(btrim(payload->>'reason'),'') IS NULL OR length(btrim(payload->>'reason'))>500 THEN RAISE EXCEPTION 'PROGRESS_REASON_REQUIRED' USING ERRCODE='23514'; END IF;
-  replacement_payload := payload->'replacement';
-  SELECT pg_catalog.array_agg(keys.key ORDER BY keys.key) INTO unknown_keys FROM jsonb_object_keys(replacement_payload) keys(key)
-  WHERE keys.key <> ALL (ARRAY['type','effective_date','description','amount_ex_gst','gst_rate','quote_item_id']::TEXT[]);
-  IF unknown_keys IS NOT NULL THEN RAISE EXCEPTION 'PROGRESS_PAYLOAD_UNKNOWN_KEYS' USING ERRCODE='22023'; END IF;
-  PERFORM public.progress_validate_adjustment_payload(replacement_payload,true);
-  SELECT adjustment.* INTO original FROM public.progress_adjustments adjustment WHERE adjustment.id=(payload->>'adjustment_id')::UUID FOR UPDATE;
-  IF NOT FOUND THEN RAISE EXCEPTION 'PROGRESS_NOT_FOUND' USING ERRCODE='P0001'; END IF;
-  PERFORM 1 FROM public.progress_invoice_series series WHERE series.id=original.series_id FOR UPDATE;
-  correlation_key := (payload->>'correlation_key')::UUID; fingerprint := public.progress_request_fingerprint(payload);
-  existing_result := public.progress_lock_idempotency(original.series_id,'supersede_progress_adjustment',correlation_key,fingerprint);
-  IF existing_result IS NOT NULL THEN RETURN QUERY SELECT (existing_result->>'id')::UUID,(existing_result->>'series_id')::UUID,(existing_result->>'version')::INT,(existing_result->>'replacement_id')::UUID,false,NULL::JSONB; RETURN; END IF;
-  IF (payload->>'expected_version')::NUMERIC <> original.version THEN RETURN QUERY SELECT original.id,original.series_id,original.version,NULL::UUID,true,public.progress_adjustment_safe_dto(original); RETURN; END IF;
-  IF original.status <> 'approved' THEN RAISE EXCEPTION 'PROGRESS_ADJUSTMENT_IMMUTABLE' USING ERRCODE='55000'; END IF;
+  IF jsonb_typeof(payload) IS DISTINCT FROM 'object' THEN
+    RAISE EXCEPTION 'PROGRESS_PAYLOAD_INVALID' USING ERRCODE = '22023';
+  END IF;
+  SELECT pg_catalog.array_agg(keys.key ORDER BY keys.key) INTO unknown_keys
+  FROM jsonb_object_keys(payload) AS keys(key)
+  WHERE keys.key <> ALL (ARRAY['adjustment_id', 'expected_version', 'reason', 'replacement', 'correlation_key']::TEXT[]);
+  IF unknown_keys IS NOT NULL THEN
+    RAISE EXCEPTION 'PROGRESS_PAYLOAD_UNKNOWN_KEYS' USING ERRCODE = '22023';
+  END IF;
+  IF jsonb_typeof(payload -> 'adjustment_id') IS DISTINCT FROM 'string'
+    OR jsonb_typeof(payload -> 'expected_version') IS DISTINCT FROM 'number'
+    OR jsonb_typeof(payload -> 'reason') IS DISTINCT FROM 'string'
+    OR jsonb_typeof(payload -> 'replacement') IS DISTINCT FROM 'object'
+    OR jsonb_typeof(payload -> 'correlation_key') IS DISTINCT FROM 'string' THEN
+    RAISE EXCEPTION 'PROGRESS_PAYLOAD_TYPE_INVALID' USING ERRCODE = '22023';
+  END IF;
+  IF NULLIF(btrim(payload ->> 'reason'), '') IS NULL OR length(btrim(payload ->> 'reason')) > 500 THEN
+    RAISE EXCEPTION 'PROGRESS_REASON_REQUIRED' USING ERRCODE = '23514';
+  END IF;
+  replacement_payload := payload -> 'replacement';
+  SELECT pg_catalog.array_agg(keys.key ORDER BY keys.key) INTO unknown_keys
+  FROM jsonb_object_keys(replacement_payload) AS keys(key)
+  WHERE keys.key <> ALL (ARRAY['type', 'effective_date', 'description', 'amount_ex_gst', 'gst_rate', 'quote_item_id']::TEXT[]);
+  IF unknown_keys IS NOT NULL THEN
+    RAISE EXCEPTION 'PROGRESS_PAYLOAD_UNKNOWN_KEYS' USING ERRCODE = '22023';
+  END IF;
+  PERFORM public.progress_validate_adjustment_payload(replacement_payload, true);
+  SELECT adjustment.* INTO original
+  FROM public.progress_adjustments AS adjustment
+  WHERE adjustment.id = (payload ->> 'adjustment_id')::UUID
+  FOR UPDATE;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'PROGRESS_NOT_FOUND' USING ERRCODE = 'P0001';
+  END IF;
+  SELECT series.quote_id INTO series_quote_id
+  FROM public.progress_invoice_series AS series
+  WHERE series.id = original.series_id
+  FOR UPDATE;
+  correlation_key := (payload ->> 'correlation_key')::UUID;
+  fingerprint := public.progress_request_fingerprint(payload);
+  existing_result := public.progress_lock_idempotency(
+    original.series_id, 'supersede_progress_adjustment', correlation_key, fingerprint
+  );
+  IF existing_result IS NOT NULL THEN
+    RETURN QUERY SELECT
+      (existing_result ->> 'id')::UUID,
+      (existing_result ->> 'series_id')::UUID,
+      (existing_result ->> 'quote_id')::UUID,
+      (existing_result ->> 'version')::INT,
+      (existing_result ->> 'replacement_id')::UUID,
+      false, NULL::JSONB;
+    RETURN;
+  END IF;
+  IF (payload ->> 'expected_version')::NUMERIC <> original.version THEN
+    RETURN QUERY SELECT original.id, original.series_id, series_quote_id, original.version,
+      NULL::UUID, true, public.progress_adjustment_safe_dto(original);
+    RETURN;
+  END IF;
+  IF original.status <> 'approved' THEN
+    RAISE EXCEPTION 'PROGRESS_ADJUSTMENT_IMMUTABLE' USING ERRCODE = '55000';
+  END IF;
   INSERT INTO public.progress_adjustments(series_id,type,status,effective_date,display_order,description,amount_ex_gst,gst_rate,superseded_adjustment_id,reason,quote_item_id,created_by,updated_by)
-  VALUES(original.series_id,replacement_payload->>'type','approved',(replacement_payload->>'effective_date')::DATE,original.display_order,btrim(replacement_payload->>'description'),(replacement_payload->>'amount_ex_gst')::NUMERIC,(replacement_payload->>'gst_rate')::NUMERIC,original.id,btrim(payload->>'reason'),CASE WHEN replacement_payload->'quote_item_id'='null'::JSONB OR NOT(replacement_payload?'quote_item_id') THEN NULL ELSE (replacement_payload->>'quote_item_id')::UUID END,actor,actor)
+  VALUES(original.series_id,replacement_payload->>'type','approved',public.progress_require_iso_date(replacement_payload->'effective_date'),original.display_order,btrim(replacement_payload->>'description'),(replacement_payload->>'amount_ex_gst')::NUMERIC,(replacement_payload->>'gst_rate')::NUMERIC,original.id,btrim(payload->>'reason'),CASE WHEN replacement_payload->'quote_item_id'='null'::JSONB OR NOT(replacement_payload?'quote_item_id') THEN NULL ELSE (replacement_payload->>'quote_item_id')::UUID END,actor,actor)
   RETURNING * INTO replacement;
   UPDATE public.progress_adjustments adjustment SET status='superseded',reason=btrim(payload->>'reason'),version=adjustment.version+1,updated_by=actor
   WHERE adjustment.id=original.id RETURNING adjustment.* INTO original;
@@ -666,15 +969,25 @@ BEGIN
   UPDATE public.progress_invoice_series series
   SET version = series.version + 1, updated_by = actor
   WHERE series.id = original.series_id;
-  PERFORM public.progress_append_event(original.series_id,NULL,'adjustment_superseded','user',NULL,NULL,jsonb_build_object('adjustment_id',original.id,'replacement_id',replacement.id),
-    'supersede_progress_adjustment',correlation_key,fingerprint,jsonb_build_object('id',original.id,'series_id',original.series_id,'version',original.version,'replacement_id',replacement.id));
-  RETURN QUERY SELECT original.id,original.series_id,original.version,replacement.id,false,NULL::JSONB;
+  PERFORM public.progress_append_event(
+    original.series_id, NULL, 'adjustment_superseded', 'user', NULL, NULL,
+    jsonb_build_object('adjustment_id', original.id, 'replacement_id', replacement.id),
+    'supersede_progress_adjustment', correlation_key, fingerprint,
+    jsonb_build_object('id', original.id, 'series_id', original.series_id, 'quote_id', series_quote_id, 'version', original.version, 'replacement_id', replacement.id)
+  );
+  RETURN QUERY SELECT original.id, original.series_id, series_quote_id, original.version,
+    replacement.id, false, NULL::JSONB;
 END;
 $$;
 
 REVOKE ALL ON FUNCTION public.progress_request_fingerprint(JSONB) FROM PUBLIC, anon, authenticated, service_role;
 REVOKE ALL ON FUNCTION public.progress_series_safe_dto(public.progress_invoice_series) FROM PUBLIC, anon, authenticated, service_role;
 REVOKE ALL ON FUNCTION public.progress_adjustment_safe_dto(public.progress_adjustments) FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION public.progress_require_iso_date(JSONB) FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION public.progress_series_safe_changes(public.progress_invoice_series, public.progress_invoice_series) FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION public.progress_adjustment_safe_changes(public.progress_adjustments, public.progress_adjustments) FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION public.list_progress_invoice_series(JSONB) FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION public.get_progress_invoice_series(JSONB) FROM PUBLIC, anon, authenticated, service_role;
 REVOKE ALL ON FUNCTION public.progress_validate_series_create_payload(JSONB) FROM PUBLIC, anon, authenticated, service_role;
 REVOKE ALL ON FUNCTION public.progress_recalculate_series_read_model(UUID) FROM PUBLIC, anon, authenticated, service_role;
 REVOKE ALL ON FUNCTION public.progress_validate_adjustment_payload(JSONB, BOOLEAN) FROM PUBLIC, anon, authenticated, service_role;
@@ -686,6 +999,8 @@ REVOKE ALL ON FUNCTION public.approve_progress_adjustment(JSONB) FROM PUBLIC, an
 REVOKE ALL ON FUNCTION public.supersede_progress_adjustment(JSONB) FROM PUBLIC, anon, authenticated, service_role;
 
 GRANT EXECUTE ON FUNCTION public.create_progress_invoice_series(JSONB) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.list_progress_invoice_series(JSONB) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.get_progress_invoice_series(JSONB) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.update_progress_invoice_series(JSONB) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.create_progress_adjustment(JSONB) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.update_progress_adjustment_draft(JSONB) TO authenticated;

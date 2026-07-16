@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase/server'
 import {
   createProgressInvoiceRepository,
   type BusinessInvoiceProfileRpcResult,
+  type ProgressInvoicePaymentState,
   type ProgressInvoiceSeriesRpcDetail,
   type ProgressInvoiceSeriesStatus,
   type VersionedMutationRpcResult,
@@ -35,8 +36,11 @@ export interface BusinessInvoiceProfileDto {
 }
 
 export interface ProgressInvoiceListInput {
-  search?: string
-  status?: ProgressInvoiceSeriesStatus
+  query: string
+  statuses: readonly string[]
+  page: number
+  pageSize: number
+  quoteId: string | null
 }
 
 export interface ProgressInvoiceDashboardItem {
@@ -53,15 +57,17 @@ export interface ProgressInvoiceDashboardItem {
   outstandingReceivable: string
   unclaimedIncGst: string
   cumulativePercentage: string
-  paymentState: 'unpaid' | 'part_paid' | 'paid' | 'overdue' | 'credit_balance'
+  paymentState: ProgressInvoicePaymentState
   lastSuccessfulJobberSyncAt: string | null
   lastJobberSyncErrorCode: string | null
   version: number
 }
 
 export interface ProgressInvoiceDashboardDto {
-  series: ProgressInvoiceDashboardItem[]
-  summary: { count: number }
+  items: ProgressInvoiceDashboardItem[]
+  page: number
+  pageSize: number
+  total: number
 }
 
 export interface ProgressInvoiceSeriesDetail {
@@ -96,6 +102,10 @@ export interface ProgressInvoiceSeriesDetail {
   cumulativePercentage: string
 }
 
+export interface ProgressInvoiceSeriesMutationResult extends VersionedMutationRpcResult {
+  quoteId: string | null
+}
+
 export interface ProgressInvoiceCreatePrefill {
   sourceType: 'pbc_quote' | 'standalone'
   quote: null | {
@@ -108,27 +118,12 @@ export interface ProgressInvoiceCreatePrefill {
   }
 }
 
-const SERIES_SELECT = 'id,quote_id,source_type,version,base_contract_ex_gst,gst_rate,recipient_name,recipient_company,recipient_address,recipient_email,recipient_phone,recipient_abn,site_name,site_address,default_description,reference,status,accepted_numbering_base,jobber_link_locked_at,current_adjusted_contract_ex_gst,current_adjusted_contract_gst,current_adjusted_contract_inc_gst,current_claimed_ex_gst,current_claimed_gst,current_claimed_inc_gst,current_unclaimed_ex_gst,current_unclaimed_gst,current_unclaimed_inc_gst,current_cumulative_percentage'
-
 function money(value: string | number): string {
   return new Decimal(value).toFixed(2)
 }
 
-function percentage(value: string | number): string {
-  return new Decimal(value).toFixed(6)
-}
-
 function text(value: string | null): string {
   return value ?? ''
-}
-
-function isSourceType(value: string): value is ProgressInvoiceSeriesDetail['sourceType'] {
-  return value === 'pbc_quote' || value === 'jobber_job' || value === 'jobber_invoice'
-}
-
-function isSeriesStatus(value: string): value is ProgressInvoiceSeriesStatus {
-  return value === 'draft' || value === 'active' || value === 'completed'
-    || value === 'reconciliation_required' || value === 'void'
 }
 
 function mapProfile(row: BusinessInvoiceProfileRpcResult): BusinessInvoiceProfileDto {
@@ -184,71 +179,6 @@ export function mapSeriesDetail(row: ProgressInvoiceSeriesRpcDetail): ProgressIn
     unclaimedIncGst: row.current_unclaimed_inc_gst,
     cumulativePercentage: row.current_cumulative_percentage,
   }
-}
-
-function mapDatabaseSeries(row: {
-  id: string
-  quote_id: string | null
-  source_type: string
-  version: number
-  base_contract_ex_gst: number
-  gst_rate: number
-  recipient_name: string
-  recipient_company: string | null
-  recipient_address: string
-  recipient_email: string | null
-  recipient_phone: string | null
-  recipient_abn: string | null
-  site_name: string
-  site_address: string
-  default_description: string
-  reference: string | null
-  status: string
-  accepted_numbering_base: string | null
-  jobber_link_locked_at: string | null
-  current_adjusted_contract_ex_gst: number
-  current_adjusted_contract_gst: number
-  current_adjusted_contract_inc_gst: number
-  current_claimed_ex_gst: number
-  current_claimed_gst: number
-  current_claimed_inc_gst: number
-  current_unclaimed_ex_gst: number
-  current_unclaimed_gst: number
-  current_unclaimed_inc_gst: number
-  current_cumulative_percentage: number
-}): ProgressInvoiceSeriesDetail | null {
-  if (!isSourceType(row.source_type) || !isSeriesStatus(row.status) || !new Decimal(row.gst_rate).eq('0.1')) return null
-  return mapSeriesDetail({
-    id: row.id,
-    quote_id: row.quote_id,
-    source_type: row.source_type,
-    version: row.version,
-    base_contract_ex_gst: money(row.base_contract_ex_gst),
-    gst_rate: '0.10',
-    recipient_name: row.recipient_name,
-    recipient_company: text(row.recipient_company),
-    recipient_address: row.recipient_address,
-    recipient_email: text(row.recipient_email),
-    recipient_phone: text(row.recipient_phone),
-    recipient_abn: text(row.recipient_abn),
-    site_name: row.site_name,
-    site_address: row.site_address,
-    default_description: row.default_description,
-    reference: text(row.reference),
-    status: row.status,
-    accepted_numbering_base: row.accepted_numbering_base,
-    jobber_link_locked_at: row.jobber_link_locked_at,
-    current_adjusted_contract_ex_gst: money(row.current_adjusted_contract_ex_gst),
-    current_adjusted_contract_gst: money(row.current_adjusted_contract_gst),
-    current_adjusted_contract_inc_gst: money(row.current_adjusted_contract_inc_gst),
-    current_claimed_ex_gst: money(row.current_claimed_ex_gst),
-    current_claimed_gst: money(row.current_claimed_gst),
-    current_claimed_inc_gst: money(row.current_claimed_inc_gst),
-    current_unclaimed_ex_gst: money(row.current_unclaimed_ex_gst),
-    current_unclaimed_gst: money(row.current_unclaimed_gst),
-    current_unclaimed_inc_gst: money(row.current_unclaimed_inc_gst),
-    current_cumulative_percentage: percentage(row.current_cumulative_percentage),
-  })
 }
 
 export async function getBusinessInvoiceProfile(): Promise<ActionResult<BusinessInvoiceProfileDto | null>> {
@@ -312,7 +242,7 @@ export async function createProgressInvoiceSeries(
 
 export async function updateProgressInvoiceSeries(
   input: UpdateProgressInvoiceSeriesInput
-): Promise<ActionResult<VersionedMutationRpcResult, ProgressInvoiceSeriesDetail>> {
+): Promise<ActionResult<ProgressInvoiceSeriesMutationResult, ProgressInvoiceSeriesDetail>> {
   const repository = await createProgressInvoiceRepository()
   const result = await repository.call('update_progress_invoice_series', {
     series_id: input.seriesId,
@@ -336,64 +266,65 @@ export async function updateProgressInvoiceSeries(
       ? { ...result, current: mapSeriesDetail(result.current) }
       : { ok: false, error: result.error, ...(result.code ? { code: result.code } : {}) }
   }
-  return result
+  return {
+    ok: true,
+    data: {
+      id: result.data.id,
+      version: result.data.version,
+      quoteId: result.data.quote_id,
+    },
+  }
 }
 
 export async function getProgressInvoiceSeries(
   seriesId: string
 ): Promise<ActionResult<ProgressInvoiceSeriesDetail | null>> {
-  const client = await createClient()
-  const { data, error } = await client.from('progress_invoice_series').select(SERIES_SELECT).eq('id', seriesId).maybeSingle()
-  if (error) return { ok: false, error: 'PROGRESS_REQUEST_FAILED' }
-  if (!data) return { ok: true, data: null }
-  const detail = mapDatabaseSeries(data)
-  return detail ? { ok: true, data: detail } : { ok: false, error: 'PROGRESS_RESPONSE_INVALID' }
+  const repository = await createProgressInvoiceRepository()
+  const result = await repository.call('get_progress_invoice_series', { series_id: seriesId })
+  return result.ok
+    ? { ok: true, data: result.data.series ? mapSeriesDetail(result.data.series) : null }
+    : result
 }
 
 export async function listProgressInvoiceSeries(
   input: ProgressInvoiceListInput
 ): Promise<ActionResult<ProgressInvoiceDashboardDto>> {
-  const client = await createClient()
-  let query = client.from('progress_invoice_series').select('*').order('updated_at', { ascending: false }).limit(100)
-  if (input.status) query = query.eq('status', input.status)
-  const { data, error } = await query
-  if (error) return { ok: false, error: 'PROGRESS_REQUEST_FAILED' }
-  const items: ProgressInvoiceDashboardItem[] = []
-  const search = input.search?.trim().toLocaleLowerCase('en-AU')
-  for (const row of data) {
-    if (search && ![
-      row.recipient_name,
-      row.recipient_company,
-      row.site_name,
-      row.default_description,
-      row.reference,
-      row.original_jobber_invoice_number,
-    ].some((value) => value?.toLocaleLowerCase('en-AU').includes(search))) continue
-    if (!isSourceType(row.source_type) || !isSeriesStatus(row.status)) return { ok: false, error: 'PROGRESS_RESPONSE_INVALID' }
-    if (!['unpaid', 'part_paid', 'paid', 'overdue', 'credit_balance'].includes(row.current_payment_state)) {
-      return { ok: false, error: 'PROGRESS_RESPONSE_INVALID' }
-    }
-    items.push({
-      id: row.id,
-      sourceType: row.source_type,
-      quoteId: row.quote_id,
-      recipientName: row.recipient_name,
-      recipientCompany: text(row.recipient_company),
-      siteName: row.site_name,
-      status: row.status,
-      adjustedContractExGst: money(row.current_adjusted_contract_ex_gst),
-      claimedIncGst: money(row.current_claimed_inc_gst),
-      receivedIncGst: money(row.current_actual_receipts),
-      outstandingReceivable: money(row.current_outstanding_receivable),
-      unclaimedIncGst: money(row.current_unclaimed_inc_gst),
-      cumulativePercentage: percentage(row.current_cumulative_percentage),
-      paymentState: row.current_payment_state as ProgressInvoiceDashboardItem['paymentState'],
-      lastSuccessfulJobberSyncAt: row.last_successful_jobber_sync_at,
-      lastJobberSyncErrorCode: row.last_jobber_sync_error_code,
-      version: row.version,
-    })
+  const repository = await createProgressInvoiceRepository()
+  const result = await repository.call('list_progress_invoice_series', {
+    query: input.query,
+    statuses: [...input.statuses],
+    page: input.page,
+    page_size: input.pageSize,
+    quote_id: input.quoteId,
+  })
+  if (!result.ok) return result
+  return {
+    ok: true,
+    data: {
+      items: result.data.items.map((row) => ({
+        id: row.id,
+        sourceType: row.source_type,
+        quoteId: row.quote_id,
+        recipientName: row.recipient_name,
+        recipientCompany: row.recipient_company,
+        siteName: row.site_name,
+        status: row.status,
+        adjustedContractExGst: row.current_adjusted_contract_ex_gst,
+        claimedIncGst: row.current_claimed_inc_gst,
+        receivedIncGst: row.current_actual_receipts,
+        outstandingReceivable: row.current_outstanding_receivable,
+        unclaimedIncGst: row.current_unclaimed_inc_gst,
+        cumulativePercentage: row.current_cumulative_percentage,
+        paymentState: row.current_payment_state,
+        lastSuccessfulJobberSyncAt: row.last_successful_jobber_sync_at,
+        lastJobberSyncErrorCode: row.last_jobber_sync_error_code,
+        version: row.version,
+      })),
+      page: result.data.page,
+      pageSize: result.data.page_size,
+      total: result.data.total,
+    },
   }
-  return { ok: true, data: { series: items, summary: { count: items.length } } }
 }
 
 export async function getProgressInvoiceCreatePrefill(

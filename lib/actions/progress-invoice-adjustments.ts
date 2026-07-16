@@ -11,6 +11,7 @@ import {
   updateDraftProgressAdjustment as updateAdjustment,
   type ProgressAdjustmentDetail,
   type ProgressAdjustmentMutationResult,
+  type ProgressAdjustmentServiceMutationResult,
 } from '@/lib/progress-invoices/adjustment-service'
 import {
   approveProgressAdjustmentSchema,
@@ -28,19 +29,29 @@ async function authorize(): Promise<ActionResult<true>> {
   return allowed.ok ? { ok: true, data: true } : allowed
 }
 
-function revalidateSeries(seriesId: string): void {
+function revalidateSeries(seriesId: string, quoteId: string | null): void {
   revalidatePath('/progress-invoices')
   revalidatePath(`/progress-invoices/${seriesId}`)
+  if (quoteId) revalidatePath(`/quotes/${quoteId}`)
 }
 
 async function execute<TCurrent = never>(
-  operation: () => Promise<ActionResult<ProgressAdjustmentMutationResult, TCurrent>>
+  operation: () => Promise<ActionResult<ProgressAdjustmentServiceMutationResult, TCurrent>>
 ): Promise<ActionResult<ProgressAdjustmentMutationResult, TCurrent>> {
   const authorized = await authorize()
   if (!authorized.ok) return authorized
   const result = await operation()
-  if (result.ok) revalidateSeries(result.data.seriesId)
-  return result
+  if (!result.ok) return result
+  revalidateSeries(result.data.seriesId, result.data.quoteId)
+  return {
+    ok: true,
+    data: {
+      id: result.data.id,
+      seriesId: result.data.seriesId,
+      version: result.data.version,
+      ...(result.data.replacementId ? { replacementId: result.data.replacementId } : {}),
+    },
+  }
 }
 
 export async function createProgressAdjustment(
