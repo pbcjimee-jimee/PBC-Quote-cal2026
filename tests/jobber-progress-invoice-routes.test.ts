@@ -19,6 +19,7 @@ vi.mock('@/lib/jobber/invoice-gateway', () => ({
 
 import { GET as listInvoices } from '@/app/api/jobber/progress-invoices/jobs/[jobId]/invoices/route'
 import { GET as previewInvoice } from '@/app/api/jobber/progress-invoices/invoices/[invoiceId]/route'
+import { parseJobberInvoicePreviewResponse } from '@/lib/progress-invoices/standalone-import-contract'
 
 const NO_STORE = 'private, no-store, max-age=0'
 
@@ -30,9 +31,9 @@ const selectionPreview = {
   normalizedStatus: 'awaiting_payment',
   jobberWebUri: 'https://secure.getjobber.com/invoices/invoice-1',
   amounts: null,
-  issuedDate: '2026-01-01',
-  dueDate: '2026-01-15',
-  receivedDate: null,
+  issuedDate: '2026-07-01T00:00:00Z',
+  dueDate: '2026-07-15T00:00:00+00:00',
+  receivedDate: '2026-01-01T13:30:00Z',
   createdAt: '2026-01-01T00:00:00Z',
   updatedAt: '2026-01-02T00:00:00Z',
   client: {
@@ -186,6 +187,7 @@ describe('Progress Invoice Jobber selector routes', () => {
   })
 
   it('returns selection-required candidates while omitting payments, authority, raw transport, and fingerprints', async () => {
+    const rawGatewayPreview = structuredClone(selectionPreview)
     const response = await previewInvoice(
       new NextRequest('http://localhost/api/jobber/progress-invoices/invoices/invoice-1'),
       params({ invoiceId: 'invoice-1' }),
@@ -201,6 +203,9 @@ describe('Progress Invoice Jobber selector routes', () => {
     expect(body.data).toMatchObject({
       invoiceId: 'invoice-1',
       invoiceNumber: 'INV-100',
+      issuedDate: '2026-07-01',
+      dueDate: '2026-07-15',
+      receivedDate: '2026-01-02',
       jobs: [{ id: 'job-1' }, { id: 'job-2' }],
       properties: [{ id: 'property-1' }, { id: 'property-2' }],
       selectedJobberJobId: null,
@@ -221,6 +226,8 @@ describe('Progress Invoice Jobber selector routes', () => {
       'payments', 'payment-secret', 'responseFingerprint', 'accountId',
     ]) expect(serialized).not.toContain(forbidden)
     expect(body.data).not.toHaveProperty('payments')
+    expect(parseJobberInvoicePreviewResponse(body)).toEqual(body)
+    expect(selectionPreview).toEqual(rawGatewayPreview)
   })
 
   it.each([

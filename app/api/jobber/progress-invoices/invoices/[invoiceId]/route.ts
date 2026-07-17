@@ -4,6 +4,7 @@ import {
   classifyJobberInvoiceError,
   fetchJobberInvoiceSelectionPreview,
 } from '@/lib/jobber/invoice-gateway'
+import { optionalSydneyCalendarDate } from '@/lib/progress-invoices/jobber-calendar-date'
 import { progressJobberExternalIdSchema } from '@/lib/progress-invoices/validators'
 import { requireAllowedUser } from '@/lib/security/require-allowed-user'
 
@@ -65,9 +66,9 @@ export async function GET(
         normalizedStatus: preview.normalizedStatus,
         jobberWebUri: preview.jobberWebUri,
         amounts: preview.amounts,
-        issuedDate: preview.issuedDate,
-        dueDate: preview.dueDate,
-        receivedDate: preview.receivedDate,
+        issuedDate: optionalSydneyCalendarDate(preview.issuedDate),
+        dueDate: optionalSydneyCalendarDate(preview.dueDate),
+        receivedDate: optionalSydneyCalendarDate(preview.receivedDate),
         client: preview.client === null ? null : {
           name: preview.client.name,
           companyName: preview.client.companyName,

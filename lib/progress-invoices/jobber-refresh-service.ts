@@ -13,6 +13,10 @@ import type {
 } from '@/lib/jobber/invoice-types'
 import type { Json } from '@/lib/supabase/types'
 import {
+  optionalSydneyCalendarDate,
+  toSydneyCalendarDate,
+} from './jobber-calendar-date'
+import {
   createProgressInvoiceJobberPersistenceRepository,
   createProgressInvoiceRepository,
   type ProgressInvoiceSeriesRpcDetail,
@@ -28,6 +32,8 @@ import type {
 
 const MAX_JOBBER_ID_LENGTH = 512
 const MAX_CONTACT_CANDIDATES = 20
+
+export { toSydneyCalendarDate } from './jobber-calendar-date'
 
 export interface ProgressJobberPaymentPayload {
   jobber_payment_id: string
@@ -116,35 +122,6 @@ function requireOffsetTimestamp(value: string): string {
   return value
 }
 
-function validDateOnly(value: string): boolean {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false
-  const parsed = new Date(`${value}T00:00:00Z`)
-  return !Number.isNaN(parsed.valueOf()) && parsed.toISOString().slice(0, 10) === value
-}
-
-export function toSydneyCalendarDate(value: string): string {
-  if (validDateOnly(value)) return value
-  requireOffsetTimestamp(value)
-  const formatter = new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'Australia/Sydney',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  })
-  const parts = Object.fromEntries(
-    formatter.formatToParts(new Date(value))
-      .filter((part) => part.type !== 'literal')
-      .map((part) => [part.type, part.value]),
-  )
-  const result = `${parts.year ?? ''}-${parts.month ?? ''}-${parts.day ?? ''}`
-  if (!validDateOnly(result)) throw progressJobberError()
-  return result
-}
-
-function optionalSydneyDate(value: string | null): string | null {
-  return value === null ? null : toSydneyCalendarDate(value)
-}
-
 function formatAddress(address: JobberAddress | null): string | null {
   if (address === null) return null
   const locality = [address.city, address.province, address.postalCode]
@@ -231,9 +208,9 @@ export function buildProgressJobberObservationPayload(
     invoice_total: observation.amounts?.total ?? null,
     invoice_balance: observation.amounts?.invoiceBalance ?? null,
     invoice_payments_total: observation.amounts?.paymentsTotal ?? null,
-    invoice_issued_date: optionalSydneyDate(observation.issuedDate),
-    invoice_due_date: optionalSydneyDate(observation.dueDate),
-    invoice_received_date: optionalSydneyDate(observation.receivedDate),
+    invoice_issued_date: optionalSydneyCalendarDate(observation.issuedDate),
+    invoice_due_date: optionalSydneyCalendarDate(observation.dueDate),
+    invoice_received_date: optionalSydneyCalendarDate(observation.receivedDate),
     external_created_at: requireOffsetTimestamp(observation.createdAt),
     external_updated_at: requireOffsetTimestamp(observation.updatedAt),
     client_id: observation.client === null ? null : assertBounded(observation.client.id),

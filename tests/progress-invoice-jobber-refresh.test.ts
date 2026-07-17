@@ -27,10 +27,8 @@ vi.mock('@/lib/jobber/invoice-gateway', () => ({
   classifyJobberInvoiceError: mocks.classifyJobberInvoiceError,
 }))
 
-import {
-  buildProgressJobberObservationPayload,
-  toSydneyCalendarDate,
-} from '@/lib/progress-invoices/jobber-refresh-service'
+import { toSydneyCalendarDate } from '@/lib/progress-invoices/jobber-calendar-date'
+import { buildProgressJobberObservationPayload } from '@/lib/progress-invoices/jobber-refresh-service'
 import {
   acceptObservedJobberInvoiceNumber,
   linkJobberInvoice,
@@ -117,14 +115,21 @@ beforeEach(() => {
   })
 })
 
-describe('Progress Invoice Jobber normalized persistence payload', () => {
-  it('converts offset timestamps to Sydney dates and preserves calendar dates', () => {
+describe('Progress Invoice Jobber calendar dates', () => {
+  it('converts valid offset timestamps to Sydney dates and preserves valid calendar dates', () => {
     expect(toSydneyCalendarDate('2026-01-01')).toBe('2026-01-01')
     expect(toSydneyCalendarDate('2026-01-01T13:30:00Z')).toBe('2026-01-02')
-    expect(toSydneyCalendarDate('2026-07-01T14:30:00Z')).toBe('2026-07-02')
-    expect(() => toSydneyCalendarDate('2026-07-01T14:30:00')).toThrow('PROGRESS_JOBBER_ERROR')
+    expect(toSydneyCalendarDate('2026-07-15T00:00:00+00:00')).toBe('2026-07-15')
   })
 
+  it('rejects timezone-free timestamps and impossible calendar dates', () => {
+    expect(() => toSydneyCalendarDate('2026-07-01T14:30:00')).toThrow('PROGRESS_JOBBER_ERROR')
+    expect(() => toSydneyCalendarDate('2026-02-30')).toThrow('PROGRESS_JOBBER_ERROR')
+    expect(() => toSydneyCalendarDate('2026-02-30T00:00:00Z')).toThrow('PROGRESS_JOBBER_ERROR')
+  })
+})
+
+describe('Progress Invoice Jobber normalized persistence payload', () => {
   it('preserves every candidate and chooses contacts only by deterministic uniqueness rules', () => {
     const payload = buildProgressJobberObservationPayload(observation)
 
