@@ -82,7 +82,7 @@
 ## 🔲 남은 작업
 
 - **성능 후속** (2026-07-17 감사 로드맵, Phase 1~3 구현 완료): cacheComponents/PPR(전역 렌더 변경, 회귀 테스트 필수 — 별도 작업 권장), `user_profiles` 미러 테이블/`created_by_name` 스냅샷(현재는 캐싱으로 완화), draft-guard 회귀 테스트(테스트 DOM에 history/removeItem 확장 선행). 신규 인덱스 마이그레이션 `20260717000000`의 원격 적용은 사용자 승인 필요.
-- **Progress Invoice 후속·운영 적용**: 원격 Supabase에는 `20260714225000`~`20260714231200` 마이그레이션이 아직 적용되지 않았다. DB CLI 인증을 복구한 뒤 dry-run과 운영 적용이 필요하다. 시리즈 상세/실제 청구 작성·입금 ledger UI, XLSX/PDF Tax Invoice 생성·현재/전체 시리즈 다운로드는 후속 구현 범위다.
+- **Progress Invoice 후속·운영 적용**: ~~원격 미적용~~ → 2026-07-18 MCP로 원격 확인 결과 `20260714225000`~`20260714231200` 전부 적용 완료. 원격에는 이 워크트리에 없는 `20260717082000_add_progress_invoice_standalone_jobber_import`, `20260717102000_add_manual_progress_invoice_series`도 적용돼 있음(다른 브랜치/main 작업 — 병합 시 마이그레이션 파일 동기화 확인 필요). 시리즈 상세/실제 청구 작성·입금 ledger UI, XLSX/PDF Tax Invoice 생성·현재/전체 시리즈 다운로드는 후속 구현 범위다.
 - **감사 발견 이슈** (2026-07-06): 우선순위별로 `docs/BACKLOG.md`에 등록. 2026-07-04 hardening으로 마진 CHECK·서버 액션 allowlist 해결, 2026-07-07 quote save conflict hardening으로 견적 저장 트랜잭션·동시 편집 충돌·product 스냅샷 재고정·Jobber 부분 성공 line id 보존을 반영. 남은 항목은 `docs/BACKLOG.md`의 미체크 항목 기준으로 처리.
 - **Supabase 실제 데이터 백업**: 운영 결정 대기(`TODOS.md` #2). Pro/PITR 우선, cron export는 restore 검증 포함 시만.
 - **UX 잔여**: `docs/UI-UX-REVIEW.md` P1 항목(폰트 시스템, 브랜드 색, sticky 결과 카드 등). P0 일부(focus-visible, 대비, draft dialog a11y)는 반영됨.
