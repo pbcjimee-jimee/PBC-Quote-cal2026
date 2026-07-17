@@ -4,6 +4,8 @@
 **Status:** Approved by the user's 2026-07-17 direction
 **Parent design:** `docs/superpowers/specs/2026-07-14-progress-invoices-design.md`
 
+> **Superseding creation amendment:** `docs/superpowers/specs/2026-07-17-progress-invoice-manual-creation-and-preview-date-design.md` replaces the PBC Quote entry path with Jobber Invoice import or local Manual creation; this document continues to govern the Jobber import path.
+
 ## Decision
 
 Standalone Progress Invoice creation uses a Jobber invoice number as a one-time import source.

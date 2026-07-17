@@ -12,7 +12,7 @@
 |---|---|
 | **앱** | PBC 견적 계산기 — 페인팅 회사 PBC 사내 도구 |
 | **스택** | Next.js 16 (App Router) + React 19 + TypeScript + Tailwind CSS 4 + Supabase + Vercel |
-| **현재 버전** | v1.0 핵심 플로우 + v1.1 보완 완료 + 2026-07-04 project hardening + 2026-07-07 quote save conflict hardening + 2026-07-08 warehouse inventory repo/production 적용 + 2026-07-09 inventory category/status UI 보완 + 2026-07-13 PWA·모바일 + 2026-07-14 핵심 navigation performance production 배포·카나리 완료. Production Supabase `0019`/`0020`/`20260705221912`/`20260707003130`/`20260708101550` 적용 확인 완료 |
+| **현재 버전** | v1.0 핵심 플로우 + v1.1 보완 완료 + 2026-07-04 project hardening + 2026-07-07 quote save conflict hardening + 2026-07-08 warehouse inventory repo/production 적용 + 2026-07-09 inventory category/status UI 보완 + 2026-07-13 PWA·모바일 + 2026-07-14 핵심 navigation performance production 배포·카나리 완료 + 2026-07-17 Progress Invoice Jobber-first/Manual 생성 구현·DB 적용. Production Supabase `0019`/`0020`/`20260705221912`/`20260707003130`/`20260708101550`/`20260717082000`/`20260717102000` 적용 확인 완료 |
 | **배포 URL** | https://pbc-quote-cal2026-v2.vercel.app |
 | **GitHub Repo** | pbcjimee-jimee/PBC-Quote-cal2026 (branch: main) |
 | **CLI 접근 기준** | Git remote `git@github-pbc-quote-cal:pbcjimee-jimee/PBC-Quote-cal2026.git`, Vercel `jimee-s-projects/pbc-quote-cal2026-v2`, Supabase `ojcrfgguhbxhtlgdflzp` |
@@ -77,11 +77,18 @@
 - 기존 Quote Jobber fetch/write-back 경로를 변경하지 않는 전용 read-only Jobber Invoice/Payment gateway를 추가했다. 시리즈당 Jobber Invoice 1개, 수락 번호·연결 잠금, 조회 observation/snapshot과 수동 refresh 경계를 반영했다.
 - 검증: Vitest 84 files·799 tests 통과(환경 조건 1 file·5 tests skip), coverage threshold 통과, pgTAP 5 files·308 tests 통과, 로컬 RLS 5 tests 통과, typecheck·lint·Next production build·audit 0 vulnerabilities 통과.
 
+### Progress Invoice Jobber-first·Manual 생성 (2026-07-17, 구현·Production DB 적용)
+- 신규 시리즈 생성 경로를 **Jobber Invoice 번호 1회 가져오기(기본 모드)** 또는 **앱 내부 Manual 생성** 두 가지로 한정했다. 신규 PBC Quote 기반 생성 카드·링크·Action은 제거했으며, 과거 `pbc_quote`·`jobber_job` 데이터의 읽기는 유지한다. 기존 Quote의 Jobber fetch/snapshot/Save & Sync/write-back 경로는 변경하지 않았다.
+- Jobber preview의 date-only 및 timezone-qualified ISO 날짜를 API 경계에서 `Australia/Sydney` 기준 `YYYY-MM-DD`로 정규화한다. timezone 없는 timestamp·불가능한 날짜는 안전하게 거부하고, gateway의 원본 timestamp와 observation fingerprint는 그대로 보존한다. 실제 Jobber 형식과 Sydney 익일 변환을 포함한 회귀 테스트를 추가했다.
+- Manual 생성은 서버가 `source_type = 'manual'`과 GST `0.10`을 고정하고, Invoice number base·계약금액 Ex GST·수취인·현장·설명을 원자적·멱등적으로 저장한다. Quote/Jobber identity는 허용하지 않으며, 활성/non-void 번호 base 중복은 DB unique index로 차단한다. 이메일·ABN·금액 검증, 안전한 audit event, mode 전환 중 비동기 결과 및 retry correlation 격리를 반영했다.
+- Production Supabase에 `20260717102000_add_manual_progress_invoice_series`를 연결된 DB API로 적용했다. migration history, `manual` source constraint, SECURITY DEFINER/empty `search_path`, authenticated-only Manual RPC, legacy Quote-create/prefill RPC 전 역할 실행 차단, unique/ready numbering index, 기존 중복 base 0건을 확인했다. Production 검증용 Manual 데이터는 생성하지 않았다.
+- 최종 검증: 독립 whole-branch re-review Critical/Important/Minor 0건, focused 8 files·138 tests, tracked full Vitest 87 files·878 tests 통과와 1 file·5 tests skip, 로컬 clean reset 후 pgTAP 349/349, typecheck·lint·Next production build를 모두 통과했다. 브라우저에서 Jobber 기본 모드와 Invoice 2875의 후보·preview·client/site·comparison 로딩, PBC Quote/Sync/Refresh 미노출, Manual 검증·키보드 focus·375px 무가로넘침·console warning/error 0을 확인했다. Manual 전환의 Jobber fetch 0회는 component 회귀 테스트로 확인했으며 QA 중 시리즈를 저장하지 않았다. 임시 live-smoke와 sample-inspection artifact도 안전하게 제거했다.
+
 ---
 
 ## 🔲 남은 작업
 
-- **Progress Invoice 후속·운영 적용**: 원격 Supabase에는 `20260714225000`~`20260714231200` 마이그레이션이 아직 적용되지 않았다. DB CLI 인증을 복구한 뒤 dry-run과 운영 적용이 필요하다. 시리즈 상세/실제 청구 작성·입금 ledger UI, XLSX/PDF Tax Invoice 생성·현재/전체 시리즈 다운로드는 후속 구현 범위다.
+- **Progress Invoice 후속**: Standalone import `20260717082000`과 Manual 생성 `20260717102000`의 Production DB 적용, Invoice 2875 preview·Jobber/Manual 모드 브라우저 QA, 임시 artifact 정리와 전체 verification을 완료했다. 시리즈 상세/실제 청구 작성·입금 ledger UI, XLSX/PDF Tax Invoice 생성·현재/전체 시리즈 다운로드는 후속 구현 범위다.
 - **감사 발견 이슈** (2026-07-06): 우선순위별로 `docs/BACKLOG.md`에 등록. 2026-07-04 hardening으로 마진 CHECK·서버 액션 allowlist 해결, 2026-07-07 quote save conflict hardening으로 견적 저장 트랜잭션·동시 편집 충돌·product 스냅샷 재고정·Jobber 부분 성공 line id 보존을 반영. 남은 항목은 `docs/BACKLOG.md`의 미체크 항목 기준으로 처리.
 - **Supabase 실제 데이터 백업**: 운영 결정 대기(`TODOS.md` #2). Pro/PITR 우선, cron export는 restore 검증 포함 시만.
 - **UX 잔여**: `docs/UI-UX-REVIEW.md` P1 항목(폰트 시스템, 브랜드 색, sticky 결과 카드 등). P0 일부(focus-visible, 대비, draft dialog a11y)는 반영됨.
@@ -101,6 +108,7 @@
 
 | 날짜 | 작업 | 담당 |
 |---|---|---|
+| 2026-07-17 | Progress Invoice 신규 생성 경로를 Jobber Invoice 번호 1회 가져오기(기본)와 Manual 로컬 생성으로 한정하고 PBC Quote 신규 생성 경로를 제거. Jobber 날짜를 Sydney `YYYY-MM-DD`로 안전하게 정규화하고 실제 timestamp 회귀 테스트 추가. Manual 원자적·멱등 저장, 번호 base unique constraint, 이메일/ABN 검증과 mode-switch race hardening 반영. Production Supabase `20260717102000` 적용 및 권한·제약·index·중복 0건 검증. whole-branch review 0건, focused 138 tests, tracked full Vitest 878 passed/5 skipped, pgTAP 349/349, typecheck/lint/build와 Invoice 2875·Manual 브라우저 QA 통과. 임시 artifact 정리 완료. | Codex 5.6-Sol high |
 | 2026-07-16 | Progress Invoice 기반을 로컬 `main`에 통합. 독립 대시보드/navigation, 진행률·금액 계산/검증, 시리즈·Variation/Credit 데이터/RPC/RLS, 기존 Quote 연동과 분리된 Jobber Invoice/Payment read-only 조회·연결·refresh를 반영. 리뷰에서 Jobber 오류 분류, 잠긴 연결 오류 매핑, 범위 밖 페이지 재조회 문제를 수정. Vitest 84 files/799 tests, coverage, pgTAP 5 files/308 tests, RLS 5 tests, typecheck/lint/build/audit 0 vulnerabilities 통과. 원격 Supabase migration과 청구·입금·문서 생성 UI는 후속. | Codex 5.6-Sol high |
 | 2026-07-16 | New Quote `Add Text` 제목의 Product & Service 추천 누락 회귀 수정. 제목 검색을 이름 기준으로 제한하고 서버의 6개 선제 제한과 클라이언트 6개 제한을 제거해 관련 항목을 최대 300개까지 스크롤 목록에 표시. Supabase·dev 검색 회귀 테스트 추가. 전체 verify 67 files/561 tests, coverage/build/audit 0 vulnerabilities 통과. | Codex 5.6-Sol high |
 | 2026-07-15 | Jobber 견적 fetch scope 회귀 수정. Jobber가 반환하는 `read_clients`·`read_quotes` 등 prefix형 read scope와 기존 승인된 `write_quotes` 최소 scope를 검증기가 정상 인식하도록 보완하고 실제 연결 scope 회귀 테스트를 추가. Jobber focused 14 files/122 tests, typecheck, 변경 파일 lint 통과. | Codex 5.6-Sol high |

@@ -41,7 +41,7 @@
 - Preserves: `toSydneyCalendarDate` re-export from `jobber-refresh-service.ts` for existing callers.
 - Consumes: raw `issuedDate`, `dueDate`, and `receivedDate` from `JobberInvoiceSelectionPreview`.
 
-- [ ] **Step 1: Write the RED pure-helper and route regression tests**
+- [x] **Step 1: Write the RED pure-helper and route regression tests**
 
 Move the existing date assertions into a dedicated helper describe block and add exact timezone cases:
 
@@ -72,7 +72,7 @@ receivedDate: '2026-01-02',
 
 and call `parseJobberInvoicePreviewResponse(body)` to prove the complete browser contract accepts it. Also assert the mocked gateway object is unchanged.
 
-- [ ] **Step 2: Run the date tests and verify RED**
+- [x] **Step 2: Run the date tests and verify RED**
 
 Run:
 
@@ -82,7 +82,7 @@ npx.cmd vitest run tests/progress-invoice-jobber-refresh.test.ts tests/jobber-pr
 
 Expected: the route regression fails because the response still contains timestamps. Existing save-time helper tests may pass; the new shared-module import must fail until Step 3.
 
-- [ ] **Step 3: Extract the pure helper and use it in both boundaries**
+- [x] **Step 3: Extract the pure helper and use it in both boundaries**
 
 Create a dependency-free module with this public shape:
 
@@ -132,11 +132,11 @@ export function optionalSydneyCalendarDate(value: string | null): string | null 
 
 Import these functions into `jobber-refresh-service.ts`, delete the duplicated implementation, and re-export `toSydneyCalendarDate`. In the preview Route, map all three nullable dates through `optionalSydneyCalendarDate` inside the existing `try` block. Do not change `invoice-client.ts`, `invoice-gateway.ts`, or observation fingerprint construction.
 
-- [ ] **Step 4: Run focused tests and verify GREEN**
+- [x] **Step 4: Run focused tests and verify GREEN**
 
 Run the Step 2 command. Expected: both files pass with no warnings, and the parser accepts the full normalized response.
 
-- [ ] **Step 5: Commit Task 1**
+- [x] **Step 5: Commit Task 1**
 
 ```powershell
 git add -- lib/progress-invoices/jobber-calendar-date.ts lib/progress-invoices/jobber-refresh-service.ts 'app/api/jobber/progress-invoices/invoices/[invoiceId]/route.ts' tests/progress-invoice-jobber-refresh.test.ts tests/jobber-progress-invoice-routes.test.ts
@@ -178,7 +178,7 @@ git commit -m "fix: normalize Jobber invoice preview dates"
 - Produces DB RPC: `public.create_manual_progress_invoice_series(payload JSONB)` returning `(id UUID, version INT)`.
 - Manual browser input keys: `acceptedNumberingBase`, local recipient/site/series fields, and `correlationKey`; no `sourceType` or `gstRate`.
 
-- [ ] **Step 1: Write RED validator, Action, service, parser, and dashboard tests**
+- [x] **Step 1: Write RED validator, Action, service, parser, and dashboard tests**
 
 Add a strict command fixture:
 
@@ -206,7 +206,7 @@ Add read-boundary fixtures with `source_type: 'manual'` and assert both detail a
 
 Add removal/authorization regressions proving the application no longer exports or delegates `createProgressInvoiceSeries` or `getProgressInvoiceCreatePrefill`, and that authenticated/Public/anon/service-role callers cannot execute the legacy `create_progress_invoice_series(JSONB)` or `get_progress_invoice_quote_prefill(JSONB)` RPCs after the forward migration. The old functions may remain as inert migration history/privileged test-fixture helpers, but no application role may execute them.
 
-- [ ] **Step 2: Write RED migration and pgTAP assertions**
+- [x] **Step 2: Write RED migration and pgTAP assertions**
 
 Static migration tests must require the new file to contain:
 
@@ -242,7 +242,7 @@ pgTAP must prove:
 
 Run static tests first and verify they fail because the migration and Manual interfaces do not exist.
 
-- [ ] **Step 3: Run the RED application tests**
+- [x] **Step 3: Run the RED application tests**
 
 ```powershell
 npx.cmd vitest run tests/progress-invoice-validators.test.ts tests/progress-invoice-actions.test.ts tests/progress-invoice-actions-supabase.test.ts tests/progress-invoice-series-service.test.ts tests/progress-invoice-repository.test.ts tests/progress-invoice-dashboard-ui.test.tsx tests/progress-invoice-migration.test.ts tests/progress-invoice-series-migration.test.ts --reporter=verbose
@@ -250,7 +250,7 @@ npx.cmd vitest run tests/progress-invoice-validators.test.ts tests/progress-invo
 
 Expected: failures specifically report missing Manual schema/Action/command/source and migration.
 
-- [ ] **Step 4: Implement the Manual Zod, Action, service, and repository boundary**
+- [x] **Step 4: Implement the Manual Zod, Action, service, and repository boundary**
 
 Define the browser schema without provenance fields:
 
@@ -276,7 +276,7 @@ Create the dedicated Action. It must not accept a source or GST from the browser
 
 Remove the obsolete Progress Invoice Quote-create application boundary end-to-end: `createProgressInvoiceSeriesSchema`, `progressInvoiceCreatePrefillSchema`, `createProgressInvoiceSeries`, `getProgressInvoiceCreatePrefill`, their service methods, and the corresponding repository command/result branches. Remove or rewrite their application tests instead of leaving unused callable exports. This removal is scoped only to Progress Invoice series creation and must not touch Quote Jobber fetch/write-back modules.
 
-- [ ] **Step 5: Implement the forward-only Manual migration**
+- [x] **Step 5: Implement the forward-only Manual migration**
 
 The migration must perform these exact logical changes in one transaction:
 
@@ -293,15 +293,15 @@ The migration must perform these exact logical changes in one transaction:
 
 Do not alter any earlier migration. Do not log recipient, address, contract amount, numbering base, or correlation key.
 
-- [ ] **Step 6: Run local DB reset and pgTAP GREEN**
+- [x] **Step 6: Run local DB reset and pgTAP GREEN**
 
 Use the repository's established Docker/local Supabase test flow. Rewrite the legacy create/prefill privilege and fixture portions of `supabase/tests/progress_invoices_test.sql` so the revoked authenticated path is expected and Manual RPC or privileged table setup supplies fixtures without weakening application grants. Add a two-session concurrency harness for the Manual correlation key. The expected proof is a successful reset plus every `supabase/tests/*.sql` file passing. If local Supabase CLI profile parsing is unavailable, use the configured Docker database commands documented for this repository; do not apply production yet.
 
-- [ ] **Step 7: Run focused application GREEN tests**
+- [x] **Step 7: Run focused application GREEN tests**
 
 Run the Step 3 command. Expected: all listed files pass, historical source fixtures still parse, and Manual Action/repository contracts are strict.
 
-- [ ] **Step 8: Commit Task 2**
+- [x] **Step 8: Commit Task 2**
 
 ```powershell
 git add -- supabase/migrations/20260717102000_add_manual_progress_invoice_series.sql lib/progress-invoices/validators.ts lib/progress-invoices/repository.ts lib/progress-invoices/series-service.ts lib/actions/progress-invoice-series.ts lib/supabase/types.ts components/progress-invoices/progress-invoice-dashboard.tsx tests/progress-invoice-validators.test.ts tests/progress-invoice-actions.test.ts tests/progress-invoice-actions-supabase.test.ts tests/progress-invoice-series-service.test.ts tests/progress-invoice-repository.test.ts tests/progress-invoice-dashboard-ui.test.tsx tests/progress-invoice-migration.test.ts tests/progress-invoice-series-migration.test.ts supabase/tests/progress_invoice_series_fix_test.sql supabase/tests/progress_invoice_core_test.sql supabase/tests/progress_invoices_test.sql supabase/tests/data_api_grants_test.sql
@@ -329,7 +329,7 @@ git commit -m "feat: add manual progress invoice series"
 - Produces: controlled `ManualProgressInvoiceForm` calling only `createManualProgressInvoiceSeries`.
 - Produces: `ProgressInvoiceCreateWorkspace` with mode union `'jobber' | 'manual'`, default `'jobber'`, and independent Jobber/Manual draft plus retry state preserved across mode switches.
 
-- [ ] **Step 1: Write RED UI tests**
+- [x] **Step 1: Write RED UI tests**
 
 Update the page-render test to assert:
 
@@ -359,7 +359,7 @@ Mount the workspace and prove:
 
 Keep existing Jobber candidate, relation-selection, async race, comparison-only, and save-time import tests.
 
-- [ ] **Step 2: Run the UI tests and verify RED**
+- [x] **Step 2: Run the UI tests and verify RED**
 
 ```powershell
 npx.cmd vitest run tests/progress-invoice-standalone-ui.test.tsx tests/progress-invoice-dashboard-ui.test.tsx --reporter=verbose
@@ -367,13 +367,13 @@ npx.cmd vitest run tests/progress-invoice-standalone-ui.test.tsx tests/progress-
 
 Expected: failures show the old PBC Quote card and missing Manual mode/form.
 
-- [ ] **Step 3: Extract shared controlled fields**
+- [x] **Step 3: Extract shared controlled fields**
 
 Move only the Recipient, Site, Base contract, Reference, and Default description markup into `progress-invoice-series-fields.tsx`. Add Invoice number base only when `showAcceptedNumberingBase` is true. Keep all labels, max lengths, required attributes, input modes, and Tax Invoice recipient/site copy. Jobber form passes `showAcceptedNumberingBase={false}`; Manual passes `true`.
 
 Do not move Jobber search, candidate, relation selection, comparison amounts, request-generation race guards, or Save correlation logic into the shared component.
 
-- [ ] **Step 4: Implement the Manual form and mode workspace**
+- [x] **Step 4: Implement the Manual form and mode workspace**
 
 The Manual form starts with empty local fields, default description `Progress painting works`, and no external fetch. It uses the same positive two-decimal validation as the Jobber form and keeps an unchanged `SaveAttempt` correlation key across transient errors.
 
@@ -385,7 +385,7 @@ Create a Progress Invoice series from an existing Jobber invoice or enter the se
 
 Remove `Icons.quote`, the PBC Quote section, and `/quotes` link. Keep the back link to `/progress-invoices`. Make the active form full-width at desktop and mobile; do not introduce a new visual design system.
 
-- [ ] **Step 5: Run UI GREEN and focused Jobber non-regression tests**
+- [x] **Step 5: Run UI GREEN and focused Jobber non-regression tests**
 
 ```powershell
 npx.cmd vitest run tests/progress-invoice-standalone-ui.test.tsx tests/progress-invoice-dashboard-ui.test.tsx tests/jobber-readonly-regression.test.ts tests/jobber-progress-invoice-routes.test.ts tests/jobber-progress-invoice-search-route.test.ts --reporter=verbose
@@ -393,7 +393,7 @@ npx.cmd vitest run tests/progress-invoice-standalone-ui.test.tsx tests/progress-
 
 Expected: all pass; Quote Jobber modules remain byte-for-byte outside the diff.
 
-- [ ] **Step 6: Commit Task 3**
+- [x] **Step 6: Commit Task 3**
 
 ```powershell
 git add -- components/progress-invoices/progress-invoice-series-fields.tsx components/progress-invoices/manual-progress-invoice-form.tsx components/progress-invoices/progress-invoice-create-workspace.tsx components/progress-invoices/standalone-progress-invoice-form.tsx 'app/(app)/progress-invoices/new/page.tsx' app/globals.css tests/progress-invoice-standalone-ui.test.tsx tests/progress-invoice-dashboard-ui.test.tsx
@@ -417,7 +417,7 @@ git commit -m "feat: add manual progress invoice workspace"
 - Consumes: Tasks 1-3 commits and migration `20260717102000`.
 - Produces: production Supabase schema parity, browser evidence for Invoice 2875 and Manual mode, clean verification evidence, and final documentation.
 
-- [ ] **Step 1: Run the complete local verification gate**
+- [x] **Step 1: Run the complete local verification gate**
 
 Run fresh commands and retain counts/exit codes:
 
@@ -430,7 +430,7 @@ npm.cmd run build
 
 Run the complete local pgTAP suite through the established Docker/Supabase test flow. Every command must exit zero. Do not treat a focused suite as proof of the full gate.
 
-- [ ] **Step 2: Perform an independent whole-branch review**
+- [x] **Step 2: Perform an independent whole-branch review**
 
 Generate a review package from `git merge-base main HEAD` through `HEAD`. The reviewer must verify spec compliance and code quality, with special attention to:
 
@@ -449,7 +449,7 @@ Generate a review package from `git merge-base main HEAD` through `HEAD`. The re
 
 Fix all Critical and Important findings with focused RED/GREEN tests, then re-review.
 
-- [ ] **Step 3: Apply the new migration through the connected Supabase DB API**
+- [x] **Step 3: Apply the new migration through the connected Supabase DB API**
 
 Use the connected project `ojcrfgguhbxhtlgdflzp`; do not use Supabase CLI. Before applying, query migration history and target constraints/index/function. Apply the exact repository migration through the migration API in one transaction. Then verify:
 
@@ -464,7 +464,7 @@ Use the connected project `ojcrfgguhbxhtlgdflzp`; do not use Supabase CLI. Befor
 
 Do not create a production Manual series during migration verification.
 
-- [ ] **Step 4: Browser QA the reported failure and both modes**
+- [x] **Step 4: Browser QA the reported failure and both modes**
 
 At `http://localhost:3000/progress-invoices/new`:
 
@@ -476,15 +476,17 @@ At `http://localhost:3000/progress-invoices/new`:
 6. verify required fields, Invoice number base, decimal input, responsive layout, keyboard mode selection, visible focus, and no console errors;
 7. do not submit Invoice 2875 or create a disposable production Manual series.
 
-- [ ] **Step 5: Clean temporary live artifacts safely**
+Evidence note (2026-07-17): the browser-client runtime selected its available Chrome binding because the in-app binding was unavailable. Live QA passed Invoice 2875 preview, both modes, validation, keyboard/focus, 375 px overflow, and zero console warning/error checks without saving. The browser's read-only evaluation surface did not expose Resource Timing, so the existing component regression proving zero `fetch` calls on Manual switch supplies the direct request-isolation assertion.
+
+- [x] **Step 5: Clean temporary live artifacts safely**
 
 Remove the untracked live test. Before removing `.codex/tmp/progress-sample-inspect`, resolve every junction/symlink target and prove the resolved delete root remains inside `.codex/tmp/progress-sample-inspect`; remove the junction itself, never its external target. Re-run `git status --short` and confirm no secret, token, customer, or payment artifact is staged/untracked.
 
-- [ ] **Step 6: Update documentation and run the final verification**
+- [x] **Step 6: Update documentation and run the final verification**
 
 Record the new creation rule, migration/API application, exact test counts, and remaining claim/document scope in `PROGRESS.md`. Add one-line superseding-amendment links to the two earlier specs without rewriting their history. Re-run typecheck, lint, full Vitest, build, and `git diff --check` after documentation edits.
 
-- [ ] **Step 7: Commit Task 4**
+- [x] **Step 7: Commit Task 4**
 
 ```powershell
 git add -- PROGRESS.md docs/superpowers/specs/2026-07-14-progress-invoices-design.md docs/superpowers/specs/2026-07-17-progress-invoice-standalone-import-design.md docs/superpowers/plans/2026-07-17-progress-invoice-manual-creation-and-preview-date.md

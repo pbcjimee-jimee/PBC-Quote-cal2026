@@ -9,6 +9,8 @@
 
 > **2026-07-17 Standalone import amendment:** Standalone creation now uses a Jobber invoice-number search followed by one atomic Save-time import of the invoice, client/site observation, and current payment records. After creation, the series is managed from PBC data and no Refresh/Sync UI is exposed. The approved amendment is specified in `docs/superpowers/specs/2026-07-17-progress-invoice-standalone-import-design.md` and takes precedence over this document's v1 manual-refresh UI language for the Standalone flow.
 
+> **2026-07-17 creation amendment:** New series creation is limited to Jobber Invoice import or local Manual creation; `docs/superpowers/specs/2026-07-17-progress-invoice-manual-creation-and-preview-date-design.md` supersedes this document's PBC Quote creation language.
+
 Add a top-level Progress Invoices module to the existing Next.js and Supabase application.
 
 A Progress Invoice Series represents one construction contract or job. Each series:
