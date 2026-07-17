@@ -3,13 +3,17 @@ import { DEFAULT_PRICING_SETTINGS } from '@/lib/calculator'
 
 const mocks = vi.hoisted(() => ({
   createClient: vi.fn(),
+  createServiceClient: vi.fn(),
   isDevNoAuthMode: vi.fn(),
   requireAllowedUser: vi.fn(),
   revalidatePath: vi.fn(),
+  revalidateTag: vi.fn(),
+  updateTag: vi.fn(),
 }))
 
 vi.mock('@/lib/supabase/server', () => ({
   createClient: mocks.createClient,
+  createServiceClient: mocks.createServiceClient,
 }))
 
 vi.mock('@/lib/actions/types', async () => {
@@ -26,6 +30,9 @@ vi.mock('@/lib/security/require-allowed-user', () => ({
 
 vi.mock('next/cache', () => ({
   revalidatePath: mocks.revalidatePath,
+  revalidateTag: mocks.revalidateTag,
+  updateTag: mocks.updateTag,
+  unstable_cache: (fn: (...args: unknown[]) => unknown) => fn,
 }))
 
 import { getPricingSettings, updatePricingSettings } from '@/lib/actions/settings'
@@ -66,10 +73,27 @@ describe('settings actions against Supabase', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mocks.isDevNoAuthMode.mockReturnValue(false)
+    // Force the uncached cookie-client fallback so read assertions target createClient.
+    mocks.createServiceClient.mockRejectedValue(
+      new Error('Supabase service configuration is missing. Set NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY.')
+    )
     mocks.requireAllowedUser.mockResolvedValue({
       ok: true,
       user: { id: 'user-1', email: 'owner@example.com' },
     })
+  })
+
+  it('serves pricing settings through the cached service-role read when the service key exists', async () => {
+    const builder = createSettingsSelectBuilder({ data: settingsRow, error: null })
+    mocks.createServiceClient.mockResolvedValueOnce({
+      from: vi.fn(() => builder),
+    })
+
+    const result = await getPricingSettings()
+
+    expect(result).toEqual({ ok: true, data: DEFAULT_PRICING_SETTINGS })
+    expect(mocks.createClient).not.toHaveBeenCalled()
+    expect(builder.eq).toHaveBeenCalledWith('id', 1)
   })
 
   it('reads pricing settings from Supabase', async () => {
@@ -128,5 +152,6 @@ describe('settings actions against Supabase', () => {
     expect(builder.update).toHaveBeenCalledWith(expect.objectContaining({ updated_by: 'user-1' }))
     expect(mocks.revalidatePath).toHaveBeenCalledWith('/settings')
     expect(mocks.revalidatePath).toHaveBeenCalledWith('/quotes/new')
+    expect(mocks.updateTag).toHaveBeenCalledWith('pricing-settings')
   })
 })

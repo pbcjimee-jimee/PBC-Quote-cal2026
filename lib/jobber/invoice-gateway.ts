@@ -39,6 +39,7 @@ import type {
 } from './invoice-types'
 
 const PAGE_SIZE = 50
+const PAYMENT_FETCH_CONCURRENCY = 6
 const MAX_SEARCH_TERM_LENGTH = 100
 const KNOWN_PAYMENT_STATUSES = new Set([
   'IN_DISPUTE', 'PENDING', 'REFUNDED', 'PARTIALLY_REFUNDED', 'FAILED', 'DISPUTED', 'SUCCEEDED',
@@ -143,21 +144,23 @@ export async function fetchJobberInvoiceObservation(input: {
     const invoice = await fetchJobberInvoiceDetail(invoiceId, options)
     if (invoice === null) throw new Error('Jobber invoice was not found')
 
-    const jobs = await fetchAllJobberPages(async (after) => {
-      const page = await fetchJobberInvoiceJobsPage(invoiceId, { first: PAGE_SIZE, after }, options)
-      if (page === null) throw new Error('Jobber invoice jobs could not be read completely')
-      return page
-    })
-    const properties = await fetchAllJobberPages(async (after) => {
-      const page = await fetchJobberInvoicePropertiesPage(invoiceId, { first: PAGE_SIZE, after }, options)
-      if (page === null) throw new Error('Jobber invoice properties could not be read completely')
-      return page
-    })
-    const paymentRows = await fetchAllJobberPages(async (after) => {
-      const page = await fetchJobberInvoicePaymentsPage(invoiceId, { first: PAGE_SIZE, after }, options)
-      if (page === null) throw new Error('Jobber invoice payments could not be read completely')
-      return page
-    })
+    const [jobs, properties, paymentRows] = await Promise.all([
+      fetchAllJobberPages(async (after) => {
+        const page = await fetchJobberInvoiceJobsPage(invoiceId, { first: PAGE_SIZE, after }, options)
+        if (page === null) throw new Error('Jobber invoice jobs could not be read completely')
+        return page
+      }),
+      fetchAllJobberPages(async (after) => {
+        const page = await fetchJobberInvoicePropertiesPage(invoiceId, { first: PAGE_SIZE, after }, options)
+        if (page === null) throw new Error('Jobber invoice properties could not be read completely')
+        return page
+      }),
+      fetchAllJobberPages(async (after) => {
+        const page = await fetchJobberInvoicePaymentsPage(invoiceId, { first: PAGE_SIZE, after }, options)
+        if (page === null) throw new Error('Jobber invoice payments could not be read completely')
+        return page
+      }),
+    ])
 
     const warnings: JobberNormalizationWarning[] = []
     const selectedJobberJobId = selectCandidate(
@@ -308,16 +311,10 @@ async function normalizePayments(
   options: JobberInvoiceClientOptions,
   warnings: JobberNormalizationWarning[],
 ): Promise<readonly NormalizedJobberPayment[]> {
-  const evidence = new Map<string, PaymentEvidence>()
-  for (const row of rows) {
-    const existing = evidence.get(row.id)
-    evidence.set(row.id, {
-      ...existing,
-      legacy: row,
-      conflict: (existing?.conflict ?? false)
-        || (existing?.refund !== undefined && !sameLegacyRefund(row, existing.refund)),
-    })
-    const refunds = await fetchAllJobberPages(async (after) => {
+  // Phase 1: fetch each payment's refunds in parallel across payments. Refund pages for a
+  // single payment stay sequential (cursor-dependent), but no payment depends on another.
+  const refundsByRow = await mapWithConcurrency(rows, PAYMENT_FETCH_CONCURRENCY, (row) => (
+    fetchAllJobberPages(async (after) => {
       const page = await fetchJobberPaymentRefundsPage(row.id, { first: PAGE_SIZE, after }, options)
       if (page === null) {
         if (after !== null) throw new Error('Jobber payment refunds could not be read completely')
@@ -325,7 +322,20 @@ async function normalizePayments(
       }
       return page
     })
-    for (const refund of refunds) {
+  ))
+
+  // Phase 2: merge evidence in original payment order (conflict detection is order-sensitive).
+  const evidence = new Map<string, PaymentEvidence>()
+  for (let index = 0; index < rows.length; index += 1) {
+    const row = rows[index]!
+    const existingLegacy = evidence.get(row.id)
+    evidence.set(row.id, {
+      ...existingLegacy,
+      legacy: row,
+      conflict: (existingLegacy?.conflict ?? false)
+        || (existingLegacy?.refund !== undefined && !sameLegacyRefund(row, existingLegacy.refund)),
+    })
+    for (const refund of refundsByRow[index]!) {
       const existing = evidence.get(refund.id)
       const conflictsWithExisting = existing?.refund
         ? !sameRefund(existing.refund, refund)
@@ -340,14 +350,44 @@ async function normalizePayments(
     }
   }
 
-  for (const [id, item] of evidence) {
-    const concrete = await fetchJobberPaymentDetail(id, options)
+  // Fetch every payment detail in parallel; each detail only affects its own evidence entry.
+  const evidenceEntries = [...evidence.entries()]
+  const concretes = await mapWithConcurrency(
+    evidenceEntries,
+    PAYMENT_FETCH_CONCURRENCY,
+    ([id]) => fetchJobberPaymentDetail(id, options),
+  )
+  for (let index = 0; index < evidenceEntries.length; index += 1) {
+    const item = evidenceEntries[index]![1]
+    const concrete = concretes[index]!
     if (concrete === null) throw new Error('Jobber payment detail was not found')
     item.concrete = concrete
     item.conflict = item.conflict || conflictsWithConcrete(item, concrete)
   }
 
-  return Object.freeze([...evidence.entries()].map(([id, item]) => normalizePayment(id, item, warnings)))
+  return Object.freeze(evidenceEntries.map(([id, item]) => normalizePayment(id, item, warnings)))
+}
+
+// Runs mapper over items with at most `limit` in flight. Results preserve input order.
+// Fail-fast: the first rejection propagates (matching serial Promise.all semantics).
+async function mapWithConcurrency<T, R>(
+  items: readonly T[],
+  limit: number,
+  mapper: (item: T, index: number) => Promise<R>,
+): Promise<R[]> {
+  const results = new Array<R>(items.length)
+  let nextIndex = 0
+  const worker = async (): Promise<void> => {
+    for (;;) {
+      const index = nextIndex
+      nextIndex += 1
+      if (index >= items.length) return
+      results[index] = await mapper(items[index]!, index)
+    }
+  }
+  const workerCount = Math.max(1, Math.min(limit, items.length))
+  await Promise.all(Array.from({ length: workerCount }, worker))
+  return results
 }
 
 function normalizePayment(

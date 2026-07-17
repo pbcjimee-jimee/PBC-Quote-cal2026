@@ -61,6 +61,10 @@ vi.mock('@/lib/security/require-allowed-user', () => ({
 
 vi.mock('next/cache', () => ({
   revalidatePath: mocks.revalidatePath,
+  revalidateTag: vi.fn(),
+  updateTag: vi.fn(),
+  // Pass-through so cached lookups run uncached and per-test call assertions hold.
+  unstable_cache: <T,>(fn: T) => fn,
 }))
 
 vi.mock('@/lib/jobber/config', () => ({
@@ -318,6 +322,8 @@ function createSelectSingleBuilder(response: unknown) {
   const builder = {
     select: vi.fn(() => builder),
     eq: vi.fn(() => builder),
+    order: vi.fn(() => builder),
+    limit: vi.fn(() => builder),
     single: vi.fn(async () => response),
   }
   return builder

@@ -2,13 +2,17 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({
   createClient: vi.fn(),
+  createServiceClient: vi.fn(),
   isDevNoAuthMode: vi.fn(),
   requireAllowedUser: vi.fn(),
   revalidatePath: vi.fn(),
+  revalidateTag: vi.fn(),
+  updateTag: vi.fn(),
 }))
 
 vi.mock('@/lib/supabase/server', () => ({
   createClient: mocks.createClient,
+  createServiceClient: mocks.createServiceClient,
 }))
 
 vi.mock('@/lib/actions/types', async () => {
@@ -25,6 +29,9 @@ vi.mock('@/lib/security/require-allowed-user', () => ({
 
 vi.mock('next/cache', () => ({
   revalidatePath: mocks.revalidatePath,
+  revalidateTag: mocks.revalidateTag,
+  updateTag: mocks.updateTag,
+  unstable_cache: (fn: (...args: unknown[]) => unknown) => fn,
 }))
 
 import { createArea, deleteArea, listAreas, updateArea } from '@/lib/actions/areas'
@@ -72,10 +79,30 @@ describe('area actions against Supabase', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mocks.isDevNoAuthMode.mockReturnValue(false)
+    // Force the uncached cookie-client fallback so read assertions target createClient.
+    mocks.createServiceClient.mockRejectedValue(
+      new Error('Supabase service configuration is missing. Set NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY.')
+    )
     mocks.requireAllowedUser.mockResolvedValue({
       ok: true,
       user: { id: 'user-1', email: 'owner@example.com' },
     })
+  })
+
+  it('serves areas through the cached service-role read when the service key exists', async () => {
+    const builder = createAreasListBuilder({ data: [areaRow], error: null })
+    mocks.createServiceClient.mockResolvedValueOnce({
+      from: vi.fn(() => builder),
+    })
+
+    const result = await listAreas()
+
+    expect(result).toEqual({
+      ok: true,
+      data: [expect.objectContaining({ id: 'area-1', scope: 'exterior', name: 'Fascia' })],
+    })
+    expect(mocks.createClient).not.toHaveBeenCalled()
+    expect(builder.order).toHaveBeenCalledTimes(3)
   })
 
   it('lists active areas from Supabase in dropdown order', async () => {

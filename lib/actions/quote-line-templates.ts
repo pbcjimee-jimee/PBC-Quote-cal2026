@@ -1,7 +1,7 @@
 'use server'
 
-import { revalidatePath } from 'next/cache'
-import { createClient } from '@/lib/supabase/server'
+import { revalidatePath, unstable_cache, updateTag } from 'next/cache'
+import { createClient, createServiceClient } from '@/lib/supabase/server'
 import type { Database } from '@/lib/supabase/types'
 import { requireAllowedUser } from '@/lib/security/require-allowed-user'
 import {
@@ -25,6 +25,8 @@ type TemplateRow = Database['public']['Tables']['quote_line_templates']['Row'] &
 type TemplateInsert = Database['public']['Tables']['quote_line_templates']['Insert']
 type TemplateItemRow = Database['public']['Tables']['quote_line_template_items']['Row']
 type TemplateItemInsert = Database['public']['Tables']['quote_line_template_items']['Insert']
+
+const QUOTE_LINE_TEMPLATES_TAG = 'quote-line-templates'
 
 const TEMPLATE_COLUMNS = [
   'id',
@@ -88,7 +90,38 @@ function itemToInsert(templateId: string, item: QuoteLineTemplateItemInput, inde
 function revalidateTemplateConsumers(): void {
   revalidatePath('/settings')
   revalidatePath('/quotes/new')
+  // updateTag hard-expires the cached entry immediately (revalidateTag with a
+  // profile only marks it stale and keeps serving the old value).
+  updateTag(QUOTE_LINE_TEMPLATES_TAG)
 }
+
+function isMissingServiceConfig(error: unknown): boolean {
+  return error instanceof Error && error.message.includes('service configuration is missing')
+}
+
+async function readTemplatesFrom(
+  supabase: Awaited<ReturnType<typeof createClient>> | Awaited<ReturnType<typeof createServiceClient>>
+) {
+  return supabase
+    .from('quote_line_templates')
+    .select(TEMPLATE_COLUMNS)
+    .eq('active', true)
+    .order('updated_at', { ascending: false })
+}
+
+// Cross-request cached read via the service-role client. Auth is verified by the
+// caller before this runs; errors throw so failures are never cached.
+const fetchCachedQuoteLineTemplates = unstable_cache(
+  async (): Promise<QuoteLineTemplateRecord[]> => {
+    const supabase = await createServiceClient()
+    const { data, error } = await readTemplatesFrom(supabase)
+
+    if (error) throw new Error(error.message)
+    return (data as unknown as TemplateRow[]).map(rowToTemplate)
+  },
+  ['quote-line-templates'],
+  { tags: [QUOTE_LINE_TEMPLATES_TAG], revalidate: 3600 }
+)
 
 async function insertTemplateItems(
   supabase: Awaited<ReturnType<typeof createClient>>,
@@ -204,15 +237,19 @@ export async function listQuoteLineTemplates(): Promise<ActionResult<QuoteLineTe
   const allowedUser = await requireAllowedUser()
   if (!allowedUser.ok) return allowedUser
 
-  const supabase = await createClient()
-  const { data, error } = await supabase
-    .from('quote_line_templates')
-    .select(TEMPLATE_COLUMNS)
-    .eq('active', true)
-    .order('updated_at', { ascending: false })
+  try {
+    return { ok: true, data: await fetchCachedQuoteLineTemplates() }
+  } catch (error) {
+    if (!isMissingServiceConfig(error)) {
+      return { ok: false, error: error instanceof Error ? error.message : 'Unknown error' }
+    }
+    // Missing service-role key (local dev): fall back to the uncached cookie client.
+    const supabase = await createClient()
+    const { data, error: readError } = await readTemplatesFrom(supabase)
 
-  if (error) return { ok: false, error: error.message }
-  return { ok: true, data: (data as unknown as TemplateRow[]).map(rowToTemplate) }
+    if (readError) return { ok: false, error: readError.message }
+    return { ok: true, data: (data as unknown as TemplateRow[]).map(rowToTemplate) }
+  }
 }
 
 export async function deleteQuoteLineTemplate(input: unknown): Promise<ActionResult<QuoteLineTemplateRecord>> {

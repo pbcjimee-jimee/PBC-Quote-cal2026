@@ -1,12 +1,14 @@
 'use server'
 
-import { revalidatePath } from 'next/cache'
-import { createClient } from '@/lib/supabase/server'
+import { revalidatePath, unstable_cache, updateTag } from 'next/cache'
+import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { requireAllowedUser } from '@/lib/security/require-allowed-user'
 import { pricingSettingsSchema, type PricingSettingsInput } from '@/lib/validators'
 import type { PricingSettings } from '@/lib/calculator'
 import type { ActionResult } from './types'
 import { isDevNoAuthMode } from './types'
+
+const PRICING_SETTINGS_TAG = 'pricing-settings'
 
 function rowToSettings(row: {
   f1_labour_rate: string
@@ -53,7 +55,29 @@ function settingsToRow(settings: PricingSettingsInput) {
 function revalidateSettingsConsumers(): void {
   revalidatePath('/settings')
   revalidatePath('/quotes/new')
+  // updateTag, not revalidateTag(tag, profile): profiles keep serving the stale
+  // entry (expire is 1 year for 'max'); updateTag hard-expires it immediately
+  // with read-your-own-writes, and every caller here is a Server Action.
+  updateTag(PRICING_SETTINGS_TAG)
 }
+
+// Cross-request cached read via the service-role client. Auth is verified by the
+// caller before this runs; errors throw so failures are never cached.
+const fetchCachedPricingSettings = unstable_cache(
+  async (): Promise<PricingSettings> => {
+    const supabase = await createServiceClient()
+    const { data, error } = await supabase
+      .from('pricing_settings')
+      .select('*')
+      .eq('id', 1)
+      .single()
+
+    if (error) throw new Error(error.message)
+    return rowToSettings(data)
+  },
+  ['pricing-settings'],
+  { tags: [PRICING_SETTINGS_TAG], revalidate: 3600 }
+)
 
 export async function getPricingSettings(): Promise<ActionResult<PricingSettings>> {
   if (isDevNoAuthMode()) {
@@ -64,15 +88,23 @@ export async function getPricingSettings(): Promise<ActionResult<PricingSettings
   const allowedUser = await requireAllowedUser()
   if (!allowedUser.ok) return allowedUser
 
-  const supabase = await createClient()
-  const { data, error } = await supabase
-    .from('pricing_settings')
-    .select('*')
-    .eq('id', 1)
-    .single()
+  try {
+    return { ok: true, data: await fetchCachedPricingSettings() }
+  } catch (error) {
+    // Missing service-role key (local dev): fall back to the uncached cookie client.
+    if (error instanceof Error && error.message.includes('service configuration is missing')) {
+      const supabase = await createClient()
+      const { data, error: readError } = await supabase
+        .from('pricing_settings')
+        .select('*')
+        .eq('id', 1)
+        .single()
 
-  if (error) return { ok: false, error: error.message }
-  return { ok: true, data: rowToSettings(data) }
+      if (readError) return { ok: false, error: readError.message }
+      return { ok: true, data: rowToSettings(data) }
+    }
+    return { ok: false, error: error instanceof Error ? error.message : 'Unknown error' }
+  }
 }
 
 export async function updatePricingSettings(input: unknown): Promise<ActionResult<PricingSettings>> {

@@ -2,13 +2,17 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({
   createClient: vi.fn(),
+  createServiceClient: vi.fn(),
   isDevNoAuthMode: vi.fn(),
   requireAllowedUser: vi.fn(),
   revalidatePath: vi.fn(),
+  revalidateTag: vi.fn(),
+  updateTag: vi.fn(),
 }))
 
 vi.mock('@/lib/supabase/server', () => ({
   createClient: mocks.createClient,
+  createServiceClient: mocks.createServiceClient,
 }))
 
 vi.mock('@/lib/actions/types', async () => {
@@ -25,6 +29,9 @@ vi.mock('@/lib/security/require-allowed-user', () => ({
 
 vi.mock('next/cache', () => ({
   revalidatePath: mocks.revalidatePath,
+  revalidateTag: mocks.revalidateTag,
+  updateTag: mocks.updateTag,
+  unstable_cache: (fn: (...args: unknown[]) => unknown) => fn,
 }))
 
 import {
@@ -94,6 +101,10 @@ describe('quote line template actions against Supabase', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mocks.isDevNoAuthMode.mockReturnValue(false)
+    // Force the uncached cookie-client fallback so read assertions target createClient.
+    mocks.createServiceClient.mockRejectedValue(
+      new Error('Supabase service configuration is missing. Set NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY.')
+    )
     mocks.requireAllowedUser.mockResolvedValue({
       ok: true,
       user: { id: 'user-1', email: 'owner@example.com' },
@@ -136,6 +147,17 @@ describe('quote line template actions against Supabase', () => {
     ])
     expect(mocks.revalidatePath).toHaveBeenCalledWith('/settings')
     expect(mocks.revalidatePath).toHaveBeenCalledWith('/quotes/new')
+  })
+
+  it('serves templates through the cached service-role read when the service key exists', async () => {
+    const listBuilder = createListBuilder({ data: [templateRow], error: null })
+    mocks.createServiceClient.mockResolvedValueOnce({ from: vi.fn(() => listBuilder) })
+
+    const result = await listQuoteLineTemplates()
+
+    expect(result.ok).toBe(true)
+    expect(mocks.createClient).not.toHaveBeenCalled()
+    expect(listBuilder.eq).toHaveBeenCalledWith('active', true)
   })
 
   it('lists active templates with ordered line items', async () => {

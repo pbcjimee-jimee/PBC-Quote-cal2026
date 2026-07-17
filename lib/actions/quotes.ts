@@ -1980,6 +1980,10 @@ export async function refreshJobberQuoteSnapshot(
   }
 }
 
+// Detail views only need recent price history; unbounded revision embeds grow
+// the payload and the co-author profile lookups with every save.
+const QUOTE_DETAIL_REVISION_LIMIT = 50
+
 export async function getQuote(id: string): Promise<ActionResult<QuoteRecord | null>> {
   if (isDevNoAuthMode()) {
     const { getDevQuote } = await import('@/lib/dev-data')
@@ -1994,6 +1998,8 @@ export async function getQuote(id: string): Promise<ActionResult<QuoteRecord | n
     .from('quotes')
     .select(QUOTE_DETAIL_SELECT)
     .eq('id', id)
+    .order('revision_number', { referencedTable: 'quote_price_revisions', ascending: false })
+    .limit(QUOTE_DETAIL_REVISION_LIMIT, { referencedTable: 'quote_price_revisions' })
     .single()
 
   let row = data as unknown as QuoteWithItemsRow | null
@@ -2009,6 +2015,8 @@ export async function getQuote(id: string): Promise<ActionResult<QuoteRecord | n
         .from('quotes')
         .select(QUOTE_DETAIL_WITHOUT_MEMOS_SELECT)
         .eq('id', id)
+        .order('revision_number', { referencedTable: 'quote_price_revisions', ascending: false })
+        .limit(QUOTE_DETAIL_REVISION_LIMIT, { referencedTable: 'quote_price_revisions' })
         .single()
 
       if (!fallbackError) {

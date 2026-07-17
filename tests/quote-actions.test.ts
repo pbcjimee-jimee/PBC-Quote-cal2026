@@ -6,6 +6,9 @@ import { resetDevData } from '@/lib/dev-data'
 
 vi.mock('next/cache', () => ({
   revalidatePath: vi.fn(),
+  revalidateTag: vi.fn(),
+  updateTag: vi.fn(),
+  unstable_cache: <T,>(fn: T) => fn,
 }))
 
 describe('quote actions', () => {

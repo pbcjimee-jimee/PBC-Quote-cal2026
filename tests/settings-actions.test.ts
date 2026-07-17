@@ -6,6 +6,9 @@ import { getPricingSettings, updatePricingSettings } from '@/lib/actions/setting
 
 vi.mock('next/cache', () => ({
   revalidatePath: vi.fn(),
+  revalidateTag: vi.fn(),
+  updateTag: vi.fn(),
+  unstable_cache: (fn: (...args: unknown[]) => unknown) => fn,
 }))
 
 describe('settings actions', () => {
