@@ -260,6 +260,7 @@ describe('ProgressInvoiceRepository', () => {
     ['PROGRESS_DOCUMENT_ERROR', 'P0001', 'DOCUMENT_ERROR'],
     ['PROGRESS_STORAGE_ERROR', 'P0001', 'STORAGE_ERROR'],
     ['IDEMPOTENCY_KEY_REUSED', 'P0001', 'VALIDATION'],
+    ['PROGRESS_UNIQUE_CONFLICT', 'P0001', 'VALIDATION'],
   ] as const)('maps %s to a safe domain result', async (message, code, expectedCode) => {
     const result = await new ProgressInvoiceRepository(
       clientReturning({ data: null, error: { message, code } })

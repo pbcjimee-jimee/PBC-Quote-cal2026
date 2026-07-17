@@ -897,6 +897,41 @@ describe('Manual source compatibility migration', () => {
     expect(manualSql).toMatch(/accepted_numbering_base[\s\S]*IS NOT NULL/i)
   })
 
+  it('keeps generated Claim Revision Row, Insert, and Update evidence fields nullable', () => {
+    const evidenceFields = [
+      'jobber_account_id',
+      'jobber_invoice_id',
+      'original_jobber_invoice_number',
+      'observed_jobber_invoice_number',
+    ]
+
+    for (const field of evidenceFields) {
+      expect(databaseTypes).toMatch(new RegExp(
+        `progress_claim_revisions:\\s*\\{[\\s\\S]*?Row:\\s*\\{[\\s\\S]*?${field}: string \\| null[\\s\\S]*?Insert:\\s*\\{`,
+      ))
+      expect(databaseTypes).toMatch(new RegExp(
+        `progress_claim_revisions:\\s*\\{[\\s\\S]*?Insert:\\s*\\{[\\s\\S]*?${field}\\?: string \\| null[\\s\\S]*?Update:\\s*\\{`,
+      ))
+      expect(databaseTypes).toMatch(new RegExp(
+        `progress_claim_revisions:\\s*\\{[\\s\\S]*?Update:\\s*\\{[\\s\\S]*?${field}\\?: string \\| null[\\s\\S]*?Relationships:`,
+      ))
+    }
+  })
+
+  it('requires a non-blank Manual base and null Jobber synchronization metadata', () => {
+    expect(manualSql).toMatch(/source_type\s*=\s*'manual'[\s\S]*NULLIF\s*\(\s*btrim\s*\(\s*accepted_numbering_base\s*\)\s*,\s*''\s*\)\s+IS\s+NOT\s+NULL/i)
+    for (const field of [
+      'last_jobber_sync_attempt_at',
+      'last_successful_jobber_sync_at',
+      'last_jobber_sync_error_code',
+    ]) {
+      expect(manualSql).toMatch(new RegExp(
+        `source_type\\s*=\\s*'manual'[\\s\\S]*${field}\\s+IS\\s+NULL`,
+        'i',
+      ))
+    }
+  })
+
   it('adds the Manual RPC to generated types and removes legacy Quote create/prefill functions', () => {
     expect(databaseTypes).toMatch(/create_manual_progress_invoice_series/)
     expect(databaseTypes).not.toMatch(/\bcreate_progress_invoice_series:\s*\{/)

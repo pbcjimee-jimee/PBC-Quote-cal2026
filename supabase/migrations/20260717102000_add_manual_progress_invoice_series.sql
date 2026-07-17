@@ -34,9 +34,12 @@ ALTER TABLE public.progress_invoice_series
         AND jobber_client_id IS NULL
         AND selected_jobber_property_id IS NULL
         AND original_jobber_invoice_number IS NULL
-        AND accepted_numbering_base IS NOT NULL
+        AND NULLIF(btrim(accepted_numbering_base), '') IS NOT NULL
         AND jobber_link_locked_at IS NULL
         AND current_jobber_snapshot_id IS NULL
+        AND last_jobber_sync_attempt_at IS NULL
+        AND last_successful_jobber_sync_at IS NULL
+        AND last_jobber_sync_error_code IS NULL
       )
       OR (
         source_type <> 'manual'

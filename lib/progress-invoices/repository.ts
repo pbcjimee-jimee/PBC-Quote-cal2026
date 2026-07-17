@@ -467,6 +467,7 @@ const DOMAIN_ERROR_CODES: Readonly<Record<string, { code: ActionErrorCode; error
   PROGRESS_DOCUMENT_ERROR: { code: 'DOCUMENT_ERROR', error: 'PROGRESS_DOCUMENT_ERROR' },
   PROGRESS_STORAGE_ERROR: { code: 'STORAGE_ERROR', error: 'PROGRESS_STORAGE_ERROR' },
   IDEMPOTENCY_KEY_REUSED: { code: 'VALIDATION', error: 'IDEMPOTENCY_KEY_REUSED' },
+  PROGRESS_UNIQUE_CONFLICT: { code: 'VALIDATION', error: 'PROGRESS_UNIQUE_CONFLICT' },
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

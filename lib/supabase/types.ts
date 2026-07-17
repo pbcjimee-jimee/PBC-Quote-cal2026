@@ -648,11 +648,11 @@ export interface Database {
           id: string
           input_mode: string
           issue_date: string
-          jobber_account_id: string
-          jobber_invoice_id: string
+          jobber_account_id: string | null
+          jobber_invoice_id: string | null
           notes: string
-          observed_jobber_invoice_number: string
-          original_jobber_invoice_number: string
+          observed_jobber_invoice_number: string | null
+          original_jobber_invoice_number: string | null
           predecessor_financial_manifest_hash: string | null
           previous_claims_ex_gst: number
           previous_claims_gst: number
@@ -720,11 +720,11 @@ export interface Database {
           id?: string
           input_mode: string
           issue_date: string
-          jobber_account_id: string
-          jobber_invoice_id: string
+          jobber_account_id?: string | null
+          jobber_invoice_id?: string | null
           notes?: string
-          observed_jobber_invoice_number: string
-          original_jobber_invoice_number: string
+          observed_jobber_invoice_number?: string | null
+          original_jobber_invoice_number?: string | null
           predecessor_financial_manifest_hash?: string | null
           previous_claims_ex_gst?: number
           previous_claims_gst?: number
@@ -792,11 +792,11 @@ export interface Database {
           id?: string
           input_mode?: string
           issue_date?: string
-          jobber_account_id?: string
-          jobber_invoice_id?: string
+          jobber_account_id?: string | null
+          jobber_invoice_id?: string | null
           notes?: string
-          observed_jobber_invoice_number?: string
-          original_jobber_invoice_number?: string
+          observed_jobber_invoice_number?: string | null
+          original_jobber_invoice_number?: string | null
           predecessor_financial_manifest_hash?: string | null
           previous_claims_ex_gst?: number
           previous_claims_gst?: number

@@ -1,7 +1,7 @@
 CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA extensions;
 CREATE EXTENSION IF NOT EXISTS dblink WITH SCHEMA extensions;
 
-SELECT plan(208);
+SELECT plan(212);
 
 DELETE FROM public.business_invoice_profiles;
 DELETE FROM auth.users
@@ -4300,6 +4300,74 @@ SELECT is(
   $sql$),
   '23514',
   'Manual rows reject Quote and Jobber identity values'
+);
+
+SELECT is(
+  pg_temp.capture_sqlstate($sql$
+    INSERT INTO public.progress_invoice_series (
+      source_type, accepted_numbering_base, base_contract_ex_gst,
+      recipient_name, recipient_address, site_name, site_address,
+      default_description, created_by, updated_by
+    ) VALUES (
+      'manual', '   ', 1000, 'Blank base', 'Blank base address',
+      'Blank base site', 'Blank base site address', 'Blank base work',
+      '00000000-0000-0000-0000-000000008001',
+      '00000000-0000-0000-0000-000000008001'
+    )
+  $sql$),
+  '23514',
+  'Manual rows reject an accepted numbering base that is blank after trimming'
+);
+
+SELECT is(
+  pg_temp.capture_sqlstate($sql$
+    INSERT INTO public.progress_invoice_series (
+      source_type, accepted_numbering_base, base_contract_ex_gst,
+      recipient_name, recipient_address, site_name, site_address,
+      default_description, last_jobber_sync_attempt_at, created_by, updated_by
+    ) VALUES (
+      'manual', 'MANUAL-SYNC-ATTEMPT', 1000, 'Sync attempt', 'Sync address',
+      'Sync site', 'Sync site address', 'Sync work', now(),
+      '00000000-0000-0000-0000-000000008001',
+      '00000000-0000-0000-0000-000000008001'
+    )
+  $sql$),
+  '23514',
+  'Manual rows reject a Jobber sync-attempt timestamp'
+);
+
+SELECT is(
+  pg_temp.capture_sqlstate($sql$
+    INSERT INTO public.progress_invoice_series (
+      source_type, accepted_numbering_base, base_contract_ex_gst,
+      recipient_name, recipient_address, site_name, site_address,
+      default_description, last_successful_jobber_sync_at, created_by, updated_by
+    ) VALUES (
+      'manual', 'MANUAL-SYNC-SUCCESS', 1000, 'Sync success', 'Sync address',
+      'Sync site', 'Sync site address', 'Sync work', now(),
+      '00000000-0000-0000-0000-000000008001',
+      '00000000-0000-0000-0000-000000008001'
+    )
+  $sql$),
+  '23514',
+  'Manual rows reject a successful Jobber sync timestamp'
+);
+
+SELECT is(
+  pg_temp.capture_sqlstate($sql$
+    INSERT INTO public.progress_invoice_series (
+      source_type, accepted_numbering_base, base_contract_ex_gst,
+      recipient_name, recipient_address, site_name, site_address,
+      default_description, last_jobber_sync_error_code, created_by, updated_by
+    ) VALUES (
+      'manual', 'MANUAL-SYNC-ERROR', 1000, 'Sync error', 'Sync address',
+      'Sync site', 'Sync site address', 'Sync work', 'JOBBER_NOT_FOUND',
+      '00000000-0000-0000-0000-000000008001',
+      '00000000-0000-0000-0000-000000008001'
+    )
+  $sql$),
+  '23514',
+  'Manual rows reject a Jobber sync error code'
 );
 
 SELECT is(
