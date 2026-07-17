@@ -46,6 +46,21 @@ vi.mock('@/lib/actions/quotes', () => ({
   updateQuote: vi.fn(),
 }))
 
+// The real module wraps these panels in next/dynamic; render them
+// synchronously here so markup assertions see the actual content.
+vi.mock('@/components/quote-form/lazy-panels', async () => {
+  const editor = await vi.importActual<typeof import('@/components/quote-form/jobber-product-service-editor')>(
+    '@/components/quote-form/jobber-product-service-editor'
+  )
+  const optionImport = await vi.importActual<typeof import('@/components/quote-form/jobber-option-import')>(
+    '@/components/quote-form/jobber-option-import'
+  )
+  return {
+    JobberProductServiceEditor: editor.JobberProductServiceEditor,
+    JobberOptionImport: optionImport.JobberOptionImport,
+  }
+})
+
 describe('quote form pricing UI', () => {
   const quoteRecord: QuoteRecord = {
     id: 'quote-id-1',

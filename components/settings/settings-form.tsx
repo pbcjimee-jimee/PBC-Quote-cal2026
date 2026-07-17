@@ -19,7 +19,7 @@ import {
 import { updatePricingSettings } from '@/lib/actions/settings'
 import type { ActionResult } from '@/lib/actions/types'
 import { Icons } from '@/components/ui/icons'
-import { JobberProductServiceEditor } from '@/components/quote-form/jobber-product-service-editor'
+import { JobberProductServiceEditor } from '@/components/quote-form/lazy-panels'
 import type { JobberQuoteLineItemDraft } from '@/components/quote-form/types'
 import type { AreaRecord, AreaScope } from '@/lib/areas/types'
 import { AREA_SCOPE_LABELS, AREA_SCOPES } from '@/lib/areas/constants'

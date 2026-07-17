@@ -22,8 +22,7 @@ import { QuoteOptionsPanel } from './quote-options-panel'
 import { OptionTotalsSummary } from './option-totals-summary'
 import { calculateMainQuoteTotals } from './quote-calculation-totals'
 import type { AreaCreateResult, AreaFormulaSelections, AreaScope, FormulaNumber, JobberQuoteLineItemDraft, MaterialItem, QuoteMemoItem, QuoteOptionItem } from './types'
-import { JobberProductServiceEditor } from './jobber-product-service-editor'
-import { JobberOptionImport } from './jobber-option-import'
+import { JobberOptionImport, JobberProductServiceEditor } from './lazy-panels'
 import {
   buildJobberOptionImportCandidates,
   convertJobberOptionCandidateToQuoteOption,
@@ -69,8 +68,16 @@ type JobberQuoteResponse =
 type JobberLookupType = 'quote' | 'job'
 type QuoteSaveAction = 'local' | 'sync'
 
-function getComparableDraftValue(draft: QuoteFormDraft): string {
-  return JSON.stringify({ ...draft, updatedAt: '' })
+// Shallow equivalence: scalars by value, collections by reference. Every
+// collection in the draft is replaced immutably on edit, so reference identity
+// is enough — and unlike JSON.stringify this costs nothing per keystroke.
+function isDraftEquivalent(a: QuoteFormDraft, b: QuoteFormDraft): boolean {
+  const keys = new Set([...Object.keys(a), ...Object.keys(b)]) as Set<keyof QuoteFormDraft>
+  for (const key of keys) {
+    if (key === 'updatedAt') continue
+    if (!Object.is(a[key], b[key])) return false
+  }
+  return true
 }
 
 export function shouldRunDraftGuard(isDirty: boolean, isNavigating: boolean): boolean {
@@ -388,14 +395,18 @@ export function QuoteForm({ settings, areas, productServices = [], quoteLineTemp
     workingDays,
   ])
 
-  const currentComparableDraft = useMemo(() => getComparableDraftValue(currentDraft), [currentDraft])
-  const [initialComparableDraft] = useState(currentComparableDraft)
+  const [initialDraftSnapshot] = useState(currentDraft)
   const isDirty = hasCheckedStoredDraft &&
-    currentComparableDraft !== initialComparableDraft &&
+    !isDraftEquivalent(currentDraft, initialDraftSnapshot) &&
     hasMeaningfulQuoteDraft(currentDraft)
 
   const writeDraftToStorage = useCallback(() => {
     if (typeof window === 'undefined') return
+    // A debounced write may fire after navigation started; it must not
+    // resurrect a draft the user discarded ("Leave without draft") or one
+    // cleared by a successful save. Intentional writes (persistDraft,
+    // beforeunload) all run before isNavigatingRef is set.
+    if (isNavigatingRef.current) return
     const draft = { ...currentDraft, updatedAt: new Date().toISOString() }
     window.localStorage.setItem(draftStorageKey, JSON.stringify(sanitizeQuoteFormDraftForStorage(draft)))
   }, [currentDraft, draftStorageKey])
@@ -441,7 +452,11 @@ export function QuoteForm({ settings, areas, productServices = [], quoteLineTemp
 
   useEffect(() => {
     if (!shouldRunDraftGuard(isDirty, isNavigatingRef.current)) return
-    writeDraftToStorage()
+    // Debounced: serializing and writing the full draft on every keystroke is
+    // the main typing cost on large quotes. beforeunload and the leave dialog
+    // both flush synchronously, so a short delay cannot lose data.
+    const timer = window.setTimeout(writeDraftToStorage, 400)
+    return () => window.clearTimeout(timer)
   }, [isDirty, writeDraftToStorage])
 
   useEffect(() => {
@@ -903,11 +918,13 @@ export function QuoteForm({ settings, areas, productServices = [], quoteLineTemp
             templates={quoteLineTemplates}
             onChange={changeJobberQuoteLines}
           />
-          <JobberOptionImport
-            candidates={jobberOptionCandidates}
-            existingOptions={options}
-            onImportCandidate={importJobberOptionCandidate}
-          />
+          {jobberOptionCandidates.some((candidate) => candidate.lines.length > 0) ? (
+            <JobberOptionImport
+              candidates={jobberOptionCandidates}
+              existingOptions={options}
+              onImportCandidate={importJobberOptionCandidate}
+            />
+          ) : null}
           <MaterialsPanel
             materials={materials}
             areas={quoteAreas}
