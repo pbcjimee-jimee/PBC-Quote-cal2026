@@ -115,7 +115,7 @@ export function AppHeader({ userProfile }: { userProfile: UserProfile }) {
         ].join(' ')}
       >
         <div className={isSidebarCollapsed ? 'flex flex-col items-center gap-3' : 'flex items-center justify-between gap-2'}>
-          <IntentLink href="/quotes" className={`pbc-brand min-w-0 ${isSidebarCollapsed ? '!px-0' : ''}`}>
+          <IntentLink href="/quotes" prefetchOnViewport className={`pbc-brand min-w-0 ${isSidebarCollapsed ? '!px-0' : ''}`}>
             <span className="pbc-brand__mark">P</span>
             <span className={isSidebarCollapsed ? 'sr-only' : 'pbc-brand__text min-w-0'}>
               <b>PBC Quote</b>
@@ -142,6 +142,7 @@ export function AppHeader({ userProfile }: { userProfile: UserProfile }) {
               <IntentLink
                 key={item.href}
                 href={item.href}
+                prefetchOnViewport
                 title={item.label}
                 className={`pbc-nav__item ${isActive ? 'is-active' : ''} ${isSidebarCollapsed ? 'justify-center' : ''}`}
               >
@@ -182,7 +183,7 @@ export function AppHeader({ userProfile }: { userProfile: UserProfile }) {
 
       <header className="pbc-mobile-header sticky top-0 z-30 border-b border-[var(--border)] bg-[rgba(246,249,255,0.82)] backdrop-blur lg:hidden">
         <div className="pbc-mobile-header__inner">
-          <IntentLink href="/quotes" className="pbc-mobile-header__brand">
+          <IntentLink href="/quotes" prefetchOnViewport className="pbc-mobile-header__brand">
             <span className="pbc-brand__mark !h-9 !w-9 !text-sm">P</span>
             <span className="text-sm font-extrabold text-[var(--foreground)]">PBC Quote</span>
           </IntentLink>
@@ -195,6 +196,7 @@ export function AppHeader({ userProfile }: { userProfile: UserProfile }) {
                 <IntentLink
                   key={item.href}
                   href={item.href}
+                  prefetchOnViewport
                   aria-current={isActive ? 'page' : undefined}
                   className={`pbc-mobile-nav__item ${isActive ? 'is-active' : ''}`}
                 >

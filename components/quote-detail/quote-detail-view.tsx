@@ -1,6 +1,6 @@
 import Decimal from 'decimal.js'
-import Link from 'next/link'
 import type { ReactNode } from 'react'
+import { IntentLink } from '@/components/navigation/intent-link'
 import type { QuoteRecord } from '@/lib/dev-data'
 import { JobberRefreshPanel } from '@/components/quote-detail/jobber-refresh-panel'
 import { formatJobberRefreshTime } from '@/components/quote-detail/jobber-refresh-time'
@@ -353,7 +353,7 @@ export function QuoteDetailView({ quote }: QuoteDetailViewProps) {
     <main>
       <header className="pbc-topbar">
         <div className="pbc-crumb">
-          <Link href="/quotes">Quotes</Link>
+          <IntentLink href="/quotes">Quotes</IntentLink>
           {Icons.arrowDown({ size: 14 })}
           <b className="truncate">{quote.customerName || 'Untitled Quote'}</b>
         </div>
@@ -365,14 +365,14 @@ export function QuoteDetailView({ quote }: QuoteDetailViewProps) {
       <div className="pbc-page">
         <div className="pbc-pagehead pbc-pagehead--detail">
           <div className="min-w-0">
-            <Link href="/quotes" className="pbc-back">{Icons.back({ size: 15 })} Back to Quotes</Link>
+            <IntentLink href="/quotes" className="pbc-back">{Icons.back({ size: 15 })} Back to Quotes</IntentLink>
             <h1>{quote.customerName || 'Untitled Quote'}</h1>
             <p className="pbc-detailaddr">{Icons.pin({ size: 15 })} {quote.customerAddress || 'No address'}</p>
           </div>
           <div className="pbc-detailtags">
-            <Link href={`/quotes/${quote.id}/edit`} className="pbc-btn pbc-btn--ghost">
+            <IntentLink href={`/quotes/${quote.id}/edit`} prefetchOnViewport className="pbc-btn pbc-btn--ghost">
               {Icons.edit({ size: 15 })} Edit
-            </Link>
+            </IntentLink>
             <QuoteDuplicateButton quoteId={quote.id} className="pbc-btn pbc-btn--ghost">
               {Icons.template({ size: 15 })} Duplicate
             </QuoteDuplicateButton>

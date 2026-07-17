@@ -1,4 +1,4 @@
-import Link from 'next/link'
+import { IntentLink } from '@/components/navigation/intent-link'
 import { SettingsForm } from '@/components/settings/settings-form'
 import { Icons } from '@/components/ui/icons'
 import { getPricingSettings } from '@/lib/actions/settings'
@@ -38,8 +38,8 @@ export default async function SettingsPage() {
       <header className="pbc-topbar">
         <div className="pbc-crumb"><span>Admin</span>{Icons.arrowDown({ size: 14 })}<b>Settings</b></div>
         <div className="pbc-topbar__right">
-          <Link href="/settings/inventory" className="pbc-btn pbc-btn--ghost">{Icons.layers({ size: 15 })} Inventory</Link>
-          <Link href="/quotes/new" className="pbc-btn pbc-btn--ghost">{Icons.back({ size: 15 })} Back to quote</Link>
+          <IntentLink href="/settings/inventory" prefetchOnViewport className="pbc-btn pbc-btn--ghost">{Icons.layers({ size: 15 })} Inventory</IntentLink>
+          <IntentLink href="/quotes/new" prefetchOnViewport className="pbc-btn pbc-btn--ghost">{Icons.back({ size: 15 })} Back to quote</IntentLink>
         </div>
       </header>
       <div className="pbc-page">

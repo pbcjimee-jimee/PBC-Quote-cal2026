@@ -1,4 +1,4 @@
-import Link from 'next/link'
+import { IntentLink } from '@/components/navigation/intent-link'
 import { OverviewQuoteRow } from '@/components/quote-list/quote-card'
 import { MonthFilterSelect, type MonthFilterOption } from '@/components/quote-list/month-filter-select'
 import { SearchInput } from '@/components/quote-list/search-input'
@@ -165,7 +165,7 @@ export default async function QuotesPage({ searchParams }: QuotesPageProps) {
       <header className="pbc-topbar">
         <div className="pbc-crumb"><span>Admin</span>{Icons.arrowDown({ size: 14 })}<b>Overview</b></div>
         <div className="pbc-topbar__right">
-          <Link href="/quotes/new" className="pbc-btn pbc-btn--primary">{Icons.plus({ size: 15 })} New Quote</Link>
+          <IntentLink href="/quotes/new" prefetchOnViewport className="pbc-btn pbc-btn--primary">{Icons.plus({ size: 15 })} New Quote</IntentLink>
         </div>
       </header>
 

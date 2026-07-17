@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 import { redirect } from 'next/navigation'
 import { duplicateQuote } from '@/lib/actions/quotes'
+import { DuplicateSubmitButton } from './duplicate-submit-button'
 
 interface QuoteDuplicateButtonProps {
   quoteId: string
@@ -19,9 +20,9 @@ export function QuoteDuplicateButton({ quoteId, children = 'Duplicate', classNam
 
   return (
     <form action={duplicateQuoteAction} className="inline-flex">
-      <button type="submit" className={className}>
+      <DuplicateSubmitButton className={className}>
         {children}
-      </button>
+      </DuplicateSubmitButton>
     </form>
   )
 }

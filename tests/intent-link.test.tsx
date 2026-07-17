@@ -64,6 +64,40 @@ describe('IntentLink', () => {
     }
   })
 
+  it('keeps viewport prefetch and skips intent prefetching when prefetchOnViewport is set', async () => {
+    navigationState.prefetch.mockReset()
+    navigationState.pending = false
+    const { cleanup } = installTestDom()
+    let root: Root | null = null
+
+    try {
+      const { createRoot } = await import('react-dom/client')
+      const container = document.createElement('div')
+      root = createRoot(container)
+
+      await act(async () => {
+        root!.render(createElement(IntentLink, { href: '/quotes', prefetchOnViewport: true }, 'Overview'))
+      })
+
+      const link = container.querySelectorAll('a')[0]
+      expect(link.getAttribute('data-next-prefetch')).toBe('undefined')
+      expect(link.getAttribute('data-intent-link')).toBe('true')
+
+      await act(async () => {
+        link.dispatchEvent(new MouseEvent('pointerover', { bubbles: true }))
+        link.dispatchEvent(new Event('focusin', { bubbles: true }))
+      })
+
+      expect(navigationState.prefetch).not.toHaveBeenCalled()
+    } finally {
+      try {
+        if (root) await act(async () => root?.unmount())
+      } finally {
+        cleanup()
+      }
+    }
+  })
+
   it('shows a fixed route progress status while navigation is pending', async () => {
     navigationState.pending = true
     const { cleanup } = installTestDom()

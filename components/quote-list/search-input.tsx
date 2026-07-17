@@ -13,7 +13,9 @@ export function SearchInput() {
   useEffect(() => {
     const timer = window.setTimeout(() => {
       const href = getNextQuotesSearchHref(value, currentSearch)
-      if (href) router.push(href)
+      // replace, not push: typing refines the current list and must not
+      // stack a history entry per debounce tick.
+      if (href) router.replace(href)
     }, 300)
 
     return () => window.clearTimeout(timer)

@@ -4,7 +4,15 @@ import Link, { useLinkStatus } from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useRef, type ComponentProps } from 'react'
 
-type IntentLinkProps = ComponentProps<typeof Link>
+type IntentLinkProps = Omit<ComponentProps<typeof Link>, 'prefetch'> & {
+  /**
+   * When true, uses next/link's default viewport prefetching instead of
+   * waiting for hover/focus intent. Use for always-visible navigation
+   * (sidebar, primary actions) where immediate clicks and touch taps would
+   * otherwise always miss the prefetch cache.
+   */
+  prefetchOnViewport?: boolean
+}
 
 function RoutePendingStatus() {
   const { pending } = useLinkStatus()
@@ -21,6 +29,7 @@ function RoutePendingStatus() {
 export function IntentLink({
   children,
   href,
+  prefetchOnViewport = false,
   onFocus,
   onPointerEnter,
   onTouchStart,
@@ -30,6 +39,7 @@ export function IntentLink({
   const hasPrefetched = useRef(false)
 
   function prefetchAfterIntent() {
+    if (prefetchOnViewport) return
     if (hasPrefetched.current || typeof href !== 'string') return
     hasPrefetched.current = true
     router.prefetch(href)
@@ -39,7 +49,7 @@ export function IntentLink({
     <Link
       {...props}
       href={href}
-      prefetch={false}
+      prefetch={prefetchOnViewport ? undefined : false}
       data-intent-link="true"
       onPointerEnter={(event) => {
         onPointerEnter?.(event)

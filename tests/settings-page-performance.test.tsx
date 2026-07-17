@@ -10,6 +10,10 @@ const mocks = vi.hoisted(() => ({
   listQuoteLineTemplates: vi.fn(),
 }))
 
+vi.mock('next/navigation', () => ({
+  useRouter: () => ({ prefetch: vi.fn() }),
+}))
+
 vi.mock('@/lib/actions/settings', async (importOriginal) => ({
   ...await importOriginal<typeof import('@/lib/actions/settings')>(),
   getPricingSettings: mocks.getPricingSettings,

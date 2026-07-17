@@ -81,6 +81,7 @@
 
 ## 🔲 남은 작업
 
+- **성능 Phase 2·3** (2026-07-17 감사 로드맵): 준정적 데이터 캐싱(`unstable_cache`+`cacheTag`), Jobber observation 조회 병렬화(2N+6 직렬 왕복 해소), `user_profiles` 미러/`created_by_name` 스냅샷, `quote_price_revisions` limit, dead code `lib/supabase/middleware.ts` 제거, quote-form 코드 스플리팅(next/dynamic)·타이핑 렉 제거(draft 직렬화 dirty 판정 교체), cacheComponents/PPR(최후순위). 신규 인덱스 마이그레이션 `20260717000000`의 원격 적용은 사용자 승인 필요.
 - **Progress Invoice 후속·운영 적용**: 원격 Supabase에는 `20260714225000`~`20260714231200` 마이그레이션이 아직 적용되지 않았다. DB CLI 인증을 복구한 뒤 dry-run과 운영 적용이 필요하다. 시리즈 상세/실제 청구 작성·입금 ledger UI, XLSX/PDF Tax Invoice 생성·현재/전체 시리즈 다운로드는 후속 구현 범위다.
 - **감사 발견 이슈** (2026-07-06): 우선순위별로 `docs/BACKLOG.md`에 등록. 2026-07-04 hardening으로 마진 CHECK·서버 액션 allowlist 해결, 2026-07-07 quote save conflict hardening으로 견적 저장 트랜잭션·동시 편집 충돌·product 스냅샷 재고정·Jobber 부분 성공 line id 보존을 반영. 남은 항목은 `docs/BACKLOG.md`의 미체크 항목 기준으로 처리.
 - **Supabase 실제 데이터 백업**: 운영 결정 대기(`TODOS.md` #2). Pro/PITR 우선, cron export는 restore 검증 포함 시만.
@@ -101,6 +102,7 @@
 
 | 날짜 | 작업 | 담당 |
 |---|---|---|
+| 2026-07-17 | 성능 감사(6영역 병렬 분석 + 발견별 적대적 검증 + 빌드 실측, 39 에이전트) 후 Phase 1 체감 성능 개선 구현. `quotes/[id]`·`[id]/edit`·`new` 세그먼트별 loading.tsx 추가(같은 섹션 내 전환에서도 즉시 스켈레톤), 삭제를 `window.location` 풀 리로드에서 `router.replace`/`refresh` SPA 라우팅으로 교체, IntentLink에 `prefetchOnViewport` 모드를 추가해 상시 노출 사이드바·모바일 네비에만 viewport prefetch 복원(목록 행은 intent prefetch 유지 — 2026-07-14 fan-out 축소 결정 보존), 검색 debounce `push`→`replace`(히스토리 오염 제거), 상세/목록/Settings 보조 링크 IntentLink 통일(진행 표시), 복제 버튼 useFormStatus pending 표시, pg_trgm(quotes·products) + `progress_invoice_series(updated_at DESC, id DESC)` 예방 인덱스 마이그레이션 `20260717000000` 작성(**원격 적용은 사용자 승인 대기**). 검증: typecheck/lint/Vitest 84 files·800 tests/build 통과, 3관점 리뷰+적대적 검증 워크플로 확정 결함 0건. | Claude Fable 5 |
 | 2026-07-16 | Progress Invoice 기반을 로컬 `main`에 통합. 독립 대시보드/navigation, 진행률·금액 계산/검증, 시리즈·Variation/Credit 데이터/RPC/RLS, 기존 Quote 연동과 분리된 Jobber Invoice/Payment read-only 조회·연결·refresh를 반영. 리뷰에서 Jobber 오류 분류, 잠긴 연결 오류 매핑, 범위 밖 페이지 재조회 문제를 수정. Vitest 84 files/799 tests, coverage, pgTAP 5 files/308 tests, RLS 5 tests, typecheck/lint/build/audit 0 vulnerabilities 통과. 원격 Supabase migration과 청구·입금·문서 생성 UI는 후속. | Codex 5.6-Sol high |
 | 2026-07-16 | New Quote `Add Text` 제목의 Product & Service 추천 누락 회귀 수정. 제목 검색을 이름 기준으로 제한하고 서버의 6개 선제 제한과 클라이언트 6개 제한을 제거해 관련 항목을 최대 300개까지 스크롤 목록에 표시. Supabase·dev 검색 회귀 테스트 추가. 전체 verify 67 files/561 tests, coverage/build/audit 0 vulnerabilities 통과. | Codex 5.6-Sol high |
 | 2026-07-15 | Jobber 견적 fetch scope 회귀 수정. Jobber가 반환하는 `read_clients`·`read_quotes` 등 prefix형 read scope와 기존 승인된 `write_quotes` 최소 scope를 검증기가 정상 인식하도록 보완하고 실제 연결 scope 회귀 테스트를 추가. Jobber focused 14 files/122 tests, typecheck, 변경 파일 lint 통과. | Codex 5.6-Sol high |

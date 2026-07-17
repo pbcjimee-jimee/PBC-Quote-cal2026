@@ -1,5 +1,6 @@
 'use client'
 
+import { useRouter } from 'next/navigation'
 import { useState, useTransition } from 'react'
 import { deleteQuote } from '@/lib/actions/quotes'
 
@@ -9,6 +10,7 @@ interface QuoteDeleteButtonProps {
 }
 
 export function QuoteDeleteButton({ quoteId, redirectToQuotes = false }: QuoteDeleteButtonProps) {
+  const router = useRouter()
   const [isPending, startTransition] = useTransition()
   const [error, setError] = useState<string | null>(null)
   const [isConfirming, setIsConfirming] = useState(false)
@@ -33,11 +35,14 @@ export function QuoteDeleteButton({ quoteId, redirectToQuotes = false }: QuoteDe
         return
       }
 
+      // deleteQuote already revalidates /quotes; stay on the client router so the
+      // app shell, bundles and router cache survive the mutation.
       if (redirectToQuotes) {
-        window.location.href = '/quotes'
+        router.replace('/quotes')
         return
       }
-      window.location.reload()
+      setIsConfirming(false)
+      router.refresh()
     })
   }
 
