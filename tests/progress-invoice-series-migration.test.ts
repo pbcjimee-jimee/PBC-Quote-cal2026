@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { describe, expect, it } from 'vitest'
@@ -7,6 +7,13 @@ const migration = readFileSync(join(
   process.cwd(),
   'supabase/migrations/20260714231100_add_progress_invoice_series_rpcs.sql',
 ), 'utf8')
+const manualMigrationPath = join(
+  process.cwd(),
+  'supabase/migrations/20260717102000_add_manual_progress_invoice_series.sql',
+)
+const manualMigration = existsSync(manualMigrationPath)
+  ? readFileSync(manualMigrationPath, 'utf8')
+  : ''
 
 function functionBody(name: string): string {
   const match = migration.match(new RegExp(
@@ -86,5 +93,60 @@ describe('Task 5 series lifecycle migration hardening', () => {
     expect(validation).not.toMatch(/THEN[ \t]+RAISE EXCEPTION[^;]+;[ \t]+END IF;/i)
     expect(create).not.toMatch(/LANGUAGE[ \t]+plpgsql[ \t]+SECURITY DEFINER/i)
     expect(create).not.toMatch(/THEN[ \t]+RAISE EXCEPTION[^;]+;[ \t]+END IF;/i)
+  })
+})
+
+describe('Manual Progress Invoice series forward migration', () => {
+  it('adds Manual provenance and normalized active numbering uniqueness', () => {
+    expect(manualMigration).toMatch(
+      /ADD CONSTRAINT progress_invoice_series_source_type_check\s+CHECK \(source_type IN \('pbc_quote', 'jobber_job', 'jobber_invoice', 'manual'\)\)/i,
+    )
+    expect(manualMigration).toMatch(
+      /CREATE UNIQUE INDEX uq_progress_invoice_series_numbering_base\s+ON public\.progress_invoice_series \(lower\(btrim\(accepted_numbering_base\)\)\)\s+WHERE accepted_numbering_base IS NOT NULL AND status <> 'void'/i,
+    )
+    expect(manualMigration).toMatch(/duplicate[\s\S]*accepted_numbering_base[\s\S]*RAISE EXCEPTION/i)
+  })
+
+  it('defines a hardened authenticated-only idempotent Manual command', () => {
+    expect(manualMigration).toMatch(
+      /CREATE OR REPLACE FUNCTION public\.create_manual_progress_invoice_series\(payload JSONB\)\s+RETURNS TABLE \(id UUID, version INT\)\s+LANGUAGE plpgsql\s+SECURITY DEFINER\s+SET search_path = ''/i,
+    )
+    expect(manualMigration).toMatch(/progress_validate_manual_series_create_payload\(payload\)/i)
+    expect(manualMigration).toMatch(/pg_advisory_xact_lock[\s\S]*create_manual_progress_invoice_series/i)
+    expect(manualMigration).toMatch(/progress_recalculate_series_read_model\(created_series\.id\)/i)
+    expect(manualMigration).toMatch(/jsonb_build_object\('source_type', created_series\.source_type\)/i)
+    expect(manualMigration).toMatch(/REVOKE ALL ON FUNCTION public\.create_manual_progress_invoice_series\(JSONB\)\s+FROM PUBLIC, anon, authenticated, service_role/i)
+    expect(manualMigration).toMatch(/GRANT EXECUTE ON FUNCTION public\.create_manual_progress_invoice_series\(JSONB\)\s+TO authenticated/i)
+    expect(manualMigration).not.toMatch(/GRANT EXECUTE[^;]*create_manual_progress_invoice_series[^;]*(?:PUBLIC|anon|service_role)/i)
+  })
+
+  it('revokes every application role from the legacy Quote create and prefill RPCs', () => {
+    for (const name of ['create_progress_invoice_series', 'get_progress_invoice_quote_prefill']) {
+      expect(manualMigration).toMatch(new RegExp(
+        `REVOKE ALL ON FUNCTION public\\.${name}\\(JSONB\\)\\s+FROM PUBLIC, anon, authenticated, service_role`,
+        'i',
+      ))
+      expect(manualMigration).not.toMatch(new RegExp(
+        `GRANT EXECUTE[^;]*${name}[^;]*(?:PUBLIC|anon|authenticated|service_role)`,
+        'i',
+      ))
+    }
+  })
+
+  it('makes claim evidence source-aware without exposing the trigger helper', () => {
+    for (const column of [
+      'jobber_account_id',
+      'jobber_invoice_id',
+      'original_jobber_invoice_number',
+      'observed_jobber_invoice_number',
+    ]) {
+      expect(manualMigration).toMatch(new RegExp(
+        `ALTER COLUMN ${column} DROP NOT NULL`,
+        'i',
+      ))
+    }
+    expect(manualMigration).toMatch(/FROM public\.progress_claims[\s\S]*JOIN public\.progress_invoice_series[\s\S]*claim\.series_id/i)
+    expect(manualMigration).toMatch(/SELECT series\.source_type[\s\S]*WHERE claim\.id = NEW\.claim_id/i)
+    expect(manualMigration).toMatch(/REVOKE ALL ON FUNCTION public\.[a-z0-9_]*claim[a-z0-9_]*evidence[a-z0-9_]*\(\)\s+FROM PUBLIC, anon, authenticated, service_role/i)
   })
 })

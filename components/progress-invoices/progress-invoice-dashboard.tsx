@@ -54,6 +54,7 @@ function titleCaseStatus(value: string): string {
 function sourceLabel(sourceType: ProgressInvoiceDashboardDto['items'][number]['sourceType']): string {
   if (sourceType === 'pbc_quote') return 'PBC Quote'
   if (sourceType === 'jobber_job') return 'Jobber Job'
+  if (sourceType === 'manual') return 'Manual'
   return 'Jobber Invoice'
 }
 
@@ -207,9 +208,11 @@ function SeriesCards({ data }: { data: ProgressInvoiceDashboardDto }) {
               <span className={`pbc-progress-badge pbc-progress-badge--${statusTone(item.paymentState)}`}>
                 {titleCaseStatus(item.paymentState)}
               </span>
-              <span className="pbc-progress-series__sync">
-                {formatJobberFreshness(item.lastSuccessfulJobberSyncAt, item.lastJobberSyncErrorCode)}
-              </span>
+              {item.sourceType === 'manual' ? null : (
+                <span className="pbc-progress-series__sync">
+                  {formatJobberFreshness(item.lastSuccessfulJobberSyncAt, item.lastJobberSyncErrorCode)}
+                </span>
+              )}
             </div>
             {item.quoteId ? (
               <IntentLink href={`/quotes/${item.quoteId}`} className="pbc-btn pbc-btn--ghost pbc-btn--sm">

@@ -1,7 +1,7 @@
 CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA extensions;
 CREATE EXTENSION IF NOT EXISTS dblink WITH SCHEMA extensions;
 
-SELECT plan(189);
+SELECT plan(208);
 
 DELETE FROM public.business_invoice_profiles;
 DELETE FROM auth.users
@@ -103,6 +103,34 @@ AS $$
     'external_status', 'SUCCEEDED',
     'external_updated_at', NULL,
     'treatment', 'active'
+  );
+$$;
+
+CREATE FUNCTION pg_temp.manual_series_payload(
+  requested_correlation_key UUID,
+  requested_numbering_base TEXT DEFAULT '2906',
+  requested_contract TEXT DEFAULT '17220.50'
+)
+RETURNS JSONB
+LANGUAGE sql
+IMMUTABLE
+AS $$
+  SELECT jsonb_build_object(
+    'source_type', 'manual',
+    'gst_rate', '0.10',
+    'accepted_numbering_base', requested_numbering_base,
+    'base_contract_ex_gst', requested_contract,
+    'recipient_name', 'Manual Builder',
+    'recipient_company', NULL,
+    'recipient_address', '1 Billing Street',
+    'recipient_email', NULL,
+    'recipient_phone', NULL,
+    'recipient_abn', NULL,
+    'site_name', 'Manual Site',
+    'site_address', '4 Site Street',
+    'default_description', 'Progress painting works',
+    'reference', NULL,
+    'correlation_key', requested_correlation_key
   );
 $$;
 
@@ -1267,8 +1295,9 @@ SELECT is(
 
 -- Task 5 assertion 02
 SELECT ok(
-  NOT has_function_privilege('anon', 'public.create_progress_invoice_series(jsonb)', 'EXECUTE'),
-  'anon cannot execute the create-series RPC'
+  NOT has_function_privilege('anon', 'public.create_progress_invoice_series(jsonb)', 'EXECUTE')
+    AND NOT has_function_privilege('authenticated', 'public.create_progress_invoice_series(jsonb)', 'EXECUTE'),
+  'anon and authenticated cannot execute the legacy create-series RPC'
 );
 
 -- Task 5 assertion 03
@@ -1277,7 +1306,7 @@ SELECT ok(
   'service_role is not an alternate series write surface'
 );
 
-SET ROLE authenticated;
+RESET ROLE;
 SET request.jwt.claim.sub = '00000000-0000-0000-0000-000000008101';
 
 CREATE TEMP TABLE task5_standalone_result AS
@@ -1369,6 +1398,8 @@ SELECT * FROM public.create_progress_invoice_series(
     '00000000-0000-0000-0000-000000008110'
   )
 );
+
+GRANT ALL ON task5_standalone_result, task5_quote_result TO authenticated;
 
 -- Task 5 assertion 11
 SELECT is(
@@ -1896,7 +1927,7 @@ SELECT is(
     FROM (
       SELECT to_regprocedure(signature)::OID AS function_oid
       FROM unnest(ARRAY[
-        'public.create_progress_invoice_series(jsonb)',
+        'public.create_manual_progress_invoice_series(jsonb)',
         'public.update_progress_invoice_series(jsonb)',
         'public.create_progress_adjustment(jsonb)',
         'public.update_progress_adjustment_draft(jsonb)',
@@ -1947,8 +1978,11 @@ SELECT extensions.dblink_exec('task5_create_a', $$SET LOCAL request.jwt.claim.su
 SELECT extensions.dblink_exec(
   'task5_create_a',
   format(
-    'CREATE TEMP TABLE first_create_result AS SELECT * FROM public.create_progress_invoice_series(%L::JSONB)',
-    pg_temp.series_payload('jobber_job', '81000000-0000-4000-8000-000000000030')::TEXT
+    'CREATE TEMP TABLE first_create_result AS SELECT * FROM public.create_manual_progress_invoice_series(%L::JSONB)',
+    pg_temp.manual_series_payload(
+      '81000000-0000-4000-8000-000000000030',
+      'TASK5-CONCURRENT'
+    )::TEXT
   )
 );
 SELECT extensions.dblink_exec('task5_create_b', 'BEGIN');
@@ -1957,8 +1991,11 @@ SELECT extensions.dblink_exec('task5_create_b', $$SET LOCAL request.jwt.claim.su
 SELECT extensions.dblink_send_query(
   'task5_create_b',
   format(
-    'SELECT id::TEXT, version FROM public.create_progress_invoice_series(%L::JSONB)',
-    pg_temp.series_payload('jobber_job', '81000000-0000-4000-8000-000000000030')::TEXT
+    'SELECT id::TEXT, version FROM public.create_manual_progress_invoice_series(%L::JSONB)',
+    pg_temp.manual_series_payload(
+      '81000000-0000-4000-8000-000000000030',
+      'TASK5-CONCURRENT'
+    )::TEXT
   )
 );
 SELECT pg_sleep(0.1);
@@ -1990,7 +2027,7 @@ SELECT is(
     FROM task5_concurrent_second second
     JOIN public.progress_invoice_events event
       ON event.actor_id = '00000000-0000-0000-0000-000000008101'::UUID
-     AND event.command_name = 'create_progress_invoice_series'
+     AND event.command_name = 'create_manual_progress_invoice_series'
      AND event.correlation_key = '81000000-0000-4000-8000-000000000030'
   ),
   true,
@@ -2002,7 +2039,7 @@ SELECT is(
   (
     SELECT count(*)::INT FROM public.progress_invoice_events event
     WHERE event.actor_id = '00000000-0000-0000-0000-000000008101'::UUID
-      AND event.command_name = 'create_progress_invoice_series'
+      AND event.command_name = 'create_manual_progress_invoice_series'
       AND event.correlation_key = '81000000-0000-4000-8000-000000000030'
   ),
   1,
@@ -2016,7 +2053,7 @@ SELECT is(
     FROM public.progress_invoice_series series
     JOIN public.progress_invoice_events event ON event.series_id = series.id
     WHERE event.actor_id = '00000000-0000-0000-0000-000000008101'::UUID
-      AND event.command_name = 'create_progress_invoice_series'
+      AND event.command_name = 'create_manual_progress_invoice_series'
       AND event.correlation_key = '81000000-0000-4000-8000-000000000030'
   ),
   1,
@@ -4087,6 +4124,480 @@ SELECT is(
   'duplicate relink conflict preserves the original identity and all evidence atomically'
 );
 
+SET ROLE authenticated;
+SET request.jwt.claim.sub = '00000000-0000-0000-0000-000000008001';
+
+CREATE TEMP TABLE manual_create_first AS
+SELECT * FROM public.create_manual_progress_invoice_series(
+  pg_temp.manual_series_payload('83000000-0000-4000-8000-000000000001')
+);
+
+CREATE TEMP TABLE manual_create_replay AS
+SELECT * FROM public.create_manual_progress_invoice_series(
+  pg_temp.manual_series_payload('83000000-0000-4000-8000-000000000001')
+);
+
+SELECT is(
+  (
+    SELECT series.source_type = 'manual'
+      AND series.quote_id IS NULL
+      AND series.jobber_account_id IS NULL
+      AND series.jobber_invoice_id IS NULL
+      AND series.selected_jobber_job_id IS NULL
+      AND series.jobber_client_id IS NULL
+      AND series.selected_jobber_property_id IS NULL
+      AND series.original_jobber_invoice_number IS NULL
+      AND series.current_jobber_snapshot_id IS NULL
+      AND series.accepted_numbering_base = '2906'
+      AND series.gst_rate = 0.1000
+      AND series.current_adjusted_contract_ex_gst = 17220.50
+      AND series.current_adjusted_contract_gst = 1722.05
+      AND series.current_adjusted_contract_inc_gst = 18942.55
+      AND series.current_claimed_ex_gst = 0
+      AND series.current_claimed_gst = 0
+      AND series.current_claimed_inc_gst = 0
+      AND series.current_actual_receipts = 0
+      AND series.current_unclaimed_ex_gst = 17220.50
+      AND series.current_unclaimed_gst = 1722.05
+      AND series.current_unclaimed_inc_gst = 18942.55
+    FROM public.progress_invoice_series AS series
+    WHERE series.id = (SELECT id FROM manual_create_first)
+  ),
+  true,
+  'Manual creation stores isolated provenance and exact financial caches'
+);
+
+SELECT is(
+  (SELECT id FROM manual_create_replay),
+  (SELECT id FROM manual_create_first),
+  'exact Manual replay returns the original series ID'
+);
+
+SELECT is(
+  (
+    SELECT count(*)::INT
+    FROM public.progress_invoice_events AS event
+    WHERE event.command_name = 'create_manual_progress_invoice_series'
+      AND event.correlation_key = '83000000-0000-4000-8000-000000000001'
+  ),
+  1,
+  'exact Manual replay does not append a second creation event'
+);
+
+SELECT throws_ok(
+  format(
+    'SELECT * FROM public.create_manual_progress_invoice_series(%L::JSONB)',
+    pg_temp.manual_series_payload(
+      '83000000-0000-4000-8000-000000000001',
+      '2906',
+      '17221.50'
+    )::TEXT
+  ),
+  'P0001',
+  'IDEMPOTENCY_KEY_REUSED',
+  'changed Manual payload cannot reuse an actor correlation key'
+);
+
+SELECT throws_ok(
+  format(
+    'SELECT * FROM public.create_manual_progress_invoice_series(%L::JSONB)',
+    pg_temp.manual_series_payload(
+      '83000000-0000-4000-8000-000000000002',
+      ' 2906 '
+    )::TEXT
+  ),
+  'P0001',
+  'PROGRESS_UNIQUE_CONFLICT',
+  'active normalized numbering-base duplicates return the stable conflict'
+);
+
+SELECT is(
+  pg_temp.capture_sqlstate($sql$
+    INSERT INTO public.progress_invoice_series (
+      source_type, accepted_numbering_base, base_contract_ex_gst,
+      recipient_name, recipient_address, site_name, site_address,
+      default_description, created_by, updated_by
+    ) VALUES (
+      'manual', 'DIRECT-MANUAL', 1000, 'Direct', 'Direct address',
+      'Direct site', 'Direct site address', 'Direct work',
+      '00000000-0000-0000-0000-000000008001',
+      '00000000-0000-0000-0000-000000008001'
+    )
+  $sql$),
+  '42501',
+  'authenticated cannot directly insert a Manual series'
+);
+
+SELECT is(
+  pg_temp.capture_sqlstate(format(
+    'UPDATE public.progress_invoice_series SET recipient_name = %L WHERE id = %L',
+    'Direct update',
+    (SELECT id FROM manual_create_first)::TEXT
+  )),
+  '42501',
+  'authenticated cannot directly update a Manual series'
+);
+
+RESET ROLE;
+
+UPDATE public.progress_invoice_series
+SET status = 'void'
+WHERE id = (SELECT id FROM manual_create_first);
+
+SET ROLE authenticated;
+SET request.jwt.claim.sub = '00000000-0000-0000-0000-000000008001';
+
+SELECT lives_ok(
+  format(
+    'SELECT * FROM public.create_manual_progress_invoice_series(%L::JSONB)',
+    pg_temp.manual_series_payload(
+      '83000000-0000-4000-8000-000000000003',
+      ' 2906 '
+    )::TEXT
+  ),
+  'a void-series numbering base may be reused'
+);
+
+SET request.jwt.claim.sub = '00000000-0000-0000-0000-000000008002';
+
+SELECT lives_ok(
+  format(
+    'SELECT * FROM public.create_manual_progress_invoice_series(%L::JSONB)',
+    pg_temp.manual_series_payload(
+      '83000000-0000-4000-8000-000000000001',
+      '2907'
+    )::TEXT
+  ),
+  'another actor may reuse a Manual correlation key'
+);
+
+SELECT is(
+  (
+    SELECT count(*)::INT
+    FROM public.progress_invoice_series AS series
+    WHERE series.source_type IN ('pbc_quote', 'jobber_job')
+  ) > 0,
+  true,
+  'historical PBC Quote and Jobber Job rows remain readable'
+);
+
+RESET ROLE;
+
+SELECT is(
+  pg_temp.capture_sqlstate($sql$
+    INSERT INTO public.progress_invoice_series (
+      source_type, quote_id, jobber_account_id, jobber_invoice_id,
+      accepted_numbering_base, base_contract_ex_gst, recipient_name,
+      recipient_address, site_name, site_address, default_description,
+      created_by, updated_by
+    ) VALUES (
+      'manual', NULL, 'forbidden-account', 'forbidden-invoice', 'FORBIDDEN',
+      1000, 'Forbidden', 'Forbidden address', 'Forbidden site',
+      'Forbidden site address', 'Forbidden work',
+      '00000000-0000-0000-0000-000000008001',
+      '00000000-0000-0000-0000-000000008001'
+    )
+  $sql$),
+  '23514',
+  'Manual rows reject Quote and Jobber identity values'
+);
+
+SELECT is(
+  has_function_privilege(
+    'authenticated',
+    'public.create_manual_progress_invoice_series(jsonb)',
+    'EXECUTE'
+  )
+    AND NOT has_function_privilege(
+      'anon',
+      'public.create_manual_progress_invoice_series(jsonb)',
+      'EXECUTE'
+    )
+    AND NOT has_function_privilege(
+      'service_role',
+      'public.create_manual_progress_invoice_series(jsonb)',
+      'EXECUTE'
+    ),
+  true,
+  'Manual command is executable only by authenticated'
+);
+
+SELECT is(
+  (
+    SELECT bool_and(
+      NOT has_function_privilege('anon', function_oid, 'EXECUTE')
+      AND NOT has_function_privilege('authenticated', function_oid, 'EXECUTE')
+      AND NOT has_function_privilege('service_role', function_oid, 'EXECUTE')
+    )
+    FROM (
+      SELECT to_regprocedure(signature)::OID AS function_oid
+      FROM unnest(ARRAY[
+        'public.create_progress_invoice_series(jsonb)',
+        'public.get_progress_invoice_quote_prefill(jsonb)'
+      ]) AS legacy(signature)
+    ) AS legacy_functions
+  ),
+  true,
+  'legacy Quote create and prefill are not executable by application roles'
+);
+
+SELECT is(
+  (
+    SELECT event.safe_field_changes = '{"source_type":"manual"}'::JSONB
+      AND event.result_refs ?& ARRAY['id', 'version']
+      AND (SELECT count(*) FROM jsonb_object_keys(event.result_refs)) = 2
+    FROM public.progress_invoice_events AS event
+    WHERE event.command_name = 'create_manual_progress_invoice_series'
+      AND event.correlation_key = '83000000-0000-4000-8000-000000000001'
+      AND event.actor_id = '00000000-0000-0000-0000-000000008001'
+  ),
+  true,
+  'Manual creation event contains only safe source and result references'
+);
+
+INSERT INTO public.progress_claims (
+  id, series_id, sequence, kind, suffix, tax_invoice_number,
+  created_by, updated_by
+) VALUES (
+  '83000000-0000-4000-8000-000000000010',
+  (SELECT id FROM manual_create_first),
+  1,
+  'progress',
+  'P01',
+  '2906-P01-MANUAL-TEST',
+  '00000000-0000-0000-0000-000000008001',
+  '00000000-0000-0000-0000-000000008001'
+);
+
+SELECT lives_ok(
+  $sql$
+    INSERT INTO public.progress_claim_revisions
+    SELECT (jsonb_populate_record(
+      NULL::public.progress_claim_revisions,
+      to_jsonb(source_revision)
+        || jsonb_build_object(
+          'id', '83000000-0000-4000-8000-000000000011',
+          'claim_id', '83000000-0000-4000-8000-000000000010',
+          'revision_number', 1,
+          'state', 'draft',
+          'jobber_account_id', NULL,
+          'jobber_invoice_id', NULL,
+          'original_jobber_invoice_number', NULL,
+          'observed_jobber_invoice_number', NULL,
+          'accepted_numbering_base', '2906'
+        )
+    )).* FROM public.progress_claim_revisions AS source_revision LIMIT 1
+  $sql$,
+  'Manual Claim Revision accepts all-null Jobber evidence with an accepted base'
+);
+
+SELECT is(
+  pg_temp.capture_sqlstate($sql$
+    INSERT INTO public.progress_claim_revisions
+    SELECT (jsonb_populate_record(
+      NULL::public.progress_claim_revisions,
+      to_jsonb(source_revision)
+        || jsonb_build_object(
+          'id', '83000000-0000-4000-8000-000000000012',
+          'claim_id', '83000000-0000-4000-8000-000000000010',
+          'revision_number', 2,
+          'state', 'draft',
+          'jobber_account_id', 'partial-account',
+          'jobber_invoice_id', NULL,
+          'original_jobber_invoice_number', NULL,
+          'observed_jobber_invoice_number', NULL,
+          'accepted_numbering_base', '2906'
+        )
+    )).* FROM public.progress_claim_revisions AS source_revision LIMIT 1
+  $sql$),
+  '23514',
+  'Claim Revision rejects partial Jobber evidence'
+);
+
+SELECT is(
+  pg_temp.capture_sqlstate($sql$
+    INSERT INTO public.progress_claim_revisions
+    SELECT (jsonb_populate_record(
+      NULL::public.progress_claim_revisions,
+      to_jsonb(source_revision)
+        || jsonb_build_object(
+          'id', '83000000-0000-4000-8000-000000000013',
+          'claim_id', source_revision.claim_id,
+          'revision_number', 99,
+          'state', 'draft',
+          'jobber_account_id', NULL,
+          'jobber_invoice_id', NULL,
+          'original_jobber_invoice_number', NULL,
+          'observed_jobber_invoice_number', NULL,
+          'accepted_numbering_base', 'LEGACY'
+        )
+    )).* FROM public.progress_claim_revisions AS source_revision
+    JOIN public.progress_claims AS source_claim ON source_claim.id = source_revision.claim_id
+    JOIN public.progress_invoice_series AS source_series ON source_series.id = source_claim.series_id
+    WHERE source_series.source_type <> 'manual'
+    LIMIT 1
+  $sql$),
+  '23514',
+  'non-Manual Claim Revision requires complete Jobber evidence'
+);
+
+SELECT extensions.dblink_connect(
+  'manual_changed_race_a',
+  'host=host.docker.internal port=54322 dbname=postgres user=postgres password=postgres'
+);
+SELECT extensions.dblink_connect(
+  'manual_changed_race_b',
+  'host=host.docker.internal port=54322 dbname=postgres user=postgres password=postgres'
+);
+SELECT extensions.dblink_exec('manual_changed_race_a', 'BEGIN');
+SELECT extensions.dblink_exec('manual_changed_race_a', 'SET LOCAL ROLE authenticated');
+SELECT extensions.dblink_exec(
+  'manual_changed_race_a',
+  $$SET LOCAL request.jwt.claim.sub = '00000000-0000-0000-0000-000000008001'$$
+);
+SELECT extensions.dblink_exec(
+  'manual_changed_race_a',
+  format(
+    'CREATE TEMP TABLE changed_race_winner AS SELECT * FROM public.create_manual_progress_invoice_series(%L::JSONB)',
+    pg_temp.manual_series_payload(
+      '83000000-0000-4000-8000-000000000020',
+      'MANUAL-CHANGED-RACE'
+    )::TEXT
+  )
+);
+
+SELECT extensions.dblink_exec('manual_changed_race_b', 'BEGIN');
+SELECT extensions.dblink_exec('manual_changed_race_b', 'SET LOCAL ROLE authenticated');
+SELECT extensions.dblink_exec(
+  'manual_changed_race_b',
+  $$SET LOCAL request.jwt.claim.sub = '00000000-0000-0000-0000-000000008001'$$
+);
+SELECT extensions.dblink_send_query(
+  'manual_changed_race_b',
+  format(
+    'SELECT id::TEXT, version FROM public.create_manual_progress_invoice_series(%L::JSONB)',
+    pg_temp.manual_series_payload(
+      '83000000-0000-4000-8000-000000000020',
+      'MANUAL-CHANGED-RACE',
+      '17221.50'
+    )::TEXT
+  )
+);
+SELECT pg_sleep(0.1);
+SELECT extensions.dblink_exec('manual_changed_race_a', 'COMMIT');
+CREATE TEMP TABLE manual_changed_race_observation (error_text TEXT);
+DO $$
+DECLARE
+  observed_error TEXT;
+BEGIN
+  PERFORM result.id, result.version
+  FROM extensions.dblink_get_result('manual_changed_race_b', false)
+    AS result(id TEXT, version INT);
+  observed_error := extensions.dblink_error_message('manual_changed_race_b');
+  PERFORM result.id, result.version
+  FROM extensions.dblink_get_result('manual_changed_race_b', false)
+    AS result(id TEXT, version INT);
+  INSERT INTO manual_changed_race_observation (error_text) VALUES (observed_error);
+END;
+$$;
+SELECT extensions.dblink_exec('manual_changed_race_b', 'ROLLBACK');
+
+SELECT is(
+  (
+    SELECT observation.error_text LIKE '%IDEMPOTENCY_KEY_REUSED%'
+      AND (
+        SELECT count(*)
+        FROM public.progress_invoice_events AS event
+        WHERE event.actor_id = '00000000-0000-0000-0000-000000008001'
+          AND event.command_name = 'create_manual_progress_invoice_series'
+          AND event.correlation_key = '83000000-0000-4000-8000-000000000020'
+      ) = 1
+    FROM manual_changed_race_observation AS observation
+  ),
+  true,
+  'concurrent changed Manual payload cannot bypass idempotency-key reuse protection'
+);
+
+SELECT extensions.dblink_disconnect('manual_changed_race_a');
+SELECT extensions.dblink_disconnect('manual_changed_race_b');
+
+SELECT extensions.dblink_connect(
+  'manual_base_race_a',
+  'host=host.docker.internal port=54322 dbname=postgres user=postgres password=postgres'
+);
+SELECT extensions.dblink_connect(
+  'manual_base_race_b',
+  'host=host.docker.internal port=54322 dbname=postgres user=postgres password=postgres'
+);
+SELECT extensions.dblink_exec('manual_base_race_a', 'BEGIN');
+SELECT extensions.dblink_exec('manual_base_race_a', 'SET LOCAL ROLE authenticated');
+SELECT extensions.dblink_exec(
+  'manual_base_race_a',
+  $$SET LOCAL request.jwt.claim.sub = '00000000-0000-0000-0000-000000008001'$$
+);
+SELECT extensions.dblink_exec(
+  'manual_base_race_a',
+  format(
+    'CREATE TEMP TABLE base_race_winner AS SELECT * FROM public.create_manual_progress_invoice_series(%L::JSONB)',
+    pg_temp.manual_series_payload(
+      '83000000-0000-4000-8000-000000000021',
+      'MANUAL-BASE-RACE'
+    )::TEXT
+  )
+);
+SELECT extensions.dblink_exec('manual_base_race_b', 'BEGIN');
+SELECT extensions.dblink_exec('manual_base_race_b', 'SET LOCAL ROLE authenticated');
+SELECT extensions.dblink_exec(
+  'manual_base_race_b',
+  $$SET LOCAL request.jwt.claim.sub = '00000000-0000-0000-0000-000000008002'$$
+);
+SELECT extensions.dblink_send_query(
+  'manual_base_race_b',
+  format(
+    'SELECT id::TEXT, version FROM public.create_manual_progress_invoice_series(%L::JSONB)',
+    pg_temp.manual_series_payload(
+      '83000000-0000-4000-8000-000000000022',
+      ' manual-base-race '
+    )::TEXT
+  )
+);
+SELECT pg_sleep(0.1);
+SELECT extensions.dblink_exec('manual_base_race_a', 'COMMIT');
+CREATE TEMP TABLE manual_base_race_observation (error_text TEXT);
+DO $$
+DECLARE
+  observed_error TEXT;
+BEGIN
+  PERFORM result.id, result.version
+  FROM extensions.dblink_get_result('manual_base_race_b', false)
+    AS result(id TEXT, version INT);
+  observed_error := extensions.dblink_error_message('manual_base_race_b');
+  PERFORM result.id, result.version
+  FROM extensions.dblink_get_result('manual_base_race_b', false)
+    AS result(id TEXT, version INT);
+  INSERT INTO manual_base_race_observation (error_text) VALUES (observed_error);
+END;
+$$;
+SELECT extensions.dblink_exec('manual_base_race_b', 'ROLLBACK');
+
+SELECT is(
+  (
+    SELECT observation.error_text LIKE '%PROGRESS_UNIQUE_CONFLICT%'
+      AND (
+        SELECT count(*)
+        FROM public.progress_invoice_series AS series
+        WHERE lower(btrim(series.accepted_numbering_base)) = 'manual-base-race'
+          AND series.status <> 'void'
+      ) = 1
+    FROM manual_base_race_observation AS observation
+  ),
+  true,
+  'concurrent normalized Manual numbering-base race returns the stable unique conflict'
+);
+
+SELECT extensions.dblink_disconnect('manual_base_race_a');
+SELECT extensions.dblink_disconnect('manual_base_race_b');
+
 SELECT is(
   (
     SELECT has_function_privilege(
@@ -4132,11 +4643,5 @@ SELECT is(
 );
 
 DELETE FROM public.business_invoice_profiles;
-DELETE FROM auth.users
-WHERE id IN (
-  '00000000-0000-0000-0000-000000008001',
-  '00000000-0000-0000-0000-000000008002',
-  '00000000-0000-0000-0000-000000008003'
-);
 
 SELECT * FROM finish();

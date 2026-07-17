@@ -4,10 +4,10 @@ import { PROGRESS_INVOICE_TEXT_LIMITS } from '@/lib/progress-invoices/types'
 import {
   acceptProgressJobberInvoiceNumberSchema,
   approveProgressAdjustmentSchema,
+  createManualProgressInvoiceSeriesSchema,
   createManualProgressPaymentSchema,
   createProgressAdjustmentSchema,
   createProgressClaimDraftSchema,
-  createProgressInvoiceSeriesSchema,
   createStandaloneProgressInvoiceFromJobberSchema,
   linkProgressJobberInvoiceSchema,
   matchProgressPaymentsSchema,
@@ -27,6 +27,22 @@ import {
 
 const UUID = '11111111-1111-4111-8111-111111111111'
 const UUID_2 = '22222222-2222-4222-8222-222222222222'
+
+const manualSeriesInput = {
+  acceptedNumberingBase: ' 2906 ',
+  baseContractExGst: '17220.50',
+  recipientName: 'Manual Builder',
+  recipientCompany: null,
+  recipientAddress: '1 Billing Street',
+  recipientEmail: null,
+  recipientPhone: null,
+  recipientAbn: null,
+  siteName: 'Manual Site',
+  siteAddress: '4 Site Street',
+  defaultDescription: 'Progress painting works',
+  reference: null,
+  correlationKey: UUID,
+}
 
 const claimDraft = {
   inputMode: 'current_claim_amount' as const,
@@ -71,6 +87,47 @@ describe('Progress Invoice command schemas', () => {
     reference: 'Jobber 2906',
     correlationKey: UUID,
   }
+
+  it('strictly validates and normalizes browser Manual series input', () => {
+    const parsed = createManualProgressInvoiceSeriesSchema.safeParse(manualSeriesInput)
+
+    expect(parsed.success).toBe(true)
+    if (parsed.success) {
+      expect(parsed.data.acceptedNumberingBase).toBe('2906')
+      expect(parsed.data.baseContractExGst).toBe('17220.50')
+      expect(parsed.data).not.toHaveProperty('sourceType')
+      expect(parsed.data).not.toHaveProperty('gstRate')
+    }
+  })
+
+  it.each(['sourceType', 'gstRate', 'jobberInvoiceId', 'pbcQuoteId'])(
+    'rejects browser-controlled Manual provenance key %s',
+    (key) => {
+      expect(createManualProgressInvoiceSeriesSchema.safeParse({
+        ...manualSeriesInput,
+        [key]: key === 'gstRate' ? '0.10' : 'forbidden',
+      }).success).toBe(false)
+    },
+  )
+
+  it('requires positive two-decimal money and bounded local fields for Manual series', () => {
+    expect(createManualProgressInvoiceSeriesSchema.safeParse({
+      ...manualSeriesInput,
+      baseContractExGst: '0.00',
+    }).success).toBe(false)
+    expect(createManualProgressInvoiceSeriesSchema.safeParse({
+      ...manualSeriesInput,
+      baseContractExGst: '1.001',
+    }).success).toBe(false)
+    expect(createManualProgressInvoiceSeriesSchema.safeParse({
+      ...manualSeriesInput,
+      recipientName: ' ',
+    }).success).toBe(false)
+    expect(createManualProgressInvoiceSeriesSchema.safeParse({
+      ...manualSeriesInput,
+      acceptedNumberingBase: 'x'.repeat(121),
+    }).success).toBe(false)
+  })
 
   it('strictly validates and normalizes standalone Jobber create input', () => {
     const parsed = createStandaloneProgressInvoiceFromJobberSchema.safeParse(standaloneJobberInput)
@@ -301,17 +358,9 @@ describe('Progress Invoice command schemas', () => {
       expectedVersion: 1,
     }).success).toBe(false)
 
-    expect(createProgressInvoiceSeriesSchema.safeParse({
-      sourceType: 'jobber_invoice',
-      baseContractExGst: '1000.00',
-      gstRate: '0.10',
-      recipientName: 'Recipient',
-      recipientAddress: '1 Recipient Street',
-      siteName: 'Sample Site',
-      siteAddress: '2 Site Street',
+    expect(createManualProgressInvoiceSeriesSchema.safeParse({
+      ...manualSeriesInput,
       defaultDescription: 'D'.repeat(PROGRESS_INVOICE_TEXT_LIMITS.description + 1),
-      reference: 'Ref',
-      correlationKey: UUID,
     }).success).toBe(false)
 
     expect(saveProgressClaimDraftSchema.safeParse({

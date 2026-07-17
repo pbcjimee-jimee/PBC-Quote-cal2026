@@ -2,7 +2,7 @@ BEGIN;
 
 CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA extensions;
 
-SELECT plan(21);
+SELECT plan(25);
 
 CREATE FUNCTION pg_temp.capture_sqlstate(command TEXT)
 RETURNS TEXT
@@ -601,6 +601,63 @@ SELECT lives_ok(
     NULL
   )$$,
   'Draft Claim Revision may remain unbound before document generation'
+);
+
+SELECT is(
+  (
+    SELECT count(*)::INT
+    FROM information_schema.columns
+    WHERE table_schema = 'public'
+      AND table_name = 'progress_claim_revisions'
+      AND column_name IN (
+        'jobber_account_id',
+        'jobber_invoice_id',
+        'original_jobber_invoice_number',
+        'observed_jobber_invoice_number'
+      )
+      AND is_nullable = 'YES'
+  ),
+  4,
+  'all four Jobber-only Claim Revision evidence columns are nullable'
+);
+
+SELECT is(
+  (
+    SELECT count(*)::INT
+    FROM pg_catalog.pg_constraint AS constraint_record
+    WHERE constraint_record.conrelid = 'public.progress_claim_revisions'::regclass
+      AND constraint_record.conname = 'progress_claim_revisions_jobber_evidence_all_or_none'
+      AND constraint_record.contype = 'c'
+  ),
+  1,
+  'Claim Revision Jobber evidence is all-null or all-present'
+);
+
+SELECT has_trigger(
+  'public',
+  'progress_claim_revisions',
+  'trg_progress_claim_revisions_validate_source_evidence',
+  'Claim Revision evidence follows the owning series source'
+);
+
+SELECT is(
+  NOT has_function_privilege(
+    'authenticated',
+    'public.validate_progress_claim_revision_source_evidence()',
+    'EXECUTE'
+  )
+    AND NOT has_function_privilege(
+      'anon',
+      'public.validate_progress_claim_revision_source_evidence()',
+      'EXECUTE'
+    )
+    AND NOT has_function_privilege(
+      'service_role',
+      'public.validate_progress_claim_revision_source_evidence()',
+      'EXECUTE'
+    ),
+  true,
+  'Claim Revision evidence trigger helper is not directly callable'
 );
 
 SELECT * FROM finish();

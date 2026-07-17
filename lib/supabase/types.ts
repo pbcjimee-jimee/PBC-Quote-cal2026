@@ -1703,7 +1703,7 @@ export interface Database {
           version: number
         }>
       }
-      create_progress_invoice_series: {
+      create_manual_progress_invoice_series: {
         Args: { payload: Json }
         Returns: Array<{ id: string; version: number }>
       }
@@ -1729,10 +1729,6 @@ export interface Database {
         }[]
       }
       get_progress_invoice_series: {
-        Args: { payload: Json }
-        Returns: Json
-      }
-      get_progress_invoice_quote_prefill: {
         Args: { payload: Json }
         Returns: Json
       }

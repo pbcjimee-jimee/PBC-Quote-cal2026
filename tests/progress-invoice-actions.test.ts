@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('server-only', () => ({}))
@@ -9,8 +11,7 @@ const mocks = vi.hoisted(() => ({
   saveBusinessInvoiceProfile: vi.fn(),
   listProgressInvoiceSeries: vi.fn(),
   getProgressInvoiceSeries: vi.fn(),
-  getProgressInvoiceCreatePrefill: vi.fn(),
-  createProgressInvoiceSeries: vi.fn(),
+  createManualProgressInvoiceSeries: vi.fn(),
   updateProgressInvoiceSeries: vi.fn(),
   createProgressAdjustment: vi.fn(),
   updateDraftProgressAdjustment: vi.fn(),
@@ -32,8 +33,7 @@ vi.mock('@/lib/progress-invoices/series-service', () => ({
   saveBusinessInvoiceProfile: mocks.saveBusinessInvoiceProfile,
   listProgressInvoiceSeries: mocks.listProgressInvoiceSeries,
   getProgressInvoiceSeries: mocks.getProgressInvoiceSeries,
-  getProgressInvoiceCreatePrefill: mocks.getProgressInvoiceCreatePrefill,
-  createProgressInvoiceSeries: mocks.createProgressInvoiceSeries,
+  createManualProgressInvoiceSeries: mocks.createManualProgressInvoiceSeries,
   updateProgressInvoiceSeries: mocks.updateProgressInvoiceSeries,
 }))
 
@@ -50,9 +50,8 @@ vi.mock('@/lib/progress-invoices/standalone-import-service', () => ({
 }))
 
 import {
-  createProgressInvoiceSeries,
+  createManualProgressInvoiceSeries,
   getBusinessInvoiceProfile,
-  getProgressInvoiceCreatePrefill,
   getProgressInvoiceSeries,
   listProgressInvoiceSeries,
   saveBusinessInvoiceProfile,
@@ -71,20 +70,19 @@ const QUOTE_ID = '22222222-2222-4222-8222-222222222222'
 const ADJUSTMENT_ID = '33333333-3333-4333-8333-333333333333'
 const CORRELATION_KEY = '44444444-4444-4444-8444-444444444444'
 
-const standaloneSeriesInput = {
-  sourceType: 'jobber_job' as const,
-  baseContractExGst: '1000.00',
-  gstRate: '0.10' as const,
-  recipientName: 'Example Builder',
-  recipientCompany: 'Example Builder Pty Ltd',
-  recipientAddress: '1 Billing Street, Sydney NSW 2000',
-  recipientEmail: 'accounts@example.test',
-  recipientPhone: '0400000000',
-  recipientAbn: '12345678901',
-  siteName: 'Example Site',
-  siteAddress: '2 Site Street, Sydney NSW 2000',
-  defaultDescription: 'Painting works',
-  reference: 'JOB-1',
+const manualSeriesInput = {
+  acceptedNumberingBase: ' 2906 ',
+  baseContractExGst: '17220.50',
+  recipientName: 'Manual Builder',
+  recipientCompany: null,
+  recipientAddress: '1 Billing Street',
+  recipientEmail: null,
+  recipientPhone: null,
+  recipientAbn: null,
+  siteName: 'Manual Site',
+  siteAddress: '4 Site Street',
+  defaultDescription: 'Progress painting works',
+  reference: null,
   correlationKey: CORRELATION_KEY,
 }
 
@@ -199,15 +197,15 @@ describe('Progress Invoice Server Actions', () => {
     expect(mocks.revalidatePath).not.toHaveBeenCalled()
   })
 
-  it('validates create-series input before authentication', async () => {
-    const result = await createProgressInvoiceSeries({
-      ...standaloneSeriesInput,
+  it('validates Manual create-series input before authentication', async () => {
+    const result = await createManualProgressInvoiceSeries({
+      ...manualSeriesInput,
       baseContractExGst: 1000,
     })
 
     expect(result).toMatchObject({ ok: false, code: 'VALIDATION' })
     expect(mocks.requireAllowedUser).not.toHaveBeenCalled()
-    expect(mocks.createProgressInvoiceSeries).not.toHaveBeenCalled()
+    expect(mocks.createManualProgressInvoiceSeries).not.toHaveBeenCalled()
   })
 
   it('requires an allowed user before profile, series, and adjustment work', async () => {
@@ -220,7 +218,7 @@ describe('Progress Invoice Server Actions', () => {
       ok: false,
       error: 'Authentication required',
     })
-    expect(await createProgressInvoiceSeries(standaloneSeriesInput)).toEqual({
+    expect(await createManualProgressInvoiceSeries(manualSeriesInput)).toEqual({
       ok: false,
       error: 'Authentication required',
     })
@@ -229,7 +227,7 @@ describe('Progress Invoice Server Actions', () => {
       error: 'Authentication required',
     })
     expect(mocks.getBusinessInvoiceProfile).not.toHaveBeenCalled()
-    expect(mocks.createProgressInvoiceSeries).not.toHaveBeenCalled()
+    expect(mocks.createManualProgressInvoiceSeries).not.toHaveBeenCalled()
     expect(mocks.createProgressAdjustment).not.toHaveBeenCalled()
   })
 
@@ -243,37 +241,61 @@ describe('Progress Invoice Server Actions', () => {
     }
     const dashboard = { items: [], page: 2, pageSize: 25, total: 0 }
     const detail = { id: SERIES_ID, version: 1 }
-    const prefill = { sourceType: 'standalone', quote: null }
     mocks.listProgressInvoiceSeries.mockResolvedValue({ ok: true, data: dashboard })
     mocks.getProgressInvoiceSeries.mockResolvedValue({ ok: true, data: detail })
-    mocks.getProgressInvoiceCreatePrefill.mockResolvedValue({ ok: true, data: prefill })
 
     expect(await listProgressInvoiceSeries(listInput)).toEqual({ ok: true, data: dashboard })
     expect(await getProgressInvoiceSeries(SERIES_ID)).toEqual({ ok: true, data: detail })
-    expect(await getProgressInvoiceCreatePrefill({ standalone: true })).toEqual({ ok: true, data: prefill })
     expect(mocks.listProgressInvoiceSeries).toHaveBeenCalledWith(listInput)
     expect(mocks.getProgressInvoiceSeries).toHaveBeenCalledWith(SERIES_ID)
-    expect(mocks.getProgressInvoiceCreatePrefill).toHaveBeenCalledWith({ standalone: true })
   })
 
-  it('creates standalone and PBC-quote series and revalidates linked consumers', async () => {
-    mocks.createProgressInvoiceSeries
-      .mockResolvedValueOnce({ ok: true, data: { id: SERIES_ID, version: 1 } })
-      .mockResolvedValueOnce({ ok: true, data: { id: SERIES_ID, version: 1 } })
+  it('authorizes, injects server-owned Manual literals, and revalidates the dashboard', async () => {
+    mocks.createManualProgressInvoiceSeries
+      .mockResolvedValue({ ok: true, data: { id: SERIES_ID, version: 1 } })
 
-    expect(await createProgressInvoiceSeries(standaloneSeriesInput)).toEqual({
+    expect(await createManualProgressInvoiceSeries(manualSeriesInput)).toEqual({
       ok: true,
       data: { id: SERIES_ID, version: 1 },
     })
-    expect(await createProgressInvoiceSeries({
-      ...standaloneSeriesInput,
-      sourceType: 'pbc_quote',
-      pbcQuoteId: QUOTE_ID,
-    })).toEqual({ ok: true, data: { id: SERIES_ID, version: 1 } })
 
+    expect(mocks.requireAllowedUser).toHaveBeenCalledBefore(
+      mocks.createManualProgressInvoiceSeries,
+    )
+    expect(mocks.createManualProgressInvoiceSeries).toHaveBeenCalledWith({
+      ...manualSeriesInput,
+      acceptedNumberingBase: '2906',
+      sourceType: 'manual',
+      gstRate: '0.10',
+    })
     expect(mocks.revalidatePath).toHaveBeenCalledWith('/progress-invoices')
     expect(mocks.revalidatePath).toHaveBeenCalledWith(`/progress-invoices/${SERIES_ID}`)
-    expect(mocks.revalidatePath).toHaveBeenCalledWith(`/quotes/${QUOTE_ID}`)
+    expect(mocks.revalidatePath).toHaveBeenCalledTimes(2)
+  })
+
+  it('preserves Manual RPC errors and does not revalidate failed creates', async () => {
+    mocks.createManualProgressInvoiceSeries.mockResolvedValue({
+      ok: false,
+      error: 'PROGRESS_UNIQUE_CONFLICT',
+      code: 'VALIDATION',
+    })
+
+    expect(await createManualProgressInvoiceSeries(manualSeriesInput)).toEqual({
+      ok: false,
+      error: 'PROGRESS_UNIQUE_CONFLICT',
+      code: 'VALIDATION',
+    })
+    expect(mocks.revalidatePath).not.toHaveBeenCalled()
+  })
+
+  it('removes the legacy Quote create and prefill Action exports', () => {
+    const source = readFileSync(join(
+      process.cwd(),
+      'lib/actions/progress-invoice-series.ts',
+    ), 'utf8')
+
+    expect(source).not.toMatch(/export async function createProgressInvoiceSeries\b/)
+    expect(source).not.toMatch(/export async function getProgressInvoiceCreatePrefill\b/)
   })
 
   it('saves the supplier profile and only revalidates invoice settings on success', async () => {

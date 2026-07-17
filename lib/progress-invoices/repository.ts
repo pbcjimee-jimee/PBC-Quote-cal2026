@@ -60,7 +60,7 @@ export type ProgressInvoicePaymentState =
 export interface ProgressInvoiceSeriesRpcDetail {
   id: string
   quote_id: string | null
-  source_type: 'pbc_quote' | 'jobber_job' | 'jobber_invoice'
+  source_type: 'pbc_quote' | 'jobber_job' | 'jobber_invoice' | 'manual'
   version: number
   base_contract_ex_gst: string
   gst_rate: '0.10'
@@ -89,9 +89,9 @@ export interface ProgressInvoiceSeriesRpcDetail {
   current_cumulative_percentage: string
 }
 
-export interface CreateProgressInvoiceSeriesPayload {
-  source_type: 'pbc_quote' | 'jobber_job' | 'jobber_invoice'
-  quote_id?: string | null
+export interface CreateManualProgressInvoiceSeriesPayload {
+  source_type: 'manual'
+  accepted_numbering_base: string
   base_contract_ex_gst: string
   gst_rate: '0.10'
   recipient_name: string
@@ -135,7 +135,7 @@ export interface ProgressInvoiceListPayload {
 
 export interface ProgressInvoiceDashboardRpcItem {
   id: string
-  source_type: 'pbc_quote' | 'jobber_job' | 'jobber_invoice'
+  source_type: 'pbc_quote' | 'jobber_job' | 'jobber_invoice' | 'manual'
   quote_id: string | null
   recipient_name: string
   recipient_company: string
@@ -162,19 +162,6 @@ export interface ProgressInvoiceDashboardRpcResult {
 
 export interface ProgressInvoiceSeriesReadRpcResult {
   series: ProgressInvoiceSeriesRpcDetail | null
-}
-
-export interface ProgressInvoiceQuotePrefillRpcDetail {
-  id: string
-  customer_name: string
-  customer_address: string
-  work_type: string
-  subtotal: string
-  final_total: string
-}
-
-export interface ProgressInvoiceQuotePrefillRpcResult {
-  quote: ProgressInvoiceQuotePrefillRpcDetail | null
 }
 
 interface AdjustmentPayload {
@@ -357,8 +344,8 @@ export interface ProgressInvoiceCommandMap {
     result: BusinessInvoiceProfileRpcResult
     current: never
   }
-  create_progress_invoice_series: {
-    payload: CreateProgressInvoiceSeriesPayload
+  create_manual_progress_invoice_series: {
+    payload: CreateManualProgressInvoiceSeriesPayload
     result: VersionedMutationRpcResult
     current: never
   }
@@ -375,11 +362,6 @@ export interface ProgressInvoiceCommandMap {
   get_progress_invoice_series: {
     payload: { series_id: string }
     result: ProgressInvoiceSeriesReadRpcResult
-    current: never
-  }
-  get_progress_invoice_quote_prefill: {
-    payload: { quote_id: string }
-    result: ProgressInvoiceQuotePrefillRpcResult
     current: never
   }
   get_progress_invoice_jobber_context: {
@@ -739,7 +721,8 @@ function parseSeriesDetail(value: unknown): ProgressInvoiceSeriesRpcDetail | nul
   const textFields = Object.fromEntries(textKeys.map((key) => [key, stringField(value, key)]))
   const moneyFields = Object.fromEntries(moneyKeys.map((key) => [key, moneyField(value, key)]))
   const cumulativePercentage = percentageField(value, 'current_cumulative_percentage')
-  const validSource = sourceType === 'pbc_quote' || sourceType === 'jobber_job' || sourceType === 'jobber_invoice'
+  const validSource = sourceType === 'pbc_quote' || sourceType === 'jobber_job'
+    || sourceType === 'jobber_invoice' || sourceType === 'manual'
   const validStatus = status === 'draft' || status === 'active' || status === 'completed'
     || status === 'reconciliation_required' || status === 'void'
   if (!id || quoteId === undefined || !validSource || !version || !validStatus
@@ -799,7 +782,8 @@ function parseDashboardItem(value: unknown): ProgressInvoiceDashboardRpcItem | n
   const outstanding = moneyField(value, 'current_outstanding_receivable')
   const unclaimed = moneyField(value, 'current_unclaimed_inc_gst')
   const cumulative = percentageField(value, 'current_cumulative_percentage')
-  const validSource = sourceType === 'pbc_quote' || sourceType === 'jobber_job' || sourceType === 'jobber_invoice'
+  const validSource = sourceType === 'pbc_quote' || sourceType === 'jobber_job'
+    || sourceType === 'jobber_invoice' || sourceType === 'manual'
   const validStatus = status === 'draft' || status === 'active' || status === 'completed'
     || status === 'reconciliation_required' || status === 'void'
   const validPayment = paymentState === 'unpaid' || paymentState === 'part_paid'
@@ -847,31 +831,6 @@ function parseSeriesRead(value: unknown): ProgressInvoiceSeriesReadRpcResult | n
   return series ? { series } : null
 }
 
-function parseQuotePrefill(value: unknown): ProgressInvoiceQuotePrefillRpcResult | null {
-  const candidate = singleton(value)
-  if (!isRecord(candidate) || !('quote' in candidate)) return null
-  if (candidate.quote === null) return { quote: null }
-  if (!isRecord(candidate.quote)) return null
-  const id = stringField(candidate.quote, 'id')
-  const customerName = stringField(candidate.quote, 'customer_name')
-  const customerAddress = stringField(candidate.quote, 'customer_address')
-  const workType = stringField(candidate.quote, 'work_type')
-  const subtotal = moneyField(candidate.quote, 'subtotal')
-  const finalTotal = moneyField(candidate.quote, 'final_total')
-  if (!id || customerName === null || customerAddress === null || workType === null
-    || !subtotal || !finalTotal) return null
-  return {
-    quote: {
-      id,
-      customer_name: customerName,
-      customer_address: customerAddress,
-      work_type: workType,
-      subtotal,
-      final_total: finalTotal,
-    },
-  }
-}
-
 function parseRpcError(error: ProgressInvoiceRpcError): { message: string; code: string } {
   return {
     message: typeof error.message === 'string' ? error.message : '',
@@ -916,13 +875,12 @@ function parseSuccess<TCommand extends ProgressInvoiceCommand>(
   value: unknown
 ): CommandResult<TCommand> | null {
   if (command === 'save_business_invoice_profile') return parseBusinessInvoiceProfile(value) as CommandResult<TCommand> | null
-  if (command === 'create_progress_invoice_series') {
+  if (command === 'create_manual_progress_invoice_series') {
     return parseVersioned(value) as CommandResult<TCommand> | null
   }
   if (command === 'update_progress_invoice_series') return parseSeriesMutation(value) as CommandResult<TCommand> | null
   if (command === 'list_progress_invoice_series') return parseDashboard(value) as CommandResult<TCommand> | null
   if (command === 'get_progress_invoice_series') return parseSeriesRead(value) as CommandResult<TCommand> | null
-  if (command === 'get_progress_invoice_quote_prefill') return parseQuotePrefill(value) as CommandResult<TCommand> | null
   if (command === 'get_progress_invoice_jobber_context') return parseJobberContext(value) as CommandResult<TCommand> | null
   if (command === 'accept_progress_jobber_invoice_number') return parseVersioned(value) as CommandResult<TCommand> | null
   return parseAdjustment(value) as CommandResult<TCommand> | null
@@ -939,10 +897,9 @@ export class ProgressInvoiceRepository {
     if (error) return mapRpcError(error)
 
     if (command !== 'save_business_invoice_profile'
-      && command !== 'create_progress_invoice_series'
+      && command !== 'create_manual_progress_invoice_series'
       && command !== 'list_progress_invoice_series'
       && command !== 'get_progress_invoice_series'
-      && command !== 'get_progress_invoice_quote_prefill'
       && command !== 'get_progress_invoice_jobber_context') {
       const candidate = singleton(data)
       if (isRecord(candidate) && candidate.conflict === true) {

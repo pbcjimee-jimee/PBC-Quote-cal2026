@@ -168,6 +168,12 @@ describe('ProgressInvoiceRepository', () => {
     expect(result).toEqual({ ok: true, data: serviceResult })
   })
 
+  it('exposes the Manual command without legacy Quote create or prefill branches', () => {
+    expect(repositorySource).toMatch(/create_manual_progress_invoice_series/)
+    expect(repositorySource).not.toMatch(/\bcreate_progress_invoice_series\b/)
+    expect(repositorySource).not.toMatch(/\bget_progress_invoice_quote_prefill\b/)
+  })
+
   it('calls the standalone Jobber import command and parses its complete result', async () => {
     const serviceResult = {
       series_id: '11111111-1111-4111-8111-111111111111',

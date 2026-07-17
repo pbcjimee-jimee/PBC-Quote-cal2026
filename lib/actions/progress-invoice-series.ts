@@ -5,23 +5,20 @@ import { revalidatePath } from 'next/cache'
 import type { ActionResult } from './types'
 import { requireAllowedUser } from '@/lib/security/require-allowed-user'
 import {
-  createProgressInvoiceSeries as createSeries,
+  createManualProgressInvoiceSeries as createManualSeries,
   getBusinessInvoiceProfile as getProfile,
-  getProgressInvoiceCreatePrefill as getCreatePrefill,
   getProgressInvoiceSeries as getSeries,
   listProgressInvoiceSeries as listSeries,
   saveBusinessInvoiceProfile as saveProfile,
   updateProgressInvoiceSeries as updateSeries,
   type BusinessInvoiceProfileDto,
-  type ProgressInvoiceCreatePrefill,
   type ProgressInvoiceDashboardDto,
   type ProgressInvoiceListInput,
   type ProgressInvoiceSeriesDetail,
 } from '@/lib/progress-invoices/series-service'
 import type { VersionedMutationRpcResult } from '@/lib/progress-invoices/repository'
 import {
-  createProgressInvoiceSeriesSchema,
-  progressInvoiceCreatePrefillSchema,
+  createManualProgressInvoiceSeriesSchema,
   progressInvoiceListSchema,
   progressInvoiceSeriesIdSchema,
   saveBusinessInvoiceProfileSchema,
@@ -76,28 +73,20 @@ export async function getProgressInvoiceSeries(
   return authorized.ok ? getSeries(parsed.data) : authorized
 }
 
-export async function getProgressInvoiceCreatePrefill(
-  input: { quoteId: string } | { standalone: true }
-): Promise<ActionResult<ProgressInvoiceCreatePrefill>> {
-  const parsed = progressInvoiceCreatePrefillSchema.safeParse(input)
-  if (!parsed.success) return validationFailure()
-  const authorized = await authorize()
-  return authorized.ok ? getCreatePrefill(parsed.data) : authorized
-}
-
-export async function createProgressInvoiceSeries(
+export async function createManualProgressInvoiceSeries(
   input: unknown
 ): Promise<ActionResult<VersionedMutationRpcResult>> {
-  const parsed = createProgressInvoiceSeriesSchema.safeParse(input)
+  const parsed = createManualProgressInvoiceSeriesSchema.safeParse(input)
   if (!parsed.success) return validationFailure()
   const authorized = await authorize()
   if (!authorized.ok) return authorized
-  const result = await createSeries(parsed.data)
+  const result = await createManualSeries({
+    ...parsed.data,
+    sourceType: 'manual',
+    gstRate: '0.10',
+  })
   if (result.ok) {
     revalidateSeries(result.data.id)
-    if (parsed.data.sourceType === 'pbc_quote' && parsed.data.pbcQuoteId) {
-      revalidatePath(`/quotes/${parsed.data.pbcQuoteId}`)
-    }
   }
   return result
 }

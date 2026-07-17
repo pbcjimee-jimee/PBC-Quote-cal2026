@@ -2,7 +2,7 @@ CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA extensions;
 
 BEGIN;
 
-SELECT plan(46);
+SELECT plan(45);
 
 CREATE FUNCTION pg_temp.capture_sqlstate(command TEXT)
 RETURNS TEXT
@@ -24,13 +24,17 @@ BEGIN
 END;
 $$;
 
-CREATE FUNCTION pg_temp.series_payload(requested_correlation_key UUID)
+CREATE FUNCTION pg_temp.series_payload(
+  requested_correlation_key UUID,
+  requested_numbering_base TEXT
+)
 RETURNS JSONB
 LANGUAGE sql
 IMMUTABLE
 AS $$
   SELECT jsonb_build_object(
-    'source_type', 'jobber_job',
+    'source_type', 'manual',
+    'accepted_numbering_base', requested_numbering_base,
     'base_contract_ex_gst', '1000.00',
     'gst_rate', '0.10',
     'recipient_name', 'Actor-isolated Builder',
@@ -133,8 +137,7 @@ SELECT is(
       SELECT to_regprocedure(signature)::OID AS function_oid
       FROM unnest(ARRAY[
         'public.list_progress_invoice_series(jsonb)',
-        'public.get_progress_invoice_series(jsonb)',
-        'public.get_progress_invoice_quote_prefill(jsonb)'
+        'public.get_progress_invoice_series(jsonb)'
       ]) AS rpc(signature)
     ) AS read_rpcs
   ),
@@ -250,53 +253,6 @@ SELECT is(
   ),
   true,
   'rejected list inputs leave series, Quote, and audit state unchanged'
-);
-
-CREATE TEMP TABLE fix_quote_prefill AS
-SELECT public.get_progress_invoice_quote_prefill(jsonb_build_object(
-  'quote_id', '92000000-0000-4000-8000-000000000001'
-)) AS result;
-
-SELECT is(
-  (
-    SELECT jsonb_typeof(result #> '{quote,subtotal}') = 'string'
-      AND result #>> '{quote,subtotal}' = '99999999.99'
-      AND jsonb_typeof(result #> '{quote,final_total}') = 'string'
-      AND result #>> '{quote,final_total}' = '12345678.91'
-    FROM fix_quote_prefill
-  ),
-  true,
-  'Quote prefill serializes large valid money and exact cents before PostgREST'
-);
-
-SELECT is(
-  (
-    SELECT (result -> 'quote') ?& ARRAY[
-      'id', 'customer_name', 'customer_address', 'work_type', 'subtotal', 'final_total'
-    ]
-      AND NOT (result -> 'quote') ?| ARRAY[
-        'pricing_settings_snapshot', 'jobber_quote_id', 'created_by', 'updated_by'
-      ]
-    FROM fix_quote_prefill
-  ),
-  true,
-  'Quote prefill exposes only its purpose-specific safe fields'
-);
-
-SELECT is(
-  public.get_progress_invoice_quote_prefill(jsonb_build_object(
-    'quote_id', '92000000-0000-4000-8000-000000000099'
-  )) -> 'quote',
-  'null'::JSONB,
-  'Quote prefill returns a safe null result when the Quote does not exist'
-);
-
-SELECT is(
-  pg_temp.capture_sqlstate($sql$
-    SELECT public.get_progress_invoice_quote_prefill('{"quote_id":"not-a-uuid"}'::JSONB)
-  $sql$),
-  '22023',
-  'Quote prefill rejects unsafe UUID cast input with the safe validation contract'
 );
 
 CREATE TEMP TABLE fix_list_page AS
@@ -764,14 +720,20 @@ SELECT is(
 );
 
 CREATE TEMP TABLE fix_actor_a AS
-SELECT * FROM public.create_progress_invoice_series(
-  pg_temp.series_payload('91000000-0000-4000-8000-000000000030')
+SELECT * FROM public.create_manual_progress_invoice_series(
+  pg_temp.series_payload(
+    '91000000-0000-4000-8000-000000000030',
+    'actor-isolation-a'
+  )
 );
 
 SET request.jwt.claim.sub = '00000000-0000-0000-0000-000000009102';
 CREATE TEMP TABLE fix_actor_b AS
-SELECT * FROM public.create_progress_invoice_series(
-  pg_temp.series_payload('91000000-0000-4000-8000-000000000030')
+SELECT * FROM public.create_manual_progress_invoice_series(
+  pg_temp.series_payload(
+    '91000000-0000-4000-8000-000000000030',
+    'actor-isolation-b'
+  )
 );
 
 SELECT isnt(
@@ -785,7 +747,7 @@ SELECT is(
     SELECT count(DISTINCT event.actor_id)::INT = 2
       AND count(DISTINCT event.series_id)::INT = 2
     FROM public.progress_invoice_events AS event
-    WHERE event.command_name = 'create_progress_invoice_series'
+    WHERE event.command_name = 'create_manual_progress_invoice_series'
       AND event.correlation_key = '91000000-0000-4000-8000-000000000030'
   ),
   true,
@@ -793,6 +755,51 @@ SELECT is(
 );
 
 RESET ROLE;
+
+SELECT is(
+  has_function_privilege(
+    'authenticated',
+    'public.create_manual_progress_invoice_series(jsonb)',
+    'EXECUTE'
+  )
+    AND NOT has_function_privilege(
+      'anon',
+      'public.create_manual_progress_invoice_series(jsonb)',
+      'EXECUTE'
+    )
+    AND NOT has_function_privilege(
+      'service_role',
+      'public.create_manual_progress_invoice_series(jsonb)',
+      'EXECUTE'
+    ),
+  true,
+  'Manual series creation is authenticated-only'
+);
+
+SELECT is(
+  (
+    SELECT bool_and(
+      NOT has_function_privilege('anon', function_oid, 'EXECUTE')
+      AND NOT has_function_privilege('authenticated', function_oid, 'EXECUTE')
+      AND NOT has_function_privilege('service_role', function_oid, 'EXECUTE')
+    )
+    FROM (
+      SELECT to_regprocedure(signature)::OID AS function_oid
+      FROM unnest(ARRAY[
+        'public.create_progress_invoice_series(jsonb)',
+        'public.get_progress_invoice_quote_prefill(jsonb)'
+      ]) AS legacy(signature)
+    ) AS legacy_functions
+  ),
+  true,
+  'legacy Quote create and prefill RPCs are inert for application roles'
+);
+
+SELECT is(
+  to_regclass('public.uq_progress_invoice_series_numbering_base') IS NOT NULL,
+  true,
+  'normalized active numbering-base uniqueness index exists'
+);
 
 SELECT * FROM finish();
 

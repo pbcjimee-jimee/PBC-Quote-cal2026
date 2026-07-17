@@ -10,21 +10,20 @@ vi.mock('@/lib/supabase/server', () => ({
 
 import {
   createProgressInvoiceRepository,
-  type CreateProgressInvoiceSeriesPayload,
+  type CreateManualProgressInvoiceSeriesPayload,
   type ProgressInvoiceRpcExecutor,
 } from '@/lib/progress-invoices/repository'
 
 const SERIES_ID = '11111111-1111-4111-8111-111111111111'
-const QUOTE_ID = '22222222-2222-4222-8222-222222222222'
 const CORRELATION_KEY = '33333333-3333-4333-8333-333333333333'
 
-const createPayload: CreateProgressInvoiceSeriesPayload = {
-  source_type: 'pbc_quote',
-  quote_id: QUOTE_ID,
-  base_contract_ex_gst: '1000.00',
+const createPayload: CreateManualProgressInvoiceSeriesPayload = {
+  source_type: 'manual',
   gst_rate: '0.10',
-  recipient_name: 'Example Builder',
-  recipient_company: 'Example Builder Pty Ltd',
+  accepted_numbering_base: '2906',
+  base_contract_ex_gst: '17220.50',
+  recipient_name: 'Manual Builder',
+  recipient_company: null,
   recipient_address: '1 Billing Street',
   recipient_email: 'accounts@example.test',
   recipient_phone: '0400000000',
@@ -32,7 +31,7 @@ const createPayload: CreateProgressInvoiceSeriesPayload = {
   site_name: 'Example Site',
   site_address: '2 Site Street',
   default_description: 'Painting works',
-  reference: 'JOB-1',
+  reference: null,
   correlation_key: CORRELATION_KEY,
 }
 
@@ -47,7 +46,7 @@ describe('Progress Invoice authenticated RPC repository', () => {
     vi.clearAllMocks()
   })
 
-  it('uses the request-authenticated client for create-series RPCs', async () => {
+  it('uses the request-authenticated client for the Manual create-series RPC', async () => {
     const rpc = vi.fn().mockResolvedValue({
       data: [{ id: SERIES_ID, version: 1 }],
       error: null,
@@ -55,10 +54,10 @@ describe('Progress Invoice authenticated RPC repository', () => {
     serverMocks.createClient.mockResolvedValue({ rpc })
 
     const repository = await createProgressInvoiceRepository()
-    const result = await repository.call('create_progress_invoice_series', createPayload)
+    const result = await repository.call('create_manual_progress_invoice_series', createPayload)
 
     expect(serverMocks.createClient).toHaveBeenCalledOnce()
-    expect(rpc).toHaveBeenCalledWith('create_progress_invoice_series', {
+    expect(rpc).toHaveBeenCalledWith('create_manual_progress_invoice_series', {
       payload: createPayload,
     })
     expect(result).toEqual({ ok: true, data: { id: SERIES_ID, version: 1 } })
@@ -72,11 +71,11 @@ describe('Progress Invoice authenticated RPC repository', () => {
     const { ProgressInvoiceRepository } = await import('@/lib/progress-invoices/repository')
     const repository = new ProgressInvoiceRepository(retryExecutor)
 
-    expect(await repository.call('create_progress_invoice_series', createPayload)).toEqual({
+    expect(await repository.call('create_manual_progress_invoice_series', createPayload)).toEqual({
       ok: true,
       data: { id: SERIES_ID, version: 1 },
     })
-    expect(await repository.call('create_progress_invoice_series', createPayload)).toEqual({
+    expect(await repository.call('create_manual_progress_invoice_series', createPayload)).toEqual({
       ok: true,
       data: { id: SERIES_ID, version: 1 },
     })
@@ -85,7 +84,7 @@ describe('Progress Invoice authenticated RPC repository', () => {
       data: null,
       error: { message: 'IDEMPOTENCY_KEY_REUSED', code: 'P0001' },
     }))
-    expect(await reused.call('create_progress_invoice_series', {
+    expect(await reused.call('create_manual_progress_invoice_series', {
       ...createPayload,
       base_contract_ex_gst: '1001.00',
     })).toEqual({
@@ -95,52 +94,11 @@ describe('Progress Invoice authenticated RPC repository', () => {
     })
   })
 
-  it('parses Quote prefill amounts only when PostgreSQL serialized them as strings', async () => {
-    const { ProgressInvoiceRepository } = await import('@/lib/progress-invoices/repository')
-    const valid = new ProgressInvoiceRepository(executorReturning({
-      data: {
-        quote: {
-          id: QUOTE_ID,
-          customer_name: 'Exact Builder',
-          customer_address: '',
-          work_type: '',
-          subtotal: '99999999.99',
-          final_total: '12345678.91',
-        },
-      },
-      error: null,
-    }))
-    const numeric = new ProgressInvoiceRepository(executorReturning({
-      data: {
-        quote: {
-          id: QUOTE_ID,
-          customer_name: 'Rounded Builder',
-          customer_address: '',
-          work_type: '',
-          subtotal: 99999999.99,
-          final_total: 12345678.91,
-        },
-      },
-      error: null,
-    }))
-
-    expect(await valid.call('get_progress_invoice_quote_prefill', { quote_id: QUOTE_ID })).toEqual({
-      ok: true,
-      data: expect.objectContaining({
-        quote: expect.objectContaining({ subtotal: '99999999.99', final_total: '12345678.91' }),
-      }),
-    })
-    expect(await numeric.call('get_progress_invoice_quote_prefill', { quote_id: QUOTE_ID })).toEqual({
-      ok: false,
-      error: 'PROGRESS_RESPONSE_INVALID',
-    })
-  })
-
   it('returns a stale series current DTO instead of leaking database detail', async () => {
     const current = {
       id: SERIES_ID,
       source_type: 'pbc_quote',
-      quote_id: QUOTE_ID,
+      quote_id: null,
       version: 2,
       base_contract_ex_gst: '1000.00',
       gst_rate: '0.10',

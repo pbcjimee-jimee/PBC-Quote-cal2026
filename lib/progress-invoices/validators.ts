@@ -54,8 +54,6 @@ export const saveBusinessInvoiceProfileSchema = z.strictObject({
 })
 
 const seriesEditableShape = {
-  pbcQuoteId: uuidSchema.nullable().optional(),
-  sourceType: z.enum(['pbc_quote', 'jobber_job', 'jobber_invoice']),
   baseContractExGst: positiveMoneySchema,
   gstRate: gstRateSchema,
   recipientName: requiredText(PROGRESS_INVOICE_TEXT_LIMITS.recipientName),
@@ -70,24 +68,20 @@ const seriesEditableShape = {
   reference: optionalText(PROGRESS_INVOICE_TEXT_LIMITS.reference),
 }
 
-export const createProgressInvoiceSeriesSchema = z.strictObject({
-  ...seriesEditableShape,
+export const createManualProgressInvoiceSeriesSchema = z.strictObject({
+  acceptedNumberingBase: requiredText(120),
+  baseContractExGst: positiveMoneySchema,
+  recipientName: requiredText(PROGRESS_INVOICE_TEXT_LIMITS.recipientName),
+  recipientCompany: optionalText(PROGRESS_INVOICE_TEXT_LIMITS.recipientCompany),
+  recipientAddress: requiredText(PROGRESS_INVOICE_TEXT_LIMITS.address),
+  recipientEmail: optionalText(PROGRESS_INVOICE_TEXT_LIMITS.email),
+  recipientPhone: optionalText(PROGRESS_INVOICE_TEXT_LIMITS.phone),
+  recipientAbn: optionalText(PROGRESS_INVOICE_TEXT_LIMITS.abn),
+  siteName: requiredText(PROGRESS_INVOICE_TEXT_LIMITS.siteName),
+  siteAddress: requiredText(PROGRESS_INVOICE_TEXT_LIMITS.siteAddress),
+  defaultDescription: requiredText(PROGRESS_INVOICE_TEXT_LIMITS.description),
+  reference: optionalText(PROGRESS_INVOICE_TEXT_LIMITS.reference),
   correlationKey: uuidSchema,
-}).superRefine((series, context) => {
-  if (series.sourceType === 'pbc_quote' && !series.pbcQuoteId) {
-    context.addIssue({
-      code: 'custom',
-      path: ['pbcQuoteId'],
-      message: 'PBC quote series require a quote ID',
-    })
-  }
-  if (series.sourceType !== 'pbc_quote' && series.pbcQuoteId != null) {
-    context.addIssue({
-      code: 'custom',
-      path: ['pbcQuoteId'],
-      message: 'Only PBC quote series may include a quote ID',
-    })
-  }
 })
 
 export const createStandaloneProgressInvoiceFromJobberSchema = z.strictObject({
@@ -147,11 +141,6 @@ export const progressInvoiceListSchema = z.strictObject({
 })
 
 export const progressInvoiceSeriesIdSchema = uuidSchema
-
-export const progressInvoiceCreatePrefillSchema = z.union([
-  z.strictObject({ quoteId: uuidSchema }),
-  z.strictObject({ standalone: z.literal(true) }),
-])
 
 export const linkProgressJobberInvoiceSchema = z.strictObject({
   seriesId: uuidSchema,
@@ -361,8 +350,8 @@ export const progressInvoiceDocumentRequestSchema = z.strictObject({
 export type SaveBusinessInvoiceProfileInput = z.infer<
   typeof saveBusinessInvoiceProfileSchema
 >
-export type CreateProgressInvoiceSeriesInput = z.infer<
-  typeof createProgressInvoiceSeriesSchema
+export type CreateManualProgressInvoiceSeriesInput = z.infer<
+  typeof createManualProgressInvoiceSeriesSchema
 >
 export type CreateStandaloneProgressInvoiceFromJobberInput = z.infer<
   typeof createStandaloneProgressInvoiceFromJobberSchema

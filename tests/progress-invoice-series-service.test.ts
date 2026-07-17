@@ -9,17 +9,17 @@ vi.mock('@/lib/supabase/server', () => ({
 }))
 
 import {
-  getProgressInvoiceCreatePrefill,
+  createManualProgressInvoiceSeries,
   getProgressInvoiceSeries,
   listProgressInvoiceSeries,
 } from '@/lib/progress-invoices/series-service'
 
 const SERIES_ID = '11111111-1111-4111-8111-111111111111'
-const QUOTE_ID = '22222222-2222-4222-8222-222222222222'
+const CORRELATION_KEY = '22222222-2222-4222-8222-222222222222'
 
 const dashboardItem = {
   id: SERIES_ID,
-  source_type: 'pbc_quote',
+  source_type: 'manual',
   quote_id: null,
   recipient_name: 'Safe Builder),owner_id.eq.attacker',
   recipient_company: '',
@@ -40,7 +40,7 @@ const dashboardItem = {
 const detail = {
   id: SERIES_ID,
   quote_id: null,
-  source_type: 'pbc_quote',
+  source_type: 'manual',
   version: 1,
   base_contract_ex_gst: '899999999999.99',
   gst_rate: '0.10',
@@ -122,7 +122,7 @@ describe('progress invoice series service read boundary', () => {
       data: {
         items: [{
           id: SERIES_ID,
-          sourceType: 'pbc_quote',
+          sourceType: 'manual',
           quoteId: null,
           recipientName: 'Safe Builder),owner_id.eq.attacker',
           recipientCompany: '',
@@ -214,10 +214,83 @@ describe('progress invoice series service read boundary', () => {
     expect(result).toMatchObject({
       ok: true,
       data: {
+        sourceType: 'manual',
         baseContractExGst: '899999999999.99',
         adjustedContractExGst: '899999999999.99',
         claimedIncGst: '0.01',
         cumulativePercentage: '0.000001',
+      },
+    })
+  })
+
+  it('accepts historical PBC Quote and Jobber Job sources at the read boundary', async () => {
+    const rpc = vi.fn()
+      .mockResolvedValueOnce({
+        data: {
+          items: [{ ...dashboardItem, source_type: 'pbc_quote' }],
+          page: 1,
+          page_size: 20,
+          total: 1,
+        },
+        error: null,
+      })
+      .mockResolvedValueOnce({
+        data: { series: { ...detail, source_type: 'jobber_job' } },
+        error: null,
+      })
+    mocks.createClient.mockResolvedValue({ from: directReadClient(detail), rpc })
+
+    expect(await listProgressInvoiceSeries({
+      query: '', statuses: [], page: 1, pageSize: 20, quoteId: null,
+    })).toMatchObject({ ok: true, data: { items: [{ sourceType: 'pbc_quote' }] } })
+    expect(await getProgressInvoiceSeries(SERIES_ID)).toMatchObject({
+      ok: true,
+      data: { sourceType: 'jobber_job' },
+    })
+  })
+
+  it('sends only the strict Manual command to the repository boundary', async () => {
+    const rpc = vi.fn().mockResolvedValue({
+      data: [{ id: SERIES_ID, version: 1 }],
+      error: null,
+    })
+    mocks.createClient.mockResolvedValue({ rpc })
+
+    expect(await createManualProgressInvoiceSeries({
+      sourceType: 'manual',
+      gstRate: '0.10',
+      acceptedNumberingBase: '2906',
+      baseContractExGst: '17220.50',
+      recipientName: 'Manual Builder',
+      recipientCompany: null,
+      recipientAddress: '1 Billing Street',
+      recipientEmail: null,
+      recipientPhone: null,
+      recipientAbn: null,
+      siteName: 'Manual Site',
+      siteAddress: '4 Site Street',
+      defaultDescription: 'Progress painting works',
+      reference: null,
+      correlationKey: CORRELATION_KEY,
+    })).toEqual({ ok: true, data: { id: SERIES_ID, version: 1 } })
+
+    expect(rpc).toHaveBeenCalledWith('create_manual_progress_invoice_series', {
+      payload: {
+        source_type: 'manual',
+        gst_rate: '0.10',
+        accepted_numbering_base: '2906',
+        base_contract_ex_gst: '17220.50',
+        recipient_name: 'Manual Builder',
+        recipient_company: null,
+        recipient_address: '1 Billing Street',
+        recipient_email: null,
+        recipient_phone: null,
+        recipient_abn: null,
+        site_name: 'Manual Site',
+        site_address: '4 Site Street',
+        default_description: 'Progress painting works',
+        reference: null,
+        correlation_key: CORRELATION_KEY,
       },
     })
   })
@@ -243,77 +316,4 @@ describe('progress invoice series service read boundary', () => {
     })
   })
 
-  it('reads Quote prefill through the authenticated RPC with exact decimal strings', async () => {
-    const rpc = vi.fn().mockResolvedValue({
-      data: {
-        quote: {
-          id: QUOTE_ID,
-          customer_name: 'Exact Builder',
-          customer_address: '1 Exact Street',
-          work_type: 'Exact works',
-          subtotal: '99999999.99',
-          final_total: '12345678.91',
-        },
-      },
-      error: null,
-    })
-    const from = directReadClient({ subtotal: 99999999.99, final_total: 12345678.91 })
-    mocks.createClient.mockResolvedValue({ from, rpc })
-
-    expect(await getProgressInvoiceCreatePrefill({ quoteId: QUOTE_ID })).toEqual({
-      ok: true,
-      data: {
-        sourceType: 'pbc_quote',
-        quote: {
-          id: QUOTE_ID,
-          customerName: 'Exact Builder',
-          customerAddress: '1 Exact Street',
-          baseContractExGst: '99999999.99',
-          comparisonIncGst: '12345678.91',
-          defaultDescription: 'Exact works',
-        },
-      },
-    })
-    expect(rpc).toHaveBeenCalledWith('get_progress_invoice_quote_prefill', {
-      payload: { quote_id: QUOTE_ID },
-    })
-    expect(from).not.toHaveBeenCalled()
-  })
-
-  it('rejects numeric Quote prefill JSON and maps a missing Quote safely', async () => {
-    const rpc = vi.fn()
-      .mockResolvedValueOnce({
-        data: {
-          quote: {
-            id: QUOTE_ID,
-            customer_name: 'Rounded Builder',
-            customer_address: '',
-            work_type: '',
-            subtotal: 99999999.99,
-            final_total: 12345678.91,
-          },
-        },
-        error: null,
-      })
-      .mockResolvedValueOnce({ data: { quote: null }, error: null })
-    mocks.createClient.mockResolvedValue({ from: directReadClient({}), rpc })
-
-    expect(await getProgressInvoiceCreatePrefill({ quoteId: QUOTE_ID })).toEqual({
-      ok: false,
-      error: 'PROGRESS_RESPONSE_INVALID',
-    })
-    expect(await getProgressInvoiceCreatePrefill({ quoteId: QUOTE_ID })).toEqual({
-      ok: false,
-      error: 'PROGRESS_NOT_FOUND',
-      code: 'NOT_FOUND',
-    })
-  })
-
-  it('keeps standalone prefill local without opening a database boundary', async () => {
-    expect(await getProgressInvoiceCreatePrefill({ standalone: true })).toEqual({
-      ok: true,
-      data: { sourceType: 'standalone', quote: null },
-    })
-    expect(mocks.createClient).not.toHaveBeenCalled()
-  })
 })

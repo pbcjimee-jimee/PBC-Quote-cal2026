@@ -23,6 +23,15 @@ const databaseTypesPath = join(process.cwd(), 'lib', 'supabase', 'types.ts')
 const databaseTypes = existsSync(databaseTypesPath)
   ? readFileSync(databaseTypesPath, 'utf8')
   : ''
+const manualMigrationPath = join(
+  process.cwd(),
+  'supabase',
+  'migrations',
+  '20260717102000_add_manual_progress_invoice_series.sql',
+)
+const manualSql = existsSync(manualMigrationPath)
+  ? readFileSync(manualMigrationPath, 'utf8')
+  : ''
 
 const tables = [
   'business_invoice_profiles',
@@ -878,5 +887,19 @@ describe('Progress Invoice RPC foundations migration', () => {
 
     expect(profileFunction).toBeDefined()
     expect(profileFunction).not.toMatch(/progress_append_event|progress_invoice_events/i)
+  })
+})
+
+describe('Manual source compatibility migration', () => {
+  it('preserves direct-write denial while allowing nullable source-aware claim evidence', () => {
+    expect(manualSql).not.toMatch(/GRANT\s+(?:INSERT|UPDATE|DELETE|ALL)[^;]*progress_(?:invoice_series|claim_revisions)[^;]*TO\s+(?:anon|authenticated|service_role)/i)
+    expect(manualSql).toMatch(/progress_claim_revisions_jobber_evidence_all_or_none/i)
+    expect(manualSql).toMatch(/accepted_numbering_base[\s\S]*IS NOT NULL/i)
+  })
+
+  it('adds the Manual RPC to generated types and removes legacy Quote create/prefill functions', () => {
+    expect(databaseTypes).toMatch(/create_manual_progress_invoice_series/)
+    expect(databaseTypes).not.toMatch(/\bcreate_progress_invoice_series:\s*\{/)
+    expect(databaseTypes).not.toMatch(/\bget_progress_invoice_quote_prefill:\s*\{/)
   })
 })

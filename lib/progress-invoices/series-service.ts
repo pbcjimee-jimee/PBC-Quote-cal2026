@@ -9,7 +9,7 @@ import {
   type VersionedMutationRpcResult,
 } from './repository'
 import type {
-  CreateProgressInvoiceSeriesInput,
+  CreateManualProgressInvoiceSeriesInput,
   SaveBusinessInvoiceProfileInput,
   UpdateProgressInvoiceSeriesInput,
 } from './validators'
@@ -43,7 +43,7 @@ export interface ProgressInvoiceListInput {
 
 export interface ProgressInvoiceDashboardItem {
   id: string
-  sourceType: 'pbc_quote' | 'jobber_job' | 'jobber_invoice'
+  sourceType: 'pbc_quote' | 'jobber_job' | 'jobber_invoice' | 'manual'
   quoteId: string | null
   recipientName: string
   recipientCompany: string
@@ -71,7 +71,7 @@ export interface ProgressInvoiceDashboardDto {
 export interface ProgressInvoiceSeriesDetail {
   id: string
   quoteId: string | null
-  sourceType: 'pbc_quote' | 'jobber_job' | 'jobber_invoice'
+  sourceType: 'pbc_quote' | 'jobber_job' | 'jobber_invoice' | 'manual'
   version: number
   baseContractExGst: string
   gstRate: '0.10'
@@ -104,16 +104,9 @@ export interface ProgressInvoiceSeriesMutationResult extends VersionedMutationRp
   quoteId: string | null
 }
 
-export interface ProgressInvoiceCreatePrefill {
-  sourceType: 'pbc_quote' | 'standalone'
-  quote: null | {
-    id: string
-    customerName: string
-    customerAddress: string
-    baseContractExGst: string
-    comparisonIncGst: string
-    defaultDescription: string
-  }
+export type ManualProgressInvoiceSeriesCommand = CreateManualProgressInvoiceSeriesInput & {
+  sourceType: 'manual'
+  gstRate: '0.10'
 }
 
 function mapProfile(row: BusinessInvoiceProfileRpcResult): BusinessInvoiceProfileDto {
@@ -207,21 +200,26 @@ export async function saveBusinessInvoiceProfile(
   return result.ok ? { ok: true, data: mapProfile(result.data) } : result
 }
 
-export async function createProgressInvoiceSeries(
-  input: CreateProgressInvoiceSeriesInput
+export async function createManualProgressInvoiceSeries(
+  input: ManualProgressInvoiceSeriesCommand
 ): Promise<ActionResult<VersionedMutationRpcResult>> {
+  if (input.sourceType !== 'manual' || input.gstRate !== '0.10') {
+    return { ok: false, error: 'PROGRESS_VALIDATION_FAILED', code: 'VALIDATION' }
+  }
   const repository = await createProgressInvoiceRepository()
-  return repository.call('create_progress_invoice_series', {
+  return repository.call('create_manual_progress_invoice_series', {
     source_type: input.sourceType,
-    quote_id: input.pbcQuoteId,
-    base_contract_ex_gst: input.baseContractExGst,
     gst_rate: input.gstRate,
+    accepted_numbering_base: input.acceptedNumberingBase,
+    base_contract_ex_gst: input.baseContractExGst,
     recipient_name: input.recipientName,
     recipient_company: input.recipientCompany,
     recipient_address: input.recipientAddress,
     recipient_email: input.recipientEmail,
     recipient_phone: input.recipientPhone,
-    recipient_abn: input.recipientAbn?.replace(/\s/g, ''),
+    recipient_abn: input.recipientAbn == null
+      ? input.recipientAbn
+      : input.recipientAbn.replace(/\s/g, ''),
     site_name: input.siteName,
     site_address: input.siteAddress,
     default_description: input.defaultDescription,
@@ -324,31 +322,6 @@ export async function listProgressInvoiceSeries(
       page: result.data.page,
       pageSize: result.data.page_size,
       total: result.data.total,
-    },
-  }
-}
-
-export async function getProgressInvoiceCreatePrefill(
-  input: { quoteId: string } | { standalone: true }
-): Promise<ActionResult<ProgressInvoiceCreatePrefill>> {
-  if ('standalone' in input) return { ok: true, data: { sourceType: 'standalone', quote: null } }
-  const repository = await createProgressInvoiceRepository()
-  const result = await repository.call('get_progress_invoice_quote_prefill', { quote_id: input.quoteId })
-  if (!result.ok) return result
-  if (!result.data.quote) return { ok: false, error: 'PROGRESS_NOT_FOUND', code: 'NOT_FOUND' }
-  const quote = result.data.quote
-  return {
-    ok: true,
-    data: {
-      sourceType: 'pbc_quote',
-      quote: {
-        id: quote.id,
-        customerName: quote.customer_name,
-        customerAddress: quote.customer_address,
-        baseContractExGst: quote.subtotal,
-        comparisonIncGst: quote.final_total,
-        defaultDescription: quote.work_type,
-      },
     },
   }
 }

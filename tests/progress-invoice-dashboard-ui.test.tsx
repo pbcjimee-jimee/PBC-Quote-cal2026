@@ -266,4 +266,29 @@ describe('Progress Invoice dashboard foundation', () => {
     expect(newMarkup).not.toContain('Sync Jobber')
     expect(newMarkup).not.toContain('Auto sync')
   })
+
+  it('labels Manual rows without a Jobber import timestamp', () => {
+    const markup = renderToStaticMarkup(createElement(ProgressInvoiceDashboard, {
+      result: {
+        ok: true,
+        data: {
+          ...dashboardData,
+          items: [{
+            ...dashboardData.items[0]!,
+            sourceType: 'manual',
+            quoteId: null,
+            lastSuccessfulJobberSyncAt: null,
+            lastJobberSyncErrorCode: null,
+          }],
+        },
+      },
+      filters: {
+        query: '', statuses: [], page: 1, pageSize: 20, quoteId: null,
+      },
+    }))
+
+    expect(markup).toContain('Manual')
+    expect(markup).not.toContain('Imported from Jobber')
+    expect(markup).not.toContain('Jobber not imported')
+  })
 })
