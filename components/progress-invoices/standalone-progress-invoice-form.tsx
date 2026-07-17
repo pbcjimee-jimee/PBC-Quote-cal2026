@@ -608,7 +608,7 @@ export function StandaloneProgressInvoiceForm({
         </>
       ) : null}
 
-      <form className="pbc-progress-series-form" aria-label="Create standalone Progress Invoice series" noValidate onSubmit={saveSeries}>
+      <form className="pbc-progress-series-form" aria-label="Create standalone Progress Invoice series" onSubmit={saveSeries}>
         <ProgressInvoiceSeriesFields
           draft={formDraft}
           disabled={formDisabled || viewModel.saveState.status === 'saving'}

@@ -270,6 +270,14 @@ async function selectMode(container: HTMLElement, label: string): Promise<void> 
   })
 }
 
+async function pressKey(element: HTMLElement, key: string): Promise<void> {
+  const event = new Event('keydown', { bubbles: true, cancelable: true })
+  Object.defineProperty(event, 'key', { configurable: true, value: key })
+  await act(async () => {
+    element.dispatchEvent(event)
+  })
+}
+
 async function submitSearch(container: HTMLElement, term: string): Promise<void> {
   const input = inputByName(container, 'jobberInvoiceNumber')
   await act(async () => {
@@ -451,6 +459,73 @@ describe('Standalone Progress Invoice workspace', () => {
       expect(panel?.getAttribute('id')).toBe('progress-invoice-jobber-panel')
       expect(panel?.getAttribute('aria-labelledby')).toBe('progress-invoice-jobber-tab')
       expect(inputByName(mounted.container, 'jobberInvoiceNumber')).toBeDefined()
+    } finally {
+      await mounted.cleanup()
+    }
+  })
+
+  it('moves tab focus, selection, and panel linkage with ArrowRight and ArrowLeft', async () => {
+    vi.stubGlobal('fetch', vi.fn())
+    const mounted = await mountCreateWorkspace()
+
+    try {
+      let jobberTab = buttonByText(mounted.container, 'Import from Jobber')
+      let manualTab = buttonByText(mounted.container, 'Create manually')
+      const manualFocus = vi.fn()
+      Object.defineProperty(manualTab, 'focus', { configurable: true, value: manualFocus })
+
+      await pressKey(jobberTab, 'ArrowRight')
+
+      jobberTab = buttonByText(mounted.container, 'Import from Jobber')
+      manualTab = buttonByText(mounted.container, 'Create manually')
+      expect(manualFocus).toHaveBeenCalledTimes(1)
+      expect(jobberTab.getAttribute('aria-selected')).toBe('false')
+      expect(jobberTab.getAttribute('tabindex')).toBe('-1')
+      expect(manualTab.getAttribute('aria-selected')).toBe('true')
+      expect(manualTab.getAttribute('tabindex')).toBe('0')
+      let panel = Array.from(mounted.container.querySelectorAll('section')).find((section) => (
+        section.getAttribute('role') === 'tabpanel'
+      ))
+      expect(panel?.getAttribute('id')).toBe('progress-invoice-manual-panel')
+      expect(panel?.getAttribute('aria-labelledby')).toBe('progress-invoice-manual-tab')
+
+      const jobberFocus = vi.fn()
+      Object.defineProperty(jobberTab, 'focus', { configurable: true, value: jobberFocus })
+      await pressKey(manualTab, 'ArrowLeft')
+
+      jobberTab = buttonByText(mounted.container, 'Import from Jobber')
+      manualTab = buttonByText(mounted.container, 'Create manually')
+      expect(jobberFocus).toHaveBeenCalledTimes(1)
+      expect(jobberTab.getAttribute('aria-selected')).toBe('true')
+      expect(jobberTab.getAttribute('tabindex')).toBe('0')
+      expect(manualTab.getAttribute('aria-selected')).toBe('false')
+      expect(manualTab.getAttribute('tabindex')).toBe('-1')
+      panel = Array.from(mounted.container.querySelectorAll('section')).find((section) => (
+        section.getAttribute('role') === 'tabpanel'
+      ))
+      expect(panel?.getAttribute('id')).toBe('progress-invoice-jobber-panel')
+      expect(panel?.getAttribute('aria-labelledby')).toBe('progress-invoice-jobber-tab')
+    } finally {
+      await mounted.cleanup()
+    }
+  })
+
+  it('keeps native Jobber form validation and its email input type enabled', async () => {
+    vi.stubGlobal('fetch', vi.fn())
+    const mounted = await mountCreateWorkspace()
+    const markup = renderToStaticMarkup(createElement(ProgressInvoiceCreateWorkspace))
+
+    try {
+      const createForm = Array.from(mounted.container.querySelectorAll('form')).find((form) => (
+        form.getAttribute('aria-label') === 'Create standalone Progress Invoice series'
+      ))
+      expect(createForm).toBeDefined()
+      const createFormTag = markup.match(
+        /<form class="pbc-progress-series-form" aria-label="Create standalone Progress Invoice series"[^>]*>/,
+      )?.[0]
+      expect(createFormTag).toBeDefined()
+      expect(createFormTag).not.toMatch(/novalidate/i)
+      expect(markup).toContain('type="email"')
     } finally {
       await mounted.cleanup()
     }
@@ -1073,8 +1148,15 @@ describe('Standalone Progress Invoice workspace', () => {
     expect(markup).toContain('pbc-progress-standalone')
     expect(sharedCss).toContain('.pbc-progress-form-grid')
     expect(sharedCss).toContain('.pbc-progress-comparison-grid')
-    expect(globalCss).toContain('.pbc-progress-create-grid--workspace')
+    expect(globalCss).toMatch(
+      /\.pbc-progress-create-grid--workspace\s*\{\s*grid-template-columns:\s*minmax\(0, 1fr\);\s*\}/,
+    )
+    expect(globalCss).toMatch(
+      /\.pbc-progress-create-workspace,\s*\.pbc-progress-create-workspace > \[role="tabpanel"\]\s*\{\s*width:\s*100%;\s*min-width:\s*0;\s*\}/,
+    )
     expect(globalCss).toContain('.pbc-progress-create-modes')
+    expect(globalCss).toContain('.pbc-progress-create-workspace .pbc-field__error')
+    expect(globalCss).not.toMatch(/(?:^|\n)\.pbc-field__error\s*\{/)
     expect(globalCss).toContain('@media (max-width: 720px)')
   })
 })

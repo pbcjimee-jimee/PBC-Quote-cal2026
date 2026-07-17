@@ -80,7 +80,7 @@
   outline-offset: 2px;
 }
 
-.pbc-field__error {
+.pbc-progress-create-workspace .pbc-field__error {
   color: var(--danger);
   font-size: 11px;
   font-weight: 700;
