@@ -129,6 +129,33 @@ describe('Progress Invoice command schemas', () => {
     }).success).toBe(false)
   })
 
+  it('validates optional Manual email and normalizes an eleven-digit ABN', () => {
+    const parsed = createManualProgressInvoiceSeriesSchema.safeParse({
+      ...manualSeriesInput,
+      recipientEmail: ' accounts@example.test ',
+      recipientAbn: '11 222 333 444',
+    })
+
+    expect(parsed.success).toBe(true)
+    if (parsed.success) {
+      expect(parsed.data.recipientEmail).toBe('accounts@example.test')
+      expect(parsed.data.recipientAbn).toBe('11222333444')
+    }
+
+    for (const recipientEmail of ['not-an-email', 'missing-tld@example', `${'a'.repeat(245)}@example.test`]) {
+      expect(createManualProgressInvoiceSeriesSchema.safeParse({
+        ...manualSeriesInput,
+        recipientEmail,
+      }).success).toBe(false)
+    }
+    for (const recipientAbn of ['1234567890', '123456789012', '12A45678901', '1 2 3 4 5 6 7 8 9 0 1']) {
+      expect(createManualProgressInvoiceSeriesSchema.safeParse({
+        ...manualSeriesInput,
+        recipientAbn,
+      }).success).toBe(false)
+    }
+  })
+
   it('strictly validates and normalizes standalone Jobber create input', () => {
     const parsed = createStandaloneProgressInvoiceFromJobberSchema.safeParse(standaloneJobberInput)
 

@@ -1,6 +1,7 @@
 'use server'
 
 import { revalidatePath } from 'next/cache'
+import type { ZodError } from 'zod'
 
 import type { ActionResult } from './types'
 import { requireAllowedUser } from '@/lib/security/require-allowed-user'
@@ -27,6 +28,17 @@ import {
 
 function validationFailure(): ActionResult<never> {
   return { ok: false, error: 'PROGRESS_VALIDATION_FAILED', code: 'VALIDATION' }
+}
+
+function manualValidationFailure(error: ZodError): ActionResult<never> {
+  const invalidFields = new Set(error.issues.map((issue) => issue.path[0]))
+  if (invalidFields.has('recipientEmail')) {
+    return { ok: false, error: 'PROGRESS_EMAIL_INVALID', code: 'VALIDATION' }
+  }
+  if (invalidFields.has('recipientAbn')) {
+    return { ok: false, error: 'PROGRESS_ABN_INVALID', code: 'VALIDATION' }
+  }
+  return validationFailure()
 }
 
 async function authorize(): Promise<ActionResult<true>> {
@@ -77,7 +89,7 @@ export async function createManualProgressInvoiceSeries(
   input: unknown
 ): Promise<ActionResult<VersionedMutationRpcResult>> {
   const parsed = createManualProgressInvoiceSeriesSchema.safeParse(input)
-  if (!parsed.success) return validationFailure()
+  if (!parsed.success) return manualValidationFailure(parsed.error)
   const authorized = await authorize()
   if (!authorized.ok) return authorized
   const result = await createManualSeries({

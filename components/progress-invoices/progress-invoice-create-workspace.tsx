@@ -15,6 +15,9 @@ import {
 
 export type ProgressInvoiceCreateMode = 'jobber' | 'manual'
 
+const SAVE_INTERRUPTED_MESSAGE =
+  'Save was interrupted when you changed creation method. Retry to confirm the result.'
+
 export function ProgressInvoiceCreateWorkspace() {
   const [mode, setMode] = useState<ProgressInvoiceCreateMode>('jobber')
   const [jobberViewModel, reduceJobber] = useReducer(
@@ -30,24 +33,43 @@ export function ProgressInvoiceCreateWorkspace() {
   const jobberTabRef = useRef<HTMLButtonElement>(null)
   const manualTabRef = useRef<HTMLButtonElement>(null)
   function dispatchJobber(event: Parameters<typeof reduceJobber>[0]): void {
-    if (event.type === 'saveStarted') {
+    if (event.type === 'saveStarted' || event.type === 'saveCancelled') {
       jobberSaveGenerationRef.current = event.requestGeneration
     }
     reduceJobber(event)
   }
 
   function dispatchManual(event: Parameters<typeof reduceManual>[0]): void {
-    if (event.type === 'saveStarted') {
+    if (event.type === 'saveStarted' || event.type === 'saveCancelled') {
       manualSaveGenerationRef.current = event.requestGeneration
     }
     reduceManual(event)
+  }
+
+  function selectMode(nextMode: ProgressInvoiceCreateMode): void {
+    if (nextMode === mode) return
+    if (mode === 'jobber' && jobberViewModel.saveState.status === 'saving') {
+      dispatchJobber({
+        type: 'saveCancelled',
+        requestGeneration: jobberSaveGenerationRef.current + 1,
+        message: SAVE_INTERRUPTED_MESSAGE,
+      })
+    }
+    if (mode === 'manual' && manualViewModel.saveState.status === 'saving') {
+      dispatchManual({
+        type: 'saveCancelled',
+        requestGeneration: manualSaveGenerationRef.current + 1,
+        message: SAVE_INTERRUPTED_MESSAGE,
+      })
+    }
+    setMode(nextMode)
   }
 
   function selectFromKeyboard(event: KeyboardEvent<HTMLButtonElement>): void {
     if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return
     event.preventDefault()
     const nextMode = mode === 'jobber' ? 'manual' : 'jobber'
-    setMode(nextMode)
+    selectMode(nextMode)
     if (nextMode === 'jobber') jobberTabRef.current?.focus()
     else manualTabRef.current?.focus()
   }
@@ -68,7 +90,7 @@ export function ProgressInvoiceCreateWorkspace() {
           aria-selected={mode === 'jobber'}
           aria-controls="progress-invoice-jobber-panel"
           tabIndex={mode === 'jobber' ? 0 : -1}
-          onClick={() => setMode('jobber')}
+          onClick={() => selectMode('jobber')}
           onKeyDown={selectFromKeyboard}
         >
           Import from Jobber
@@ -82,7 +104,7 @@ export function ProgressInvoiceCreateWorkspace() {
           aria-selected={mode === 'manual'}
           aria-controls="progress-invoice-manual-panel"
           tabIndex={mode === 'manual' ? 0 : -1}
-          onClick={() => setMode('manual')}
+          onClick={() => selectMode('manual')}
           onKeyDown={selectFromKeyboard}
         >
           Create manually

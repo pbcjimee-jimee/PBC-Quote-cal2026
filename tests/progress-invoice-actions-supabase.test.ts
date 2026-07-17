@@ -108,6 +108,23 @@ describe('Progress Invoice authenticated RPC repository', () => {
     })
   })
 
+  it.each(['PROGRESS_EMAIL_INVALID', 'PROGRESS_ABN_INVALID'] as const)(
+    'preserves %s at the authenticated Manual repository boundary',
+    async (error) => {
+      const { ProgressInvoiceRepository } = await import('@/lib/progress-invoices/repository')
+      const repository = new ProgressInvoiceRepository(executorReturning({
+        data: null,
+        error: { message: error, code: '23514' },
+      }))
+
+      expect(await repository.call('create_manual_progress_invoice_series', createPayload)).toEqual({
+        ok: false,
+        error,
+        code: 'VALIDATION',
+      })
+    },
+  )
+
   it('returns a stale series current DTO instead of leaking database detail', async () => {
     const current = {
       id: SERIES_ID,

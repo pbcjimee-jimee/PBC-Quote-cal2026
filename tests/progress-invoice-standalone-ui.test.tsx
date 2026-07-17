@@ -134,6 +134,12 @@ function buttonByText(container: HTMLElement, text: string): HTMLButtonElement {
   return button
 }
 
+function spanTextById(container: HTMLElement, id: string): string | undefined {
+  return Array.from(container.querySelectorAll('span')).find((candidate) => (
+    candidate.getAttribute('id') === id
+  ))?.textContent
+}
+
 async function flushReact(): Promise<void> {
   await act(async () => {
     await Promise.resolve()
@@ -572,6 +578,7 @@ describe('Standalone Progress Invoice workspace', () => {
       await changeInput(mounted.container, 'recipientName', 'Manual Draft Builder')
       await changeInput(mounted.container, 'acceptedNumberingBase', 'MAN-2906')
       expect(inputByName(mounted.container, 'recipientName').value).toBe('Manual Draft Builder')
+      expect(mounted.container.textContent).not.toContain('Save was interrupted')
 
       await selectMode(mounted.container, 'Import from Jobber')
       expect(inputByName(mounted.container, 'recipientName').value).toBe('Jobber Draft Builder')
@@ -581,6 +588,7 @@ describe('Standalone Progress Invoice workspace', () => {
       await selectMode(mounted.container, 'Create manually')
       expect(inputByName(mounted.container, 'recipientName').value).toBe('Manual Draft Builder')
       expect(inputByName(mounted.container, 'acceptedNumberingBase').value).toBe('MAN-2906')
+      expect(mounted.container.textContent).not.toContain('Save was interrupted')
     } finally {
       await mounted.cleanup()
     }
@@ -686,6 +694,75 @@ describe('Standalone Progress Invoice workspace', () => {
       await mounted.cleanup()
     }
   })
+
+  it('reports invalid optional Manual email and ABN fields locally without clearing raw values', async () => {
+    vi.stubGlobal('fetch', vi.fn())
+    const mounted = await mountCreateWorkspace()
+
+    try {
+      await selectMode(mounted.container, 'Create manually')
+      await completeManualDraft(mounted.container)
+      await changeInput(mounted.container, 'recipientEmail', 'not-an-email')
+      await changeInput(mounted.container, 'recipientAbn', '12 34 invalid')
+      await submitManual(mounted.container)
+
+      expect(mocks.createManualProgressInvoiceSeries).not.toHaveBeenCalled()
+      for (const [name, rawValue, message] of [
+        ['recipientEmail', 'not-an-email', 'Enter a valid email address.'],
+        ['recipientAbn', '12 34 invalid', 'Enter an 11-digit ABN.'],
+      ] as const) {
+        const field = inputByName(mounted.container, name)
+        expect(field.value).toBe(rawValue)
+        expect(field.getAttribute('aria-invalid')).toBe('true')
+        const messageId = field.getAttribute('aria-describedby')
+        expect(messageId).toBeTruthy()
+        expect(spanTextById(mounted.container, messageId!)).toBe(message)
+      }
+    } finally {
+      await mounted.cleanup()
+    }
+  })
+
+  it.each([
+    ['recipientEmail', 'accounts@example.test', 'PROGRESS_EMAIL_INVALID', 'Enter a valid email address.'],
+    ['recipientAbn', '11 222 333 444', 'PROGRESS_ABN_INVALID', 'Enter an 11-digit ABN.'],
+  ] as const)(
+    'maps server %s validation to its Manual field and replays the unchanged attempt key',
+    async (fieldName, rawValue, error, message) => {
+      vi.stubGlobal('fetch', vi.fn())
+      mocks.createManualProgressInvoiceSeries
+        .mockResolvedValueOnce({ ok: false, error, code: 'VALIDATION' })
+        .mockResolvedValueOnce({ ok: true, data: { id: 'series-manual', version: 1 } })
+      const mounted = await mountCreateWorkspace()
+
+      try {
+        await selectMode(mounted.container, 'Create manually')
+        await completeManualDraft(mounted.container)
+        await changeInput(mounted.container, fieldName, rawValue)
+        await submitManual(mounted.container)
+
+        const field = inputByName(mounted.container, fieldName)
+        expect(field.value).toBe(rawValue)
+        expect(field.getAttribute('aria-invalid')).toBe('true')
+        const messageId = field.getAttribute('aria-describedby')
+        expect(messageId).toBeTruthy()
+        expect(spanTextById(mounted.container, messageId!)).toBe(message)
+        expect(mocks.push).not.toHaveBeenCalled()
+        const firstKey = mocks.createManualProgressInvoiceSeries.mock.calls[0]?.[0]
+          .correlationKey
+
+        await submitManual(mounted.container)
+
+        expect(mocks.createManualProgressInvoiceSeries.mock.calls[1]?.[0]
+          .correlationKey).toBe(firstKey)
+        expect(mocks.push).toHaveBeenCalledTimes(1)
+        expect(mocks.push).toHaveBeenCalledWith('/progress-invoices')
+        expect(mocks.refresh).toHaveBeenCalledTimes(1)
+      } finally {
+        await mounted.cleanup()
+      }
+    },
+  )
 
   it('submits only Manual local fields, reuses an unchanged retry key, and rotates it after an edit', async () => {
     vi.stubGlobal('fetch', vi.fn())
@@ -819,6 +896,117 @@ describe('Standalone Progress Invoice workspace', () => {
       expect(mocks.createManualProgressInvoiceSeries.mock.calls[1]?.[0]
         .correlationKey).toBe(firstManualKey)
       expect(inputByName(mounted.container, 'acceptedNumberingBase').value).toBe('2906')
+    } finally {
+      await mounted.cleanup()
+    }
+  })
+
+  it('ignores a late Jobber save success after switching modes and replays its key once active', async () => {
+    const lateJobberSave = deferred<{
+      ok: true
+      data: { seriesId: string; version: number; importedPayments: number }
+    }>()
+    vi.stubGlobal('fetch', vi.fn()
+      .mockResolvedValueOnce(jsonResponse(searchResponse))
+      .mockResolvedValueOnce(jsonResponse(previewResponse)))
+    mocks.createStandaloneProgressInvoiceFromJobber
+      .mockReturnValueOnce(lateJobberSave.promise)
+      .mockResolvedValueOnce({
+        ok: true,
+        data: { seriesId: 'series-jobber-replay', version: 1, importedPayments: 0 },
+      })
+    const mounted = await mountCreateWorkspace()
+
+    try {
+      await submitSearch(mounted.container, '2906')
+      await flushReact()
+      await selectCandidate(mounted.container, '2906')
+      await flushReact()
+      await saveDraft(mounted.container)
+      const firstKey = mocks.createStandaloneProgressInvoiceFromJobber.mock.calls[0]?.[0]
+        .correlationKey
+
+      await selectMode(mounted.container, 'Create manually')
+      await changeInput(mounted.container, 'recipientName', 'Manual mode stays active')
+      await act(async () => {
+        lateJobberSave.resolve({
+          ok: true,
+          data: { seriesId: 'series-jobber-late', version: 1, importedPayments: 0 },
+        })
+        await lateJobberSave.promise
+      })
+      await flushReact()
+
+      expect(inputByName(mounted.container, 'recipientName').value).toBe(
+        'Manual mode stays active',
+      )
+      expect(mocks.push).not.toHaveBeenCalled()
+      expect(mocks.refresh).not.toHaveBeenCalled()
+
+      await selectMode(mounted.container, 'Import from Jobber')
+      expect(inputByName(mounted.container, 'baseContractExGst').value).toBe('17220.50')
+      expect(mounted.container.textContent).toContain(
+        'Save was interrupted when you changed creation method. Retry to confirm the result.',
+      )
+      await saveDraft(mounted.container)
+
+      expect(mocks.createStandaloneProgressInvoiceFromJobber.mock.calls[1]?.[0]
+        .correlationKey).toBe(firstKey)
+      expect(mocks.push).toHaveBeenCalledTimes(1)
+      expect(mocks.push).toHaveBeenCalledWith('/progress-invoices')
+      expect(mocks.refresh).toHaveBeenCalledTimes(1)
+    } finally {
+      await mounted.cleanup()
+    }
+  })
+
+  it('ignores a late Manual save success after switching modes and replays its key once active', async () => {
+    const lateManualSave = deferred<{
+      ok: true
+      data: { id: string; version: number }
+    }>()
+    vi.stubGlobal('fetch', vi.fn())
+    mocks.createManualProgressInvoiceSeries
+      .mockReturnValueOnce(lateManualSave.promise)
+      .mockResolvedValueOnce({ ok: true, data: { id: 'series-manual-replay', version: 1 } })
+    const mounted = await mountCreateWorkspace()
+
+    try {
+      await changeInput(mounted.container, 'jobberInvoiceNumber', 'JOBBER-STAYS')
+      await selectMode(mounted.container, 'Create manually')
+      await completeManualDraft(mounted.container)
+      await submitManual(mounted.container)
+      const firstKey = mocks.createManualProgressInvoiceSeries.mock.calls[0]?.[0]
+        .correlationKey
+
+      await selectMode(mounted.container, 'Import from Jobber')
+      expect(inputByName(mounted.container, 'jobberInvoiceNumber').value).toBe('JOBBER-STAYS')
+      await act(async () => {
+        lateManualSave.resolve({
+          ok: true,
+          data: { id: 'series-manual-late', version: 1 },
+        })
+        await lateManualSave.promise
+      })
+      await flushReact()
+
+      expect(inputByName(mounted.container, 'jobberInvoiceNumber').value).toBe('JOBBER-STAYS')
+      expect(mocks.push).not.toHaveBeenCalled()
+      expect(mocks.refresh).not.toHaveBeenCalled()
+
+      await selectMode(mounted.container, 'Create manually')
+      expect(inputByName(mounted.container, 'acceptedNumberingBase').value).toBe('2906')
+      expect(inputByName(mounted.container, 'recipientName').value).toBe('Manual Builder')
+      expect(mounted.container.textContent).toContain(
+        'Save was interrupted when you changed creation method. Retry to confirm the result.',
+      )
+      await submitManual(mounted.container)
+
+      expect(mocks.createManualProgressInvoiceSeries.mock.calls[1]?.[0]
+        .correlationKey).toBe(firstKey)
+      expect(mocks.push).toHaveBeenCalledTimes(1)
+      expect(mocks.push).toHaveBeenCalledWith('/progress-invoices')
+      expect(mocks.refresh).toHaveBeenCalledTimes(1)
     } finally {
       await mounted.cleanup()
     }

@@ -208,6 +208,35 @@ describe('Progress Invoice Server Actions', () => {
     expect(mocks.createManualProgressInvoiceSeries).not.toHaveBeenCalled()
   })
 
+  it.each([
+    ['recipientEmail', 'not-an-email', 'PROGRESS_EMAIL_INVALID'],
+    ['recipientAbn', '1234567890', 'PROGRESS_ABN_INVALID'],
+  ] as const)(
+    'returns the stable Manual %s parse error before authentication',
+    async (field, value, error) => {
+      expect(await createManualProgressInvoiceSeries({
+        ...manualSeriesInput,
+        [field]: value,
+      })).toEqual({ ok: false, error, code: 'VALIDATION' })
+      expect(mocks.requireAllowedUser).not.toHaveBeenCalled()
+      expect(mocks.createManualProgressInvoiceSeries).not.toHaveBeenCalled()
+    },
+  )
+
+  it('gives invalid Manual email precedence when email and ABN both fail parsing', async () => {
+    expect(await createManualProgressInvoiceSeries({
+      ...manualSeriesInput,
+      recipientEmail: 'not-an-email',
+      recipientAbn: '1234567890',
+    })).toEqual({
+      ok: false,
+      error: 'PROGRESS_EMAIL_INVALID',
+      code: 'VALIDATION',
+    })
+    expect(mocks.requireAllowedUser).not.toHaveBeenCalled()
+    expect(mocks.createManualProgressInvoiceSeries).not.toHaveBeenCalled()
+  })
+
   it('requires an allowed user before profile, series, and adjustment work', async () => {
     mocks.requireAllowedUser.mockResolvedValue({
       ok: false,

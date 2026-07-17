@@ -83,6 +83,7 @@ export type JobberProgressInvoiceEvent =
       attempt: ProgressInvoiceSaveAttempt
     }
   | { type: 'saveFailed'; requestGeneration: number; message: string }
+  | { type: 'saveCancelled'; requestGeneration: number; message: string }
   | { type: 'saveSucceeded'; requestGeneration: number }
 
 const EMPTY_DRAFT: ProgressInvoiceSeriesDraft = {
@@ -192,6 +193,14 @@ export function jobberProgressInvoiceReducer(
     case 'saveFailed':
       return event.requestGeneration === state.saveRequestGeneration
         ? { ...state, saveState: { status: 'error', message: event.message } }
+        : state
+    case 'saveCancelled':
+      return state.saveState.status === 'saving'
+        ? {
+            ...state,
+            saveState: { status: 'error', message: event.message },
+            saveRequestGeneration: event.requestGeneration,
+          }
         : state
     case 'saveSucceeded':
       return event.requestGeneration === state.saveRequestGeneration

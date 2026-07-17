@@ -468,6 +468,8 @@ const DOMAIN_ERROR_CODES: Readonly<Record<string, { code: ActionErrorCode; error
   PROGRESS_STORAGE_ERROR: { code: 'STORAGE_ERROR', error: 'PROGRESS_STORAGE_ERROR' },
   IDEMPOTENCY_KEY_REUSED: { code: 'VALIDATION', error: 'IDEMPOTENCY_KEY_REUSED' },
   PROGRESS_UNIQUE_CONFLICT: { code: 'VALIDATION', error: 'PROGRESS_UNIQUE_CONFLICT' },
+  PROGRESS_EMAIL_INVALID: { code: 'VALIDATION', error: 'PROGRESS_EMAIL_INVALID' },
+  PROGRESS_ABN_INVALID: { code: 'VALIDATION', error: 'PROGRESS_ABN_INVALID' },
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

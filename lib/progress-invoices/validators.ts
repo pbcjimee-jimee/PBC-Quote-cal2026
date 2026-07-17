@@ -31,6 +31,25 @@ const dateSchema = z.iso.date()
 const requiredText = (limit: number) => z.string().trim().min(1).max(limit)
 const optionalText = (limit: number) => z.string().trim().max(limit).nullable().optional()
 
+export const manualRecipientEmailSchema = z.string()
+  .trim()
+  .max(PROGRESS_INVOICE_TEXT_LIMITS.email)
+  .transform((value) => value || null)
+  .pipe(z.string().email().nullable())
+  .nullable()
+  .optional()
+
+export const manualRecipientAbnSchema = z.string()
+  .trim()
+  .max(PROGRESS_INVOICE_TEXT_LIMITS.abn)
+  .transform((value) => value.replace(/\s/g, ''))
+  .refine((value) => value === '' || /^\d{11}$/.test(value), {
+    message: 'ABN must contain exactly eleven digits',
+  })
+  .transform((value) => value || null)
+  .nullable()
+  .optional()
+
 const profileShape = {
   legalName: requiredText(PROGRESS_INVOICE_TEXT_LIMITS.legalName),
   tradingName: optionalText(PROGRESS_INVOICE_TEXT_LIMITS.tradingName),
@@ -74,9 +93,9 @@ export const createManualProgressInvoiceSeriesSchema = z.strictObject({
   recipientName: requiredText(PROGRESS_INVOICE_TEXT_LIMITS.recipientName),
   recipientCompany: optionalText(PROGRESS_INVOICE_TEXT_LIMITS.recipientCompany),
   recipientAddress: requiredText(PROGRESS_INVOICE_TEXT_LIMITS.address),
-  recipientEmail: optionalText(PROGRESS_INVOICE_TEXT_LIMITS.email),
+  recipientEmail: manualRecipientEmailSchema,
   recipientPhone: optionalText(PROGRESS_INVOICE_TEXT_LIMITS.phone),
-  recipientAbn: optionalText(PROGRESS_INVOICE_TEXT_LIMITS.abn),
+  recipientAbn: manualRecipientAbnSchema,
   siteName: requiredText(PROGRESS_INVOICE_TEXT_LIMITS.siteName),
   siteAddress: requiredText(PROGRESS_INVOICE_TEXT_LIMITS.siteAddress),
   defaultDescription: requiredText(PROGRESS_INVOICE_TEXT_LIMITS.description),

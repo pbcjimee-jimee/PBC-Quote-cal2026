@@ -5,6 +5,10 @@ import { useRouter } from 'next/navigation'
 
 import { createManualProgressInvoiceSeries } from '@/lib/actions/progress-invoice-series'
 import {
+  manualRecipientAbnSchema,
+  manualRecipientEmailSchema,
+} from '@/lib/progress-invoices/validators'
+import {
   isValidProgressInvoiceMoney,
   ProgressInvoiceSeriesFields,
   type ProgressInvoiceSeriesDraft,
@@ -40,7 +44,13 @@ export type ManualProgressInvoiceEvent =
       requestGeneration: number
       attempt: ProgressInvoiceSaveAttempt
     }
-  | { type: 'saveFailed'; requestGeneration: number; message: string }
+  | {
+      type: 'saveFailed'
+      requestGeneration: number
+      message: string
+      fieldErrors?: ProgressInvoiceSeriesFieldErrors
+    }
+  | { type: 'saveCancelled'; requestGeneration: number; message: string }
   | { type: 'saveSucceeded'; requestGeneration: number }
 
 export const INITIAL_MANUAL_PROGRESS_INVOICE_VIEW_MODEL: ManualProgressInvoiceViewModel = {
@@ -98,7 +108,19 @@ export function manualProgressInvoiceReducer(
       }
     case 'saveFailed':
       return event.requestGeneration === state.saveRequestGeneration
-        ? { ...state, saveState: { status: 'error', message: event.message } }
+        ? {
+            ...state,
+            fieldErrors: event.fieldErrors ?? state.fieldErrors,
+            saveState: { status: 'error', message: event.message },
+          }
+        : state
+    case 'saveCancelled':
+      return state.saveState.status === 'saving'
+        ? {
+            ...state,
+            saveState: { status: 'error', message: event.message },
+            saveRequestGeneration: event.requestGeneration,
+          }
         : state
     case 'saveSucceeded':
       return event.requestGeneration === state.saveRequestGeneration
@@ -129,14 +151,35 @@ function validateManualDraft(
   if (!isValidProgressInvoiceMoney(draft.baseContractExGst)) {
     errors.baseContractExGst = 'Enter a positive amount with up to two decimals.'
   }
+  if (!manualRecipientEmailSchema.safeParse(draft.recipientEmail).success) {
+    errors.recipientEmail = 'Enter a valid email address.'
+  }
+  if (!manualRecipientAbnSchema.safeParse(draft.recipientAbn).success) {
+    errors.recipientAbn = 'Enter an 11-digit ABN.'
+  }
   return errors
 }
 
-function manualSaveError(error: string): string {
+function manualSaveFailure(error: string): {
+  message: string
+  fieldErrors?: ProgressInvoiceSeriesFieldErrors
+} {
   if (error === 'PROGRESS_UNIQUE_CONFLICT') {
-    return 'That Invoice number base is already used by an active series.'
+    return { message: 'That Invoice number base is already used by an active series.' }
   }
-  return 'The Progress Invoice series could not be created. Try again.'
+  if (error === 'PROGRESS_EMAIL_INVALID') {
+    return {
+      message: 'Enter a valid recipient email address and try again.',
+      fieldErrors: { recipientEmail: 'Enter a valid email address.' },
+    }
+  }
+  if (error === 'PROGRESS_ABN_INVALID') {
+    return {
+      message: 'Enter an 11-digit recipient ABN and try again.',
+      fieldErrors: { recipientAbn: 'Enter an 11-digit ABN.' },
+    }
+  }
+  return { message: 'The Progress Invoice series could not be created. Try again.' }
 }
 
 interface ManualProgressInvoiceFormProps {
@@ -210,10 +253,11 @@ export function ManualProgressInvoiceForm({
     }
 
     if (!result.ok) {
+      const failure = manualSaveFailure(result.error)
       dispatch({
         type: 'saveFailed',
         requestGeneration,
-        message: manualSaveError(result.error),
+        ...failure,
       })
       return
     }

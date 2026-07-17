@@ -148,6 +148,10 @@ export function ProgressInvoiceSeriesFields({
               maxLength={PROGRESS_INVOICE_TEXT_LIMITS.email}
               {...inputProps('recipientEmail')}
             />
+            <FieldError
+              id={`${idPrefix}-recipientEmail-error`}
+              message={errors.recipientEmail}
+            />
           </label>
           <label className="pbc-field" htmlFor={`${idPrefix}-recipientPhone`}>
             <span className="pbc-field__label">Phone</span>
@@ -165,6 +169,7 @@ export function ProgressInvoiceSeriesFields({
               maxLength={PROGRESS_INVOICE_TEXT_LIMITS.abn}
               {...inputProps('recipientAbn')}
             />
+            <FieldError id={`${idPrefix}-recipientAbn-error`} message={errors.recipientAbn} />
           </label>
         </div>
       </div>
