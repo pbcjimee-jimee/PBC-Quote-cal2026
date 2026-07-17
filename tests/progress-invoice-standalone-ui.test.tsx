@@ -6,7 +6,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import NewProgressInvoicePage from '@/app/(app)/progress-invoices/new/page'
-import { StandaloneProgressInvoiceForm } from '@/components/progress-invoices/standalone-progress-invoice-form'
+import { ProgressInvoiceCreateWorkspace } from '@/components/progress-invoices/progress-invoice-create-workspace'
 import {
   buildStandaloneDraft,
   formatJobberAddress,
@@ -17,6 +17,7 @@ import { installTestDom } from '@/tests/helpers/test-dom'
 
 const mocks = vi.hoisted(() => ({
   createStandaloneProgressInvoiceFromJobber: vi.fn(),
+  createManualProgressInvoiceSeries: vi.fn(),
   push: vi.fn(),
   refresh: vi.fn(),
 }))
@@ -32,6 +33,10 @@ vi.mock('next/navigation', () => ({
 vi.mock('@/lib/actions/progress-invoice-jobber', () => ({
   createStandaloneProgressInvoiceFromJobber:
     mocks.createStandaloneProgressInvoiceFromJobber,
+}))
+
+vi.mock('@/lib/actions/progress-invoice-series', () => ({
+  createManualProgressInvoiceSeries: mocks.createManualProgressInvoiceSeries,
 }))
 
 const billingAddress = {
@@ -212,13 +217,13 @@ function previewFixture({
   }
 }
 
-async function mountStandaloneForm() {
+async function mountCreateWorkspace() {
   const dom = installTestDom()
   const { createRoot } = await import('react-dom/client')
   const container = document.createElement('div')
   const root = createRoot(container)
   await act(async () => {
-    root.render(createElement(StandaloneProgressInvoiceForm))
+    root.render(createElement(ProgressInvoiceCreateWorkspace))
   })
   return {
     container: container as unknown as HTMLElement,
@@ -231,6 +236,38 @@ async function mountStandaloneForm() {
       }
     },
   }
+}
+
+async function changeInput(
+  container: HTMLElement,
+  name: string,
+  value: string,
+): Promise<void> {
+  const field = inputByName(container, name)
+  await act(async () => {
+    field.value = value
+    field.dispatchEvent(new Event('input', { bubbles: true }))
+    field.dispatchEvent(new Event('change', { bubbles: true }))
+  })
+}
+
+async function changeTextarea(
+  container: HTMLElement,
+  name: string,
+  value: string,
+): Promise<void> {
+  const field = textareaByName(container, name)
+  await act(async () => {
+    field.value = value
+    field.dispatchEvent(new Event('input', { bubbles: true }))
+    field.dispatchEvent(new Event('change', { bubbles: true }))
+  })
+}
+
+async function selectMode(container: HTMLElement, label: string): Promise<void> {
+  await act(async () => {
+    buttonByText(container, label).dispatchEvent(new MouseEvent('click', { bubbles: true }))
+  })
 }
 
 async function submitSearch(container: HTMLElement, term: string): Promise<void> {
@@ -271,6 +308,26 @@ async function saveDraft(container: HTMLElement, baseContract = '17220.50'): Pro
     form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
   })
   await flushReact()
+}
+
+async function submitManual(container: HTMLElement): Promise<void> {
+  const form = Array.from(container.querySelectorAll('form')).find((candidateForm) => (
+    candidateForm.getAttribute('aria-label') === 'Create manual Progress Invoice series'
+  ))
+  if (!form) throw new Error('Manual create series form was not rendered')
+  await act(async () => {
+    form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+  })
+  await flushReact()
+}
+
+async function completeManualDraft(container: HTMLElement): Promise<void> {
+  await changeInput(container, 'acceptedNumberingBase', '2906')
+  await changeInput(container, 'baseContractExGst', '17220.50')
+  await changeInput(container, 'recipientName', 'Manual Builder')
+  await changeTextarea(container, 'recipientAddress', '1 Billing Street')
+  await changeInput(container, 'siteName', 'Manual Site')
+  await changeTextarea(container, 'siteAddress', '4 Site Street')
 }
 
 describe('Standalone Progress Invoice browser contract', () => {
@@ -352,6 +409,8 @@ describe('Standalone Progress Invoice workspace', () => {
     const markup = renderToStaticMarkup(createElement(NewProgressInvoicePage))
 
     for (const copy of [
+      'Import from Jobber',
+      'Create manually',
       'Jobber Invoice Number',
       'Fetch invoice',
       'Base contract Ex GST',
@@ -359,14 +418,335 @@ describe('Standalone Progress Invoice workspace', () => {
       'Recipient',
       'Site',
       'Create Progress Invoice series',
-      'Existing PBC Quote',
     ]) expect(markup).toContain(copy)
-    expect(markup).toContain('href="/quotes"')
+    expect(markup).not.toContain('Existing PBC Quote')
+    expect(markup).not.toContain('Browse PBC Quotes')
+    expect(markup).not.toContain('Start from a PBC Quote')
+    expect(markup).not.toContain('href="/quotes"')
     expect(markup).not.toContain('guided landing page is read-only')
     expect(markup).not.toContain('next implementation step')
     expect(markup).not.toContain('Refresh Jobber')
     expect(markup).not.toContain('Sync Jobber')
     expect(markup).not.toContain('Auto sync')
+  })
+
+  it('defaults to an accessible Jobber tab and associates each mode with its panel', async () => {
+    vi.stubGlobal('fetch', vi.fn())
+    const mounted = await mountCreateWorkspace()
+
+    try {
+      const tabs = Array.from(mounted.container.querySelectorAll('button')).filter((button) => (
+        button.getAttribute('role') === 'tab'
+      ))
+      expect(tabs).toHaveLength(2)
+      expect(tabs[0]?.textContent).toContain('Import from Jobber')
+      expect(tabs[0]?.getAttribute('aria-selected')).toBe('true')
+      expect(tabs[0]?.getAttribute('aria-controls')).toBe('progress-invoice-jobber-panel')
+      expect(tabs[1]?.textContent).toContain('Create manually')
+      expect(tabs[1]?.getAttribute('aria-selected')).toBe('false')
+      expect(tabs[1]?.getAttribute('aria-controls')).toBe('progress-invoice-manual-panel')
+      const panel = Array.from(mounted.container.querySelectorAll('section')).find((section) => (
+        section.getAttribute('role') === 'tabpanel'
+      ))
+      expect(panel?.getAttribute('id')).toBe('progress-invoice-jobber-panel')
+      expect(panel?.getAttribute('aria-labelledby')).toBe('progress-invoice-jobber-tab')
+      expect(inputByName(mounted.container, 'jobberInvoiceNumber')).toBeDefined()
+    } finally {
+      await mounted.cleanup()
+    }
+  })
+
+  it('switches to Manual without fetching and renders the accepted base and shared fields', async () => {
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+    const mounted = await mountCreateWorkspace()
+
+    try {
+      await selectMode(mounted.container, 'Create manually')
+      expect(fetchMock).not.toHaveBeenCalled()
+      expect(() => inputByName(mounted.container, 'jobberInvoiceNumber')).toThrow()
+      expect(inputByName(mounted.container, 'acceptedNumberingBase').value).toBe('')
+      expect(inputByName(mounted.container, 'recipientName').value).toBe('')
+      const manualTab = buttonByText(mounted.container, 'Create manually')
+      expect(manualTab.getAttribute('aria-selected')).toBe('true')
+      const panel = Array.from(mounted.container.querySelectorAll('section')).find((section) => (
+        section.getAttribute('role') === 'tabpanel'
+      ))
+      expect(panel?.getAttribute('id')).toBe('progress-invoice-manual-panel')
+      expect(panel?.getAttribute('aria-labelledby')).toBe('progress-invoice-manual-tab')
+    } finally {
+      await mounted.cleanup()
+    }
+  })
+
+  it('preserves independent Jobber and Manual drafts across unmount and remount', async () => {
+    vi.stubGlobal('fetch', vi.fn()
+      .mockResolvedValueOnce(jsonResponse(searchResponse))
+      .mockResolvedValueOnce(jsonResponse(previewResponse)))
+    const mounted = await mountCreateWorkspace()
+
+    try {
+      await submitSearch(mounted.container, '2906')
+      await flushReact()
+      await selectCandidate(mounted.container, '2906')
+      await flushReact()
+      await changeInput(mounted.container, 'recipientName', 'Jobber Draft Builder')
+      await changeInput(mounted.container, 'baseContractExGst', '17220.50')
+
+      await selectMode(mounted.container, 'Create manually')
+      await changeInput(mounted.container, 'recipientName', 'Manual Draft Builder')
+      await changeInput(mounted.container, 'acceptedNumberingBase', 'MAN-2906')
+      expect(inputByName(mounted.container, 'recipientName').value).toBe('Manual Draft Builder')
+
+      await selectMode(mounted.container, 'Import from Jobber')
+      expect(inputByName(mounted.container, 'recipientName').value).toBe('Jobber Draft Builder')
+      expect(inputByName(mounted.container, 'baseContractExGst').value).toBe('17220.50')
+      expect(() => inputByName(mounted.container, 'acceptedNumberingBase')).toThrow()
+
+      await selectMode(mounted.container, 'Create manually')
+      expect(inputByName(mounted.container, 'recipientName').value).toBe('Manual Draft Builder')
+      expect(inputByName(mounted.container, 'acceptedNumberingBase').value).toBe('MAN-2906')
+    } finally {
+      await mounted.cleanup()
+    }
+  })
+
+  it('routes a late Jobber preview only to its origin mode and preserves the Manual draft', async () => {
+    const latePreview = deferred<ReturnType<typeof jsonResponse>>()
+    vi.stubGlobal('fetch', vi.fn()
+      .mockResolvedValueOnce(jsonResponse(searchResponse))
+      .mockReturnValueOnce(latePreview.promise))
+    const mounted = await mountCreateWorkspace()
+
+    try {
+      await submitSearch(mounted.container, '2906')
+      await flushReact()
+      await selectCandidate(mounted.container, '2906')
+      await selectMode(mounted.container, 'Create manually')
+      await changeInput(mounted.container, 'recipientName', 'Manual Stays Here')
+
+      await act(async () => {
+        latePreview.resolve(jsonResponse(previewResponse))
+        await latePreview.promise
+      })
+      await flushReact()
+
+      expect(inputByName(mounted.container, 'recipientName').value).toBe('Manual Stays Here')
+      expect(mounted.container.textContent).not.toContain('Jobber invoice 2906')
+      await selectMode(mounted.container, 'Import from Jobber')
+      expect(inputByName(mounted.container, 'recipientName').value).toBe('Example Builder')
+    } finally {
+      await mounted.cleanup()
+    }
+  })
+
+  it('ignores a stale Jobber search response after a newer search completes', async () => {
+    const oldSearch = deferred<ReturnType<typeof jsonResponse>>()
+    const newSearch = deferred<ReturnType<typeof jsonResponse>>()
+    vi.stubGlobal('fetch', vi.fn()
+      .mockReturnValueOnce(oldSearch.promise)
+      .mockReturnValueOnce(newSearch.promise))
+    const mounted = await mountCreateWorkspace()
+
+    try {
+      await submitSearch(mounted.container, 'OLD')
+      await submitSearch(mounted.container, 'NEW')
+      await act(async () => {
+        newSearch.resolve(jsonResponse({
+          ok: true,
+          data: { accountId: 'account-1', invoices: [candidate('invoice-new', 'NEW')] },
+        }))
+        await newSearch.promise
+      })
+      await flushReact()
+      await act(async () => {
+        oldSearch.resolve(jsonResponse({
+          ok: true,
+          data: { accountId: 'account-1', invoices: [candidate('invoice-old', 'OLD')] },
+        }))
+        await oldSearch.promise
+      })
+      await flushReact()
+
+      expect(mounted.container.textContent).toContain('Invoice NEW')
+      expect(mounted.container.textContent).not.toContain('Invoice OLD')
+    } finally {
+      await mounted.cleanup()
+    }
+  })
+
+  it('reports every invalid Manual field locally without clearing entered values or calling the action', async () => {
+    vi.stubGlobal('fetch', vi.fn())
+    const mounted = await mountCreateWorkspace()
+
+    try {
+      await selectMode(mounted.container, 'Create manually')
+      await changeInput(mounted.container, 'baseContractExGst', '17220.501')
+      await changeInput(mounted.container, 'recipientName', 'Keep this value')
+      await submitManual(mounted.container)
+
+      expect(mocks.createManualProgressInvoiceSeries).not.toHaveBeenCalled()
+      expect(inputByName(mounted.container, 'recipientName').value).toBe('Keep this value')
+      expect(inputByName(mounted.container, 'baseContractExGst').value).toBe('17220.501')
+      for (const name of [
+        'acceptedNumberingBase',
+        'baseContractExGst',
+        'recipientAddress',
+        'siteName',
+        'siteAddress',
+      ]) {
+        const field = name === 'recipientAddress' || name === 'siteAddress'
+          ? textareaByName(mounted.container, name)
+          : inputByName(mounted.container, name)
+        expect(field.getAttribute('aria-invalid')).toBe('true')
+        const messageId = field.getAttribute('aria-describedby')
+        expect(messageId).toBeTruthy()
+        expect(mounted.container.textContent).toContain(
+          name === 'baseContractExGst'
+            ? 'Enter a positive amount with up to two decimals.'
+            : 'This field is required.',
+        )
+      }
+    } finally {
+      await mounted.cleanup()
+    }
+  })
+
+  it('submits only Manual local fields, reuses an unchanged retry key, and rotates it after an edit', async () => {
+    vi.stubGlobal('fetch', vi.fn())
+    mocks.createManualProgressInvoiceSeries
+      .mockRejectedValueOnce(new Error('transient transport failure'))
+      .mockResolvedValueOnce({ ok: false, error: 'PROGRESS_TEMPORARY_FAILURE' })
+      .mockResolvedValueOnce({ ok: true, data: { id: 'series-manual', version: 1 } })
+    const mounted = await mountCreateWorkspace()
+
+    try {
+      await selectMode(mounted.container, 'Create manually')
+      await completeManualDraft(mounted.container)
+      await changeInput(mounted.container, 'recipientCompany', 'Manual Builder Pty Ltd')
+      await changeInput(mounted.container, 'recipientEmail', 'accounts@example.test')
+      await changeInput(mounted.container, 'recipientPhone', '0400 000 000')
+      await changeInput(mounted.container, 'recipientAbn', '11 222 333 444')
+      await changeInput(mounted.container, 'reference', 'Manual reference')
+
+      await submitManual(mounted.container)
+      await submitManual(mounted.container)
+      const firstPayload = mocks.createManualProgressInvoiceSeries.mock.calls[0]?.[0]
+      const retryPayload = mocks.createManualProgressInvoiceSeries.mock.calls[1]?.[0]
+      expect(firstPayload).toEqual({
+        acceptedNumberingBase: '2906',
+        baseContractExGst: '17220.50',
+        recipientName: 'Manual Builder',
+        recipientCompany: 'Manual Builder Pty Ltd',
+        recipientAddress: '1 Billing Street',
+        recipientEmail: 'accounts@example.test',
+        recipientPhone: '0400 000 000',
+        recipientAbn: '11 222 333 444',
+        siteName: 'Manual Site',
+        siteAddress: '4 Site Street',
+        defaultDescription: 'Progress painting works',
+        reference: 'Manual reference',
+        correlationKey: expect.stringMatching(
+          /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
+        ),
+      })
+      expect(retryPayload.correlationKey).toBe(firstPayload.correlationKey)
+      for (const forbidden of [
+        'sourceType',
+        'gstRate',
+        'quoteId',
+        'pbcQuoteId',
+        'jobberInvoiceId',
+        'observation',
+        'payments',
+        'amounts',
+      ]) expect(firstPayload).not.toHaveProperty(forbidden)
+
+      await changeInput(mounted.container, 'reference', 'Edited reference')
+      await submitManual(mounted.container)
+      const editedPayload = mocks.createManualProgressInvoiceSeries.mock.calls[2]?.[0]
+      expect(editedPayload.correlationKey).not.toBe(firstPayload.correlationKey)
+      expect(mocks.push).toHaveBeenCalledWith('/progress-invoices')
+      expect(mocks.refresh).toHaveBeenCalledTimes(1)
+    } finally {
+      await mounted.cleanup()
+    }
+  })
+
+  it('shows a stable duplicate-number error without clearing the Manual draft', async () => {
+    vi.stubGlobal('fetch', vi.fn())
+    mocks.createManualProgressInvoiceSeries.mockResolvedValueOnce({
+      ok: false,
+      error: 'PROGRESS_UNIQUE_CONFLICT',
+      code: 'VALIDATION',
+    })
+    const mounted = await mountCreateWorkspace()
+
+    try {
+      await selectMode(mounted.container, 'Create manually')
+      await completeManualDraft(mounted.container)
+      await submitManual(mounted.container)
+
+      expect(mounted.container.textContent).toContain(
+        'That Invoice number base is already used by an active series.',
+      )
+      expect(inputByName(mounted.container, 'acceptedNumberingBase').value).toBe('2906')
+      expect(inputByName(mounted.container, 'recipientName').value).toBe('Manual Builder')
+      expect(mocks.push).not.toHaveBeenCalled()
+    } finally {
+      await mounted.cleanup()
+    }
+  })
+
+  it('invalidates pending mode-scoped saves without changing either unchanged retry key', async () => {
+    const jobberSave = deferred<{ ok: false; error: string }>()
+    const manualSave = deferred<{ ok: false; error: string }>()
+    vi.stubGlobal('fetch', vi.fn()
+      .mockResolvedValueOnce(jsonResponse(searchResponse))
+      .mockResolvedValueOnce(jsonResponse(previewResponse)))
+    mocks.createStandaloneProgressInvoiceFromJobber
+      .mockReturnValueOnce(jobberSave.promise)
+      .mockResolvedValueOnce({ ok: false, error: 'PROGRESS_TEMPORARY_FAILURE' })
+    mocks.createManualProgressInvoiceSeries
+      .mockReturnValueOnce(manualSave.promise)
+      .mockResolvedValueOnce({ ok: false, error: 'PROGRESS_TEMPORARY_FAILURE' })
+    const mounted = await mountCreateWorkspace()
+
+    try {
+      await submitSearch(mounted.container, '2906')
+      await flushReact()
+      await selectCandidate(mounted.container, '2906')
+      await flushReact()
+      await saveDraft(mounted.container)
+      const firstJobberKey = mocks.createStandaloneProgressInvoiceFromJobber.mock.calls[0]?.[0]
+        .correlationKey
+
+      await selectMode(mounted.container, 'Create manually')
+      await completeManualDraft(mounted.container)
+      await submitManual(mounted.container)
+      const firstManualKey = mocks.createManualProgressInvoiceSeries.mock.calls[0]?.[0]
+        .correlationKey
+
+      await selectMode(mounted.container, 'Import from Jobber')
+      await act(async () => {
+        jobberSave.resolve({ ok: false, error: 'JOBBER_LATE_FAILURE' })
+        manualSave.resolve({ ok: false, error: 'MANUAL_LATE_FAILURE' })
+        await Promise.all([jobberSave.promise, manualSave.promise])
+      })
+      await flushReact()
+      expect(mocks.push).not.toHaveBeenCalled()
+
+      await saveDraft(mounted.container)
+      expect(mocks.createStandaloneProgressInvoiceFromJobber.mock.calls[1]?.[0]
+        .correlationKey).toBe(firstJobberKey)
+      await selectMode(mounted.container, 'Create manually')
+      await submitManual(mounted.container)
+      expect(mocks.createManualProgressInvoiceSeries.mock.calls[1]?.[0]
+        .correlationKey).toBe(firstManualKey)
+      expect(inputByName(mounted.container, 'acceptedNumberingBase').value).toBe('2906')
+    } finally {
+      await mounted.cleanup()
+    }
   })
 
   it('keeps Jobber observations out of the action payload and reuses a failed attempt key', async () => {
@@ -389,7 +769,7 @@ describe('Standalone Progress Invoice workspace', () => {
       root = createRoot(container)
 
       await act(async () => {
-        root!.render(createElement(StandaloneProgressInvoiceForm))
+        root!.render(createElement(ProgressInvoiceCreateWorkspace))
       })
 
       const searchInput = inputByName(container as unknown as HTMLElement, 'jobberInvoiceNumber')
@@ -500,7 +880,7 @@ describe('Standalone Progress Invoice workspace', () => {
       ok: true,
       data: { seriesId: 'series-b', version: 1, importedPayments: 0 },
     })
-    const mounted = await mountStandaloneForm()
+    const mounted = await mountCreateWorkspace()
 
     try {
       await submitSearch(mounted.container, 'A or B')
@@ -574,7 +954,7 @@ describe('Standalone Progress Invoice workspace', () => {
       ok: true,
       data: { seriesId: 'series-relations', version: 1, importedPayments: 0 },
     })
-    const mounted = await mountStandaloneForm()
+    const mounted = await mountCreateWorkspace()
 
     try {
       await submitSearch(mounted.container, 'REL')
@@ -655,7 +1035,7 @@ describe('Standalone Progress Invoice workspace', () => {
         data: { accountId: 'account-1', invoices: [candidate('invoice-new', 'NEW')] },
       }))
     vi.stubGlobal('fetch', fetchMock)
-    const mounted = await mountStandaloneForm()
+    const mounted = await mountCreateWorkspace()
 
     try {
       await submitSearch(mounted.container, 'OLD')
@@ -684,14 +1064,17 @@ describe('Standalone Progress Invoice workspace', () => {
   })
 
   it('uses responsive shared component classes for the standalone workspace', () => {
-    const css = readFileSync('app/styles/components.css', 'utf8')
-    const markup = renderToStaticMarkup(createElement(StandaloneProgressInvoiceForm))
+    const sharedCss = readFileSync('app/styles/components.css', 'utf8')
+    const globalCss = readFileSync('app/globals.css', 'utf8')
+    const markup = renderToStaticMarkup(createElement(ProgressInvoiceCreateWorkspace))
 
     expect(markup).toContain('pbc-card pbc-card--pad')
     expect(markup).toContain('pbc-input')
     expect(markup).toContain('pbc-progress-standalone')
-    expect(css).toContain('.pbc-progress-form-grid')
-    expect(css).toContain('.pbc-progress-comparison-grid')
-    expect(css).toContain('@media (max-width: 720px)')
+    expect(sharedCss).toContain('.pbc-progress-form-grid')
+    expect(sharedCss).toContain('.pbc-progress-comparison-grid')
+    expect(globalCss).toContain('.pbc-progress-create-grid--workspace')
+    expect(globalCss).toContain('.pbc-progress-create-modes')
+    expect(globalCss).toContain('@media (max-width: 720px)')
   })
 })

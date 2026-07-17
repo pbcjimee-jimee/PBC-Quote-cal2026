@@ -36,3 +36,58 @@
   --font-sans: var(--font-body);
   --font-mono: var(--mono);
 }
+
+.pbc-progress-create-grid--workspace {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.pbc-progress-create-workspace,
+.pbc-progress-create-workspace > [role="tabpanel"] {
+  width: 100%;
+  min-width: 0;
+}
+
+.pbc-progress-create-modes {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+  margin-bottom: 12px;
+  padding: 5px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--surface-soft);
+}
+
+.pbc-progress-create-mode {
+  min-height: 44px;
+  padding: 8px 12px;
+  border: 1px solid transparent;
+  border-radius: var(--r-sm);
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.pbc-progress-create-mode[aria-selected="true"] {
+  border-color: var(--border);
+  background: var(--surface);
+  color: var(--primary-strong);
+  box-shadow: var(--shadow-soft);
+}
+
+.pbc-progress-create-mode:focus-visible {
+  outline: 3px solid rgb(11 102 216 / 22%);
+  outline-offset: 2px;
+}
+
+.pbc-field__error {
+  color: var(--danger);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+@media (max-width: 720px) {
+  .pbc-progress-create-modes {
+    grid-template-columns: 1fr;
+  }
+}

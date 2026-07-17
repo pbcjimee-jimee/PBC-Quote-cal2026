@@ -7,6 +7,7 @@ import type { ProgressInvoiceDashboardDto } from '@/lib/progress-invoices/series
 const mocks = vi.hoisted(() => ({
   listProgressInvoiceSeries: vi.fn(),
   createStandaloneProgressInvoiceFromJobber: vi.fn(),
+  createManualProgressInvoiceSeries: vi.fn(),
 }))
 
 vi.mock('next/navigation', () => ({
@@ -15,6 +16,7 @@ vi.mock('next/navigation', () => ({
 
 vi.mock('@/lib/actions/progress-invoice-series', () => ({
   listProgressInvoiceSeries: mocks.listProgressInvoiceSeries,
+  createManualProgressInvoiceSeries: mocks.createManualProgressInvoiceSeries,
 }))
 
 vi.mock('@/lib/actions/progress-invoice-jobber', () => ({
@@ -254,11 +256,14 @@ describe('Progress Invoice dashboard foundation', () => {
     expect(loadingMarkup).toContain('aria-busy="true"')
     expect(loadingMarkup).toContain('Loading progress invoices')
     expect(newMarkup).toContain('Start a Progress Invoice series')
-    expect(newMarkup).toContain('Existing PBC Quote')
-    expect(newMarkup).toContain('Standalone')
+    expect(newMarkup).toContain('Import from Jobber')
+    expect(newMarkup).toContain('Create manually')
     expect(newMarkup).toContain('Jobber Invoice Number')
     expect(newMarkup).toContain('Create Progress Invoice series')
-    expect(newMarkup).toContain('href="/quotes"')
+    expect(newMarkup).not.toContain('Existing PBC Quote')
+    expect(newMarkup).not.toContain('Browse PBC Quotes')
+    expect(newMarkup).not.toContain('Start from a PBC Quote')
+    expect(newMarkup).not.toContain('href="/quotes"')
     expect(newMarkup).toContain('href="/progress-invoices"')
     expect(newMarkup).not.toContain('guided landing page is read-only')
     expect(newMarkup).not.toContain('next implementation step')
