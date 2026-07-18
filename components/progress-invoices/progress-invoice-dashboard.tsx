@@ -34,17 +34,8 @@ function formatMoney(value: string): string {
   return `$${groupedWhole}.${fraction}`
 }
 
-function sumMoney(
-  data: ProgressInvoiceDashboardDto,
-  pick: (item: ProgressInvoiceDashboardDto['items'][number]) => string,
-): string {
-  return data.items.reduce(
-    (total, item) => total.add(pick(item)),
-    new Decimal(0),
-  ).toFixed(2)
-}
-
 function titleCaseStatus(value: string): string {
+  if (value === 'no_claims') return 'No claims issued'
   return value
     .split('_')
     .map((part) => `${part.charAt(0).toUpperCase()}${part.slice(1)}`)
@@ -135,32 +126,31 @@ function DashboardFilters({ filters }: { filters: ProgressInvoiceListInput }) {
 }
 
 function DashboardStats({ data }: { data: ProgressInvoiceDashboardDto }) {
-  const adjusted = sumMoney(data, (item) => item.adjustedContractExGst)
-  const claimed = sumMoney(data, (item) => item.claimedIncGst)
-  const received = sumMoney(data, (item) => item.receivedIncGst)
-  const outstanding = sumMoney(data, (item) => item.outstandingReceivable)
-
   return (
-    <div className="pbc-stats" aria-label="Progress invoice totals for the visible page">
+    <div className="pbc-stats pbc-progress-stats" aria-label="Progress invoice totals for all matching series">
       <div className="pbc-stat">
-        <span className="pbc-stat__label">Adjusted contract</span>
-        <span className="pbc-stat__value mono">{formatMoney(adjusted)}</span>
-        <span className="pbc-stat__sub">visible page · ex GST</span>
+        <span className="pbc-stat__label">Adjusted contract Ex GST</span>
+        <span className="pbc-stat__value mono">{formatMoney(data.summary.adjustedContractExGst)}</span>
       </div>
       <div className="pbc-stat">
-        <span className="pbc-stat__label">Claimed</span>
-        <span className="pbc-stat__value mono">{formatMoney(claimed)}</span>
-        <span className="pbc-stat__sub">issued claims · inc GST</span>
+        <span className="pbc-stat__label">Claimed Inc GST</span>
+        <span className="pbc-stat__value mono">{formatMoney(data.summary.claimedIncGst)}</span>
       </div>
       <div className="pbc-stat">
-        <span className="pbc-stat__label">Received</span>
-        <span className="pbc-stat__value mono">{formatMoney(received)}</span>
-        <span className="pbc-stat__sub">actual receipts · inc GST</span>
+        <span className="pbc-stat__label">Received Inc GST</span>
+        <span className="pbc-stat__value mono">{formatMoney(data.summary.receivedIncGst)}</span>
       </div>
       <div className="pbc-stat">
-        <span className="pbc-stat__label">Outstanding</span>
-        <span className="pbc-stat__value mono">{formatMoney(outstanding)}</span>
-        <span className="pbc-stat__sub">receivable · inc GST</span>
+        <span className="pbc-stat__label">Outstanding Inc GST</span>
+        <span className="pbc-stat__value mono">{formatMoney(data.summary.outstandingIncGst)}</span>
+      </div>
+      <div className="pbc-stat">
+        <span className="pbc-stat__label">Credit balance Inc GST</span>
+        <span className="pbc-stat__value mono">{formatMoney(data.summary.creditBalanceIncGst)}</span>
+      </div>
+      <div className="pbc-stat">
+        <span className="pbc-stat__label">Unclaimed Inc GST</span>
+        <span className="pbc-stat__value mono">{formatMoney(data.summary.unclaimedIncGst)}</span>
       </div>
     </div>
   )
@@ -173,42 +163,41 @@ function SeriesCards({ data }: { data: ProgressInvoiceDashboardDto }) {
         <article
           key={item.id}
           id={`progress-invoice-${item.id}`}
-          className="pbc-card pbc-card--pad pbc-progress-series"
+          className="pbc-card pbc-progress-series"
         >
-          <div className="pbc-progress-series__head">
-            <div>
-              <span className="pbc-progress-series__eyebrow">{sourceLabel(item.sourceType)}</span>
-              <h2>{item.recipientCompany || item.recipientName}</h2>
-              {item.recipientCompany ? <p>{item.recipientName}</p> : null}
+          <IntentLink
+            href={`/progress-invoices/${item.id}`}
+            className="pbc-progress-series__primary"
+            aria-label={`Open Progress Invoice series for ${item.recipientCompany || item.recipientName}`}
+          >
+            <div className="pbc-progress-series__head">
+              <div>
+                <span className="pbc-progress-series__eyebrow">{sourceLabel(item.sourceType)}</span>
+                <h2>{item.recipientCompany || item.recipientName}</h2>
+                {item.recipientCompany ? <p>{item.recipientName}</p> : null}
+              </div>
+              <span className={`pbc-progress-badge pbc-progress-badge--${statusTone(item.status)}`}>
+                {titleCaseStatus(item.status)}
+              </span>
             </div>
-            <span className={`pbc-progress-badge pbc-progress-badge--${statusTone(item.status)}`}>
-              {titleCaseStatus(item.status)}
-            </span>
-          </div>
 
-          <p className="pbc-progress-series__site">{Icons.pin({ size: 15 })}{item.siteName}</p>
+            <p className="pbc-progress-series__site">{Icons.pin({ size: 15 })}{item.siteName}</p>
+            <dl className="pbc-progress-series__identity">
+              <div><dt>Current invoice</dt><dd>{item.invoiceNumber || 'Not assigned'}</dd></div>
+              <div><dt>Reference</dt><dd>{item.reference || '—'}</dd></div>
+            </dl>
 
-          <dl className="pbc-progress-series__money">
-            <div>
-              <dt>Claimed</dt>
-              <dd>{formatMoney(item.claimedIncGst)}</dd>
-            </div>
-            <div>
-              <dt>Received</dt>
-              <dd>{formatMoney(item.receivedIncGst)}</dd>
-            </div>
-            <div>
-              <dt>Outstanding</dt>
-              <dd>{formatMoney(item.outstandingReceivable)}</dd>
-            </div>
-            <div>
-              <dt>Progress</dt>
-              <dd>{new Decimal(item.cumulativePercentage).toFixed(2)}%</dd>
-            </div>
-          </dl>
+            <dl className="pbc-progress-series__money">
+              <div><dt>Adjusted contract Ex GST</dt><dd>{formatMoney(item.adjustedContractExGst)}</dd></div>
+              <div><dt>Claimed Inc GST</dt><dd>{formatMoney(item.claimedIncGst)}</dd></div>
+              <div><dt>Received Inc GST</dt><dd>{formatMoney(item.receivedIncGst)}</dd></div>
+              <div><dt>Outstanding Inc GST</dt><dd>{formatMoney(item.outstandingReceivable)}</dd></div>
+              <div><dt>Credit balance Inc GST</dt><dd>{formatMoney(item.creditBalanceIncGst)}</dd></div>
+              <div><dt>Unclaimed Inc GST</dt><dd>{formatMoney(item.unclaimedIncGst)}</dd></div>
+              <div><dt>Progress</dt><dd>{new Decimal(item.cumulativePercentage).toFixed(2)}%</dd></div>
+            </dl>
 
-          <div className="pbc-progress-series__foot">
-            <div>
+            <div className="pbc-progress-series__foot">
               <span className={`pbc-progress-badge pbc-progress-badge--${statusTone(item.paymentState)}`}>
                 {titleCaseStatus(item.paymentState)}
               </span>
@@ -218,6 +207,8 @@ function SeriesCards({ data }: { data: ProgressInvoiceDashboardDto }) {
                 </span>
               )}
             </div>
+          </IntentLink>
+          <div className="pbc-progress-series__secondary">
             {item.quoteId ? (
               <IntentLink href={`/quotes/${item.quoteId}`} className="pbc-btn pbc-btn--ghost pbc-btn--sm">
                 Open quote

@@ -29,12 +29,25 @@ const dashboardItem = {
   current_claimed_inc_gst: '110.01',
   current_actual_receipts: '10.00',
   current_outstanding_receivable: '100.01',
+  current_credit_balance: '25.50',
   current_unclaimed_inc_gst: '989999999889.97',
   current_cumulative_percentage: '0.000011',
   current_payment_state: 'overdue',
+  current_manifest_claim_count: 1,
+  invoice_number: 'INV-100-P01',
+  reference: 'Stage 1',
   last_successful_jobber_sync_at: null,
   last_jobber_sync_error_code: null,
   version: 1,
+}
+
+const dashboardSummary = {
+  current_adjusted_contract_ex_gst: '900000000999.99',
+  current_claimed_inc_gst: '220.02',
+  current_actual_receipts: '20.00',
+  current_outstanding_receivable: '200.02',
+  current_credit_balance: '25.50',
+  current_unclaimed_inc_gst: '990000000779.97',
 }
 
 const detail = {
@@ -92,7 +105,7 @@ describe('progress invoice series service read boundary', () => {
 
   it('delegates literal search, filters, and pagination to the authenticated list RPC', async () => {
     const rpc = vi.fn().mockResolvedValue({
-      data: { items: [dashboardItem], page: 2, page_size: 25, total: 126 },
+      data: { items: [dashboardItem], summary: dashboardSummary, page: 2, page_size: 25, total: 126 },
       error: null,
     })
     const from = directReadClient(dashboardItem)
@@ -132,13 +145,25 @@ describe('progress invoice series service read boundary', () => {
           claimedIncGst: '110.01',
           receivedIncGst: '10.00',
           outstandingReceivable: '100.01',
+          creditBalanceIncGst: '25.50',
           unclaimedIncGst: '989999999889.97',
           cumulativePercentage: '0.000011',
           paymentState: 'overdue',
+          currentManifestClaimCount: 1,
+          invoiceNumber: 'INV-100-P01',
+          reference: 'Stage 1',
           lastSuccessfulJobberSyncAt: null,
           lastJobberSyncErrorCode: null,
           version: 1,
         }],
+        summary: {
+          adjustedContractExGst: '900000000999.99',
+          claimedIncGst: '220.02',
+          receivedIncGst: '20.00',
+          outstandingIncGst: '200.02',
+          creditBalanceIncGst: '25.50',
+          unclaimedIncGst: '990000000779.97',
+        },
         page: 2,
         pageSize: 25,
         total: 126,
@@ -149,11 +174,11 @@ describe('progress invoice series service read boundary', () => {
   it('reloads the last available page when the requested page is out of range', async () => {
     const rpc = vi.fn()
       .mockResolvedValueOnce({
-        data: { items: [], page: 999, page_size: 20, total: 21 },
+        data: { items: [], summary: dashboardSummary, page: 999, page_size: 20, total: 21 },
         error: null,
       })
       .mockResolvedValueOnce({
-        data: { items: [dashboardItem], page: 2, page_size: 20, total: 21 },
+        data: { items: [dashboardItem], summary: { ...dashboardSummary, current_claimed_inc_gst: '333.33' }, page: 2, page_size: 20, total: 21 },
         error: null,
       })
     mocks.createClient.mockResolvedValue({ from: directReadClient(dashboardItem), rpc })
@@ -191,6 +216,7 @@ describe('progress invoice series service read boundary', () => {
         page: 2,
         pageSize: 20,
         total: 21,
+        summary: { claimedIncGst: '333.33' },
       },
     })
   })
@@ -228,6 +254,7 @@ describe('progress invoice series service read boundary', () => {
       .mockResolvedValueOnce({
         data: {
           items: [{ ...dashboardItem, source_type: 'pbc_quote' }],
+          summary: dashboardSummary,
           page: 1,
           page_size: 20,
           total: 1,
@@ -298,7 +325,7 @@ describe('progress invoice series service read boundary', () => {
   it('rejects numeric JSON for every decimal-text read boundary', async () => {
     const rpc = vi.fn()
       .mockResolvedValueOnce({
-        data: { items: [{ ...dashboardItem, current_claimed_inc_gst: 110.01 }], page: 1, page_size: 20, total: 1 },
+        data: { items: [{ ...dashboardItem, current_claimed_inc_gst: 110.01 }], summary: dashboardSummary, page: 1, page_size: 20, total: 1 },
         error: null,
       })
       .mockResolvedValueOnce({
@@ -313,6 +340,33 @@ describe('progress invoice series service read boundary', () => {
     expect(await getProgressInvoiceSeries(SERIES_ID)).toEqual({
       ok: false,
       error: 'PROGRESS_RESPONSE_INVALID',
+    })
+  })
+
+  it('maps zero manifest claims to no_claims without hiding independent credit', async () => {
+    const rpc = vi.fn().mockResolvedValue({
+      data: {
+        items: [{
+          ...dashboardItem,
+          current_manifest_claim_count: 0,
+          current_payment_state: 'credit_balance',
+        }],
+        summary: dashboardSummary,
+        page: 1,
+        page_size: 20,
+        total: 1,
+      },
+      error: null,
+    })
+    mocks.createClient.mockResolvedValue({ rpc })
+
+    const result = await listProgressInvoiceSeries({
+      query: '', statuses: [], page: 1, pageSize: 20, quoteId: null,
+    })
+
+    expect(result).toMatchObject({
+      ok: true,
+      data: { items: [{ paymentState: 'no_claims', creditBalanceIncGst: '25.50' }] },
     })
   })
 

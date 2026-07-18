@@ -187,6 +187,85 @@ describe('ProgressInvoiceRepository', () => {
     expect(result).toEqual({ ok: true, data: serviceResult })
   })
 
+  it('strictly parses dashboard item and whole-filter summary fields', async () => {
+    const item = {
+      id: '11111111-1111-4111-8111-111111111111', source_type: 'manual', quote_id: null,
+      recipient_name: 'Builder', recipient_company: '', site_name: 'Site', status: 'active',
+      current_adjusted_contract_ex_gst: '100.00', current_claimed_inc_gst: '55.00',
+      current_actual_receipts: '-5.00', current_outstanding_receivable: '60.00',
+      current_credit_balance: '0.00', current_unclaimed_inc_gst: '55.00',
+      current_cumulative_percentage: '50.000000', current_payment_state: 'overdue',
+      current_manifest_claim_count: 1, invoice_number: 'INV-P01', reference: 'Stage 1',
+      last_successful_jobber_sync_at: null, last_jobber_sync_error_code: null, version: 1,
+    }
+    const summary = {
+      current_adjusted_contract_ex_gst: '200.00', current_claimed_inc_gst: '110.00',
+      current_actual_receipts: '-10.00', current_outstanding_receivable: '120.00',
+      current_credit_balance: '0.00', current_unclaimed_inc_gst: '110.00',
+    }
+    const result = await new ProgressInvoiceRepository(clientReturning({
+      data: { items: [item], summary, page: 1, page_size: 20, total: 2 }, error: null,
+    })).call('list_progress_invoice_series', {
+      query: '', statuses: [], page: 1, page_size: 20, quote_id: null,
+    })
+
+    expect(result).toEqual({
+      ok: true,
+      data: { items: [item], summary, page: 1, page_size: 20, total: 2 },
+    })
+  })
+
+  it.each([
+    ['missing summary money', (value: Record<string, unknown>) => {
+      const summary = { ...(value.summary as Record<string, unknown>) }
+      delete summary.current_credit_balance
+      return { ...value, summary }
+    }],
+    ['numeric item money', (value: Record<string, unknown>) => ({
+      ...value,
+      items: [{ ...((value.items as Record<string, unknown>[])[0]), current_claimed_inc_gst: 55 }],
+    })],
+    ['malformed decimal scale', (value: Record<string, unknown>) => ({
+      ...value,
+      summary: { ...(value.summary as Record<string, unknown>), current_unclaimed_inc_gst: '110.0' },
+    })],
+    ['negative non-negative balance', (value: Record<string, unknown>) => ({
+      ...value,
+      items: [{ ...((value.items as Record<string, unknown>[])[0]), current_credit_balance: '-1.00' }],
+    })],
+    ['invalid manifest count', (value: Record<string, unknown>) => ({
+      ...value,
+      items: [{ ...((value.items as Record<string, unknown>[])[0]), current_manifest_claim_count: -1 }],
+    })],
+    ['invalid invoice text', (value: Record<string, unknown>) => ({
+      ...value,
+      items: [{ ...((value.items as Record<string, unknown>[])[0]), invoice_number: 123 }],
+    })],
+  ])('rejects %s in dashboard responses', async (_label, mutate) => {
+    const item = {
+      id: '11111111-1111-4111-8111-111111111111', source_type: 'manual', quote_id: null,
+      recipient_name: 'Builder', recipient_company: '', site_name: 'Site', status: 'active',
+      current_adjusted_contract_ex_gst: '100.00', current_claimed_inc_gst: '55.00',
+      current_actual_receipts: '5.00', current_outstanding_receivable: '50.00',
+      current_credit_balance: '0.00', current_unclaimed_inc_gst: '55.00',
+      current_cumulative_percentage: '50.000000', current_payment_state: 'part_paid',
+      current_manifest_claim_count: 1, invoice_number: 'INV-P01', reference: '',
+      last_successful_jobber_sync_at: null, last_jobber_sync_error_code: null, version: 1,
+    }
+    const response: Record<string, unknown> = {
+      items: [item],
+      summary: {
+        current_adjusted_contract_ex_gst: '100.00', current_claimed_inc_gst: '55.00',
+        current_actual_receipts: '5.00', current_outstanding_receivable: '50.00',
+        current_credit_balance: '0.00', current_unclaimed_inc_gst: '55.00',
+      },
+      page: 1, page_size: 20, total: 1,
+    }
+    const result = await new ProgressInvoiceRepository(clientReturning({ data: mutate(response), error: null }))
+      .call('list_progress_invoice_series', { query: '', statuses: [], page: 1, page_size: 20, quote_id: null })
+    expect(result).toEqual({ ok: false, error: 'PROGRESS_RESPONSE_INVALID' })
+  })
+
   it('exposes the Manual command without legacy Quote create or prefill branches', () => {
     expect(repositorySource).toMatch(/create_manual_progress_invoice_series/)
     expect(repositorySource).not.toMatch(/\bcreate_progress_invoice_series\b/)

@@ -145,16 +145,30 @@ export interface ProgressInvoiceDashboardRpcItem {
   current_claimed_inc_gst: string
   current_actual_receipts: string
   current_outstanding_receivable: string
+  current_credit_balance: string
   current_unclaimed_inc_gst: string
   current_cumulative_percentage: string
   current_payment_state: ProgressInvoicePaymentState
+  current_manifest_claim_count: number
+  invoice_number: string
+  reference: string
   last_successful_jobber_sync_at: string | null
   last_jobber_sync_error_code: string | null
   version: number
 }
 
+export interface ProgressInvoiceDashboardRpcSummary {
+  current_adjusted_contract_ex_gst: string
+  current_claimed_inc_gst: string
+  current_actual_receipts: string
+  current_outstanding_receivable: string
+  current_credit_balance: string
+  current_unclaimed_inc_gst: string
+}
+
 export interface ProgressInvoiceDashboardRpcResult {
   items: ProgressInvoiceDashboardRpcItem[]
+  summary: ProgressInvoiceDashboardRpcSummary
   page: number
   page_size: number
   total: number
@@ -504,6 +518,11 @@ function moneyField(record: Record<string, unknown>, key: string): string | null
   return value && /^-?(?:0|[1-9]\d*)\.\d{2}$/.test(value) ? value : null
 }
 
+function nonNegativeMoneyField(record: Record<string, unknown>, key: string): string | null {
+  const value = moneyField(record, key)
+  return value && !value.startsWith('-') ? value : null
+}
+
 function percentageField(record: Record<string, unknown>, key: string): string | null {
   const value = stringField(record, key)
   return value && /^(?:0|[1-9]\d*)\.\d{6}$/.test(value) ? value : null
@@ -779,12 +798,16 @@ function parseDashboardItem(value: unknown): ProgressInvoiceDashboardRpcItem | n
   const lastSync = nullableStringField(value, 'last_successful_jobber_sync_at')
   const syncError = nullableStringField(value, 'last_jobber_sync_error_code')
   const version = positiveIntegerField(value, 'version')
-  const adjusted = moneyField(value, 'current_adjusted_contract_ex_gst')
-  const claimed = moneyField(value, 'current_claimed_inc_gst')
+  const adjusted = nonNegativeMoneyField(value, 'current_adjusted_contract_ex_gst')
+  const claimed = nonNegativeMoneyField(value, 'current_claimed_inc_gst')
   const received = moneyField(value, 'current_actual_receipts')
-  const outstanding = moneyField(value, 'current_outstanding_receivable')
-  const unclaimed = moneyField(value, 'current_unclaimed_inc_gst')
+  const outstanding = nonNegativeMoneyField(value, 'current_outstanding_receivable')
+  const credit = nonNegativeMoneyField(value, 'current_credit_balance')
+  const unclaimed = nonNegativeMoneyField(value, 'current_unclaimed_inc_gst')
   const cumulative = percentageField(value, 'current_cumulative_percentage')
+  const manifestClaimCount = nonNegativeIntegerField(value, 'current_manifest_claim_count')
+  const invoiceNumber = stringField(value, 'invoice_number')
+  const reference = stringField(value, 'reference')
   const validSource = sourceType === 'pbc_quote' || sourceType === 'jobber_job'
     || sourceType === 'jobber_invoice' || sourceType === 'manual'
   const validStatus = status === 'draft' || status === 'active' || status === 'completed'
@@ -793,7 +816,8 @@ function parseDashboardItem(value: unknown): ProgressInvoiceDashboardRpcItem | n
     || paymentState === 'paid' || paymentState === 'overdue' || paymentState === 'credit_balance'
   if (!id || !validSource || quoteId === undefined || !recipientName || recipientCompany === null
     || !siteName || !validStatus || !validPayment || lastSync === undefined || syncError === undefined
-    || !version || !adjusted || !claimed || !received || !outstanding || !unclaimed || !cumulative) return null
+    || !version || !adjusted || !claimed || !received || !outstanding || !credit || !unclaimed
+    || !cumulative || manifestClaimCount === null || invoiceNumber === null || reference === null) return null
   return {
     id,
     source_type: sourceType,
@@ -806,12 +830,35 @@ function parseDashboardItem(value: unknown): ProgressInvoiceDashboardRpcItem | n
     current_claimed_inc_gst: claimed,
     current_actual_receipts: received,
     current_outstanding_receivable: outstanding,
+    current_credit_balance: credit,
     current_unclaimed_inc_gst: unclaimed,
     current_cumulative_percentage: cumulative,
     current_payment_state: paymentState,
+    current_manifest_claim_count: manifestClaimCount,
+    invoice_number: invoiceNumber,
+    reference,
     last_successful_jobber_sync_at: lastSync,
     last_jobber_sync_error_code: syncError,
     version,
+  }
+}
+
+function parseDashboardSummary(value: unknown): ProgressInvoiceDashboardRpcSummary | null {
+  if (!isRecord(value)) return null
+  const adjusted = nonNegativeMoneyField(value, 'current_adjusted_contract_ex_gst')
+  const claimed = nonNegativeMoneyField(value, 'current_claimed_inc_gst')
+  const received = moneyField(value, 'current_actual_receipts')
+  const outstanding = nonNegativeMoneyField(value, 'current_outstanding_receivable')
+  const credit = nonNegativeMoneyField(value, 'current_credit_balance')
+  const unclaimed = nonNegativeMoneyField(value, 'current_unclaimed_inc_gst')
+  if (!adjusted || !claimed || !received || !outstanding || !credit || !unclaimed) return null
+  return {
+    current_adjusted_contract_ex_gst: adjusted,
+    current_claimed_inc_gst: claimed,
+    current_actual_receipts: received,
+    current_outstanding_receivable: outstanding,
+    current_credit_balance: credit,
+    current_unclaimed_inc_gst: unclaimed,
   }
 }
 
@@ -821,9 +868,10 @@ function parseDashboard(value: unknown): ProgressInvoiceDashboardRpcResult | nul
   const page = positiveIntegerField(candidate, 'page')
   const pageSize = positiveIntegerField(candidate, 'page_size')
   const total = nonNegativeIntegerField(candidate, 'total')
+  const summary = parseDashboardSummary(candidate.summary)
   const items = candidate.items.map(parseDashboardItem)
-  if (!page || !pageSize || total === null || items.some((item) => item === null)) return null
-  return { items: items as ProgressInvoiceDashboardRpcItem[], page, page_size: pageSize, total }
+  if (!page || !pageSize || total === null || !summary || items.some((item) => item === null)) return null
+  return { items: items as ProgressInvoiceDashboardRpcItem[], summary, page, page_size: pageSize, total }
 }
 
 function parseSeriesRead(value: unknown): ProgressInvoiceSeriesReadRpcResult | null {

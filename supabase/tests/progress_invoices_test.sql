@@ -1,7 +1,7 @@
 CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA extensions;
 CREATE EXTENSION IF NOT EXISTS dblink WITH SCHEMA extensions;
 
-SELECT plan(212);
+SELECT plan(224);
 
 DELETE FROM public.business_invoice_profiles;
 DELETE FROM auth.users
@@ -1717,6 +1717,17 @@ INSERT INTO public.progress_claims (
   '00000000-0000-0000-0000-000000008101', '00000000-0000-0000-0000-000000008101'
 );
 
+INSERT INTO public.progress_invoice_templates (
+  id, version, status, source_evidence_path, source_byte_length, source_sha256,
+  normalized_master_path, normalized_sha256, logo_sha256, manifest_version,
+  cell_map_version, page_layout_version, font_version, font_regular_sha256,
+  font_bold_sha256, manifest, registered_by
+) VALUES (
+  '00000000-0000-0000-0000-000000008129', 1, 'pending', 'task2/source.xlsx', 1, repeat('1', 64),
+  'task2/master.xlsx', repeat('2', 64), repeat('3', 64), 'v1', 'v1', 'v1', 'v1',
+  repeat('4', 64), repeat('5', 64), '{}'::JSONB, '00000000-0000-0000-0000-000000008101'
+);
+
 INSERT INTO public.progress_claim_revisions (
   id, claim_id, revision_number, state, input_mode, authoritative_current_claim_inc_gst,
   issue_date, due_date, description, supplier_profile_version, supplier_legal_name,
@@ -1729,22 +1740,36 @@ INSERT INTO public.progress_claim_revisions (
   adjusted_contract_inc_gst, cumulative_target_ex_gst, cumulative_target_gst,
   cumulative_target_inc_gst, current_claim_ex_gst, current_claim_gst, current_claim_inc_gst,
   cumulative_percentage, remaining_ex_gst, remaining_gst, remaining_inc_gst,
-  calculation_policy_version, edit_classification, financial_snapshot_hash, created_by
+  calculation_policy_version, template_id, template_version,
+  edit_classification, financial_snapshot_hash, created_by
 ) VALUES (
   '00000000-0000-0000-0000-000000008131', '00000000-0000-0000-0000-000000008130',
-  1, 'draft', 'current_claim_amount', 990, '2026-07-16', '2026-07-30', 'Issued works',
+  1, 'issued', 'current_claim_amount', 990, '2026-07-16', '2026-07-30', 'Issued works',
   1, 'Paint Buddy & Co Pty Ltd', 'Paint Buddy & Co', '12345678901', '', '1 Supplier Street',
   '0400000000', 'accounts@example.test', 'Bank', '000-000', 'Paint Buddy & Co', '00000000', 14,
   'Task 5 Builder', '1 Billing Street', 'Task 5 Site', '2 Site Street', 'task5-account',
   'task5-invoice', 'INV-TASK5', 'INV-TASK5', 'INV-TASK5', 1050, 105, 1155,
   900, 90, 990, 900, 90, 990, 85.714286, 150, 15, 165,
-  'v1', 'clerical', repeat('a', 64), '00000000-0000-0000-0000-000000008101'
+  'v1', '00000000-0000-0000-0000-000000008129', 1,
+  'clerical', repeat('a', 64), '00000000-0000-0000-0000-000000008101'
 );
 
 UPDATE public.progress_claims SET
   current_revision_id = '00000000-0000-0000-0000-000000008131',
   status = 'issued', original_issued_at = now()
 WHERE id = '00000000-0000-0000-0000-000000008130';
+
+INSERT INTO public.progress_invoice_revision_sets (
+  id, series_id, set_number, revision_manifest, state,
+  aggregate_financial_manifest_hash, created_by, published_at
+) VALUES (
+  '00000000-0000-0000-0000-000000008132', (SELECT id FROM task5_standalone_result), 1,
+  '[{"claim_id":"00000000-0000-0000-0000-000000008130","revision_id":"00000000-0000-0000-0000-000000008131"}]',
+  'current', repeat('9', 64), '00000000-0000-0000-0000-000000008101', now()
+);
+UPDATE public.progress_invoice_series
+SET current_revision_set_id = '00000000-0000-0000-0000-000000008132'
+WHERE id = (SELECT id FROM task5_standalone_result);
 
 SET ROLE authenticated;
 SET request.jwt.claim.sub = '00000000-0000-0000-0000-000000008101';
@@ -4711,5 +4736,294 @@ SELECT is(
 );
 
 DELETE FROM public.business_invoice_profiles;
+
+RESET ROLE;
+
+INSERT INTO public.progress_invoice_series (
+  id, source_type, accepted_numbering_base, base_contract_ex_gst,
+  recipient_name, recipient_address, site_name, site_address, default_description,
+  status, created_by, updated_by
+) VALUES
+  (
+    '84000000-0000-4000-8000-000000000001', 'manual', 'TASK2-A', 1000,
+    'Task2 Dashboard Builder', 'Billing A', 'Site A', 'Site address A', 'Works A',
+    'active', '00000000-0000-0000-0000-000000008001', '00000000-0000-0000-0000-000000008001'
+  ),
+  (
+    '84000000-0000-4000-8000-000000000002', 'manual', 'TASK2-B', 2000,
+    'Task2 Dashboard Builder', 'Billing B', 'Site B', 'Site address B', 'Works B',
+    'active', '00000000-0000-0000-0000-000000008001', '00000000-0000-0000-0000-000000008001'
+  ),
+  (
+    '84000000-0000-4000-8000-000000000003', 'manual', 'TASK2-VOID', 3000,
+    'Task2 Dashboard Builder', 'Billing V', 'Site V', 'Site address V', 'Works V',
+    'void', '00000000-0000-0000-0000-000000008001', '00000000-0000-0000-0000-000000008001'
+  );
+
+INSERT INTO public.progress_payments (
+  id, series_id, source, current_revision_id, created_by, updated_by
+) VALUES (
+  '84000000-0000-4000-8000-000000000010', '84000000-0000-4000-8000-000000000001',
+  'manual', NULL, '00000000-0000-0000-0000-000000008001', '00000000-0000-0000-0000-000000008001'
+);
+INSERT INTO public.progress_payment_revisions (
+  id, payment_id, revision_number, received_date, observed_amount,
+  effective_receipt_amount, sync_state, status, created_by
+) VALUES (
+  '84000000-0000-4000-8000-000000000011', '84000000-0000-4000-8000-000000000010',
+  1, current_date, 50, 50, 'manual', 'active', '00000000-0000-0000-0000-000000008001'
+);
+UPDATE public.progress_payments SET current_revision_id = '84000000-0000-4000-8000-000000000011'
+WHERE id = '84000000-0000-4000-8000-000000000010';
+
+INSERT INTO public.progress_payments (
+  id, series_id, source, jobber_payment_id, current_revision_id, matched_manual_payment_id,
+  created_by, updated_by
+) VALUES (
+  '84000000-0000-4000-8000-000000000012', '84000000-0000-4000-8000-000000000001',
+  'jobber', 'TASK2-PAYMENT', NULL, '84000000-0000-4000-8000-000000000010',
+  '00000000-0000-0000-0000-000000008001', '00000000-0000-0000-0000-000000008001'
+);
+INSERT INTO public.progress_payment_revisions (
+  id, payment_id, revision_number, received_date, observed_amount,
+  effective_receipt_amount, sync_state, status, created_by
+) VALUES (
+  '84000000-0000-4000-8000-000000000013', '84000000-0000-4000-8000-000000000012',
+  1, current_date, 50, 50, 'observed', 'active', '00000000-0000-0000-0000-000000008001'
+);
+UPDATE public.progress_payments SET current_revision_id = '84000000-0000-4000-8000-000000000013'
+WHERE id = '84000000-0000-4000-8000-000000000012';
+
+SELECT public.progress_recalculate_series_read_model_as(
+  '84000000-0000-4000-8000-000000000001', '00000000-0000-0000-0000-000000008001'
+);
+SELECT public.progress_recalculate_series_read_model_as(
+  '84000000-0000-4000-8000-000000000002', '00000000-0000-0000-0000-000000008001'
+);
+SELECT public.progress_recalculate_series_read_model_as(
+  '84000000-0000-4000-8000-000000000003', '00000000-0000-0000-0000-000000008001'
+);
+
+SELECT is(
+  (SELECT current_claimed_inc_gst FROM public.progress_invoice_series WHERE id = '84000000-0000-4000-8000-000000000001'),
+  0::NUMERIC,
+  'no Current set yields zero issued Claims'
+);
+SELECT is(
+  (SELECT current_actual_receipts = 50 AND current_credit_balance = 50
+   FROM public.progress_invoice_series WHERE id = '84000000-0000-4000-8000-000000000001'),
+  true,
+  'Jobber receipt replaces its matched Manual receipt without double counting'
+);
+
+INSERT INTO public.progress_claims (
+  id, series_id, sequence, kind, suffix, tax_invoice_number, status,
+  original_issued_at, created_by, updated_by
+) VALUES (
+  '84000000-0000-4000-8000-000000000020', '84000000-0000-4000-8000-000000000001',
+  1, 'progress', 'P01', 'TASK2-A-P01', 'draft', NULL,
+  '00000000-0000-0000-0000-000000008001', '00000000-0000-0000-0000-000000008001'
+);
+
+INSERT INTO public.progress_claim_revisions
+SELECT (jsonb_populate_record(
+  NULL::public.progress_claim_revisions,
+  to_jsonb(source_revision) || jsonb_build_object(
+    'id', '84000000-0000-4000-8000-000000000021',
+    'claim_id', '84000000-0000-4000-8000-000000000020',
+    'revision_number', 1, 'state', 'issued',
+    'issue_date', '2026-01-01', 'due_date', '2026-01-02',
+    'authoritative_current_claim_inc_gst', 110,
+    'reference', 'Revision one', 'accepted_numbering_base', 'TASK2-A',
+    'jobber_account_id', NULL, 'jobber_invoice_id', NULL,
+    'original_jobber_invoice_number', NULL, 'observed_jobber_invoice_number', NULL,
+    'adjusted_contract_ex_gst', 1000, 'adjusted_contract_gst', 100,
+    'adjusted_contract_inc_gst', 1100, 'current_claim_ex_gst', 100,
+    'current_claim_gst', 10, 'current_claim_inc_gst', 110,
+    'cumulative_target_ex_gst', 100, 'cumulative_target_gst', 10,
+    'cumulative_target_inc_gst', 110, 'cumulative_percentage', 10,
+    'remaining_ex_gst', 900, 'remaining_gst', 90, 'remaining_inc_gst', 990,
+    'financial_snapshot_hash', repeat('b', 64)
+  )
+)).* FROM public.progress_claim_revisions AS source_revision LIMIT 1;
+
+INSERT INTO public.progress_claim_revisions
+SELECT (jsonb_populate_record(
+  NULL::public.progress_claim_revisions,
+  to_jsonb(source_revision) || jsonb_build_object(
+    'id', '84000000-0000-4000-8000-000000000022',
+    'claim_id', '84000000-0000-4000-8000-000000000020',
+    'revision_number', 2, 'state', 'issued',
+    'issue_date', '2026-01-01', 'due_date', '2026-01-02',
+    'authoritative_current_claim_inc_gst', 220,
+    'reference', 'Revision two', 'accepted_numbering_base', 'TASK2-A',
+    'jobber_account_id', NULL, 'jobber_invoice_id', NULL,
+    'original_jobber_invoice_number', NULL, 'observed_jobber_invoice_number', NULL,
+    'adjusted_contract_ex_gst', 1000, 'adjusted_contract_gst', 100,
+    'adjusted_contract_inc_gst', 1100, 'current_claim_ex_gst', 200,
+    'current_claim_gst', 20, 'current_claim_inc_gst', 220,
+    'cumulative_target_ex_gst', 200, 'cumulative_target_gst', 20,
+    'cumulative_target_inc_gst', 220, 'cumulative_percentage', 20,
+    'remaining_ex_gst', 800, 'remaining_gst', 80, 'remaining_inc_gst', 880,
+    'financial_snapshot_hash', repeat('c', 64)
+  )
+)).* FROM public.progress_claim_revisions AS source_revision LIMIT 1;
+
+UPDATE public.progress_claims
+SET current_revision_id = '84000000-0000-4000-8000-000000000021',
+    status = 'issued', original_issued_at = now()
+WHERE id = '84000000-0000-4000-8000-000000000020';
+
+INSERT INTO public.progress_invoice_revision_sets (
+  id, series_id, set_number, revision_manifest, state,
+  aggregate_financial_manifest_hash, created_by, published_at, superseded_at
+) VALUES
+  (
+    '84000000-0000-4000-8000-000000000031', '84000000-0000-4000-8000-000000000001', 1,
+    '[{"claim_id":"84000000-0000-4000-8000-000000000020","revision_id":"84000000-0000-4000-8000-000000000021"}]',
+    'superseded', repeat('d', 64), '00000000-0000-0000-0000-000000008001', now(), now()
+  ),
+  (
+    '84000000-0000-4000-8000-000000000032', '84000000-0000-4000-8000-000000000001', 2,
+    '[{"claim_id":"84000000-0000-4000-8000-000000000020","revision_id":"84000000-0000-4000-8000-000000000022"}]',
+    'current', repeat('e', 64), '00000000-0000-0000-0000-000000008001', now(), NULL
+  );
+UPDATE public.progress_invoice_series SET current_revision_set_id = '84000000-0000-4000-8000-000000000032'
+WHERE id = '84000000-0000-4000-8000-000000000001';
+SELECT public.progress_recalculate_series_read_model_as(
+  '84000000-0000-4000-8000-000000000001', '00000000-0000-0000-0000-000000008001'
+);
+
+SELECT is(
+  (SELECT current_claimed_inc_gst FROM public.progress_invoice_series WHERE id = '84000000-0000-4000-8000-000000000001'),
+  220::NUMERIC,
+  'Current manifest wins when the Claim pointer deliberately selects another Revision'
+);
+
+SET ROLE authenticated;
+SET request.jwt.claim.sub = '00000000-0000-0000-0000-000000008001';
+
+SELECT is(
+  (SELECT item ->> 'current_manifest_claim_count' = '1'
+      AND item ->> 'invoice_number' = 'TASK2-A-P01'
+      AND item ->> 'reference' = 'Revision two'
+      AND item ->> 'current_payment_state' = 'overdue'
+   FROM jsonb_array_elements(public.list_progress_invoice_series(jsonb_build_object(
+     'query', 'TASK2-A', 'statuses', '[]'::JSONB, 'page', 1, 'page_size', 1, 'quote_id', NULL
+   )) -> 'items') AS item),
+  true,
+  'dashboard item exposes Current count, invoice, reference, and Sydney overdue state'
+);
+
+SELECT is(
+  (SELECT (response -> 'summary' ->> 'current_adjusted_contract_ex_gst')::NUMERIC
+      > (response -> 'items' -> 0 ->> 'current_adjusted_contract_ex_gst')::NUMERIC
+   FROM (SELECT public.list_progress_invoice_series(jsonb_build_object(
+     'query', 'Task2 Dashboard Builder', 'statuses', '[]'::JSONB,
+     'page', 1, 'page_size', 1, 'quote_id', NULL
+   )) AS response) AS listed),
+  true,
+  'dashboard summary covers all filtered Series rather than only one paged item'
+);
+
+SELECT is(
+  (public.list_progress_invoice_series(jsonb_build_object(
+    'query', 'Task2 Dashboard Builder', 'statuses', '[]'::JSONB,
+    'page', 1, 'page_size', 20, 'quote_id', NULL
+  )) ->> 'total')::INT,
+  2,
+  'default dashboard view excludes Void Series'
+);
+
+SELECT is(
+  (SELECT (response ->> 'total')::INT = 1
+      AND response -> 'items' -> 0 ->> 'status' = 'void'
+   FROM (SELECT public.list_progress_invoice_series(jsonb_build_object(
+     'query', 'Task2 Dashboard Builder', 'statuses', '["void","active","paid"]'::JSONB,
+     'page', 1, 'page_size', 20, 'quote_id', NULL
+   )) AS response) AS listed),
+  true,
+  'any mixed Void request is an explicit Void-only view'
+);
+
+RESET ROLE;
+UPDATE public.progress_invoice_revision_sets SET state = 'superseded', superseded_at = now()
+WHERE id = '84000000-0000-4000-8000-000000000032';
+UPDATE public.progress_invoice_revision_sets SET state = 'current', superseded_at = NULL
+WHERE id = '84000000-0000-4000-8000-000000000031';
+UPDATE public.progress_invoice_series SET current_revision_set_id = '84000000-0000-4000-8000-000000000031'
+WHERE id = '84000000-0000-4000-8000-000000000001';
+SELECT public.progress_recalculate_series_read_model_as(
+  '84000000-0000-4000-8000-000000000001', '00000000-0000-0000-0000-000000008001'
+);
+SELECT is(
+  (SELECT current_claimed_inc_gst FROM public.progress_invoice_series WHERE id = '84000000-0000-4000-8000-000000000001'),
+  110::NUMERIC,
+  'changing the Current set changes cached totals without changing the Claim pointer'
+);
+
+UPDATE public.progress_invoice_revision_sets SET state = 'superseded', superseded_at = now()
+WHERE id = '84000000-0000-4000-8000-000000000031';
+INSERT INTO public.progress_invoice_revision_sets (
+  id, series_id, set_number, revision_manifest, state,
+  aggregate_financial_manifest_hash, created_by, published_at
+) VALUES (
+  '84000000-0000-4000-8000-000000000033', '84000000-0000-4000-8000-000000000001', 3,
+  '[{"claim_id":"84000000-0000-4000-8000-000000000020","revision_id":"84000000-0000-4000-8000-000000000022","extra":"invalid"}]',
+  'current', repeat('f', 64), '00000000-0000-0000-0000-000000008001', now()
+);
+UPDATE public.progress_invoice_series SET current_revision_set_id = '84000000-0000-4000-8000-000000000033'
+WHERE id = '84000000-0000-4000-8000-000000000001';
+SELECT is(
+  pg_temp.capture_sqlstate($sql$
+    SELECT public.progress_recalculate_series_read_model_as(
+      '84000000-0000-4000-8000-000000000001', '00000000-0000-0000-0000-000000008001'
+    )
+  $sql$),
+  'P0001',
+  'invalid manifest object shape fails closed'
+);
+
+UPDATE public.progress_invoice_revision_sets SET state = 'superseded', superseded_at = now()
+WHERE id = '84000000-0000-4000-8000-000000000033';
+INSERT INTO public.progress_invoice_revision_sets (
+  id, series_id, set_number, revision_manifest, state,
+  aggregate_financial_manifest_hash, created_by, published_at
+) VALUES (
+  '84000000-0000-4000-8000-000000000034', '84000000-0000-4000-8000-000000000001', 4,
+  '[]', 'current', repeat('1', 64), '00000000-0000-0000-0000-000000008001', now()
+);
+UPDATE public.progress_invoice_series SET current_revision_set_id = '84000000-0000-4000-8000-000000000034'
+WHERE id = '84000000-0000-4000-8000-000000000001';
+SELECT public.progress_recalculate_series_read_model_as(
+  '84000000-0000-4000-8000-000000000001', '00000000-0000-0000-0000-000000008001'
+);
+SELECT is(
+  (SELECT current_claimed_inc_gst = 0 AND current_actual_receipts = 50 AND current_credit_balance = 50
+   FROM public.progress_invoice_series WHERE id = '84000000-0000-4000-8000-000000000001'),
+  true,
+  'an empty Current manifest keeps independent receipts and credit while issued totals are zero'
+);
+
+SET ROLE authenticated;
+SET request.jwt.claim.sub = '00000000-0000-0000-0000-000000008001';
+SELECT is(
+  (SELECT item ->> 'current_manifest_claim_count'
+   FROM jsonb_array_elements(public.list_progress_invoice_series(jsonb_build_object(
+     'query', 'TASK2-A', 'statuses', '[]'::JSONB, 'page', 1, 'page_size', 1, 'quote_id', NULL
+   )) -> 'items') AS item),
+  '0',
+  'dashboard count follows an empty Current manifest'
+);
+
+RESET ROLE;
+
+SELECT extensions.ok(
+  position(
+    'claim.current_revision_id'
+    IN pg_get_functiondef('public.progress_recalculate_series_read_model_as(uuid,uuid)'::regprocedure)
+  ) = 0,
+  'series read model never reads issued Claims from the mutable Claim pointer'
+);
 
 SELECT * FROM finish();

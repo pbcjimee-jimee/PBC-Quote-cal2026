@@ -1,4 +1,4 @@
-import { existsSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -47,14 +47,26 @@ const dashboardData: ProgressInvoiceDashboardDto = {
       claimedIncGst: '550.00',
       receivedIncGst: '300.00',
       outstandingReceivable: '250.00',
+      creditBalanceIncGst: '15.00',
       unclaimedIncGst: '550.00',
       cumulativePercentage: '50.00',
       paymentState: 'part_paid',
+      currentManifestClaimCount: 1,
+      invoiceNumber: 'INV-2875-P01',
+      reference: 'Stage one',
       lastSuccessfulJobberSyncAt: '2026-07-16T03:30:00.000Z',
       lastJobberSyncErrorCode: null,
       version: 3,
     },
   ],
+  summary: {
+    adjustedContractExGst: '9000.00',
+    claimedIncGst: '4400.00',
+    receivedIncGst: '2100.00',
+    outstandingIncGst: '2300.00',
+    creditBalanceIncGst: '75.00',
+    unclaimedIncGst: '5500.00',
+  },
   page: 2,
   pageSize: 20,
   total: 21,
@@ -140,15 +152,29 @@ describe('Progress Invoice dashboard foundation', () => {
       },
     }))
 
-    expect(markup).toContain('Adjusted contract')
-    expect(markup).toContain('Claimed')
-    expect(markup).toContain('Received')
-    expect(markup).toContain('Outstanding')
+    expect(markup).toContain('Adjusted contract Ex GST')
+    expect(markup).toContain('Claimed Inc GST')
+    expect(markup).toContain('Received Inc GST')
+    expect(markup).toContain('Outstanding Inc GST')
+    expect(markup).toContain('Credit balance Inc GST')
+    expect(markup).toContain('Unclaimed Inc GST')
     expect(markup).not.toContain('Claimed / Received')
-    expect(markup).toContain('$1,000.00')
+    expect(markup).toContain('$9,000.00')
     expect(markup).toContain('$550.00')
     expect(markup).toContain('$300.00')
     expect(markup).toContain('$250.00')
+    expect(markup).toContain('$75.00')
+    expect(markup).toContain('Current invoice')
+    expect(markup).toContain('INV-2875-P01')
+    expect(markup).toContain('Stage one')
+    expect(markup).toContain('href="/progress-invoices/736dbf7e-2dc4-4e2a-a34f-5982b25138c0"')
+    expect(markup).toContain('data-intent-link="true"')
+    const primaryCardLink = markup.match(/<a[^>]*class="pbc-progress-series__primary"[^>]*>[\s\S]*?<\/a>/)?.[0]
+    expect(primaryCardLink).toBeDefined()
+    expect((primaryCardLink?.match(/href=/g) ?? [])).toHaveLength(1)
+    expect(readFileSync('app/styles/components.css', 'utf8')).toContain(
+      '.pbc-progress-series__primary:focus-visible',
+    )
     expect(markup).toContain('Timbaworx')
     expect(markup).toContain('Alex Builder')
     expect(markup).toContain('4 Curra Close, Frenchs Forest')
@@ -237,7 +263,14 @@ describe('Progress Invoice dashboard foundation', () => {
     const emptyMarkup = renderToStaticMarkup(createElement(ProgressInvoiceDashboard, {
       result: {
         ok: true,
-        data: { items: [], page: 1, pageSize: 20, total: 0 },
+        data: {
+          items: [],
+          summary: {
+            adjustedContractExGst: '0.00', claimedIncGst: '0.00', receivedIncGst: '0.00',
+            outstandingIncGst: '0.00', creditBalanceIncGst: '0.00', unclaimedIncGst: '0.00',
+          },
+          page: 1, pageSize: 20, total: 0,
+        },
       },
       filters,
     }))
@@ -298,5 +331,21 @@ describe('Progress Invoice dashboard foundation', () => {
     expect(markup).toContain('Manual')
     expect(markup).not.toContain('Imported from Jobber')
     expect(markup).not.toContain('Jobber not imported')
+  })
+
+  it('shows no claims issued while preserving a positive credit balance', () => {
+    const markup = renderToStaticMarkup(createElement(ProgressInvoiceDashboard, {
+      result: {
+        ok: true,
+        data: {
+          ...dashboardData,
+          items: [{ ...dashboardData.items[0]!, paymentState: 'no_claims', currentManifestClaimCount: 0 }],
+        },
+      },
+      filters: { query: '', statuses: [], page: 1, pageSize: 20, quoteId: null },
+    }))
+
+    expect(markup).toContain('No claims issued')
+    expect(markup).toContain('$15.00')
   })
 })

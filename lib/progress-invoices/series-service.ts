@@ -8,6 +8,17 @@ import {
   type ProgressInvoiceSeriesStatus,
   type VersionedMutationRpcResult,
 } from './repository'
+
+export type ProgressInvoiceDisplayPaymentState = 'no_claims' | ProgressInvoicePaymentState
+
+export interface ProgressInvoiceDashboardSummary {
+  adjustedContractExGst: string
+  claimedIncGst: string
+  receivedIncGst: string
+  outstandingIncGst: string
+  creditBalanceIncGst: string
+  unclaimedIncGst: string
+}
 import type {
   CreateManualProgressInvoiceSeriesInput,
   SaveBusinessInvoiceProfileInput,
@@ -53,9 +64,13 @@ export interface ProgressInvoiceDashboardItem {
   claimedIncGst: string
   receivedIncGst: string
   outstandingReceivable: string
+  creditBalanceIncGst: string
   unclaimedIncGst: string
   cumulativePercentage: string
-  paymentState: ProgressInvoicePaymentState
+  paymentState: ProgressInvoiceDisplayPaymentState
+  currentManifestClaimCount: number
+  invoiceNumber: string
+  reference: string
   lastSuccessfulJobberSyncAt: string | null
   lastJobberSyncErrorCode: string | null
   version: number
@@ -63,6 +78,7 @@ export interface ProgressInvoiceDashboardItem {
 
 export interface ProgressInvoiceDashboardDto {
   items: ProgressInvoiceDashboardItem[]
+  summary: ProgressInvoiceDashboardSummary
   page: number
   pageSize: number
   total: number
@@ -312,13 +328,25 @@ export async function listProgressInvoiceSeries(
         claimedIncGst: row.current_claimed_inc_gst,
         receivedIncGst: row.current_actual_receipts,
         outstandingReceivable: row.current_outstanding_receivable,
+        creditBalanceIncGst: row.current_credit_balance,
         unclaimedIncGst: row.current_unclaimed_inc_gst,
         cumulativePercentage: row.current_cumulative_percentage,
-        paymentState: row.current_payment_state,
+        paymentState: row.current_manifest_claim_count === 0 ? 'no_claims' : row.current_payment_state,
+        currentManifestClaimCount: row.current_manifest_claim_count,
+        invoiceNumber: row.invoice_number,
+        reference: row.reference,
         lastSuccessfulJobberSyncAt: row.last_successful_jobber_sync_at,
         lastJobberSyncErrorCode: row.last_jobber_sync_error_code,
         version: row.version,
       })),
+      summary: {
+        adjustedContractExGst: result.data.summary.current_adjusted_contract_ex_gst,
+        claimedIncGst: result.data.summary.current_claimed_inc_gst,
+        receivedIncGst: result.data.summary.current_actual_receipts,
+        outstandingIncGst: result.data.summary.current_outstanding_receivable,
+        creditBalanceIncGst: result.data.summary.current_credit_balance,
+        unclaimedIncGst: result.data.summary.current_unclaimed_inc_gst,
+      },
       page: result.data.page,
       pageSize: result.data.page_size,
       total: result.data.total,
