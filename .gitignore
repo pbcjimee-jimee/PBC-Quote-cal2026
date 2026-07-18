@@ -53,6 +53,7 @@ outputs/invoice-work/
 # ===== Supabase CLI (로컬 개발) =====
 supabase/.temp/
 supabase/.branches/
+/.supabase-cli-home/
 
 # ===== AI 도구 로컬 설정 =====
 .claude/
