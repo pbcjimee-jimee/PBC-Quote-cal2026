@@ -183,6 +183,27 @@ describe('Progress Invoice Server Actions', () => {
     })
   })
 
+  it.each([
+    ['workspace', () => getProgressInvoiceSeriesWorkspace(SERIES_ID), 'getProgressInvoiceSeriesWorkspace'],
+    ['history', () => listProgressInvoiceSeriesHistory({
+      seriesId: SERIES_ID,
+      cursor: null,
+      limit: 20,
+    }), 'listProgressInvoiceSeriesHistory'],
+  ] as const)('authorizes valid %s input before its service and stops on denial', async (
+    _label,
+    invoke,
+    serviceName,
+  ) => {
+    mocks.requireAllowedUser.mockResolvedValue({ ok: false, error: 'User is not allowed' })
+
+    expect(await invoke()).toEqual({ ok: false, error: 'User is not allowed' })
+    expect(mocks.requireAllowedUser).toHaveBeenCalledOnce()
+    expect(mocks[serviceName]).not.toHaveBeenCalled()
+    expect(mocks.getProgressInvoiceSeriesWorkspace).not.toHaveBeenCalled()
+    expect(mocks.listProgressInvoiceSeriesHistory).not.toHaveBeenCalled()
+  })
+
   it('authorizes before standalone Jobber gateway work and maps the exact success result', async () => {
     mocks.createStandaloneProgressInvoiceFromJobberService.mockResolvedValue({
       ok: true,

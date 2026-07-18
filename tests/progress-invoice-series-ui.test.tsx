@@ -122,6 +122,46 @@ describe('Progress Invoice series detail workspace', () => {
     expect(markup).toContain('<caption>Ready document metadata</caption>')
     expect(markup).not.toContain('storage_path')
     expect(markup).not.toContain('bank_account')
+    expect(markup).toContain('>Availability<')
+    for (const label of [
+      'Series editing', 'Base contract editing', 'Direct Series Void',
+      'Claim Void workflow', 'Claim creation', 'Current document metadata',
+      'Historical document metadata',
+    ]) expect(markup).toContain(label)
+    expect(markup).toContain('Locked after a Claim exists')
+    expect(markup).toContain('Ready metadata available')
+    expect(markup).toContain('No historical metadata available')
+    const capabilitySection = markup.match(/<section[^>]*aria-labelledby="progress-availability-heading"[\s\S]*?<\/section>/)?.[0]
+    expect(capabilitySection).toBeDefined()
+    expect(capabilitySection).not.toContain('<button')
+    expect(capabilitySection).not.toContain('href=')
+  })
+
+  it('renders all seven server-derived capability states without live mutation or download controls', () => {
+    const unlocked = {
+      ...workspace,
+      capabilities: {
+        canEditSeries: false,
+        canEditBaseContract: true,
+        canVoidSeriesDirectly: true,
+        requiresClaimVoidWorkflow: false,
+        canCreateClaim: false,
+        canDownloadCurrent: false,
+        canDownloadHistorical: true,
+      },
+    }
+    const markup = renderToStaticMarkup(createElement(ProgressInvoiceSeriesDetailView, {
+      workspace: unlocked,
+      historyResult: { ok: true, data: { events: [], nextCursor: null } },
+    }))
+    expect(markup).toContain('Read-only for this Series')
+    expect(markup).toContain('Available before the first Claim')
+    expect(markup).toContain('Direct path available')
+    expect(markup).toContain('Not required')
+    expect(markup).toContain('Claim creation unavailable')
+    expect(markup).toContain('No current metadata available')
+    expect(markup).toContain('Historical metadata available')
+    expect(markup).not.toContain('Download now')
   })
 
   it('renders explicit empty states and keeps a History error isolated', () => {

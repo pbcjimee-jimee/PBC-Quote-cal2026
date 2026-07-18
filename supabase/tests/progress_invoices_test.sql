@@ -1,7 +1,7 @@
 CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA extensions;
 CREATE EXTENSION IF NOT EXISTS dblink WITH SCHEMA extensions;
 
-SELECT plan(255);
+SELECT plan(263);
 
 DELETE FROM public.business_invoice_profiles;
 DELETE FROM auth.users
@@ -5631,5 +5631,96 @@ SELECT is(
   true,
   'history returns deterministic newest-first data with an opaque last-event cursor'
 );
+
+SELECT is(
+  (SELECT bool_and('search_path=""' = ANY(function_row.proconfig))
+   FROM pg_catalog.pg_proc AS function_row
+   JOIN pg_catalog.pg_namespace AS namespace ON namespace.oid = function_row.pronamespace
+   WHERE namespace.nspname = 'public'
+     AND function_row.proname IN ('get_progress_invoice_workspace', 'list_progress_invoice_history')
+     AND pg_catalog.pg_get_function_identity_arguments(function_row.oid) = 'payload jsonb'),
+  true,
+  'workspace and history RPCs pin an empty search_path in the catalog'
+);
+
+SELECT is(pg_temp.capture_sqlstate($sql$
+  SELECT public.get_progress_invoice_workspace('[]'::JSONB)
+$sql$), '22023', 'workspace rejects a non-object payload');
+
+SELECT is(pg_temp.capture_sqlstate($sql$
+  SELECT public.get_progress_invoice_workspace('{"series_id":123}'::JSONB)
+$sql$), '22023', 'workspace rejects a non-string Series UUID');
+
+SELECT is(pg_temp.capture_sqlstate($sql$
+  SELECT public.list_progress_invoice_history('{"series_id":"84000000-0000-4000-8000-000000000001","cursor":null}'::JSONB)
+$sql$), '22023', 'history rejects a payload missing its exact limit key');
+
+SELECT is(pg_temp.capture_sqlstate($sql$
+  SELECT public.list_progress_invoice_history('{"series_id":"84000000-0000-4000-8000-000000000001","cursor":123,"limit":20}'::JSONB)
+$sql$), '22023', 'history rejects a non-string cursor');
+
+RESET ROLE;
+INSERT INTO public.progress_invoice_series (
+  id, source_type, accepted_numbering_base, base_contract_ex_gst,
+  recipient_name, recipient_address, site_name, site_address, default_description,
+  status, created_by, updated_by
+) VALUES (
+  '86000000-0000-4000-8000-000000000001', 'manual', 'CAPABILITY-LOCK', 1000,
+  'Capability Builder', 'Capability Billing', 'Capability Site', 'Capability Site address',
+  'Capability works', 'active', '00000000-0000-0000-0000-000000008001',
+  '00000000-0000-0000-0000-000000008001'
+);
+INSERT INTO public.progress_claims (
+  id, series_id, sequence, kind, suffix, tax_invoice_number, status, created_by, updated_by
+) VALUES (
+  '86000000-0000-4000-8000-000000000002', '86000000-0000-4000-8000-000000000001',
+  1, 'progress', 'P01', 'CAPABILITY-LOCK-P01', 'draft',
+  '00000000-0000-0000-0000-000000008001', '00000000-0000-0000-0000-000000008001'
+);
+
+SET ROLE authenticated;
+SET request.jwt.claim.sub = '00000000-0000-0000-0000-000000008001';
+SELECT is(
+  public.get_progress_invoice_workspace('{"series_id":"86000000-0000-4000-8000-000000000001"}'::JSONB)
+    #>> '{capabilities,can_edit_base_contract}',
+  'false',
+  'a Draft Claim permanently locks the Base Contract outside the Current manifest'
+);
+
+RESET ROLE;
+UPDATE public.progress_claims SET status = 'void'
+WHERE id = '86000000-0000-4000-8000-000000000002';
+SET ROLE authenticated;
+SET request.jwt.claim.sub = '00000000-0000-0000-0000-000000008001';
+SELECT is(
+  public.get_progress_invoice_workspace('{"series_id":"86000000-0000-4000-8000-000000000001"}'::JSONB)
+    #>> '{capabilities,can_edit_base_contract}',
+  'false',
+  'a Void Claim keeps the Base Contract permanently locked'
+);
+
+RESET ROLE;
+INSERT INTO public.progress_invoice_series (
+  id, source_type, accepted_numbering_base, base_contract_ex_gst,
+  recipient_name, recipient_address, site_name, site_address, default_description,
+  status, created_by, updated_by
+) VALUES (
+  '86000000-0000-4000-8000-000000000010', 'manual', 'CAP-PLUS-ONE', 1000,
+  'Cap Builder', 'Cap Billing', 'Cap Site', 'Cap Site address', 'Cap works', 'active',
+  '00000000-0000-0000-0000-000000008001', '00000000-0000-0000-0000-000000008001'
+);
+INSERT INTO public.progress_claims (
+  series_id, sequence, kind, suffix, tax_invoice_number, status, created_by, updated_by
+)
+SELECT
+  '86000000-0000-4000-8000-000000000010', value,
+  'progress', 'P' || lpad(value::TEXT, 3, '0'), 'CAP-PLUS-ONE-P' || lpad(value::TEXT, 3, '0'),
+  'draft', '00000000-0000-0000-0000-000000008001', '00000000-0000-0000-0000-000000008001'
+FROM generate_series(1, 101) AS value;
+SET ROLE authenticated;
+SET request.jwt.claim.sub = '00000000-0000-0000-0000-000000008001';
+SELECT is(pg_temp.capture_sqlstate($sql$
+  SELECT public.get_progress_invoice_workspace('{"series_id":"86000000-0000-4000-8000-000000000010"}'::JSONB)
+$sql$), 'P0001', 'workspace fails closed when a bounded collection reaches cap plus one');
 
 SELECT * FROM finish();

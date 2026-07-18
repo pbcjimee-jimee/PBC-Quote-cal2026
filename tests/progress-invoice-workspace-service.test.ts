@@ -256,12 +256,68 @@ describe('Progress Invoice workspace boundary', () => {
       { series_id: SERIES_ID },
     )).toEqual({ ok: false, error: 'PROGRESS_RESPONSE_INVALID' })
 
-    const overflow = structuredClone(rawWorkspace)
-    overflow.adjustments = Array.from({ length: 251 }, () => overflow.adjustments[0]!)
+  })
+
+  it.each([
+    ['adjustments', 251],
+    ['claims', 101],
+    ['payments', 501],
+    ['ready_documents', 101],
+    ['recent_events', 21],
+  ] as const)('rejects cap+1 %s instead of silently truncating', async (section, count) => {
+    const overflow = structuredClone(rawWorkspace) as unknown as Record<string, unknown>
+    const source = (overflow[section] as unknown[])[0]
+    overflow[section] = Array.from({ length: count }, () => source)
     expect(await new ProgressInvoiceRepository(executorReturning(overflow)).call(
-      'get_progress_invoice_workspace',
-      { series_id: SERIES_ID },
+      'get_progress_invoice_workspace', { series_id: SERIES_ID },
     )).toEqual({ ok: false, error: 'PROGRESS_RESPONSE_INVALID' })
+  })
+
+  it.each([
+    ['Series UUID', (value: typeof rawWorkspace) => { value.series.id = 'not-a-uuid' }],
+    ['observation enum', (value: typeof rawWorkspace) => { value.imported_jobber_observation!.normalized_status = 'invalid' as 'paid' }],
+    ['observation date', (value: typeof rawWorkspace) => { value.imported_jobber_observation!.issued_date = '2026-02-30' }],
+    ['observation decimal', (value: typeof rawWorkspace) => { value.imported_jobber_observation!.invoice_total = '1.0' }],
+    ['revision-set UUID', (value: typeof rawWorkspace) => { value.current_revision_set!.id = 'not-a-uuid' }],
+    ['adjustment UUID', (value: typeof rawWorkspace) => { value.adjustments[0]!.id = 'not-a-uuid' }],
+    ['adjustment date', (value: typeof rawWorkspace) => { value.adjustments[0]!.effective_date = '2026-02-30' }],
+    ['adjustment enum', (value: typeof rawWorkspace) => { value.adjustments[0]!.type = 'other' as 'variation' }],
+    ['Claim UUID', (value: typeof rawWorkspace) => { value.claims[0]!.id = 'not-a-uuid' }],
+    ['Claim revision decimal', (value: typeof rawWorkspace) => { value.claims[0]!.current_revision!.remaining_inc_gst = '1.0' }],
+    ['Payment revision UUID', (value: typeof rawWorkspace) => { value.payments[0]!.current_revision!.id = 'not-a-uuid' }],
+    ['Payment received date', (value: typeof rawWorkspace) => { value.payments[0]!.current_revision!.received_date = '2026-02-30' }],
+    ['Payment status enum', (value: typeof rawWorkspace) => { value.payments[0]!.current_revision!.status = 'paid' as 'active' }],
+    ['Document UUID', (value: typeof rawWorkspace) => { value.ready_documents[0]!.template_id = 'not-a-uuid' }],
+    ['Document enum', (value: typeof rawWorkspace) => { value.ready_documents[0]!.format = 'docx' as 'pdf' }],
+    ['Event UUID', (value: typeof rawWorkspace) => { value.recent_events[0]!.id = 'not-a-uuid' }],
+    ['Event timestamp', (value: typeof rawWorkspace) => { value.recent_events[0]!.occurred_at = 'yesterday' }],
+    ['Event enum', (value: typeof rawWorkspace) => { value.recent_events[0]!.source = 'external' as 'user' }],
+  ])('rejects malformed nested %s boundary data', async (_label, mutate) => {
+    const invalid = structuredClone(rawWorkspace)
+    mutate(invalid)
+    expect(await new ProgressInvoiceRepository(executorReturning(invalid)).call(
+      'get_progress_invoice_workspace', { series_id: SERIES_ID },
+    )).toEqual({ ok: false, error: 'PROGRESS_RESPONSE_INVALID' })
+  })
+
+  it('preserves the Base Contract lock capability when a Draft Claim exists outside Current', async () => {
+    const draftClaimWorkspace = structuredClone(rawWorkspace) as unknown as Record<string, unknown>
+    const claims = draftClaimWorkspace.claims as Array<Record<string, unknown>>
+    draftClaimWorkspace.current_revision_set = null
+    draftClaimWorkspace.claims = [{ ...claims[0], status: 'draft', original_issued_at: null, current_revision: null }]
+    ;(draftClaimWorkspace.capabilities as Record<string, unknown>).can_edit_base_contract = false
+    mocks.call.mockResolvedValue({ ok: true, data: draftClaimWorkspace })
+
+    const result = await getProgressInvoiceSeriesWorkspace(SERIES_ID)
+
+    expect(result).toMatchObject({
+      ok: true,
+      data: {
+        currentRevisionSet: null,
+        claims: [{ status: 'draft', currentRevision: null }],
+        capabilities: { canEditBaseContract: false },
+      },
+    })
   })
 
   it('rejects sensitive or arbitrary observation, document, and event fields', async () => {

@@ -34,6 +34,7 @@ export function ProgressInvoiceSeriesDetailView({
   historyResult: ActionResult<ProgressInvoiceHistoryPageDto>
 }) {
   const { series, summary, importedJobberObservation: observation } = workspace
+  const { capabilities } = workspace
 
   return (
     <div className="pbc-progress-series-detail">
@@ -65,6 +66,43 @@ export function ProgressInvoiceSeriesDetailView({
             </div>
           ))}
           <div><dt>Cumulative progress</dt><dd>{summary.cumulativePercentage}%</dd></div>
+        </dl>
+      </section>
+
+      <section className="pbc-card pbc-card--pad" aria-labelledby="progress-availability-heading">
+        <h2 id="progress-availability-heading">Availability</h2>
+        <p className="pbc-progress-imported-copy">
+          This page shows the current Series state. Editing, Void workflows, and document downloads are provided by their dedicated workflows.
+        </p>
+        <dl className="pbc-progress-capability-grid">
+          <div>
+            <dt>Series editing</dt>
+            <dd>{capabilities.canEditSeries ? 'Available in a later workflow' : 'Read-only for this Series'}</dd>
+          </div>
+          <div>
+            <dt>Base contract editing</dt>
+            <dd>{capabilities.canEditBaseContract ? 'Available before the first Claim' : 'Locked after a Claim exists'}</dd>
+          </div>
+          <div>
+            <dt>Direct Series Void</dt>
+            <dd>{capabilities.canVoidSeriesDirectly ? 'Direct path available' : 'Direct path unavailable'}</dd>
+          </div>
+          <div>
+            <dt>Claim Void workflow</dt>
+            <dd>{capabilities.requiresClaimVoidWorkflow ? 'Required' : 'Not required'}</dd>
+          </div>
+          <div>
+            <dt>Claim creation</dt>
+            <dd>{capabilities.canCreateClaim ? 'Claim creation available' : 'Claim creation unavailable'}</dd>
+          </div>
+          <div>
+            <dt>Current document metadata</dt>
+            <dd>{capabilities.canDownloadCurrent ? 'Ready metadata available' : 'No current metadata available'}</dd>
+          </div>
+          <div>
+            <dt>Historical document metadata</dt>
+            <dd>{capabilities.canDownloadHistorical ? 'Historical metadata available' : 'No historical metadata available'}</dd>
+          </div>
         </dl>
       </section>
 

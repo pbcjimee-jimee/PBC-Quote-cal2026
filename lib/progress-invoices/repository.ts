@@ -901,8 +901,8 @@ function parseBusinessInvoiceProfile(value: unknown): BusinessInvoiceProfileRpcR
 
 function parseSeriesDetail(value: unknown): ProgressInvoiceSeriesRpcDetail | null {
   if (!isRecord(value)) return null
-  const id = stringField(value, 'id')
-  const quoteId = nullableStringField(value, 'quote_id')
+  const id = uuidField(value, 'id')
+  const quoteId = nullableUuidField(value, 'quote_id')
   const sourceType = stringField(value, 'source_type')
   const version = positiveIntegerField(value, 'version')
   const status = stringField(value, 'status')

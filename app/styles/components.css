@@ -558,6 +558,21 @@
   gap: 12px;
   margin: 16px 0 0;
 }
+.pbc-progress-capability-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin: 16px 0 0;
+}
+.pbc-progress-capability-grid > div {
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface-subtle);
+  min-width: 0;
+}
+.pbc-progress-capability-grid dt { color: var(--muted-foreground); font-size: 0.78rem; }
+.pbc-progress-capability-grid dd { margin: 5px 0 0; font-weight: 700; }
 .pbc-progress-summary-grid > div,
 .pbc-progress-detail-dl > div {
   padding: 12px;
@@ -590,6 +605,7 @@
 
 @media (max-width: 760px) {
   .pbc-progress-summary-grid,
+  .pbc-progress-capability-grid,
   .pbc-progress-detail-columns { grid-template-columns: 1fr; }
   .pbc-progress-detail-heading { align-items: stretch; flex-direction: column; }
 }
