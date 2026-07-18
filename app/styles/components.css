@@ -536,6 +536,63 @@
   color: var(--foreground);
 }
 .pbc-workspace h3 { color: var(--foreground); }
+
+.pbc-progress-series-detail {
+  display: grid;
+  gap: 18px;
+  width: min(1180px, 100%);
+  margin: 0 auto;
+  min-width: 0;
+}
+.pbc-progress-detail-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+.pbc-progress-detail-heading h1 { margin: 2px 0 4px; }
+.pbc-progress-detail-heading p { margin: 0; color: var(--muted-foreground); }
+.pbc-progress-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin: 16px 0 0;
+}
+.pbc-progress-summary-grid > div,
+.pbc-progress-detail-dl > div {
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface-subtle);
+  min-width: 0;
+}
+.pbc-progress-summary-grid dt,
+.pbc-progress-detail-dl dt { color: var(--muted-foreground); font-size: 0.78rem; }
+.pbc-progress-summary-grid dd { margin: 5px 0 0; font-size: 1.05rem; font-weight: 800; }
+.pbc-progress-detail-dl { display: grid; gap: 10px; margin: 14px 0 0; }
+.pbc-progress-detail-dl dd { margin: 4px 0 0; overflow-wrap: anywhere; }
+.pbc-progress-detail-columns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.pbc-progress-imported-copy,
+.pbc-progress-empty { margin: 12px 0 0; color: var(--muted-foreground); }
+.pbc-progress-table-scroll { overflow-x: auto; margin-top: 12px; border-radius: 12px; }
+.pbc-progress-table-scroll:focus-visible { outline: 3px solid var(--primary); outline-offset: 2px; }
+.pbc-progress-detail-table { width: 100%; min-width: 720px; border-collapse: collapse; }
+.pbc-progress-detail-table caption { text-align: left; font-weight: 700; padding: 0 0 10px; }
+.pbc-progress-detail-table th,
+.pbc-progress-detail-table td { padding: 12px; border-bottom: 1px solid var(--border); text-align: left; vertical-align: top; }
+.pbc-progress-detail-table thead th { color: var(--muted-foreground); font-size: 0.78rem; }
+.pbc-progress-history-list { display: grid; gap: 10px; margin: 14px 0 0; padding: 0; list-style: none; }
+.pbc-progress-history-list li { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 12px; border: 1px solid var(--border); border-radius: 12px; }
+.pbc-progress-history-list li div { display: grid; gap: 3px; }
+.pbc-progress-history-list li span { color: var(--muted-foreground); }
+.pbc-progress-history-more,
+.pbc-progress-detail-back { min-height: 44px; margin-top: 14px; }
+
+@media (max-width: 760px) {
+  .pbc-progress-summary-grid,
+  .pbc-progress-detail-columns { grid-template-columns: 1fr; }
+  .pbc-progress-detail-heading { align-items: stretch; flex-direction: column; }
+}
 .pbc-workspace input,
 .pbc-workspace select,
 .pbc-workspace textarea,

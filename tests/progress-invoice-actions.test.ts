@@ -13,6 +13,8 @@ const mocks = vi.hoisted(() => ({
   getProgressInvoiceSeries: vi.fn(),
   createManualProgressInvoiceSeries: vi.fn(),
   updateProgressInvoiceSeries: vi.fn(),
+  getProgressInvoiceSeriesWorkspace: vi.fn(),
+  listProgressInvoiceSeriesHistory: vi.fn(),
   createProgressAdjustment: vi.fn(),
   updateDraftProgressAdjustment: vi.fn(),
   approveProgressAdjustment: vi.fn(),
@@ -44,6 +46,11 @@ vi.mock('@/lib/progress-invoices/adjustment-service', () => ({
   supersedeProgressAdjustment: mocks.supersedeProgressAdjustment,
 }))
 
+vi.mock('@/lib/progress-invoices/workspace-service', () => ({
+  getProgressInvoiceSeriesWorkspace: mocks.getProgressInvoiceSeriesWorkspace,
+  listProgressInvoiceSeriesHistory: mocks.listProgressInvoiceSeriesHistory,
+}))
+
 vi.mock('@/lib/progress-invoices/standalone-import-service', () => ({
   createStandaloneProgressInvoiceFromJobberService:
     mocks.createStandaloneProgressInvoiceFromJobberService,
@@ -53,7 +60,9 @@ import {
   createManualProgressInvoiceSeries,
   getBusinessInvoiceProfile,
   getProgressInvoiceSeries,
+  getProgressInvoiceSeriesWorkspace,
   listProgressInvoiceSeries,
+  listProgressInvoiceSeriesHistory,
   saveBusinessInvoiceProfile,
   updateProgressInvoiceSeries,
 } from '@/lib/actions/progress-invoice-series'
@@ -138,6 +147,39 @@ describe('Progress Invoice Server Actions', () => {
     mocks.requireAllowedUser.mockResolvedValue({
       ok: true,
       user: { id: 'actor-1', email: 'owner@example.test' },
+    })
+  })
+
+  it('validates workspace and history input before authorization, then delegates only when allowed', async () => {
+    expect(await getProgressInvoiceSeriesWorkspace('not-a-uuid')).toMatchObject({
+      ok: false,
+      code: 'VALIDATION',
+    })
+    expect(await listProgressInvoiceSeriesHistory({
+      seriesId: SERIES_ID,
+      cursor: null,
+      limit: 51,
+    })).toMatchObject({ ok: false, code: 'VALIDATION' })
+    expect(mocks.requireAllowedUser).not.toHaveBeenCalled()
+    expect(mocks.getProgressInvoiceSeriesWorkspace).not.toHaveBeenCalled()
+    expect(mocks.listProgressInvoiceSeriesHistory).not.toHaveBeenCalled()
+
+    mocks.getProgressInvoiceSeriesWorkspace.mockResolvedValue({ ok: true, data: null })
+    mocks.listProgressInvoiceSeriesHistory.mockResolvedValue({
+      ok: true,
+      data: { events: [], nextCursor: null },
+    })
+    expect(await getProgressInvoiceSeriesWorkspace(SERIES_ID)).toEqual({ ok: true, data: null })
+    expect(await listProgressInvoiceSeriesHistory({
+      seriesId: SERIES_ID,
+      cursor: null,
+      limit: 20,
+    })).toEqual({ ok: true, data: { events: [], nextCursor: null } })
+    expect(mocks.getProgressInvoiceSeriesWorkspace).toHaveBeenCalledWith(SERIES_ID)
+    expect(mocks.listProgressInvoiceSeriesHistory).toHaveBeenCalledWith({
+      seriesId: SERIES_ID,
+      cursor: null,
+      limit: 20,
     })
   })
 

@@ -1,7 +1,7 @@
 'use server'
 
 import { revalidatePath } from 'next/cache'
-import type { ZodError } from 'zod'
+import { z, type ZodError } from 'zod'
 
 import type { ActionResult } from './types'
 import { requireAllowedUser } from '@/lib/security/require-allowed-user'
@@ -25,6 +25,18 @@ import {
   saveBusinessInvoiceProfileSchema,
   updateProgressInvoiceSeriesSchema,
 } from '@/lib/progress-invoices/validators'
+import {
+  getProgressInvoiceSeriesWorkspace as getSeriesWorkspace,
+  listProgressInvoiceSeriesHistory as listSeriesHistory,
+  type ProgressInvoiceHistoryPageDto,
+  type ProgressInvoiceSeriesWorkspaceDto,
+} from '@/lib/progress-invoices/workspace-service'
+
+const progressInvoiceHistoryInputSchema = z.object({
+  seriesId: z.string().uuid(),
+  cursor: z.string().uuid().nullable(),
+  limit: z.number().int().min(1).max(50),
+}).strict()
 
 function validationFailure(): ActionResult<never> {
   return { ok: false, error: 'PROGRESS_VALIDATION_FAILED', code: 'VALIDATION' }
@@ -83,6 +95,24 @@ export async function getProgressInvoiceSeries(
   if (!parsed.success) return validationFailure()
   const authorized = await authorize()
   return authorized.ok ? getSeries(parsed.data) : authorized
+}
+
+export async function getProgressInvoiceSeriesWorkspace(
+  seriesId: unknown,
+): Promise<ActionResult<ProgressInvoiceSeriesWorkspaceDto | null>> {
+  const parsed = progressInvoiceSeriesIdSchema.safeParse(seriesId)
+  if (!parsed.success) return validationFailure()
+  const authorized = await authorize()
+  return authorized.ok ? getSeriesWorkspace(parsed.data) : authorized
+}
+
+export async function listProgressInvoiceSeriesHistory(
+  input: unknown,
+): Promise<ActionResult<ProgressInvoiceHistoryPageDto>> {
+  const parsed = progressInvoiceHistoryInputSchema.safeParse(input)
+  if (!parsed.success) return validationFailure()
+  const authorized = await authorize()
+  return authorized.ok ? listSeriesHistory(parsed.data) : authorized
 }
 
 export async function createManualProgressInvoiceSeries(

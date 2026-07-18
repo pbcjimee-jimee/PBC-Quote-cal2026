@@ -1732,6 +1732,14 @@ export interface Database {
         Args: { payload: Json }
         Returns: Json
       }
+      get_progress_invoice_workspace: {
+        Args: { payload: Json }
+        Returns: Json
+      }
+      list_progress_invoice_history: {
+        Args: { payload: Json }
+        Returns: Json
+      }
       list_progress_invoice_series: {
         Args: { payload: Json }
         Returns: Json

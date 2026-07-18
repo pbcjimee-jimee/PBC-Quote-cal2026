@@ -1,7 +1,7 @@
 CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA extensions;
 CREATE EXTENSION IF NOT EXISTS dblink WITH SCHEMA extensions;
 
-SELECT plan(238);
+SELECT plan(255);
 
 DELETE FROM public.business_invoice_profiles;
 DELETE FROM auth.users
@@ -5397,6 +5397,239 @@ SELECT is(
     AND NOT has_function_privilege('service_role', 'public.progress_resolve_current_manifest(uuid)', 'EXECUTE'),
   true,
   'Current manifest resolver remains private to trusted database functions'
+);
+
+SELECT has_function(
+  'public',
+  'get_progress_invoice_workspace',
+  ARRAY['jsonb'],
+  'workspace read RPC exists'
+);
+
+SELECT function_returns(
+  'public',
+  'get_progress_invoice_workspace',
+  ARRAY['jsonb'],
+  'jsonb',
+  'workspace read RPC returns one bounded JSON object'
+);
+
+SELECT has_function(
+  'public',
+  'list_progress_invoice_history',
+  ARRAY['jsonb'],
+  'history read RPC exists'
+);
+
+SELECT function_returns(
+  'public',
+  'list_progress_invoice_history',
+  ARRAY['jsonb'],
+  'jsonb',
+  'history read RPC returns one cursor page JSON object'
+);
+
+SELECT is(
+  has_function_privilege('authenticated', 'public.get_progress_invoice_workspace(jsonb)', 'EXECUTE')
+    AND has_function_privilege('authenticated', 'public.list_progress_invoice_history(jsonb)', 'EXECUTE')
+    AND NOT has_function_privilege('anon', 'public.get_progress_invoice_workspace(jsonb)', 'EXECUTE')
+    AND NOT has_function_privilege('service_role', 'public.get_progress_invoice_workspace(jsonb)', 'EXECUTE')
+    AND NOT has_function_privilege('anon', 'public.list_progress_invoice_history(jsonb)', 'EXECUTE')
+    AND NOT has_function_privilege('service_role', 'public.list_progress_invoice_history(jsonb)', 'EXECUTE'),
+  true,
+  'workspace RPCs are exposed only to authenticated'
+);
+
+RESET ROLE;
+RESET request.jwt.claim.sub;
+SELECT is(pg_temp.capture_sqlstate($sql$
+  SELECT public.get_progress_invoice_workspace('{"series_id":"84000000-0000-4000-8000-000000000001"}'::JSONB)
+$sql$), '28000', 'workspace requires an authenticated actor before reading data');
+
+SET ROLE authenticated;
+SET request.jwt.claim.sub = '00000000-0000-0000-0000-000000008001';
+SELECT is(pg_temp.capture_sqlstate($sql$
+  SELECT public.get_progress_invoice_workspace('{"series_id":"84000000-0000-4000-8000-000000000001","extra":true}'::JSONB)
+$sql$), '22023', 'workspace rejects unknown payload keys before data access');
+
+SELECT is(
+  public.get_progress_invoice_workspace('{"series_id":"99000000-0000-4000-8000-000000000099"}'::JSONB),
+  '{"series":null}'::JSONB,
+  'missing workspace Series returns only a safe null Series'
+);
+
+RESET ROLE;
+UPDATE public.progress_invoice_revision_sets SET state = 'superseded', superseded_at = now()
+WHERE series_id = '84000000-0000-4000-8000-000000000001' AND state = 'current';
+UPDATE public.progress_invoice_revision_sets SET state = 'current', superseded_at = NULL
+WHERE id = '84000000-0000-4000-8000-000000000032';
+UPDATE public.progress_invoice_series
+SET current_revision_set_id = '84000000-0000-4000-8000-000000000032'
+WHERE id = '84000000-0000-4000-8000-000000000001';
+SELECT public.progress_recalculate_series_read_model_as(
+  '84000000-0000-4000-8000-000000000001', '00000000-0000-0000-0000-000000008001'
+);
+
+INSERT INTO public.progress_adjustments (
+  id, series_id, type, status, effective_date, display_order, description,
+  amount_ex_gst, created_by, updated_by
+) VALUES
+  ('85000000-0000-4000-8000-000000000002', '84000000-0000-4000-8000-000000000001',
+   'credit', 'draft', '2026-07-03', 2, 'Later credit', 5,
+   '00000000-0000-0000-0000-000000008001', '00000000-0000-0000-0000-000000008001'),
+  ('85000000-0000-4000-8000-000000000001', '84000000-0000-4000-8000-000000000001',
+   'variation', 'approved', '2026-07-01', 1, 'Earlier variation', 10,
+   '00000000-0000-0000-0000-000000008001', '00000000-0000-0000-0000-000000008001');
+
+INSERT INTO public.progress_invoice_series (
+  id, source_type, jobber_account_id, jobber_invoice_id, accepted_numbering_base,
+  base_contract_ex_gst, recipient_name, recipient_address, site_name, site_address,
+  default_description, status, created_by, updated_by
+) VALUES (
+  '85000000-0000-4000-8000-000000000009', 'jobber_invoice', 'workspace-account',
+  'workspace-invoice', '2875', 1000, 'Workspace Jobber Builder', 'Billing J',
+  'Site J', 'Site address J', 'Works J', 'active',
+  '00000000-0000-0000-0000-000000008001', '00000000-0000-0000-0000-000000008001'
+);
+
+INSERT INTO public.progress_jobber_invoice_snapshots (
+  id, series_id, jobber_account_id, jobber_invoice_id, jobber_client_id,
+  original_invoice_number, observed_invoice_number, raw_status, normalized_status,
+  jobber_web_uri, invoice_subtotal, invoice_tax, invoice_total, invoice_balance,
+  issued_date, due_date, client_name, billing_address, property_address,
+  effective_graphql_version, fetched_at, response_fingerprint, normalization_warnings,
+  created_by
+) VALUES (
+  '85000000-0000-4000-8000-000000000010', '85000000-0000-4000-8000-000000000009',
+  'unsafe-account-id', 'unsafe-invoice-id', 'unsafe-client-id', '2875', '2875',
+  'PAST_DUE', 'past_due', 'https://unsafe.example/invoice', 1000, 100, 1100, 880,
+  '2026-07-01', '2026-07-15', 'Task2 Dashboard Builder', 'Billing A', 'Site address A',
+  '2026-06-20', '2026-07-16T01:00:00+00:00', repeat('9', 64),
+  '["unsafe raw warning"]'::JSONB, '00000000-0000-0000-0000-000000008001'
+);
+UPDATE public.progress_invoice_series
+SET current_jobber_snapshot_id = '85000000-0000-4000-8000-000000000010'
+WHERE id = '85000000-0000-4000-8000-000000000009';
+
+INSERT INTO public.progress_invoice_templates (
+  id, version, status, source_evidence_path, source_byte_length, source_sha256,
+  normalized_master_path, normalized_sha256, logo_sha256, manifest_version,
+  cell_map_version, page_layout_version, font_version, font_regular_sha256,
+  font_bold_sha256, manifest, registered_by
+) VALUES (
+  '85000000-0000-4000-8000-000000000020', 850, 'pending', 'private/source.xlsx', 1,
+  repeat('1', 64), 'private/master.xlsx', repeat('2', 64), repeat('3', 64),
+  'v1', 'v1', 'v1', 'v1', repeat('4', 64), repeat('5', 64), '{}'::JSONB,
+  '00000000-0000-0000-0000-000000008001'
+);
+INSERT INTO public.progress_documents (
+  id, series_id, claim_revision_id, scope, format, state, template_id,
+  template_version, renderer_version, storage_path, sha256,
+  page_or_worksheet_count, snapshot_hash, generation_correlation_key,
+  created_by, generated_at
+) VALUES (
+  '85000000-0000-4000-8000-000000000021', '84000000-0000-4000-8000-000000000001',
+  '84000000-0000-4000-8000-000000000022', 'current_claim', 'pdf', 'ready',
+  '85000000-0000-4000-8000-000000000020', 850, 'renderer-v1',
+  'private/unsafe-storage-path.pdf', repeat('6', 64), 1, repeat('7', 64),
+  '85000000-0000-4000-8000-000000000022', '00000000-0000-0000-0000-000000008001', now()
+);
+
+INSERT INTO public.progress_invoice_events (
+  id, series_id, actor_id, event_type, source, occurred_at, safe_field_changes
+) VALUES
+  ('85000000-0000-4000-8000-000000000031', '84000000-0000-4000-8000-000000000001',
+   '00000000-0000-0000-0000-000000008001', 'workspace_newer', 'user',
+   '2026-07-18T02:00:00+00:00',
+   '{"reference":{"before":null,"after":"Stage one"},"bank_account_number":"1234","storage_path":"private/file","url":"https://unsafe.example"}'::JSONB),
+  ('85000000-0000-4000-8000-000000000032', '84000000-0000-4000-8000-000000000001',
+   '00000000-0000-0000-0000-000000008001', 'workspace_older', 'system',
+   '2026-07-18T01:00:00+00:00', '{}'::JSONB),
+  ('85000000-0000-4000-8000-000000000033', '84000000-0000-4000-8000-000000000002',
+   '00000000-0000-0000-0000-000000008001', 'foreign_series_event', 'user',
+   '2026-07-18T03:00:00+00:00', '{}'::JSONB);
+
+SET ROLE authenticated;
+SET request.jwt.claim.sub = '00000000-0000-0000-0000-000000008001';
+SELECT is(
+  public.get_progress_invoice_workspace('{"series_id":"84000000-0000-4000-8000-000000000001"}'::JSONB)
+    #>> '{current_revision_set,current_claim_revision_id}',
+  '84000000-0000-4000-8000-000000000022',
+  'workspace Current Claim revision follows the Current manifest instead of the Claim pointer'
+);
+
+SELECT is(
+  public.get_progress_invoice_workspace('{"series_id":"84000000-0000-4000-8000-000000000001"}'::JSONB)
+    #>> '{claims,0,current_revision,id}',
+  '84000000-0000-4000-8000-000000000022',
+  'Claim timeline exposes the manifest-selected Revision metadata'
+);
+
+SELECT is(
+  (SELECT payment ->> 'source' = 'manual'
+      AND payment #>> '{current_revision,status}' = 'active'
+      AND NOT (payment ? 'jobber_payment_id')
+   FROM jsonb_array_elements(
+     public.get_progress_invoice_workspace('{"series_id":"84000000-0000-4000-8000-000000000001"}'::JSONB) -> 'payments'
+   ) AS payment
+   WHERE payment ->> 'id' = '84000000-0000-4000-8000-000000000010'),
+  true,
+  'payment ledger keeps source and current Revision status independent from Claim payment state'
+);
+
+SELECT is(
+  (WITH workspace AS (
+    SELECT public.get_progress_invoice_workspace('{"series_id":"85000000-0000-4000-8000-000000000009"}'::JSONB) AS value
+  ) SELECT value #>> '{imported_jobber_observation,normalized_status}' = 'past_due'
+      AND value::TEXT NOT LIKE '%unsafe-account-id%'
+      AND value::TEXT NOT LIKE '%unsafe-invoice-id%'
+      AND value::TEXT NOT LIKE '%response_fingerprint%'
+      AND value::TEXT NOT LIKE '%unsafe raw warning%'
+    FROM workspace),
+  true,
+  'stored Jobber observation exposes normalized display fields without raw or external identities'
+);
+
+SELECT is(
+  (WITH workspace AS (
+    SELECT public.get_progress_invoice_workspace('{"series_id":"84000000-0000-4000-8000-000000000001"}'::JSONB) AS value
+  ) SELECT value::TEXT NOT LIKE '%private/unsafe-storage-path.pdf%'
+      AND value::TEXT NOT LIKE '%bank_account_number%'
+      AND value::TEXT NOT LIKE '%https://unsafe.example%'
+      AND value #>> '{recent_events,0,safe_field_changes,reference,after}' = 'Stage one'
+    FROM workspace),
+  true,
+  'workspace strips document storage paths and reconstructs events from the safe allowlist'
+);
+
+SELECT is(
+  (WITH workspace AS (
+    SELECT public.get_progress_invoice_workspace('{"series_id":"84000000-0000-4000-8000-000000000001"}'::JSONB) AS value
+  ) SELECT value #>> '{adjustments,0,id}' = '85000000-0000-4000-8000-000000000001'
+      AND value #>> '{adjustments,1,id}' = '85000000-0000-4000-8000-000000000002'
+      AND value #>> '{recent_events,0,id}' = '85000000-0000-4000-8000-000000000031'
+      AND value #>> '{recent_events,1,id}' = '85000000-0000-4000-8000-000000000032'
+    FROM workspace),
+  true,
+  'bounded workspace arrays use deterministic business chronology'
+);
+
+SELECT is(pg_temp.capture_sqlstate($sql$
+  SELECT public.list_progress_invoice_history('{"series_id":"84000000-0000-4000-8000-000000000001","cursor":null,"limit":51}'::JSONB)
+$sql$), '23514', 'history enforces the approved 1 through 50 page limit');
+
+SELECT is(pg_temp.capture_sqlstate($sql$
+  SELECT public.list_progress_invoice_history('{"series_id":"84000000-0000-4000-8000-000000000001","cursor":"85000000-0000-4000-8000-000000000033","limit":20}'::JSONB)
+$sql$), '22023', 'history rejects a cursor owned by another Series');
+
+SELECT is(
+  (WITH first_page AS (
+    SELECT public.list_progress_invoice_history('{"series_id":"84000000-0000-4000-8000-000000000001","cursor":null,"limit":1}'::JSONB) AS value
+  ) SELECT value #>> '{events,0,id}' = '85000000-0000-4000-8000-000000000031'
+      AND value ->> 'next_cursor' = '85000000-0000-4000-8000-000000000031'
+    FROM first_page),
+  true,
+  'history returns deterministic newest-first data with an opaque last-event cursor'
 );
 
 SELECT * FROM finish();
