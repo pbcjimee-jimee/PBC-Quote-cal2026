@@ -1,53 +1,49 @@
-CREATE OR REPLACE FUNCTION public.progress_recalculate_series_read_model_as(
-  owning_series_id UUID,
-  requested_actor UUID
+CREATE OR REPLACE FUNCTION public.progress_resolve_current_manifest(owning_series_id UUID)
+RETURNS TABLE (
+  manifest_ordinal BIGINT,
+  claim_id UUID,
+  revision_id UUID,
+  claim_sequence INT,
+  tax_invoice_number TEXT,
+  revision_reference TEXT,
+  issue_date DATE,
+  due_date DATE,
+  current_claim_ex_gst NUMERIC,
+  current_claim_gst NUMERIC,
+  current_claim_inc_gst NUMERIC
 )
-RETURNS VOID
 LANGUAGE plpgsql
+STABLE
 SET search_path = ''
 AS $$
 DECLARE
-  series_row public.progress_invoice_series%ROWTYPE;
+  pointed_set_id UUID;
   manifest JSONB := '[]'::JSONB;
   manifest_count INT := 0;
-  approved_variations NUMERIC := 0;
-  approved_credits NUMERIC := 0;
-  claimed_ex NUMERIC := 0;
-  claimed_gst NUMERIC := 0;
-  claimed_inc NUMERIC := 0;
-  adjusted_ex NUMERIC;
-  adjusted_gst NUMERIC;
-  adjusted_inc NUMERIC;
-  receipts NUMERIC := 0;
-  allocatable_receipts NUMERIC := 0;
-  allocated_to_claim NUMERIC;
-  claim_remaining NUMERIC;
-  overdue_amount NUMERIC := 0;
-  outstanding NUMERIC;
-  credit NUMERIC;
-  payment_state TEXT;
-  claim_row RECORD;
 BEGIN
-  SELECT series.* INTO STRICT series_row
+  SELECT series.current_revision_set_id
+  INTO pointed_set_id
   FROM public.progress_invoice_series AS series
-  WHERE series.id = owning_series_id
-  FOR UPDATE;
+  WHERE series.id = owning_series_id;
 
-  IF series_row.current_revision_set_id IS NOT NULL THEN
-    SELECT revision_set.revision_manifest
-    INTO manifest
-    FROM public.progress_invoice_revision_sets AS revision_set
-    WHERE revision_set.id = series_row.current_revision_set_id
-      AND revision_set.series_id = owning_series_id
-      AND revision_set.state = 'current';
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'PROGRESS_RESPONSE_INVALID' USING ERRCODE = 'P0001';
+  END IF;
+  IF pointed_set_id IS NULL THEN
+    RETURN;
+  END IF;
 
-    IF NOT FOUND THEN
-      RAISE EXCEPTION 'PROGRESS_RESPONSE_INVALID' USING ERRCODE = 'P0001';
-    END IF;
+  SELECT revision_set.revision_manifest
+  INTO manifest
+  FROM public.progress_invoice_revision_sets AS revision_set
+  WHERE revision_set.id = pointed_set_id
+    AND revision_set.series_id = owning_series_id
+    AND revision_set.state = 'current';
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'PROGRESS_RESPONSE_INVALID' USING ERRCODE = 'P0001';
   END IF;
 
   manifest_count := jsonb_array_length(manifest);
-
   IF EXISTS (
     SELECT 1
     FROM jsonb_array_elements(manifest) AS item(value)
@@ -83,6 +79,65 @@ BEGIN
     RAISE EXCEPTION 'PROGRESS_RESPONSE_INVALID' USING ERRCODE = 'P0001';
   END IF;
 
+  RETURN QUERY
+  SELECT
+    item.ordinal,
+    claim.id,
+    revision.id,
+    claim.sequence,
+    claim.tax_invoice_number,
+    revision.reference,
+    revision.issue_date,
+    revision.due_date,
+    revision.current_claim_ex_gst,
+    revision.current_claim_gst,
+    revision.current_claim_inc_gst
+  FROM jsonb_array_elements(manifest) WITH ORDINALITY AS item(value, ordinal)
+  JOIN public.progress_claims AS claim
+    ON claim.id = (item.value ->> 'claim_id')::UUID
+   AND claim.series_id = owning_series_id
+   AND claim.status = 'issued'
+  JOIN public.progress_claim_revisions AS revision
+    ON revision.id = (item.value ->> 'revision_id')::UUID
+   AND revision.claim_id = claim.id
+   AND revision.state = 'issued'
+  ORDER BY item.ordinal;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.progress_recalculate_series_read_model_as(
+  owning_series_id UUID,
+  requested_actor UUID
+)
+RETURNS VOID
+LANGUAGE plpgsql
+SET search_path = ''
+AS $$
+DECLARE
+  series_row public.progress_invoice_series%ROWTYPE;
+  approved_variations NUMERIC := 0;
+  approved_credits NUMERIC := 0;
+  claimed_ex NUMERIC := 0;
+  claimed_gst NUMERIC := 0;
+  claimed_inc NUMERIC := 0;
+  adjusted_ex NUMERIC;
+  adjusted_gst NUMERIC;
+  adjusted_inc NUMERIC;
+  receipts NUMERIC := 0;
+  allocatable_receipts NUMERIC := 0;
+  allocated_to_claim NUMERIC;
+  claim_remaining NUMERIC;
+  overdue_amount NUMERIC := 0;
+  outstanding NUMERIC;
+  credit NUMERIC;
+  payment_state TEXT;
+  claim_row RECORD;
+BEGIN
+  SELECT series.* INTO STRICT series_row
+  FROM public.progress_invoice_series AS series
+  WHERE series.id = owning_series_id
+  FOR UPDATE;
+
   SELECT
     COALESCE(sum(adjustment.amount_ex_gst) FILTER (
       WHERE adjustment.status = 'approved' AND adjustment.type = 'variation'
@@ -99,15 +154,7 @@ BEGIN
     COALESCE(sum(revision.current_claim_gst), 0),
     COALESCE(sum(revision.current_claim_inc_gst), 0)
   INTO claimed_ex, claimed_gst, claimed_inc
-  FROM jsonb_array_elements(manifest) WITH ORDINALITY AS item(value, ordinal)
-  JOIN public.progress_claims AS claim
-    ON claim.id = (item.value ->> 'claim_id')::UUID
-   AND claim.series_id = owning_series_id
-   AND claim.status = 'issued'
-  JOIN public.progress_claim_revisions AS revision
-    ON revision.id = (item.value ->> 'revision_id')::UUID
-   AND revision.claim_id = claim.id
-   AND revision.state = 'issued';
+  FROM public.progress_resolve_current_manifest(owning_series_id) AS revision;
 
   SELECT COALESCE(SUM(revision.effective_receipt_amount), 0)
   INTO receipts
@@ -137,19 +184,11 @@ BEGIN
     SELECT
       revision.issue_date,
       revision.due_date,
-      claim.sequence AS sequence_number,
-      item.ordinal,
+      revision.claim_sequence AS sequence_number,
+      revision.manifest_ordinal,
       revision.current_claim_inc_gst AS claim_face
-    FROM jsonb_array_elements(manifest) WITH ORDINALITY AS item(value, ordinal)
-    JOIN public.progress_claims AS claim
-      ON claim.id = (item.value ->> 'claim_id')::UUID
-     AND claim.series_id = owning_series_id
-     AND claim.status = 'issued'
-    JOIN public.progress_claim_revisions AS revision
-      ON revision.id = (item.value ->> 'revision_id')::UUID
-     AND revision.claim_id = claim.id
-     AND revision.state = 'issued'
-    ORDER BY revision.issue_date, claim.sequence, item.ordinal
+    FROM public.progress_resolve_current_manifest(owning_series_id) AS revision
+    ORDER BY revision.issue_date, revision.claim_sequence, revision.manifest_ordinal
   LOOP
     allocated_to_claim := LEAST(allocatable_receipts, claim_row.claim_face);
     claim_remaining := claim_row.claim_face - allocated_to_claim;
@@ -294,46 +333,41 @@ BEGIN
   WITH enriched AS (
     SELECT
       series.*,
-      COALESCE(jsonb_array_length(revision_set.revision_manifest), 0) AS manifest_claim_count,
-      COALESCE(latest.tax_invoice_number, NULLIF(btrim(series.accepted_numbering_base), ''), NULLIF(btrim(series.original_jobber_invoice_number), ''), '') AS display_invoice_number,
-      COALESCE(latest.reference, series.reference, '') AS display_reference,
+      manifest.claim_count AS manifest_claim_count,
+      COALESCE(manifest.latest_tax_invoice_number, NULLIF(btrim(series.accepted_numbering_base), ''), NULLIF(btrim(series.original_jobber_invoice_number), ''), '') AS display_invoice_number,
+      COALESCE(manifest.latest_reference, series.reference, '') AS display_reference,
       CASE
         WHEN series.current_credit_balance > 0 THEN 'credit_balance'
+        WHEN manifest.claim_count = 0 THEN 'no_claims'
         WHEN series.current_claimed_inc_gst > 0 AND series.current_outstanding_receivable = 0 THEN 'paid'
-        WHEN COALESCE(overdue.has_overdue, false) THEN 'overdue'
+        WHEN COALESCE(manifest.has_overdue, false) THEN 'overdue'
         WHEN series.current_actual_receipts > 0 AND series.current_outstanding_receivable > 0 THEN 'part_paid'
-        ELSE 'unpaid'
+        WHEN series.current_outstanding_receivable > 0 THEN 'unpaid'
+        ELSE 'no_claims'
       END AS display_payment_state
     FROM public.progress_invoice_series AS series
-    LEFT JOIN public.progress_invoice_revision_sets AS revision_set
-      ON revision_set.id = series.current_revision_set_id
-     AND revision_set.series_id = series.id
-     AND revision_set.state = 'current'
-    LEFT JOIN LATERAL (
-      SELECT claim.tax_invoice_number, revision.reference
-      FROM jsonb_array_elements(COALESCE(revision_set.revision_manifest, '[]'::JSONB)) WITH ORDINALITY AS item(value, ordinal)
-      JOIN public.progress_claims AS claim ON claim.id = (item.value ->> 'claim_id')::UUID AND claim.series_id = series.id
-      JOIN public.progress_claim_revisions AS revision ON revision.id = (item.value ->> 'revision_id')::UUID AND revision.claim_id = claim.id
-      ORDER BY item.ordinal DESC
-      LIMIT 1
-    ) AS latest ON true
-    LEFT JOIN LATERAL (
-      SELECT bool_or(
-        ordered.due_date < (pg_catalog.clock_timestamp() AT TIME ZONE 'Australia/Sydney')::DATE
-        AND ordered.claim_face - GREATEST(LEAST(GREATEST(series.current_actual_receipts, 0) - ordered.prior_claims, ordered.claim_face), 0) > 0
-      ) AS has_overdue
-      FROM (
-        SELECT revision.due_date,
-          revision.current_claim_inc_gst AS claim_face,
-          COALESCE(sum(revision.current_claim_inc_gst) OVER (
-            ORDER BY revision.issue_date, claim.sequence, item.ordinal
+    CROSS JOIN LATERAL (
+      WITH resolved AS MATERIALIZED (
+        SELECT * FROM public.progress_resolve_current_manifest(series.id)
+      ), ordered AS (
+        SELECT resolved.*,
+          COALESCE(sum(resolved.current_claim_inc_gst) OVER (
+            ORDER BY resolved.issue_date, resolved.claim_sequence, resolved.manifest_ordinal
             ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING
           ), 0) AS prior_claims
-        FROM jsonb_array_elements(COALESCE(revision_set.revision_manifest, '[]'::JSONB)) WITH ORDINALITY AS item(value, ordinal)
-        JOIN public.progress_claims AS claim ON claim.id = (item.value ->> 'claim_id')::UUID AND claim.series_id = series.id AND claim.status = 'issued'
-        JOIN public.progress_claim_revisions AS revision ON revision.id = (item.value ->> 'revision_id')::UUID AND revision.claim_id = claim.id AND revision.state = 'issued'
-      ) AS ordered
-    ) AS overdue ON true
+        FROM resolved
+      )
+      SELECT
+        count(*)::INT AS claim_count,
+        (array_agg(ordered.tax_invoice_number ORDER BY ordered.manifest_ordinal DESC))[1] AS latest_tax_invoice_number,
+        (array_agg(ordered.revision_reference ORDER BY ordered.manifest_ordinal DESC))[1] AS latest_reference,
+        bool_or(
+        ordered.due_date < (pg_catalog.clock_timestamp() AT TIME ZONE 'Australia/Sydney')::DATE
+        AND ordered.current_claim_inc_gst
+          - GREATEST(LEAST(GREATEST(series.current_actual_receipts, 0) - ordered.prior_claims, ordered.current_claim_inc_gst), 0) > 0
+        ) AS has_overdue
+      FROM ordered
+    ) AS manifest
   ), matching AS (
     SELECT enriched.*
     FROM enriched
@@ -363,7 +397,7 @@ BEGIN
       'current_credit_balance', pg_catalog.to_char(paged.current_credit_balance, 'FM999999999999990.00'),
       'current_unclaimed_inc_gst', pg_catalog.to_char(paged.current_unclaimed_inc_gst, 'FM999999999999990.00'),
       'current_cumulative_percentage', pg_catalog.to_char(paged.current_cumulative_percentage, 'FM999999990.000000'),
-      'current_payment_state', paged.display_payment_state,
+      'current_payment_state', CASE WHEN paged.display_payment_state = 'no_claims' THEN 'unpaid' ELSE paged.display_payment_state END,
       'current_manifest_claim_count', paged.manifest_claim_count,
       'invoice_number', paged.display_invoice_number,
       'reference', paged.display_reference,
@@ -385,6 +419,8 @@ BEGIN
 END;
 $$;
 
+REVOKE ALL ON FUNCTION public.progress_resolve_current_manifest(UUID)
+  FROM PUBLIC, anon, authenticated, service_role;
 REVOKE ALL ON FUNCTION public.progress_recalculate_series_read_model_as(UUID, UUID)
   FROM PUBLIC, anon, authenticated, service_role;
 REVOKE ALL ON FUNCTION public.progress_recalculate_series_read_model(UUID)

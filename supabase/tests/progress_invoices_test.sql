@@ -1,7 +1,7 @@
 CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA extensions;
 CREATE EXTENSION IF NOT EXISTS dblink WITH SCHEMA extensions;
 
-SELECT plan(224);
+SELECT plan(238);
 
 DELETE FROM public.business_invoice_profiles;
 DELETE FROM auth.users
@@ -5010,11 +5010,376 @@ SET request.jwt.claim.sub = '00000000-0000-0000-0000-000000008001';
 SELECT is(
   (SELECT item ->> 'current_manifest_claim_count'
    FROM jsonb_array_elements(public.list_progress_invoice_series(jsonb_build_object(
-     'query', 'TASK2-A', 'statuses', '[]'::JSONB, 'page', 1, 'page_size', 1, 'quote_id', NULL
+     'query', 'TASK2-A', 'statuses', '["credit_balance"]'::JSONB, 'page', 1, 'page_size', 1, 'quote_id', NULL
    )) -> 'items') AS item),
   '0',
-  'dashboard count follows an empty Current manifest'
+  'Credit Balance filtering preserves a no-Claim row and its empty Current manifest count'
 );
+
+RESET ROLE;
+
+INSERT INTO public.progress_payments (
+  id, series_id, source, current_revision_id, created_by, updated_by
+) VALUES (
+  '84000000-0000-4000-8000-000000000040', '84000000-0000-4000-8000-000000000002',
+  'manual', NULL, '00000000-0000-0000-0000-000000008001', '00000000-0000-0000-0000-000000008001'
+);
+INSERT INTO public.progress_payment_revisions (
+  id, payment_id, revision_number, received_date, observed_amount,
+  effective_receipt_amount, sync_state, status, created_by
+) VALUES (
+  '84000000-0000-4000-8000-000000000041', '84000000-0000-4000-8000-000000000040',
+  1, current_date, 10, -10, 'reversed', 'active', '00000000-0000-0000-0000-000000008001'
+);
+UPDATE public.progress_payments SET current_revision_id = '84000000-0000-4000-8000-000000000041'
+WHERE id = '84000000-0000-4000-8000-000000000040';
+SELECT public.progress_recalculate_series_read_model_as(
+  '84000000-0000-4000-8000-000000000002', '00000000-0000-0000-0000-000000008001'
+);
+
+SET ROLE authenticated;
+SET request.jwt.claim.sub = '00000000-0000-0000-0000-000000008001';
+SELECT is(
+  (SELECT (response ->> 'total')::INT = 0
+      AND jsonb_array_length(response -> 'items') = 0
+      AND response -> 'summary' = jsonb_build_object(
+        'current_adjusted_contract_ex_gst', '0.00',
+        'current_claimed_inc_gst', '0.00',
+        'current_actual_receipts', '0.00',
+        'current_outstanding_receivable', '0.00',
+        'current_credit_balance', '0.00',
+        'current_unclaimed_inc_gst', '0.00'
+      )
+   FROM (SELECT public.list_progress_invoice_series(jsonb_build_object(
+     'query', 'TASK2-B', 'statuses', '["unpaid"]'::JSONB,
+     'page', 1, 'page_size', 20, 'quote_id', NULL
+   )) AS response) AS listed),
+  true,
+  'Unpaid excludes a zero-manifest Series even when a signed reversal leaves positive cached outstanding'
+);
+
+RESET ROLE;
+UPDATE public.progress_invoice_revision_sets SET state = 'superseded', superseded_at = now()
+WHERE id = '84000000-0000-4000-8000-000000000034';
+UPDATE public.progress_invoice_revision_sets SET state = 'current', superseded_at = NULL
+WHERE id = '84000000-0000-4000-8000-000000000033';
+UPDATE public.progress_invoice_series SET current_revision_set_id = '84000000-0000-4000-8000-000000000033'
+WHERE id = '84000000-0000-4000-8000-000000000001';
+
+SET ROLE authenticated;
+SET request.jwt.claim.sub = '00000000-0000-0000-0000-000000008001';
+SELECT is(
+  pg_temp.capture_sqlstate($sql$
+    SELECT public.list_progress_invoice_series(
+      '{"query":"TASK2-A","statuses":[],"page":1,"page_size":20,"quote_id":null}'::JSONB
+    )
+  $sql$),
+  'P0001',
+  'list RPC rejects a Current manifest entry with extra keys using a safe Progress error'
+);
+
+RESET ROLE;
+UPDATE public.progress_invoice_revision_sets SET state = 'superseded', superseded_at = now()
+WHERE id = '84000000-0000-4000-8000-000000000033';
+INSERT INTO public.progress_invoice_revision_sets (
+  id, series_id, set_number, revision_manifest, state,
+  aggregate_financial_manifest_hash, created_by, published_at
+) VALUES (
+  '84000000-0000-4000-8000-000000000035', '84000000-0000-4000-8000-000000000001', 5,
+  '[{"claim_id":"not-a-uuid","revision_id":"84000000-0000-4000-8000-000000000022"}]',
+  'current', repeat('2', 64), '00000000-0000-0000-0000-000000008001', now()
+);
+UPDATE public.progress_invoice_series SET current_revision_set_id = '84000000-0000-4000-8000-000000000035'
+WHERE id = '84000000-0000-4000-8000-000000000001';
+
+SET ROLE authenticated;
+SET request.jwt.claim.sub = '00000000-0000-0000-0000-000000008001';
+SELECT is(
+  pg_temp.capture_sqlstate($sql$
+    SELECT public.list_progress_invoice_series(
+      '{"query":"TASK2-A","statuses":[],"page":1,"page_size":20,"quote_id":null}'::JSONB
+    )
+  $sql$),
+  'P0001',
+  'list RPC rejects malformed manifest UUID text without exposing native cast errors'
+);
+
+RESET ROLE;
+UPDATE public.progress_invoice_revision_sets SET state = 'superseded', superseded_at = now()
+WHERE id = '84000000-0000-4000-8000-000000000035';
+UPDATE public.progress_invoice_revision_sets SET state = 'current', superseded_at = NULL
+WHERE id = '84000000-0000-4000-8000-000000000034';
+UPDATE public.progress_invoice_series SET current_revision_set_id = '84000000-0000-4000-8000-000000000034'
+WHERE id = '84000000-0000-4000-8000-000000000001';
+
+INSERT INTO public.progress_claims (
+  id, series_id, sequence, kind, suffix, tax_invoice_number, status,
+  original_issued_at, created_by, updated_by
+) VALUES
+  (
+    '84000000-0000-4000-8000-000000000060', '84000000-0000-4000-8000-000000000001',
+    2, 'progress', 'P02', 'TASK2-A-P02', 'draft', NULL,
+    '00000000-0000-0000-0000-000000008001', '00000000-0000-0000-0000-000000008001'
+  ),
+  (
+    '84000000-0000-4000-8000-000000000062', '84000000-0000-4000-8000-000000000001',
+    3, 'progress', 'P03', 'TASK2-A-P03', 'draft', NULL,
+    '00000000-0000-0000-0000-000000008001', '00000000-0000-0000-0000-000000008001'
+  ),
+  (
+    '84000000-0000-4000-8000-000000000064', '84000000-0000-4000-8000-000000000001',
+    4, 'progress', 'P04', 'TASK2-A-P04', 'draft', NULL,
+    '00000000-0000-0000-0000-000000008001', '00000000-0000-0000-0000-000000008001'
+  );
+
+INSERT INTO public.progress_claim_revisions
+SELECT (jsonb_populate_record(NULL::public.progress_claim_revisions,
+  to_jsonb(source_revision) || jsonb_build_object(
+    'id', '84000000-0000-4000-8000-000000000061',
+    'claim_id', '84000000-0000-4000-8000-000000000060', 'revision_number', 1,
+    'state', 'issued', 'authoritative_current_claim_inc_gst', 330,
+    'issue_date', '2026-02-01', 'due_date', '2099-01-01', 'reference', 'Future claim',
+    'accepted_numbering_base', 'TASK2-A', 'jobber_account_id', NULL, 'jobber_invoice_id', NULL,
+    'original_jobber_invoice_number', NULL, 'observed_jobber_invoice_number', NULL,
+    'adjusted_contract_ex_gst', 1000, 'adjusted_contract_gst', 100, 'adjusted_contract_inc_gst', 1100,
+    'previous_claims_ex_gst', 200, 'previous_claims_gst', 20, 'previous_claims_inc_gst', 220,
+    'cumulative_target_ex_gst', 500, 'cumulative_target_gst', 50, 'cumulative_target_inc_gst', 550,
+    'current_claim_ex_gst', 300, 'current_claim_gst', 30, 'current_claim_inc_gst', 330,
+    'cumulative_percentage', 50, 'remaining_ex_gst', 500, 'remaining_gst', 50,
+    'remaining_inc_gst', 550, 'financial_snapshot_hash', repeat('6', 64)
+  ))).* FROM public.progress_claim_revisions AS source_revision LIMIT 1;
+
+INSERT INTO public.progress_claim_revisions
+SELECT (jsonb_populate_record(NULL::public.progress_claim_revisions,
+  to_jsonb(source_revision) || jsonb_build_object(
+    'id', '84000000-0000-4000-8000-000000000063',
+    'claim_id', '84000000-0000-4000-8000-000000000062', 'revision_number', 1,
+    'state', 'issued', 'authoritative_current_claim_inc_gst', 55,
+    'issue_date', '2026-03-01', 'due_date', '2026-03-15', 'reference', 'Mismatch evidence',
+    'accepted_numbering_base', 'TASK2-A', 'jobber_account_id', NULL, 'jobber_invoice_id', NULL,
+    'original_jobber_invoice_number', NULL, 'observed_jobber_invoice_number', NULL,
+    'adjusted_contract_ex_gst', 1000, 'adjusted_contract_gst', 100, 'adjusted_contract_inc_gst', 1100,
+    'previous_claims_ex_gst', 500, 'previous_claims_gst', 50, 'previous_claims_inc_gst', 550,
+    'cumulative_target_ex_gst', 550, 'cumulative_target_gst', 55, 'cumulative_target_inc_gst', 605,
+    'current_claim_ex_gst', 50, 'current_claim_gst', 5, 'current_claim_inc_gst', 55,
+    'cumulative_percentage', 55, 'remaining_ex_gst', 450, 'remaining_gst', 45,
+    'remaining_inc_gst', 495, 'financial_snapshot_hash', repeat('7', 64)
+  ))).* FROM public.progress_claim_revisions AS source_revision LIMIT 1;
+
+INSERT INTO public.progress_claim_revisions
+SELECT (jsonb_populate_record(NULL::public.progress_claim_revisions,
+  to_jsonb(source_revision) || jsonb_build_object(
+    'id', '84000000-0000-4000-8000-000000000065',
+    'claim_id', '84000000-0000-4000-8000-000000000064', 'revision_number', 1,
+    'state', 'draft', 'template_id', NULL, 'template_version', NULL,
+    'authoritative_current_claim_inc_gst', 55, 'reference', 'Draft evidence',
+    'accepted_numbering_base', 'TASK2-A', 'jobber_account_id', NULL, 'jobber_invoice_id', NULL,
+    'original_jobber_invoice_number', NULL, 'observed_jobber_invoice_number', NULL,
+    'financial_snapshot_hash', repeat('8', 64)
+  ))).* FROM public.progress_claim_revisions AS source_revision LIMIT 1;
+
+UPDATE public.progress_claims SET
+  current_revision_id = CASE id
+    WHEN '84000000-0000-4000-8000-000000000060' THEN '84000000-0000-4000-8000-000000000061'::UUID
+    WHEN '84000000-0000-4000-8000-000000000062' THEN '84000000-0000-4000-8000-000000000063'::UUID
+  END,
+  status = 'issued', original_issued_at = now()
+WHERE id IN ('84000000-0000-4000-8000-000000000060', '84000000-0000-4000-8000-000000000062');
+
+UPDATE public.progress_invoice_revision_sets SET state = 'superseded', superseded_at = now()
+WHERE id = '84000000-0000-4000-8000-000000000034';
+INSERT INTO public.progress_invoice_revision_sets (
+  id, series_id, set_number, revision_manifest, state,
+  aggregate_financial_manifest_hash, created_by, published_at
+) VALUES (
+  '84000000-0000-4000-8000-000000000066', '84000000-0000-4000-8000-000000000001', 6,
+  '[{"claim_id":"84000000-0000-4000-8000-000000000020","revision_id":"84000000-0000-4000-8000-000000000022"},{"claim_id":"84000000-0000-4000-8000-000000000060","revision_id":"84000000-0000-4000-8000-000000000061"}]',
+  'current', repeat('9', 64), '00000000-0000-0000-0000-000000008001', now()
+);
+UPDATE public.progress_invoice_series SET current_revision_set_id = '84000000-0000-4000-8000-000000000066'
+WHERE id = '84000000-0000-4000-8000-000000000001';
+SELECT public.progress_recalculate_series_read_model_as(
+  '84000000-0000-4000-8000-000000000001', '00000000-0000-0000-0000-000000008001'
+);
+
+SET ROLE authenticated;
+SET request.jwt.claim.sub = '00000000-0000-0000-0000-000000008001';
+SELECT is(
+  (SELECT series.current_cumulative_percentage = 50
+      AND response -> 'items' -> 0 ->> 'current_payment_state' = 'overdue'
+   FROM public.progress_invoice_series AS series
+   CROSS JOIN LATERAL public.list_progress_invoice_series(jsonb_build_object(
+     'query', 'TASK2-A', 'statuses', '[]'::JSONB, 'page', 1, 'page_size', 1, 'quote_id', NULL
+   )) AS response
+   WHERE series.id = '84000000-0000-4000-8000-000000000001'),
+  true,
+  'two manifested Claims derive 50 percent cumulative progress and an overdue state'
+);
+
+RESET ROLE;
+CREATE FUNCTION pg_temp.set_task2_receipt(requested_id UUID, requested_number INT, requested_observed NUMERIC, requested_effective NUMERIC)
+RETURNS VOID LANGUAGE plpgsql AS $$
+BEGIN
+  INSERT INTO public.progress_payment_revisions (
+    id, payment_id, revision_number, received_date, observed_amount,
+    effective_receipt_amount, sync_state, status, predecessor_revision_id, created_by
+  ) VALUES (
+    requested_id, '84000000-0000-4000-8000-000000000012', requested_number,
+    current_date, requested_observed, requested_effective,
+    CASE WHEN requested_effective < 0 THEN 'reversed' ELSE 'observed' END,
+    'active', (SELECT current_revision_id FROM public.progress_payments WHERE id = '84000000-0000-4000-8000-000000000012'),
+    '00000000-0000-0000-0000-000000008001'
+  );
+  UPDATE public.progress_payments SET current_revision_id = requested_id
+  WHERE id = '84000000-0000-4000-8000-000000000012';
+  PERFORM public.progress_recalculate_series_read_model_as(
+    '84000000-0000-4000-8000-000000000001', '00000000-0000-0000-0000-000000008001'
+  );
+END;
+$$;
+
+SELECT pg_temp.set_task2_receipt('84000000-0000-4000-8000-000000000071', 2, 220, 220);
+SET ROLE authenticated;
+SET request.jwt.claim.sub = '00000000-0000-0000-0000-000000008001';
+SELECT is(
+  (SELECT series.current_outstanding_receivable = 330
+      AND response -> 'items' -> 0 ->> 'current_payment_state' = 'part_paid'
+   FROM public.progress_invoice_series AS series
+   CROSS JOIN LATERAL public.list_progress_invoice_series(jsonb_build_object(
+     'query', 'TASK2-A', 'statuses', '["part_paid"]'::JSONB, 'page', 1, 'page_size', 1, 'quote_id', NULL
+   )) AS response
+   WHERE series.id = '84000000-0000-4000-8000-000000000001'),
+  true,
+  'FIFO applies receipt to the earlier overdue Claim before the later future-due Claim'
+);
+
+RESET ROLE;
+SELECT pg_temp.set_task2_receipt('84000000-0000-4000-8000-000000000072', 3, 550, 550);
+SET ROLE authenticated;
+SET request.jwt.claim.sub = '00000000-0000-0000-0000-000000008001';
+SELECT is(
+  public.list_progress_invoice_series(jsonb_build_object(
+    'query', 'TASK2-A', 'statuses', '["paid"]'::JSONB, 'page', 1, 'page_size', 1, 'quote_id', NULL
+  )) -> 'items' -> 0 ->> 'current_payment_state',
+  'paid',
+  'manifested Claims become paid when receipts exactly equal issued value'
+);
+
+RESET ROLE;
+SELECT pg_temp.set_task2_receipt('84000000-0000-4000-8000-000000000073', 4, 600, 600);
+SET ROLE authenticated;
+SET request.jwt.claim.sub = '00000000-0000-0000-0000-000000008001';
+SELECT is(
+  public.list_progress_invoice_series(jsonb_build_object(
+    'query', 'TASK2-A', 'statuses', '["credit_balance"]'::JSONB, 'page', 1, 'page_size', 1, 'quote_id', NULL
+  )) -> 'items' -> 0 ->> 'current_payment_state',
+  'credit_balance',
+  'manifested Claims expose credit balance after overpayment'
+);
+
+RESET ROLE;
+SELECT pg_temp.set_task2_receipt('84000000-0000-4000-8000-000000000074', 5, 10, -10);
+SET ROLE authenticated;
+SET request.jwt.claim.sub = '00000000-0000-0000-0000-000000008001';
+SELECT is(
+  (SELECT series.current_actual_receipts = -10
+      AND series.current_outstanding_receivable = 560
+      AND response -> 'items' -> 0 ->> 'current_payment_state' = 'overdue'
+   FROM public.progress_invoice_series AS series
+   CROSS JOIN LATERAL public.list_progress_invoice_series(jsonb_build_object(
+     'query', 'TASK2-A', 'statuses', '["overdue"]'::JSONB, 'page', 1, 'page_size', 1, 'quote_id', NULL
+   )) AS response
+   WHERE series.id = '84000000-0000-4000-8000-000000000001'),
+  true,
+  'signed reversal remains negative and returns the manifested Series to overdue'
+);
+
+RESET ROLE;
+UPDATE public.progress_invoice_revision_sets SET state = 'superseded', superseded_at = now()
+WHERE id = '84000000-0000-4000-8000-000000000066';
+UPDATE public.progress_invoice_revision_sets SET state = 'current', superseded_at = NULL
+WHERE id = '84000000-0000-4000-8000-000000000031';
+UPDATE public.progress_invoice_series SET current_revision_set_id = '84000000-0000-4000-8000-000000000031'
+WHERE id = '84000000-0000-4000-8000-000000000001';
+SELECT public.progress_recalculate_series_read_model_as(
+  '84000000-0000-4000-8000-000000000001', '00000000-0000-0000-0000-000000008001'
+);
+SELECT is(
+  (SELECT current_cumulative_percentage FROM public.progress_invoice_series WHERE id = '84000000-0000-4000-8000-000000000001'),
+  10::NUMERIC,
+  'switching the Current set also switches cached cumulative percentage'
+);
+
+UPDATE public.progress_invoice_revision_sets SET state = 'superseded', superseded_at = now()
+WHERE id = '84000000-0000-4000-8000-000000000031';
+INSERT INTO public.progress_invoice_revision_sets (
+  id, series_id, set_number, revision_manifest, state, aggregate_financial_manifest_hash, created_by, published_at
+) VALUES (
+  '84000000-0000-4000-8000-000000000081', '84000000-0000-4000-8000-000000000001', 7,
+  '[{"claim_id":"84000000-0000-4000-8000-000000000020","revision_id":"84000000-0000-4000-8000-000000000022"},{"claim_id":"84000000-0000-4000-8000-000000000020","revision_id":"84000000-0000-4000-8000-000000000022"}]',
+  'current', repeat('a', 64), '00000000-0000-0000-0000-000000008001', now()
+);
+UPDATE public.progress_invoice_series SET current_revision_set_id = '84000000-0000-4000-8000-000000000081'
+WHERE id = '84000000-0000-4000-8000-000000000001';
+SET ROLE authenticated;
+SET request.jwt.claim.sub = '00000000-0000-0000-0000-000000008001';
+SELECT is(pg_temp.capture_sqlstate($sql$
+  SELECT public.list_progress_invoice_series('{"query":"TASK2-A","statuses":[],"page":1,"page_size":20,"quote_id":null}'::JSONB)
+$sql$), 'P0001', 'list RPC rejects duplicate Claim and Revision identities');
+
+RESET ROLE;
+UPDATE public.progress_invoice_revision_sets SET state = 'superseded', superseded_at = now()
+WHERE id = '84000000-0000-4000-8000-000000000081';
+INSERT INTO public.progress_invoice_revision_sets (
+  id, series_id, set_number, revision_manifest, state, aggregate_financial_manifest_hash, created_by, published_at
+) VALUES (
+  '84000000-0000-4000-8000-000000000082', '84000000-0000-4000-8000-000000000001', 8,
+  '[{"claim_id":"84000000-0000-4000-8000-000000000020","revision_id":"84000000-0000-4000-8000-000000000063"}]',
+  'current', repeat('b', 64), '00000000-0000-0000-0000-000000008001', now()
+);
+UPDATE public.progress_invoice_series SET current_revision_set_id = '84000000-0000-4000-8000-000000000082'
+WHERE id = '84000000-0000-4000-8000-000000000001';
+SET ROLE authenticated;
+SET request.jwt.claim.sub = '00000000-0000-0000-0000-000000008001';
+SELECT is(pg_temp.capture_sqlstate($sql$
+  SELECT public.list_progress_invoice_series('{"query":"TASK2-A","statuses":[],"page":1,"page_size":20,"quote_id":null}'::JSONB)
+$sql$), 'P0001', 'list RPC rejects a Claim to Revision ownership mismatch');
+
+RESET ROLE;
+UPDATE public.progress_invoice_revision_sets SET state = 'superseded', superseded_at = now()
+WHERE id = '84000000-0000-4000-8000-000000000082';
+INSERT INTO public.progress_invoice_revision_sets (
+  id, series_id, set_number, revision_manifest, state, aggregate_financial_manifest_hash, created_by, published_at
+) VALUES (
+  '84000000-0000-4000-8000-000000000083', '84000000-0000-4000-8000-000000000001', 9,
+  '[{"claim_id":"84000000-0000-4000-8000-000000000064","revision_id":"84000000-0000-4000-8000-000000000065"}]',
+  'current', repeat('c', 64), '00000000-0000-0000-0000-000000008001', now()
+);
+UPDATE public.progress_invoice_series SET current_revision_set_id = '84000000-0000-4000-8000-000000000083'
+WHERE id = '84000000-0000-4000-8000-000000000001';
+SET ROLE authenticated;
+SET request.jwt.claim.sub = '00000000-0000-0000-0000-000000008001';
+SELECT is(pg_temp.capture_sqlstate($sql$
+  SELECT public.list_progress_invoice_series('{"query":"TASK2-A","statuses":[],"page":1,"page_size":20,"quote_id":null}'::JSONB)
+$sql$), 'P0001', 'list RPC rejects non-issued Claim and Revision state');
+
+RESET ROLE;
+UPDATE public.progress_invoice_revision_sets SET state = 'superseded', superseded_at = now()
+WHERE id = '84000000-0000-4000-8000-000000000083';
+INSERT INTO public.progress_invoice_revision_sets (
+  id, series_id, set_number, revision_manifest, state, aggregate_financial_manifest_hash, created_by, published_at
+) VALUES (
+  '84000000-0000-4000-8000-000000000084', '84000000-0000-4000-8000-000000000002', 1,
+  '[{"claim_id":"84000000-0000-4000-8000-000000000020","revision_id":"84000000-0000-4000-8000-000000000022"}]',
+  'current', repeat('d', 64), '00000000-0000-0000-0000-000000008001', now()
+);
+UPDATE public.progress_invoice_series SET current_revision_set_id = '84000000-0000-4000-8000-000000000084'
+WHERE id = '84000000-0000-4000-8000-000000000002';
+SET ROLE authenticated;
+SET request.jwt.claim.sub = '00000000-0000-0000-0000-000000008001';
+SELECT is(pg_temp.capture_sqlstate($sql$
+  SELECT public.list_progress_invoice_series('{"query":"TASK2-B","statuses":[],"page":1,"page_size":20,"quote_id":null}'::JSONB)
+$sql$), 'P0001', 'list RPC rejects a Current manifest Claim owned by another Series');
 
 RESET ROLE;
 
@@ -5024,6 +5389,14 @@ SELECT extensions.ok(
     IN pg_get_functiondef('public.progress_recalculate_series_read_model_as(uuid,uuid)'::regprocedure)
   ) = 0,
   'series read model never reads issued Claims from the mutable Claim pointer'
+);
+
+SELECT is(
+  NOT has_function_privilege('anon', 'public.progress_resolve_current_manifest(uuid)', 'EXECUTE')
+    AND NOT has_function_privilege('authenticated', 'public.progress_resolve_current_manifest(uuid)', 'EXECUTE')
+    AND NOT has_function_privilege('service_role', 'public.progress_resolve_current_manifest(uuid)', 'EXECUTE'),
+  true,
+  'Current manifest resolver remains private to trusted database functions'
 );
 
 SELECT * FROM finish();
