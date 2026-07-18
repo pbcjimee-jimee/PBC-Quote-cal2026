@@ -5,6 +5,7 @@ import {
   calculateProgressClaim,
 } from '@/lib/progress-invoices/calculation'
 import type { ProgressClaimCalculationInput } from '@/lib/progress-invoices/types'
+import { SAMPLE_PROGRESS_SERIES } from './fixtures/progress-invoices/sample-financials'
 import sampleSeries from './fixtures/progress-invoices/sample-series.json'
 
 const GST_RATE = '0.10' as const
@@ -107,6 +108,100 @@ describe('calculateAdjustedContract', () => {
 })
 
 describe('calculateProgressClaim', () => {
+  it('reconciles the sanitized P01, P02, and FINAL chain from separate Variation increments', () => {
+    const financials = SAMPLE_PROGRESS_SERIES
+
+    expect(financials.variationIncrementsExGst).toEqual([
+      '19714.68',
+      '1997.86',
+      '574.04',
+    ])
+
+    const adjustments = financials.variationIncrementsExGst.map((amountExGst, index) => ({
+      id: `variation-${index + 1}`,
+      type: 'variation' as const,
+      amountExGst,
+    }))
+    const p01 = calculateProgressClaim(progressInput({
+      inputMode: 'current_claim_amount',
+      authoritativeValue: financials.p01IncGst,
+      baseContractExGst: financials.baseContractExGst,
+    }))
+    const p02 = calculateProgressClaim(progressInput({
+      authoritativeValue: financials.p02CumulativePercentage,
+      baseContractExGst: financials.baseContractExGst,
+      approvedAdjustments: adjustments.slice(0, 2),
+      previousClaims: [{
+        claimId: 'p01',
+        sequence: 1,
+        exGst: p01.currentClaimExGst,
+        gst: p01.currentClaimGst,
+        incGst: p01.currentClaimIncGst,
+      }],
+    }))
+    const final = calculateProgressClaim(progressInput({
+      kind: 'final',
+      inputMode: 'current_claim_amount',
+      authoritativeValue: financials.finalCurrentIncGst,
+      baseContractExGst: financials.baseContractExGst,
+      approvedAdjustments: adjustments,
+      previousClaims: [
+        {
+          claimId: 'p01',
+          sequence: 1,
+          exGst: p01.currentClaimExGst,
+          gst: p01.currentClaimGst,
+          incGst: p01.currentClaimIncGst,
+        },
+        {
+          claimId: 'p02',
+          sequence: 2,
+          exGst: p02.currentClaimExGst,
+          gst: p02.currentClaimGst,
+          incGst: p02.currentClaimIncGst,
+        },
+      ],
+    }))
+
+    expect(p01).toMatchObject({
+      currentClaimExGst: '17220.50',
+      currentClaimGst: '1722.05',
+      currentClaimIncGst: financials.p01IncGst,
+    })
+    expect(p02).toMatchObject({
+      adjustedContractExGst: '38933.04',
+      adjustedContractGst: '3893.30',
+      adjustedContractIncGst: '42826.34',
+      cumulativeTargetExGst: '35039.74',
+      cumulativeTargetGst: '3503.97',
+      cumulativeTargetIncGst: '38543.71',
+      currentClaimExGst: '17819.24',
+      currentClaimGst: '1781.92',
+      currentClaimIncGst: financials.p02CurrentIncGst,
+      cumulativePercentage: financials.p02CumulativePercentage,
+      remainingExGst: '3893.30',
+      remainingGst: '389.33',
+      remainingIncGst: '4282.63',
+    })
+    expect(final).toMatchObject({
+      adjustedContractExGst: financials.finalAdjustedExGst,
+      adjustedContractGst: '3950.71',
+      adjustedContractIncGst: financials.finalClaimedIncGst,
+      previousClaimsExGst: '35039.74',
+      previousClaimsGst: '3503.97',
+      previousClaimsIncGst: '38543.71',
+      currentClaimExGst: '4467.34',
+      currentClaimGst: '446.74',
+      currentClaimIncGst: financials.finalCurrentIncGst,
+      cumulativeTargetIncGst: financials.finalClaimedIncGst,
+      cumulativePercentage: '100.000000',
+      remainingExGst: '0.00',
+      remainingGst: '0.00',
+      remainingIncGst: '0.00',
+    })
+    expect(financials.inferredReceiptsIncGst).toBe('0.00')
+  })
+
   it('uses cumulative percentage as authority and rounds the target before subtraction', () => {
     const p01 = calculateProgressClaim(progressInput({
       inputMode: 'current_claim_amount',
