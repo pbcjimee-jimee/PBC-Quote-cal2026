@@ -170,7 +170,11 @@ function SeriesCards({ data }: { data: ProgressInvoiceDashboardDto }) {
   return (
     <div className="pbc-progress-series-grid">
       {data.items.map((item) => (
-        <article key={item.id} className="pbc-card pbc-card--pad pbc-progress-series">
+        <article
+          key={item.id}
+          id={`progress-invoice-${item.id}`}
+          className="pbc-card pbc-card--pad pbc-progress-series"
+        >
           <div className="pbc-progress-series__head">
             <div>
               <span className="pbc-progress-series__eyebrow">{sourceLabel(item.sourceType)}</span>

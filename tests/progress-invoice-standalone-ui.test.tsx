@@ -428,6 +428,7 @@ describe('Standalone Progress Invoice workspace', () => {
       'Jobber Invoice Number',
       'Fetch invoice',
       'Base contract Ex GST',
+      'Enter the original accepted contract amount before Variations or Credits, excluding GST.',
       'Jobber amounts are for comparison only',
       'Recipient',
       'Site',
@@ -1121,6 +1122,56 @@ describe('Standalone Progress Invoice workspace', () => {
         cleanup()
         vi.unstubAllGlobals()
       }
+    }
+  })
+
+  it('retains edited values and offers the existing series when duplicate import is rejected', async () => {
+    const encodedInvoiceNumber = 'INV 29/06'
+    vi.stubGlobal('fetch', vi.fn()
+      .mockResolvedValueOnce(jsonResponse({
+        ...searchResponse,
+        data: {
+          ...searchResponse.data,
+          invoices: [{
+            ...searchResponse.data.invoices[0],
+            invoiceNumber: encodedInvoiceNumber,
+          }],
+        },
+      }))
+      .mockResolvedValueOnce(jsonResponse({
+        ...previewResponse,
+        data: { ...previewResponse.data, invoiceNumber: encodedInvoiceNumber },
+      })))
+    mocks.createStandaloneProgressInvoiceFromJobber.mockResolvedValueOnce({
+      ok: false,
+      error: 'PROGRESS_JOBBER_ALREADY_IMPORTED',
+      code: 'VALIDATION',
+      current: { seriesId: 'existing-series', version: 4 },
+    })
+    const mounted = await mountCreateWorkspace()
+
+    try {
+      await submitSearch(mounted.container, encodedInvoiceNumber)
+      await flushReact()
+      await selectCandidate(mounted.container, encodedInvoiceNumber)
+      await flushReact()
+      await saveDraft(mounted.container)
+
+      expect(mocks.push).not.toHaveBeenCalled()
+      expect(mocks.refresh).not.toHaveBeenCalled()
+      expect(inputByName(mounted.container, 'baseContractExGst').value).toBe('17220.50')
+      expect(inputByName(mounted.container, 'recipientName').value).toBe('Example Builder')
+      expect(mounted.container.textContent).toContain(
+        'This Jobber invoice already has a Progress Invoice series. The values entered here were not saved.',
+      )
+      const openExisting = Array.from(mounted.container.querySelectorAll('a')).find((link) => (
+        link.textContent?.trim() === 'Open existing series'
+      ))
+      expect(openExisting?.getAttribute('href')).toBe(
+        '/progress-invoices?q=INV%2029%2F06#progress-invoice-existing-series',
+      )
+    } finally {
+      await mounted.cleanup()
     }
   })
 

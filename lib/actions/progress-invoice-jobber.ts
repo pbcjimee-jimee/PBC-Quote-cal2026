@@ -26,7 +26,11 @@ function validationFailure(): ActionResult<never> {
 
 export async function createStandaloneProgressInvoiceFromJobber(
   input: unknown,
-): Promise<ActionResult<{ seriesId: string; version: number; importedPayments: number }>> {
+): Promise<ActionResult<{
+  seriesId: string
+  version: number
+  importedPayments: number
+}, { seriesId: string; version: number }>> {
   const parsed = createStandaloneProgressInvoiceFromJobberSchema.safeParse(input)
   if (!parsed.success) return validationFailure()
   const allowed = await requireAllowedUser()
@@ -35,7 +39,22 @@ export async function createStandaloneProgressInvoiceFromJobber(
     parsed.data,
     allowed.user.id,
   )
-  if (!result.ok) return result
+  if (!result.ok) {
+    if (result.current) {
+      return {
+        ...result,
+        current: {
+          seriesId: result.current.series_id,
+          version: result.current.version,
+        },
+      }
+    }
+    return {
+      ok: false,
+      error: result.error,
+      ...(result.code ? { code: result.code } : {}),
+    }
+  }
   revalidateSeries(result.data.series_id)
   return {
     ok: true,

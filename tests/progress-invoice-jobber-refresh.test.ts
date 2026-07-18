@@ -158,6 +158,64 @@ describe('Progress Invoice Jobber normalized persistence payload', () => {
     })
   })
 
+  it('serializes every persisted Jobber money value as exact cents', () => {
+    const payload = buildProgressJobberObservationPayload({
+      ...observation,
+      amounts: {
+        subtotal: '1000',
+        taxAmount: '100.5',
+        total: '1100',
+        invoiceBalance: '799.5',
+        paymentsTotal: '0',
+      },
+      payments: [{
+        ...observation.payments[0],
+        rawAdjustmentType: 'REFUND',
+        rawSignedAmount: '-300.5',
+        absoluteAmount: '300.5',
+        direction: 'refund',
+        effectiveReceiptAmount: '-300.5',
+      }],
+    })
+
+    expect(payload).toMatchObject({
+      invoice_subtotal: '1000.00',
+      invoice_tax_amount: '100.50',
+      invoice_total: '1100.00',
+      invoice_balance: '799.50',
+      invoice_payments_total: '0.00',
+      payments: [{
+        raw_signed_amount: '-300.50',
+        absolute_amount: '300.50',
+        effective_amount: '-300.50',
+      }],
+    })
+  })
+
+  it('rejects Jobber money with fractions of a cent instead of rounding it', () => {
+    expect(() => buildProgressJobberObservationPayload({
+      ...observation,
+      amounts: { ...observation.amounts, paymentsTotal: '0.001' },
+    })).toThrow('PROGRESS_JOBBER_ERROR')
+  })
+
+  it('preserves unavailable Jobber money as null', () => {
+    const payload = buildProgressJobberObservationPayload({
+      ...observation,
+      amounts: null,
+      payments: [{ ...observation.payments[0], rawSignedAmount: null }],
+    })
+
+    expect(payload).toMatchObject({
+      invoice_subtotal: null,
+      invoice_tax_amount: null,
+      invoice_total: null,
+      invoice_balance: null,
+      invoice_payments_total: null,
+      payments: [{ raw_signed_amount: null }],
+    })
+  })
+
   it('does not choose candidate zero when contact evidence is ambiguous', () => {
     const payload = buildProgressJobberObservationPayload({
       ...observation,

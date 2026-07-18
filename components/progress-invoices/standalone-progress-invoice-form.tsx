@@ -40,6 +40,12 @@ export type JobberPreviewState =
   | { status: 'ready'; preview: JobberInvoicePreviewDto }
   | { status: 'error'; message: string }
 
+type JobberProgressInvoiceSaveState = ProgressInvoiceSaveState | {
+  status: 'duplicate'
+  message: string
+  seriesId: string
+}
+
 export interface JobberProgressInvoiceViewModel {
   readonly invoiceNumber: string
   readonly selectedInvoiceId: string | null
@@ -47,7 +53,7 @@ export interface JobberProgressInvoiceViewModel {
   readonly previewState: JobberPreviewState
   readonly draft: ProgressInvoiceSeriesDraft | null
   readonly fieldErrors: ProgressInvoiceSeriesFieldErrors
-  readonly saveState: ProgressInvoiceSaveState
+  readonly saveState: JobberProgressInvoiceSaveState
   readonly saveAttempt: ProgressInvoiceSaveAttempt | null
   readonly searchRequestGeneration: number
   readonly previewRequestGeneration: number
@@ -83,6 +89,7 @@ export type JobberProgressInvoiceEvent =
       attempt: ProgressInvoiceSaveAttempt
     }
   | { type: 'saveFailed'; requestGeneration: number; message: string }
+  | { type: 'saveDuplicate'; requestGeneration: number; seriesId: string; message: string }
   | { type: 'saveCancelled'; requestGeneration: number; message: string }
   | { type: 'saveSucceeded'; requestGeneration: number }
 
@@ -193,6 +200,17 @@ export function jobberProgressInvoiceReducer(
     case 'saveFailed':
       return event.requestGeneration === state.saveRequestGeneration
         ? { ...state, saveState: { status: 'error', message: event.message } }
+        : state
+    case 'saveDuplicate':
+      return event.requestGeneration === state.saveRequestGeneration
+        ? {
+            ...state,
+            saveState: {
+              status: 'duplicate',
+              message: event.message,
+              seriesId: event.seriesId,
+            },
+          }
         : state
     case 'saveCancelled':
       return state.saveState.status === 'saving'
@@ -488,6 +506,15 @@ export function StandaloneProgressInvoiceForm({
       return
     }
     if (!result.ok) {
+      if (result.error === 'PROGRESS_JOBBER_ALREADY_IMPORTED' && result.current) {
+        dispatch({
+          type: 'saveDuplicate',
+          requestGeneration,
+          seriesId: result.current.seriesId,
+          message: 'This Jobber invoice already has a Progress Invoice series. The values entered here were not saved.',
+        })
+        return
+      }
       dispatch({
         type: 'saveFailed',
         requestGeneration,
@@ -559,7 +586,7 @@ export function StandaloneProgressInvoiceForm({
 
       <p className="pbc-alert pbc-alert--warning pbc-progress-comparison__notice">
         <strong>Jobber amounts are for comparison only.</strong>{' '}
-        Enter the original base contract Ex GST after selecting the invoice.
+        Enter the original accepted contract amount before Variations or Credits, excluding GST.
       </p>
 
       {readyPreview ? (
@@ -624,12 +651,25 @@ export function StandaloneProgressInvoiceForm({
           showAcceptedNumberingBase={false}
           errors={viewModel.fieldErrors}
           idPrefix="jobber-progress-invoice"
-          baseContractHelp="Enter the original contract amount, not the adjusted Jobber subtotal."
+          baseContractHelp="Enter the original accepted contract amount before Variations or Credits, excluding GST. Do not use the adjusted Jobber subtotal."
           seriesDetailsCopy="These values stay in PBC after the one-time import."
           onChange={(field, value) => dispatch({ type: 'draftChanged', field, value })}
         />
         {viewModel.saveState.status === 'error' ? (
           <div className="pbc-alert pbc-alert--danger" role="alert">{viewModel.saveState.message}</div>
+        ) : null}
+        {viewModel.saveState.status === 'duplicate' ? (
+          <div className="pbc-alert pbc-alert--warning" role="alert">
+            <span>{viewModel.saveState.message}</span>
+            <a
+              className="pbc-btn pbc-btn--secondary"
+              href={`/progress-invoices?q=${encodeURIComponent(
+                readyPreview?.invoiceNumber ?? viewModel.invoiceNumber,
+              )}#progress-invoice-${encodeURIComponent(viewModel.saveState.seriesId)}`}
+            >
+              Open existing series
+            </a>
+          </div>
         ) : null}
         <div className="pbc-progress-series-form__actions">
           <button

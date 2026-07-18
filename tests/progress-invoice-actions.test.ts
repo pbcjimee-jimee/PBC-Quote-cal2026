@@ -166,6 +166,23 @@ describe('Progress Invoice Server Actions', () => {
     ])
   })
 
+  it('maps a duplicate standalone Jobber import current DTO without revalidation', async () => {
+    mocks.createStandaloneProgressInvoiceFromJobberService.mockResolvedValue({
+      ok: false,
+      error: 'PROGRESS_JOBBER_ALREADY_IMPORTED',
+      code: 'VALIDATION',
+      current: { series_id: SERIES_ID, version: 4 },
+    })
+
+    expect(await createStandaloneProgressInvoiceFromJobber(standaloneJobberInput)).toEqual({
+      ok: false,
+      error: 'PROGRESS_JOBBER_ALREADY_IMPORTED',
+      code: 'VALIDATION',
+      current: { seriesId: SERIES_ID, version: 4 },
+    })
+    expect(mocks.revalidatePath).not.toHaveBeenCalled()
+  })
+
   it('rejects standalone Jobber input and authorization failures before delegation', async () => {
     expect(await createStandaloneProgressInvoiceFromJobber({
       ...standaloneJobberInput,

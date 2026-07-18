@@ -1,6 +1,7 @@
 import 'server-only'
 
 import { createHash } from 'node:crypto'
+import Decimal from 'decimal.js'
 
 import type { ActionResult } from '@/lib/actions/types'
 import {
@@ -108,6 +109,23 @@ function progressJobberError(): Error {
   return new Error('PROGRESS_JOBBER_ERROR')
 }
 
+function persistenceMoney(value: string): string
+function persistenceMoney(value: null): null
+function persistenceMoney(value: string | null): string | null
+function persistenceMoney(value: string | null): string | null {
+  if (value === null) return null
+
+  try {
+    const amount = new Decimal(value)
+    if (!amount.isFinite() || amount.decimalPlaces() > 2) {
+      throw new Error('Invalid money')
+    }
+    return amount.toFixed(2)
+  } catch {
+    throw progressJobberError()
+  }
+}
+
 function assertBounded(value: string, maxLength = MAX_JOBBER_ID_LENGTH): string {
   const trimmed = value.trim()
   if (!trimmed || trimmed.length > maxLength) throw progressJobberError()
@@ -203,11 +221,11 @@ export function buildProgressJobberObservationPayload(
     raw_status: assertBounded(observation.rawStatus, 120),
     normalized_status: observation.normalizedStatus,
     jobber_web_uri: assertBounded(observation.jobberWebUri, 2048),
-    invoice_subtotal: observation.amounts?.subtotal ?? null,
-    invoice_tax_amount: observation.amounts?.taxAmount ?? null,
-    invoice_total: observation.amounts?.total ?? null,
-    invoice_balance: observation.amounts?.invoiceBalance ?? null,
-    invoice_payments_total: observation.amounts?.paymentsTotal ?? null,
+    invoice_subtotal: persistenceMoney(observation.amounts?.subtotal ?? null),
+    invoice_tax_amount: persistenceMoney(observation.amounts?.taxAmount ?? null),
+    invoice_total: persistenceMoney(observation.amounts?.total ?? null),
+    invoice_balance: persistenceMoney(observation.amounts?.invoiceBalance ?? null),
+    invoice_payments_total: persistenceMoney(observation.amounts?.paymentsTotal ?? null),
     invoice_issued_date: optionalSydneyCalendarDate(observation.issuedDate),
     invoice_due_date: optionalSydneyCalendarDate(observation.dueDate),
     invoice_received_date: optionalSydneyCalendarDate(observation.receivedDate),
@@ -249,10 +267,10 @@ export function buildProgressJobberObservationPayload(
       jobber_payment_id: assertBounded(payment.id),
       source: payment.source,
       raw_adjustment_type: assertBounded(payment.rawAdjustmentType, 120),
-      raw_signed_amount: payment.rawSignedAmount,
-      absolute_amount: payment.absoluteAmount,
+      raw_signed_amount: persistenceMoney(payment.rawSignedAmount),
+      absolute_amount: persistenceMoney(payment.absoluteAmount),
       direction: payment.direction,
-      effective_amount: payment.effectiveReceiptAmount,
+      effective_amount: persistenceMoney(payment.effectiveReceiptAmount),
       entry_date: toSydneyCalendarDate(payment.entryDate),
       method: payment.method === null ? null : assertBounded(payment.method, 120),
       reference: payment.reference === null ? null : assertBounded(payment.reference, 240),

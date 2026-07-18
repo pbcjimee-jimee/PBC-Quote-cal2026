@@ -156,6 +156,9 @@ describe('Progress Invoice dashboard foundation', () => {
     expect(markup).toContain('50.00%')
     expect(markup).toContain('Imported from Jobber 16 July 2026')
     expect(markup).not.toContain('Jobber synced')
+    expect(markup).toContain(
+      'id="progress-invoice-736dbf7e-2dc4-4e2a-a34f-5982b25138c0"',
+    )
 
     const notImportedMarkup = renderToStaticMarkup(createElement(ProgressInvoiceDashboard, {
       result: {

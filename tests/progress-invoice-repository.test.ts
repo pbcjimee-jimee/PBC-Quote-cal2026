@@ -121,6 +121,25 @@ describe('ProgressInvoiceRepository', () => {
     expect(result).toEqual({ ok: true, data: profileRow })
   })
 
+  it('preserves the authenticated Supabase rpc receiver', async () => {
+    const restRpc = vi.fn().mockResolvedValue({ data: [profileRow], error: null })
+    const client = {
+      rest: { rpc: restRpc },
+      rpc(command: string, args: { payload: unknown }) {
+        return this.rest.rpc(command, args)
+      },
+    }
+    serverMocks.createClient.mockResolvedValue(client)
+
+    const repository = await createProgressInvoiceRepository()
+    const result = await repository.call('save_business_invoice_profile', payload)
+
+    expect(restRpc).toHaveBeenCalledWith('save_business_invoice_profile', {
+      payload,
+    })
+    expect(result).toEqual({ ok: true, data: profileRow })
+  })
+
   it('accepts the actual authenticated createClient shape through the production adapter', () => {
     type AuthenticatedClient = Awaited<ReturnType<typeof createAuthenticatedClient>>
     type AdapterInput = Parameters<typeof createProgressInvoiceRpcExecutor>[0]
@@ -215,6 +234,40 @@ describe('ProgressInvoiceRepository', () => {
 
     expect(rpc).toHaveBeenCalledWith('create_progress_invoice_series_from_jobber', {
       payload: commandPayload,
+    })
+    expect(result).toEqual({ ok: true, data: serviceResult })
+  })
+
+  it('preserves the service-role Supabase rpc receiver', async () => {
+    const serviceResult = {
+      series_id: '11111111-1111-4111-8111-111111111111',
+      snapshot_id: '22222222-2222-4222-8222-222222222222',
+      series_version: 2,
+      inserted_payments: 1,
+      revised_payments: 0,
+      unconfirmed_payments: 0,
+    }
+    const restRpc = vi.fn().mockResolvedValue({ data: [serviceResult], error: null })
+    const client = {
+      rest: { rpc: restRpc },
+      rpc(command: string, args: { payload: unknown }) {
+        return this.rest.rpc(command, args)
+      },
+    }
+    serverMocks.createServiceClient.mockReturnValue(client)
+
+    const repository = await createProgressInvoiceJobberPersistenceRepository()
+    const result = await repository.call('apply_progress_invoice_jobber_refresh', {
+      actor_id: '33333333-3333-4333-8333-333333333333',
+      series_id: serviceResult.series_id,
+      expected_version: 1,
+      idempotency_key: '44444444-4444-4444-8444-444444444444',
+      request_fingerprint: 'a'.repeat(64),
+      observation: {},
+    })
+
+    expect(restRpc).toHaveBeenCalledWith('apply_progress_invoice_jobber_refresh', {
+      payload: expect.objectContaining({ actor_id: '33333333-3333-4333-8333-333333333333' }),
     })
     expect(result).toEqual({ ok: true, data: serviceResult })
   })

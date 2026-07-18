@@ -932,7 +932,7 @@ export function createProgressInvoiceRpcExecutor(
     command: string,
     args: { payload: Json }
   ) => PromiseLike<{ data: unknown; error: ProgressInvoiceRpcError | null }>
-  const rpc = client.rpc as unknown as Rpc
+  const rpc = client.rpc.bind(client) as unknown as Rpc
   return {
     async execute(command, payload) {
       const { data, error } = await rpc(command, { payload })
@@ -971,7 +971,7 @@ export function createProgressInvoiceServiceRpcExecutor(
     command: string,
     args: { payload: Json }
   ) => PromiseLike<{ data: unknown; error: ProgressInvoiceRpcError | null }>
-  const rpc = client.rpc as unknown as Rpc
+  const rpc = client.rpc.bind(client) as unknown as Rpc
   return {
     async execute(command, payload) {
       const { data, error } = await rpc(command, { payload })

@@ -72,7 +72,7 @@ export function ProgressInvoiceSeriesFields({
   onChange,
   errors = {},
   idPrefix = 'progress-invoice-series',
-  baseContractHelp = 'Enter the original contract amount, not an adjusted invoice subtotal.',
+  baseContractHelp = 'Enter the original accepted contract amount before Variations or Credits, excluding GST.',
   seriesDetailsCopy = 'These values stay in PBC after creation.',
 }: ProgressInvoiceSeriesFieldsProps) {
   function inputProps(field: ProgressInvoiceSeriesField) {
