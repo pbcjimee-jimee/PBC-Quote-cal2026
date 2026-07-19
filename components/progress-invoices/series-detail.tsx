@@ -72,7 +72,7 @@ export function ProgressInvoiceSeriesDetailView({
       <section className="pbc-card pbc-card--pad" aria-labelledby="progress-availability-heading">
         <h2 id="progress-availability-heading">Availability</h2>
         <p className="pbc-progress-imported-copy">
-          This page shows the current Series state. Editing, Void workflows, and document downloads are provided by their dedicated workflows.
+          Eligibility is informational only. Actions and downloads are unavailable on this read-only page.
         </p>
         <dl className="pbc-progress-capability-grid">
           <div>

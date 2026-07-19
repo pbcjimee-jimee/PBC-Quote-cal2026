@@ -1064,7 +1064,7 @@ function parseSeriesRead(value: unknown): ProgressInvoiceSeriesReadRpcResult | n
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 const HASH_PATTERN = /^[0-9a-f]{64}$/i
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/
-const TIMESTAMP_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/
+const TIMESTAMP_PATTERN = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d+))?(Z|([+-])(\d{2}):(\d{2}))$/
 const SERIES_DETAIL_KEYS = [
   'id', 'quote_id', 'source_type', 'version', 'base_contract_ex_gst', 'gst_rate',
   'recipient_name', 'recipient_company', 'recipient_address', 'recipient_email',
@@ -1105,7 +1105,36 @@ function nullableDateField(record: Record<string, unknown>, key: string): string
 
 function timestampField(record: Record<string, unknown>, key: string): string | null {
   const value = stringField(record, key)
-  return value && TIMESTAMP_PATTERN.test(value) && !Number.isNaN(Date.parse(value)) ? value : null
+  if (!value) return null
+  const match = TIMESTAMP_PATTERN.exec(value)
+  if (!match) return null
+  const [, year, month, day, hour, minute, second, fraction, zone, sign, offsetHour, offsetMinute] = match
+  const date = `${year}-${month}-${day}`
+  if (dateField({ date }, 'date') === null) return null
+
+  const hours = Number(hour)
+  const minutes = Number(minute)
+  const seconds = Number(second)
+  const offsetHours = zone === 'Z' ? 0 : Number(offsetHour)
+  const offsetMinutes = zone === 'Z' ? 0 : Number(offsetMinute)
+  if (hours > 23 || minutes > 59 || seconds > 59 || offsetHours > 23 || offsetMinutes > 59) return null
+
+  const parsed = Date.parse(value)
+  if (Number.isNaN(parsed)) return null
+  const signedOffsetMinutes = zone === 'Z'
+    ? 0
+    : (sign === '-' ? -1 : 1) * ((offsetHours * 60) + offsetMinutes)
+  const localRoundTrip = new Date(parsed + (signedOffsetMinutes * 60_000))
+  const milliseconds = Number((fraction ?? '').slice(0, 3).padEnd(3, '0'))
+  return localRoundTrip.getUTCFullYear() === Number(year)
+    && localRoundTrip.getUTCMonth() + 1 === Number(month)
+    && localRoundTrip.getUTCDate() === Number(day)
+    && localRoundTrip.getUTCHours() === hours
+    && localRoundTrip.getUTCMinutes() === minutes
+    && localRoundTrip.getUTCSeconds() === seconds
+    && localRoundTrip.getUTCMilliseconds() === milliseconds
+    ? value
+    : null
 }
 
 function nullableTimestampField(record: Record<string, unknown>, key: string): string | null | undefined {
@@ -1360,31 +1389,81 @@ function parseWorkspaceDocument(value: unknown): ProgressInvoiceDocumentRpcDto |
     generated_at: generatedAt, created_at: createdAt, is_current: current }
 }
 
-const SAFE_SIMPLE_EVENT_KEYS = new Set(['source_type', 'type', 'number_source', 'quote_id', 'adjustment_id', 'replacement_id'])
-const SAFE_CHANGE_EVENT_KEYS = new Set([
-  'base_contract_ex_gst', 'gst_rate', 'recipient_name', 'recipient_company',
-  'recipient_address', 'recipient_email', 'recipient_phone', 'recipient_abn',
-  'site_name', 'site_address', 'default_description', 'reference', 'effective_date',
-  'description', 'amount_ex_gst', 'quote_item_id',
-])
 const UNSAFE_EVENT_VALUE_PATTERN = /(?:https?:\/\/|s3:\/\/|storage[_ -]?path|bank[_ -]|account[_ -]|\bbsb\b|response[_ -]?fingerprint|raw[_ -])/i
 
-function isSafeEventScalar(value: unknown): value is string | number | null {
-  return value === null
+type SafeEventScalar = string | number | null
+type SafeEventScalarValidator = (value: unknown) => value is SafeEventScalar
+
+function isEventUuid(value: unknown): value is string {
+  return typeof value === 'string' && UUID_PATTERN.test(value)
+}
+
+function isNullableEventUuid(value: unknown): value is string | null {
+  return value === null || isEventUuid(value)
+}
+
+function isCanonicalEventMoney(value: unknown): value is string {
+  return typeof value === 'string' && /^(?:0|[1-9]\d*)\.\d{2}$/.test(value)
+}
+
+function isCanonicalEventDecimal(value: unknown): value is string {
+  return typeof value === 'string' && /^(?:0|[1-9]\d*)\.\d{2}$/.test(value)
+}
+
+function isEventDate(value: unknown): value is string {
+  return typeof value === 'string' && dateField({ value }, 'value') !== null
+}
+
+function safeEventText(nullable: boolean): SafeEventScalarValidator {
+  return (value: unknown): value is string | null => (nullable && value === null)
     || (typeof value === 'string' && value.length <= 2000 && !UNSAFE_EVENT_VALUE_PATTERN.test(value))
-    || (typeof value === 'number' && Number.isFinite(value))
+}
+
+function eventEnum<const T extends string>(values: readonly T[]): SafeEventScalarValidator {
+  const allowed = new Set<string>(values)
+  return (value: unknown): value is T => typeof value === 'string' && allowed.has(value)
+}
+
+const SAFE_SIMPLE_EVENT_FIELDS: Readonly<Record<string, SafeEventScalarValidator>> = {
+  source_type: eventEnum(['pbc_quote', 'jobber_job', 'jobber_invoice', 'manual']),
+  type: eventEnum(['variation', 'credit']),
+  number_source: eventEnum(['original', 'latest']),
+  quote_id: isEventUuid,
+  adjustment_id: isEventUuid,
+  replacement_id: isEventUuid,
+}
+
+const SAFE_CHANGE_EVENT_FIELDS: Readonly<Record<string, SafeEventScalarValidator>> = {
+  base_contract_ex_gst: isCanonicalEventMoney,
+  gst_rate: isCanonicalEventDecimal,
+  recipient_name: safeEventText(false),
+  recipient_company: safeEventText(true),
+  recipient_address: safeEventText(false),
+  recipient_email: safeEventText(true),
+  recipient_phone: safeEventText(true),
+  recipient_abn: safeEventText(true),
+  site_name: safeEventText(false),
+  site_address: safeEventText(false),
+  default_description: safeEventText(false),
+  reference: safeEventText(true),
+  effective_date: isEventDate,
+  description: safeEventText(false),
+  amount_ex_gst: isCanonicalEventMoney,
+  quote_item_id: isNullableEventUuid,
 }
 
 function parseSafeFieldChanges(value: unknown): ProgressInvoiceSafeFieldChangesRpcDto | null {
   if (!isRecord(value)) return null
   const result: Record<string, string | number | null | { before: string | number | null; after: string | number | null }> = {}
   for (const [key, entry] of Object.entries(value)) {
-    if (SAFE_SIMPLE_EVENT_KEYS.has(key) && isSafeEventScalar(entry)) {
+    const simpleValidator = SAFE_SIMPLE_EVENT_FIELDS[key]
+    if (simpleValidator?.(entry)) {
       result[key] = entry
       continue
     }
-    if (SAFE_CHANGE_EVENT_KEYS.has(key) && isRecord(entry) && hasExactKeys(entry, ['before', 'after'])
-      && isSafeEventScalar(entry.before) && isSafeEventScalar(entry.after)) {
+    const changeValidator = SAFE_CHANGE_EVENT_FIELDS[key]
+    if (changeValidator && isRecord(entry) && hasExactKeys(entry, ['before', 'after'])
+      && changeValidator(entry.before) && changeValidator(entry.after)) {
       result[key] = { before: entry.before, after: entry.after }
       continue
     }

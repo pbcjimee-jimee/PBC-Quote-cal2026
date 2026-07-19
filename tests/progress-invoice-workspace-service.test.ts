@@ -300,6 +300,64 @@ describe('Progress Invoice workspace boundary', () => {
     )).toEqual({ ok: false, error: 'PROGRESS_RESPONSE_INVALID' })
   })
 
+  it.each([
+    ['2024-02-30T00:00:00Z', false],
+    ['2026-02-30T00:00:00Z', false],
+    ['2025-02-29T12:30:00+11:00', false],
+    ['2024-02-29T23:59:59.123456+11:00', true],
+    ['2026-07-12T00:00:00-05:30', true],
+  ] as const)('strictly validates event timestamp %s', async (timestamp, accepted) => {
+    const candidate = structuredClone(rawWorkspace)
+    candidate.recent_events[0]!.occurred_at = timestamp
+
+    const result = await new ProgressInvoiceRepository(executorReturning(candidate)).call(
+      'get_progress_invoice_workspace', { series_id: SERIES_ID },
+    )
+
+    expect(result.ok).toBe(accepted)
+    if (!accepted) expect(result).toEqual({ ok: false, error: 'PROGRESS_RESPONSE_INVALID' })
+  })
+
+  it.each([
+    ['quote_id', 'not-a-uuid', false],
+    ['quote_id', 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', true],
+    ['type', 'invoice', false],
+    ['type', 'credit', true],
+  ] as const)('validates semantic event field %s=%s', async (key, eventValue, accepted) => {
+    const candidate = structuredClone(rawWorkspace)
+    ;(candidate.recent_events[0] as unknown as Record<string, unknown>).safe_field_changes = {
+      [key]: eventValue,
+    }
+
+    const result = await new ProgressInvoiceRepository(executorReturning(candidate)).call(
+      'get_progress_invoice_workspace', { series_id: SERIES_ID },
+    )
+
+    expect(result.ok).toBe(accepted)
+    if (!accepted) expect(result).toEqual({ ok: false, error: 'PROGRESS_RESPONSE_INVALID' })
+  })
+
+  it.each([
+    ['effective_date', { before: '2026-02-30', after: '2026-03-01' }, false],
+    ['effective_date', { before: '2026-02-28', after: '2026-03-01' }, true],
+    ['amount_ex_gst', { before: '100.0', after: '125.00' }, false],
+    ['amount_ex_gst', { before: '100.00', after: '125.00' }, true],
+    ['gst_rate', { before: 0.1, after: '0.10' }, false],
+    ['gst_rate', { before: '0.10', after: '0.15' }, true],
+  ] as const)('validates semantic event change %s', async (key, change, accepted) => {
+    const candidate = structuredClone(rawWorkspace)
+    ;(candidate.recent_events[0] as unknown as Record<string, unknown>).safe_field_changes = {
+      [key]: change,
+    }
+
+    const result = await new ProgressInvoiceRepository(executorReturning(candidate)).call(
+      'get_progress_invoice_workspace', { series_id: SERIES_ID },
+    )
+
+    expect(result.ok).toBe(accepted)
+    if (!accepted) expect(result).toEqual({ ok: false, error: 'PROGRESS_RESPONSE_INVALID' })
+  })
+
   it('preserves the Base Contract lock capability when a Draft Claim exists outside Current', async () => {
     const draftClaimWorkspace = structuredClone(rawWorkspace) as unknown as Record<string, unknown>
     const claims = draftClaimWorkspace.claims as Array<Record<string, unknown>>

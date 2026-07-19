@@ -135,6 +135,8 @@ describe('Progress Invoice series detail workspace', () => {
     expect(capabilitySection).toBeDefined()
     expect(capabilitySection).not.toContain('<button')
     expect(capabilitySection).not.toContain('href=')
+    expect(capabilitySection).toContain('Eligibility is informational only')
+    expect(capabilitySection).toContain('Actions and downloads are unavailable on this read-only page')
   })
 
   it('renders all seven server-derived capability states without live mutation or download controls', () => {
