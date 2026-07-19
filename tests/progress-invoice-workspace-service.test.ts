@@ -5,6 +5,7 @@ vi.mock('server-only', () => ({}))
 const mocks = vi.hoisted(() => ({
   call: vi.fn(),
   createProgressInvoiceRepository: vi.fn(),
+  getBusinessInvoiceProfile: vi.fn(),
 }))
 
 vi.mock('@/lib/progress-invoices/repository', async (importOriginal) => {
@@ -12,6 +13,14 @@ vi.mock('@/lib/progress-invoices/repository', async (importOriginal) => {
   return {
     ...actual,
     createProgressInvoiceRepository: mocks.createProgressInvoiceRepository,
+  }
+})
+
+vi.mock('@/lib/progress-invoices/series-service', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/progress-invoices/series-service')>()
+  return {
+    ...actual,
+    getBusinessInvoiceProfile: mocks.getBusinessInvoiceProfile,
   }
 })
 
@@ -211,6 +220,27 @@ describe('Progress Invoice workspace boundary', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mocks.createProgressInvoiceRepository.mockResolvedValue({ call: mocks.call })
+    mocks.getBusinessInvoiceProfile.mockResolvedValue({
+      ok: true,
+      data: {
+        id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+        legalName: 'Harbour Example Co Pty Ltd',
+        tradingName: '',
+        abn: '99000000000',
+        contractorLicence: '',
+        address: '1 Sample Street',
+        phone: '0400000000',
+        email: 'accounts@example.test',
+        bankName: 'Sample Bank',
+        bsb: '000-000',
+        bankAccountName: 'Harbour Example Co',
+        accountNumber: '87654321',
+        gstRate: '0.10',
+        businessTimezone: 'Australia/Sydney',
+        defaultPaymentTermDays: 14,
+        version: 1,
+      },
+    })
   })
 
   it('strictly parses and maps the exact Current-manifest workspace without changing decimals', async () => {
@@ -374,8 +404,48 @@ describe('Progress Invoice workspace boundary', () => {
         currentRevisionSet: null,
         claims: [{ status: 'draft', currentRevision: null }],
         capabilities: { canEditBaseContract: false },
+        invoiceProfileReady: true,
       },
     })
+  })
+
+  it.each([
+    ['missing', null],
+    ['invalid', {
+      id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      legalName: 'Harbour Example Co Pty Ltd', tradingName: '', abn: '99000000001',
+      contractorLicence: '', address: '1 Sample Street', phone: '0400000000',
+      email: 'accounts@example.test', bankName: 'Sample Bank', bsb: '000-000',
+      bankAccountName: 'Harbour Example Co', accountNumber: '87654321', gstRate: '0.10',
+      businessTimezone: 'Australia/Sydney', defaultPaymentTermDays: 14, version: 1,
+    }],
+  ] as const)('keeps workspace reads available but gates Claim creation for a %s profile', async (_case, profile) => {
+    mocks.call.mockResolvedValue({ ok: true, data: rawWorkspace })
+    mocks.getBusinessInvoiceProfile.mockResolvedValue({ ok: true, data: profile })
+
+    const result = await getProgressInvoiceSeriesWorkspace(SERIES_ID)
+
+    expect(result).toMatchObject({
+      ok: true,
+      data: {
+        series: { id: SERIES_ID },
+        invoiceProfileReady: false,
+        capabilities: { canCreateClaim: false },
+      },
+    })
+  })
+
+  it('never attaches supplier or bank profile fields to workspace output', async () => {
+    mocks.call.mockResolvedValue({ ok: true, data: rawWorkspace })
+
+    const result = await getProgressInvoiceSeriesWorkspace(SERIES_ID)
+    const serialized = JSON.stringify(result)
+
+    expect(serialized).not.toContain('Sample Bank')
+    expect(serialized).not.toContain('000-000')
+    expect(serialized).not.toContain('87654321')
+    expect(serialized).not.toContain('accountNumber')
+    expect(serialized).not.toContain('bankAccount')
   })
 
   it('rejects sensitive or arbitrary observation, document, and event fields', async () => {

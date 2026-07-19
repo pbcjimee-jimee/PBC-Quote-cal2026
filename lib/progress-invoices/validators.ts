@@ -31,6 +31,28 @@ const dateSchema = z.iso.date()
 const requiredText = (limit: number) => z.string().trim().min(1).max(limit)
 const optionalText = (limit: number) => z.string().trim().max(limit).nullable().optional()
 
+const AUSTRALIAN_BUSINESS_NUMBER_WEIGHTS = [10, 1, 3, 5, 7, 9, 11, 13, 15, 17, 19] as const
+
+export function canonicalizeAustralianBusinessNumber(value: string): string | null {
+  const canonical = value.trim().replace(/\s/g, '')
+  if (!/^\d{11}$/.test(canonical)) return null
+
+  const checksum = [...canonical].reduce((sum, digit, index) => {
+    const adjustedDigit = index === 0 ? Number(digit) - 1 : Number(digit)
+    return sum + adjustedDigit * AUSTRALIAN_BUSINESS_NUMBER_WEIGHTS[index]!
+  }, 0)
+  return checksum % 89 === 0 ? canonical : null
+}
+
+export const supplierAbnSchema = z.string()
+  .trim()
+  .min(1)
+  .max(PROGRESS_INVOICE_TEXT_LIMITS.abn)
+  .transform((value) => canonicalizeAustralianBusinessNumber(value))
+  .refine((value): value is string => value !== null, {
+    message: 'Enter a valid 11-digit Australian Business Number',
+  })
+
 export const manualRecipientEmailSchema = z.string()
   .trim()
   .max(PROGRESS_INVOICE_TEXT_LIMITS.email)
@@ -54,7 +76,7 @@ const profileShape = {
   legalName: requiredText(PROGRESS_INVOICE_TEXT_LIMITS.legalName),
   tradingName: optionalText(PROGRESS_INVOICE_TEXT_LIMITS.tradingName),
   contractorLicence: optionalText(PROGRESS_INVOICE_TEXT_LIMITS.contractorLicence),
-  abn: requiredText(PROGRESS_INVOICE_TEXT_LIMITS.abn),
+  abn: supplierAbnSchema,
   address: requiredText(PROGRESS_INVOICE_TEXT_LIMITS.address),
   email: requiredText(PROGRESS_INVOICE_TEXT_LIMITS.email).email(),
   phone: requiredText(PROGRESS_INVOICE_TEXT_LIMITS.phone),
@@ -64,11 +86,12 @@ const profileShape = {
   accountNumber: requiredText(PROGRESS_INVOICE_TEXT_LIMITS.accountNumber),
   gstRate: gstRateSchema,
   businessTimezone: z.literal('Australia/Sydney'),
-  defaultPaymentTermDays: z.number().int().nonnegative(),
+  defaultPaymentTermDays: z.number().int().min(0).max(365),
 }
 
-export const saveBusinessInvoiceProfileSchema = z.strictObject({
-  ...profileShape,
+export const businessInvoiceProfileSchema = z.strictObject(profileShape)
+
+export const saveBusinessInvoiceProfileSchema = businessInvoiceProfileSchema.extend({
   expectedVersion: expectedVersionSchema.optional(),
 })
 

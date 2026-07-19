@@ -1,7 +1,7 @@
 CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA extensions;
 CREATE EXTENSION IF NOT EXISTS dblink WITH SCHEMA extensions;
 
-SELECT plan(263);
+SELECT plan(270);
 
 DELETE FROM public.business_invoice_profiles;
 DELETE FROM auth.users
@@ -34,7 +34,7 @@ VALUES
 
 CREATE FUNCTION pg_temp.profile_payload(
   requested_legal_name TEXT,
-  requested_abn TEXT DEFAULT '12345678901',
+  requested_abn TEXT DEFAULT '99 000 000 000',
   requested_payment_terms INT DEFAULT 14,
   requested_expected_version INT DEFAULT NULL
 )
@@ -546,7 +546,7 @@ SELECT is(
       ) VALUES (
         'Direct Write',
         '',
-        '12345678901',
+        '99000000000',
         '',
         '1 Test Street',
         '0400000000',
@@ -604,6 +604,12 @@ SELECT is(
 );
 
 SELECT is(
+  (SELECT abn FROM public.business_invoice_profiles),
+  '99000000000',
+  'first save canonicalizes a formatted checksum-valid supplier ABN'
+);
+
+SELECT is(
   (
     SELECT created_by = '00000000-0000-0000-0000-000000008001'::UUID
       AND updated_by = '00000000-0000-0000-0000-000000008001'::UUID
@@ -626,7 +632,7 @@ SELECT is(
   (
     SELECT gst_rate
     FROM public.save_business_invoice_profile(
-      pg_temp.profile_payload('Paint Buddy & Co Updated', '12345678901', 21, 1)
+      pg_temp.profile_payload('Paint Buddy & Co Updated', '43123456783', 21, 1)
     )
   ),
   '0.10',
@@ -646,11 +652,17 @@ SELECT is(
 );
 
 SELECT is(
+  (SELECT abn FROM public.business_invoice_profiles),
+  '43123456783',
+  'profile updates store a distinct checksum-valid supplier ABN canonically'
+);
+
+SELECT is(
   pg_temp.capture_sqlstate(
     format(
       'SELECT * FROM public.save_business_invoice_profile(%L::JSONB)',
       (
-        pg_temp.profile_payload('Safe Base', '12345678901', 14, 2)
+        pg_temp.profile_payload('Safe Base', '99000000000', 14, 2)
         || jsonb_build_object('legal_name', jsonb_build_object('nested', 'object'))
       )::TEXT
     )
@@ -664,7 +676,7 @@ SELECT is(
     format(
       'SELECT * FROM public.save_business_invoice_profile(%L::JSONB)',
       (
-        pg_temp.profile_payload('Safe Base', '12345678901', 14, 2)
+        pg_temp.profile_payload('Safe Base', '99000000000', 14, 2)
         || jsonb_build_object('email', jsonb_build_array('not', 'email'))
       )::TEXT
     )
@@ -678,7 +690,7 @@ SELECT is(
     format(
       'SELECT * FROM public.save_business_invoice_profile(%L::JSONB)',
       (
-        pg_temp.profile_payload('Safe Base', '12345678901', 14, 2)
+        pg_temp.profile_payload('Safe Base', '99000000000', 14, 2)
         || jsonb_build_object('gst_rate', 0.10::NUMERIC)
       )::TEXT
     )
@@ -692,7 +704,7 @@ SELECT is(
     format(
       'SELECT * FROM public.save_business_invoice_profile(%L::JSONB)',
       (
-        pg_temp.profile_payload('Safe Base', '12345678901', 14, 2)
+        pg_temp.profile_payload('Safe Base', '99000000000', 14, 2)
         || jsonb_build_object('default_payment_term_days', '14')
       )::TEXT
     )
@@ -706,7 +718,7 @@ SELECT is(
     format(
       'SELECT * FROM public.save_business_invoice_profile(%L::JSONB)',
       (
-        pg_temp.profile_payload('Safe Base', '12345678901', 14, 2)
+        pg_temp.profile_payload('Safe Base', '99000000000', 14, 2)
         || jsonb_build_object('default_payment_term_days', 14.5)
       )::TEXT
     )
@@ -720,7 +732,7 @@ SELECT is(
     format(
       'SELECT * FROM public.save_business_invoice_profile(%L::JSONB)',
       (
-        pg_temp.profile_payload('Safe Base', '12345678901', 14, 2)
+        pg_temp.profile_payload('Safe Base', '99000000000', 14, 2)
         || jsonb_build_object('trading_name', jsonb_build_object('bad', true))
       )::TEXT
     )
@@ -734,7 +746,7 @@ SELECT is(
     format(
       'SELECT * FROM public.save_business_invoice_profile(%L::JSONB)',
       (
-        pg_temp.profile_payload('Safe Base', '12345678901', 14, 2)
+        pg_temp.profile_payload('Safe Base', '99000000000', 14, 2)
         || jsonb_build_object('contractor_licence', jsonb_build_array('bad'))
       )::TEXT
     )
@@ -748,7 +760,7 @@ SELECT is(
     format(
       'SELECT * FROM public.save_business_invoice_profile(%L::JSONB)',
       (
-        pg_temp.profile_payload('Safe Base', '12345678901', 14, 2)
+        pg_temp.profile_payload('Safe Base', '99000000000', 14, 2)
         || jsonb_build_object('business_timezone', 10)
       )::TEXT
     )
@@ -762,7 +774,7 @@ SELECT is(
     format(
       'SELECT * FROM public.save_business_invoice_profile(%L::JSONB)',
       (
-        pg_temp.profile_payload('Safe Base', '12345678901', 14, 2)
+        pg_temp.profile_payload('Safe Base', '99000000000', 14, 2)
         || jsonb_build_object('email', 'not-an-email')
       )::TEXT
     )
@@ -776,7 +788,7 @@ SELECT is(
     format(
       'SELECT * FROM public.save_business_invoice_profile(%L::JSONB)',
       (
-        pg_temp.profile_payload('Safe Base', '12345678901', 14, 2)
+        pg_temp.profile_payload('Safe Base', '99000000000', 14, 2)
         || jsonb_build_object('email', '.alice@example.com')
       )::TEXT
     )
@@ -790,7 +802,7 @@ SELECT is(
     format(
       'SELECT * FROM public.save_business_invoice_profile(%L::JSONB)',
       (
-        pg_temp.profile_payload('Safe Base', '12345678901', 14, 2)
+        pg_temp.profile_payload('Safe Base', '99000000000', 14, 2)
         || jsonb_build_object('email', 'a..b@example.com')
       )::TEXT
     )
@@ -804,7 +816,7 @@ SELECT is(
     format(
       'SELECT * FROM public.save_business_invoice_profile(%L::JSONB)',
       (
-        pg_temp.profile_payload('Safe Base', '12345678901', 14, 2)
+        pg_temp.profile_payload('Safe Base', '99000000000', 14, 2)
         || jsonb_build_object('email', 'alice@-example.com')
       )::TEXT
     )
@@ -818,7 +830,7 @@ SELECT is(
     format(
       'SELECT * FROM public.save_business_invoice_profile(%L::JSONB)',
       (
-        pg_temp.profile_payload('Safe Base', '12345678901', 14, 2)
+        pg_temp.profile_payload('Safe Base', '99000000000', 14, 2)
         || jsonb_build_object('email', 'alice@example.c')
       )::TEXT
     )
@@ -832,7 +844,7 @@ SELECT is(
     format(
       'SELECT * FROM public.save_business_invoice_profile(%L::JSONB)',
       (
-        pg_temp.profile_payload('Safe Base', '12345678901', 14, 2)
+        pg_temp.profile_payload('Safe Base', '99000000000', 14, 2)
         || jsonb_build_object('email', 'alice@example.c0m')
       )::TEXT
     )
@@ -846,7 +858,7 @@ SELECT is(
     format(
       'SELECT * FROM public.save_business_invoice_profile(%L::JSONB)',
       (
-        pg_temp.profile_payload('Safe Base', '12345678901', 14, 2)
+        pg_temp.profile_payload('Safe Base', '99000000000', 14, 2)
         || jsonb_build_object('email', 'o''connor+tag@example.com')
       )::TEXT
     )
@@ -860,7 +872,7 @@ SELECT is(
     format(
       'SELECT * FROM public.save_business_invoice_profile(%L::JSONB)',
       (
-        pg_temp.profile_payload('Safe Base', '12345678901', 14, 2)
+        pg_temp.profile_payload('Safe Base', '99000000000', 14, 2)
         || jsonb_build_object('email', 'user@example-.com')
       )::TEXT
     )
@@ -874,7 +886,7 @@ SELECT is(
     format(
       'SELECT * FROM public.save_business_invoice_profile(%L::JSONB)',
       (
-        pg_temp.profile_payload('Safe Base', '12345678901', 14, 2)
+        pg_temp.profile_payload('Safe Base', '99000000000', 14, 2)
         || jsonb_build_object('email', 'A_B+C@0-.Technology')
       )::TEXT
     )
@@ -888,7 +900,7 @@ SELECT is(
     format(
       'SELECT * FROM public.save_business_invoice_profile(%L::JSONB)',
       (
-        pg_temp.profile_payload('Safe Base', '12345678901', 14, 2)
+        pg_temp.profile_payload('Safe Base', '99000000000', 14, 2)
         || jsonb_build_object('phone', '   ')
       )::TEXT
     )
@@ -902,7 +914,7 @@ SELECT is(
     format(
       'SELECT * FROM public.save_business_invoice_profile(%L::JSONB)',
       (
-        pg_temp.profile_payload('Safe Base', '12345678901', 14, 2)
+        pg_temp.profile_payload('Safe Base', '99000000000', 14, 2)
         || jsonb_build_object('legal_name', repeat('L', 161))
       )::TEXT
     )
@@ -916,7 +928,7 @@ SELECT is(
     format(
       'SELECT * FROM public.save_business_invoice_profile(%L::JSONB)',
       (
-        pg_temp.profile_payload('Safe Base', '12345678901', 14, 2)
+        pg_temp.profile_payload('Safe Base', '99000000000', 14, 2)
         || jsonb_build_object('expected_version', '2')
       )::TEXT
     )
@@ -930,7 +942,7 @@ SELECT is(
     format(
       'SELECT * FROM public.save_business_invoice_profile(%L::JSONB)',
       (
-        pg_temp.profile_payload('Safe Base', '12345678901', 14, 2)
+        pg_temp.profile_payload('Safe Base', '99000000000', 14, 2)
         || jsonb_build_object('expected_version', 2.5)
       )::TEXT
     )
@@ -944,7 +956,7 @@ SELECT is(
     format(
       'SELECT * FROM public.save_business_invoice_profile(%L::JSONB)',
       (
-        pg_temp.profile_payload('Safe Base', '12345678901', 14, 2)
+        pg_temp.profile_payload('Safe Base', '99000000000', 14, 2)
         || jsonb_build_object('expected_version', jsonb_build_array(2))
       )::TEXT
     )
@@ -958,7 +970,7 @@ SELECT is(
     format(
       'SELECT * FROM public.save_business_invoice_profile(%L::JSONB)',
       (
-        pg_temp.profile_payload('Safe Base', '12345678901', 14, 2)
+        pg_temp.profile_payload('Safe Base', '99000000000', 14, 2)
         || jsonb_build_object('bank_account_number', repeat('1', 33))
       )::TEXT
     )
@@ -972,7 +984,7 @@ SELECT is(
     format(
       'SELECT * FROM public.save_business_invoice_profile(%L::JSONB)',
       (
-        pg_temp.profile_payload('Safe Base', '12345678901', 14, 2)
+        pg_temp.profile_payload('Safe Base', '99000000000', 14, 2)
         || jsonb_build_object('business_timezone', 'UTC')
       )::TEXT
     )
@@ -997,7 +1009,7 @@ SELECT is(
   pg_temp.capture_sqlstate(
     format(
       'SELECT * FROM public.save_business_invoice_profile(%L::JSONB)',
-      pg_temp.profile_payload('Stale Overwrite', '12345678901', 14, 1)::TEXT
+      pg_temp.profile_payload('Stale Overwrite', '99000000000', 14, 1)::TEXT
     )
   ),
   'P0001',
@@ -1042,7 +1054,24 @@ SELECT is(
   pg_temp.capture_sqlstate(
     format(
       'SELECT * FROM public.save_business_invoice_profile(%L::JSONB)',
-      pg_temp.profile_payload('Bad Terms', '12345678901', 366, 2)::TEXT
+      pg_temp.profile_payload('Bad Checksum', '99000000001', 14, 2)::TEXT
+    )
+  ),
+  '23514',
+  'the database boundary rejects a checksum-invalid eleven-digit supplier ABN'
+);
+
+SELECT is(
+  (SELECT abn FROM public.business_invoice_profiles),
+  '43123456783',
+  'a checksum-invalid supplier ABN leaves the canonical profile unchanged'
+);
+
+SELECT is(
+  pg_temp.capture_sqlstate(
+    format(
+      'SELECT * FROM public.save_business_invoice_profile(%L::JSONB)',
+      pg_temp.profile_payload('Bad Terms', '99000000000', 366, 2)::TEXT
     )
   ),
   '23514',
@@ -1060,7 +1089,7 @@ SELECT is(
     format(
       'SELECT * FROM public.save_business_invoice_profile(%L::JSONB)',
       (
-        pg_temp.profile_payload('Forged Actor', '12345678901', 14, 2)
+        pg_temp.profile_payload('Forged Actor', '99000000000', 14, 2)
         || jsonb_build_object(
           'actor_id', '00000000-0000-0000-0000-000000008003'
         )
@@ -1081,6 +1110,32 @@ SELECT is(
   (SELECT count(*)::INT FROM public.progress_invoice_events),
   0,
   'profile saves do not append series events'
+);
+
+SELECT has_function(
+  'public',
+  'progress_canonicalize_supplier_abn',
+  ARRAY['text'],
+  'the private supplier ABN helper exists with the approved signature'
+);
+
+SELECT is(
+  (
+    SELECT routine.provolatile = 'i'
+      AND routine.proconfig @> ARRAY['search_path=""']::TEXT[]
+    FROM pg_proc AS routine
+    WHERE routine.oid = to_regprocedure('public.progress_canonicalize_supplier_abn(text)')
+  ),
+  true,
+  'the supplier ABN helper is immutable with a fixed empty search path'
+);
+
+SELECT is(
+  NOT has_function_privilege('anon', to_regprocedure('public.progress_canonicalize_supplier_abn(text)'), 'EXECUTE')
+    AND NOT has_function_privilege('authenticated', to_regprocedure('public.progress_canonicalize_supplier_abn(text)'), 'EXECUTE')
+    AND NOT has_function_privilege('service_role', to_regprocedure('public.progress_canonicalize_supplier_abn(text)'), 'EXECUTE'),
+  true,
+  'the supplier ABN helper grants no API-role execution'
 );
 RESET ROLE;
 
@@ -1114,7 +1169,7 @@ SELECT is(
         FROM public.save_business_invoice_profile(
           jsonb_build_object(
             'legal_name', 'Concurrent Winner',
-            'abn', '12345678901',
+            'abn', '99000000000',
             'business_address', '2 Race Street, Sydney NSW 2000',
             'phone', '0400000000',
             'email', 'race-a@example.test',
@@ -1150,7 +1205,7 @@ SELECT extensions.dblink_send_query(
     FROM public.save_business_invoice_profile(
       jsonb_build_object(
         'legal_name', 'Concurrent Loser',
-        'abn', '10987654321',
+        'abn', '43123456783',
         'business_address', '3 Race Street, Sydney NSW 2000',
         'phone', '0400000001',
         'email', 'race-b@example.test',

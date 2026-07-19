@@ -33,6 +33,7 @@ const workspace: ProgressInvoiceSeriesWorkspaceDto = {
     unclaimedExGst: '5169.16', unclaimedGst: '516.92', unclaimedIncGst: '5686.08',
     cumulativePercentage: '86.916836',
   },
+  invoiceProfileReady: true,
   summary: {
     adjustedExGst: '39507.08', adjustedGst: '3950.71', adjustedIncGst: '43457.79',
     claimedIncGst: '37771.71', receivedIncGst: '1000.00', outstandingIncGst: '36771.71',
@@ -164,6 +165,24 @@ describe('Progress Invoice series detail workspace', () => {
     expect(markup).toContain('No current metadata available')
     expect(markup).toContain('Historical metadata available')
     expect(markup).not.toContain('Download now')
+  })
+
+  it('keeps every read section available while linking an invalid Invoice Profile setup gate', () => {
+    const profileBlocked = {
+      ...workspace,
+      invoiceProfileReady: false,
+      capabilities: { ...workspace.capabilities, canCreateClaim: false },
+    }
+    const markup = renderToStaticMarkup(createElement(ProgressInvoiceSeriesDetailView, {
+      workspace: profileBlocked,
+      historyResult: { ok: true, data: { events: [], nextCursor: null } },
+    }))
+
+    expect(markup).toContain('Invoice Profile is missing or invalid')
+    expect(markup).toContain('href="/settings/invoice"')
+    for (const heading of ['Summary', 'Recipient and site', 'Claims', 'Payments', 'Documents', 'History']) {
+      expect(markup).toContain(`>${heading}<`)
+    }
   })
 
   it('renders explicit empty states and keeps a History error isolated', () => {

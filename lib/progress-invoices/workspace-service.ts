@@ -10,7 +10,12 @@ import {
   type ProgressInvoiceSafeEventRpcDto,
   type ProgressInvoiceWorkspaceRpcResult,
 } from './repository'
-import { mapSeriesDetail, type ProgressInvoiceSeriesDetail } from './series-service'
+import {
+  getBusinessInvoiceProfile,
+  mapSeriesDetail,
+  type ProgressInvoiceSeriesDetail,
+} from './series-service'
+import { businessInvoiceProfileSchema } from './validators'
 
 export interface ProgressInvoiceImportedObservationDto {
   originalInvoiceNumber: string
@@ -136,6 +141,7 @@ export interface ProgressInvoiceHistoryPageDto {
 
 export interface ProgressInvoiceSeriesWorkspaceDto {
   series: ProgressInvoiceSeriesDetail
+  invoiceProfileReady: boolean
   summary: {
     adjustedExGst: string
     adjustedGst: string
@@ -260,7 +266,10 @@ function mapEvent(row: ProgressInvoiceSafeEventRpcDto): ProgressInvoiceSafeEvent
   }
 }
 
-function mapWorkspace(row: ProgressInvoiceWorkspaceRpcResult): ProgressInvoiceSeriesWorkspaceDto | null {
+function mapWorkspace(
+  row: ProgressInvoiceWorkspaceRpcResult,
+  invoiceProfileReady: boolean,
+): ProgressInvoiceSeriesWorkspaceDto | null {
   if (!row.series) return null
   const summary = row.summary
   const capabilities = row.capabilities
@@ -271,6 +280,7 @@ function mapWorkspace(row: ProgressInvoiceWorkspaceRpcResult): ProgressInvoiceSe
   }
   return {
     series: mapSeriesDetail(row.series),
+    invoiceProfileReady,
     summary: {
       adjustedExGst: summary.adjusted_ex_gst, adjustedGst: summary.adjusted_gst,
       adjustedIncGst: summary.adjusted_inc_gst, claimedIncGst: summary.claimed_inc_gst,
@@ -297,7 +307,7 @@ function mapWorkspace(row: ProgressInvoiceWorkspaceRpcResult): ProgressInvoiceSe
       canEditBaseContract: capabilities.can_edit_base_contract,
       canVoidSeriesDirectly: capabilities.can_void_series_directly,
       requiresClaimVoidWorkflow: capabilities.requires_claim_void_workflow,
-      canCreateClaim: capabilities.can_create_claim,
+      canCreateClaim: capabilities.can_create_claim && invoiceProfileReady,
       canDownloadCurrent: capabilities.can_download_current,
       canDownloadHistorical: capabilities.can_download_historical,
     },
@@ -314,10 +324,30 @@ export async function getProgressInvoiceSeriesWorkspace(
   const repository = await createProgressInvoiceRepository()
   const result = await repository.call('get_progress_invoice_workspace', { series_id: seriesId })
   if (!result.ok) return result
-  const mapped = mapWorkspace(result.data)
-  return result.data.series !== null && !mapped
-    ? { ok: false, error: 'PROGRESS_RESPONSE_INVALID' }
-    : { ok: true, data: mapped }
+  if (result.data.series === null) return { ok: true, data: null }
+
+  const profileResult = await getBusinessInvoiceProfile()
+  const profile = profileResult.ok ? profileResult.data : null
+  const invoiceProfileReady = profile !== null && businessInvoiceProfileSchema.safeParse({
+    legalName: profile.legalName,
+    tradingName: profile.tradingName,
+    abn: profile.abn,
+    contractorLicence: profile.contractorLicence,
+    address: profile.address,
+    phone: profile.phone,
+    email: profile.email,
+    bankName: profile.bankName,
+    bsb: profile.bsb,
+    bankAccountName: profile.bankAccountName,
+    accountNumber: profile.accountNumber,
+    gstRate: profile.gstRate,
+    businessTimezone: profile.businessTimezone,
+    defaultPaymentTermDays: profile.defaultPaymentTermDays,
+  }).success
+  const mapped = mapWorkspace(result.data, invoiceProfileReady)
+  return mapped
+    ? { ok: true, data: mapped }
+    : { ok: false, error: 'PROGRESS_RESPONSE_INVALID' }
 }
 
 export async function listProgressInvoiceSeriesHistory(

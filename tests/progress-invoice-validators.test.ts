@@ -55,7 +55,7 @@ const claimDraft = {
 
 const businessProfile = {
   legalName: 'Harbour Example Co Pty Ltd',
-  abn: '11 222 333 444',
+  abn: '99 000 000 000',
   address: '1 Sample Street',
   email: 'accounts@example.test',
   phone: '0400000000',
@@ -331,6 +331,99 @@ describe('Progress Invoice command schemas', () => {
       ...businessProfile,
       expectedVersion: null,
     }).success).toBe(false)
+  })
+
+  it('canonicalizes checksum-valid Australian supplier ABNs', () => {
+    const formatted = saveBusinessInvoiceProfileSchema.safeParse(businessProfile)
+    const canonical = saveBusinessInvoiceProfileSchema.safeParse({
+      ...businessProfile,
+      abn: '43123456783',
+    })
+
+    expect(formatted.success).toBe(true)
+    expect(canonical.success).toBe(true)
+    if (formatted.success) expect(formatted.data.abn).toBe('99000000000')
+    if (canonical.success) expect(canonical.data.abn).toBe('43123456783')
+  })
+
+  it.each([
+    ['bad checksum', '99000000001'],
+    ['too short', '9900000000'],
+    ['too long', '990000000000'],
+    ['non-digit', '99 000 000 00A'],
+  ])('rejects a supplier ABN with %s', (_case, abn) => {
+    expect(saveBusinessInvoiceProfileSchema.safeParse({
+      ...businessProfile,
+      abn,
+    }).success).toBe(false)
+  })
+
+  it('enforces fixed invoice literals and payment terms from 0 through 365', () => {
+    for (const defaultPaymentTermDays of [0, 365]) {
+      expect(saveBusinessInvoiceProfileSchema.safeParse({
+        ...businessProfile,
+        defaultPaymentTermDays,
+      }).success).toBe(true)
+    }
+    for (const defaultPaymentTermDays of [-1, 366, 1.5]) {
+      expect(saveBusinessInvoiceProfileSchema.safeParse({
+        ...businessProfile,
+        defaultPaymentTermDays,
+      }).success).toBe(false)
+    }
+    expect(saveBusinessInvoiceProfileSchema.safeParse({
+      ...businessProfile,
+      gstRate: '0.11',
+    }).success).toBe(false)
+    expect(saveBusinessInvoiceProfileSchema.safeParse({
+      ...businessProfile,
+      businessTimezone: 'UTC',
+    }).success).toBe(false)
+  })
+
+  it('requires every approved profile field while allowing bounded optional fields to be blank', () => {
+    const optionalBlank = saveBusinessInvoiceProfileSchema.safeParse({
+      ...businessProfile,
+      tradingName: ' ',
+      contractorLicence: '',
+    })
+    expect(optionalBlank.success).toBe(true)
+    if (optionalBlank.success) {
+      expect(optionalBlank.data.tradingName).toBe('')
+      expect(optionalBlank.data.contractorLicence).toBe('')
+    }
+
+    for (const requiredField of [
+      'legalName', 'abn', 'address', 'email', 'phone', 'bankName',
+      'bsb', 'bankAccountName', 'accountNumber',
+    ] as const) {
+      expect(saveBusinessInvoiceProfileSchema.safeParse({
+        ...businessProfile,
+        [requiredField]: ' ',
+      }).success).toBe(false)
+    }
+
+    expect(saveBusinessInvoiceProfileSchema.safeParse({
+      ...businessProfile,
+      tradingName: 'T'.repeat(PROGRESS_INVOICE_TEXT_LIMITS.tradingName + 1),
+    }).success).toBe(false)
+    expect(saveBusinessInvoiceProfileSchema.safeParse({
+      ...businessProfile,
+      contractorLicence: 'L'.repeat(PROGRESS_INVOICE_TEXT_LIMITS.contractorLicence + 1),
+    }).success).toBe(false)
+  })
+
+  it('preserves approved BSB punctuation and account-number text without stronger banking rules', () => {
+    const parsed = saveBusinessInvoiceProfileSchema.safeParse({
+      ...businessProfile,
+      bsb: '12-3.A',
+      accountNumber: 'ABC 123/9',
+    })
+    expect(parsed.success).toBe(true)
+    if (parsed.success) {
+      expect(parsed.data.bsb).toBe('12-3.A')
+      expect(parsed.data.accountNumber).toBe('ABC 123/9')
+    }
   })
 
   it('requires non-empty reasons for post-issue, void, and reconciliation commands', () => {

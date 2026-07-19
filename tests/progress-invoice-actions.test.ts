@@ -98,7 +98,7 @@ const manualSeriesInput = {
 const profileInput = {
   legalName: 'Paint Buddy & Co Pty Ltd',
   tradingName: 'Paint Buddy & Co',
-  abn: '12345678901',
+  abn: '99 000 000 000',
   contractorLicence: 'LIC-1',
   address: '1 Supplier Street, Sydney NSW 2000',
   phone: '0400000000',
@@ -414,8 +414,43 @@ describe('Progress Invoice Server Actions', () => {
     })
 
     expect(await saveBusinessInvoiceProfile(profileInput)).toMatchObject({ ok: true })
+    expect(mocks.saveBusinessInvoiceProfile).toHaveBeenCalledWith({
+      ...profileInput,
+      abn: '99000000000',
+    })
     expect(mocks.revalidatePath).toHaveBeenCalledWith('/settings/invoice')
     expect(mocks.revalidatePath).not.toHaveBeenCalledWith('/quotes/new')
+  })
+
+  it('rejects an invalid supplier ABN before authorization or persistence', async () => {
+    expect(await saveBusinessInvoiceProfile({
+      ...profileInput,
+      abn: '99000000001',
+    })).toEqual({
+      ok: false,
+      error: 'PROGRESS_VALIDATION_FAILED',
+      code: 'VALIDATION',
+    })
+    expect(mocks.requireAllowedUser).not.toHaveBeenCalled()
+    expect(mocks.saveBusinessInvoiceProfile).not.toHaveBeenCalled()
+  })
+
+  it('preserves optimistic profile conflicts without revalidation', async () => {
+    mocks.saveBusinessInvoiceProfile.mockResolvedValue({
+      ok: false,
+      error: 'PROGRESS_VERSION_CONFLICT',
+      code: 'VERSION_CONFLICT',
+    })
+
+    expect(await saveBusinessInvoiceProfile({
+      ...profileInput,
+      expectedVersion: 2,
+    })).toEqual({
+      ok: false,
+      error: 'PROGRESS_VERSION_CONFLICT',
+      code: 'VERSION_CONFLICT',
+    })
+    expect(mocks.revalidatePath).not.toHaveBeenCalled()
   })
 
   it('updates editable snapshots while rejecting immutable provenance as unknown input', async () => {

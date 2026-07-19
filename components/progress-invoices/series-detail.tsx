@@ -93,7 +93,16 @@ export function ProgressInvoiceSeriesDetailView({
           </div>
           <div>
             <dt>Claim creation</dt>
-            <dd>{capabilities.canCreateClaim ? 'Claim creation available' : 'Claim creation unavailable'}</dd>
+            <dd>
+              {workspace.invoiceProfileReady
+                ? (capabilities.canCreateClaim ? 'Claim creation available' : 'Claim creation unavailable')
+                : (
+                  <>
+                    Invoice Profile is missing or invalid.{' '}
+                    <Link href="/settings/invoice">Configure Invoice Profile</Link> before creating a Claim.
+                  </>
+                )}
+            </dd>
           </div>
           <div>
             <dt>Current document metadata</dt>

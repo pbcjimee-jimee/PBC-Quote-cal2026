@@ -38,6 +38,7 @@ export default async function SettingsPage() {
       <header className="pbc-topbar">
         <div className="pbc-crumb"><span>Admin</span>{Icons.arrowDown({ size: 14 })}<b>Settings</b></div>
         <div className="pbc-topbar__right">
+          <Link href="/settings/invoice" className="pbc-btn pbc-btn--ghost">Invoice Profile</Link>
           <Link href="/settings/inventory" className="pbc-btn pbc-btn--ghost">{Icons.layers({ size: 15 })} Inventory</Link>
           <Link href="/quotes/new" className="pbc-btn pbc-btn--ghost">{Icons.back({ size: 15 })} Back to quote</Link>
         </div>
@@ -48,6 +49,15 @@ export default async function SettingsPage() {
         <p>Control labour rates, margins, material pricing, work areas and quote templates.</p>
         {!settingsResult.ok ? <p className="text-[var(--danger)]">{settingsResult.error}</p> : null}
       </div>
+      <section className="pbc-card pbc-card--pad mb-5" aria-labelledby="invoice-profile-settings-heading">
+        <div className="pbc-panelhead">
+          <div className="pbc-panelhead__copy">
+            <h2 id="invoice-profile-settings-heading" className="pbc-paneltitle">Invoice Profile</h2>
+            <p className="pbc-panelsub">Supplier, contact, bank and payment-term details for future Progress Invoice Claims.</p>
+          </div>
+          <Link href="/settings/invoice" className="pbc-btn pbc-btn--ghost">Configure Invoice Profile</Link>
+        </div>
+      </section>
       <SettingsForm
         initialSettings={settingsResult.ok ? settingsResult.data : DEFAULT_PRICING_SETTINGS}
       />
