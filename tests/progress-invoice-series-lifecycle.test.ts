@@ -117,6 +117,10 @@ describe('Progress Invoice Series lifecycle boundary', () => {
       ok: false,
       error: 'PROGRESS_RESPONSE_INVALID',
     })
+    await expect(callVoid([{ ...result, revision_set_id: SET_ID }])).resolves.toEqual({
+      ok: false,
+      error: 'PROGRESS_RESPONSE_INVALID',
+    })
     await expect(callVoid([{ ...result, version: 0 }])).resolves.toEqual({
       ok: false,
       error: 'PROGRESS_RESPONSE_INVALID',

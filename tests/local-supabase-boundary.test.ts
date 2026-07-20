@@ -81,10 +81,16 @@ describe('local Supabase execution boundary', () => {
     ['stop'],
     ['db', 'push'],
     ['migration', 'up'],
+    ['migration', 'up', '--linked'],
+    ['migration', 'up', '--local', '--linked'],
+    ['migration', 'up', '--local', '--db-url', 'postgresql://remote.invalid/db'],
     ['secrets', 'list'],
     ['functions', 'deploy', 'unsafe'],
     ['db', 'reset', '--linked'],
     ['db', 'reset', '--local', '--db-url', 'postgresql://remote.invalid/db'],
+    ['db', 'reset', '--local', '--version', '20260719225145'],
+    ['db', 'reset', '--local', '--version', '20260719225144', '--linked'],
+    ['db', 'reset', '--local', '--version', '20260719225144', '--db-url', 'postgresql://remote.invalid/db'],
     ['test', 'db', '--linked'],
     ['test', 'db', '--local', 'package.json'],
     ['gen', 'types', '--project-id', 'remote-project'],
@@ -121,6 +127,13 @@ describe('local Supabase execution boundary', () => {
     expect(script).toContain("'env\\(([A-Z][A-Z0-9_]*)\\)'")
     expect(script).toContain('com.supabase.cli.project=progress-invoice-series')
     expect(script).toContain('node_modules\\.bin\\supabase.cmd')
+  })
+
+  it('allows only the pinned local lifecycle upgrade command shapes', () => {
+    const script = readFileSync(wrapperPath, 'utf8')
+
+    expect(script).toContain("@('db', 'reset', '--local', '--version', '20260719225144')")
+    expect(script).toContain("@('migration', 'up', '--local')")
   })
 
   it('limits the environment guard to a non-secret success or refusal token', () => {

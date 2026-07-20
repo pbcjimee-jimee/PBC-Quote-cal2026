@@ -265,6 +265,24 @@ try {
     exit $cliExitCode
   }
 
+  if (Test-ExactArgs -Actual $CommandArgs -Expected @('db', 'reset', '--local', '--version', '20260719225144')) {
+    Assert-LocalStack
+    $ErrorActionPreference = 'Continue'
+    & $cliPath db reset --local --version 20260719225144 --workdir $repoRoot
+    $cliExitCode = $LASTEXITCODE
+    $ErrorActionPreference = 'Stop'
+    exit $cliExitCode
+  }
+
+  if (Test-ExactArgs -Actual $CommandArgs -Expected @('migration', 'up', '--local')) {
+    Assert-LocalStack
+    $ErrorActionPreference = 'Continue'
+    & $cliPath migration up --local --workdir $repoRoot
+    $cliExitCode = $LASTEXITCODE
+    $ErrorActionPreference = 'Stop'
+    exit $cliExitCode
+  }
+
   if ($CommandArgs.Count -ge 3 -and
       $CommandArgs[0] -ieq 'test' -and
       $CommandArgs[1] -ieq 'db' -and

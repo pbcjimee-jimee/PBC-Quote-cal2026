@@ -1,7 +1,7 @@
 CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA extensions;
 CREATE EXTENSION IF NOT EXISTS dblink WITH SCHEMA extensions;
 
-SELECT plan(304);
+SELECT plan(313);
 
 DELETE FROM public.business_invoice_profiles;
 DELETE FROM auth.users
@@ -4964,6 +4964,7 @@ INSERT INTO public.progress_invoice_revision_sets (
     '[{"claim_id":"84000000-0000-4000-8000-000000000020","revision_id":"84000000-0000-4000-8000-000000000022"}]',
     'current', repeat('e', 64), '00000000-0000-0000-0000-000000008001', now(), NULL
   );
+
 UPDATE public.progress_invoice_series SET current_revision_set_id = '84000000-0000-4000-8000-000000000032'
 WHERE id = '84000000-0000-4000-8000-000000000001';
 SELECT public.progress_recalculate_series_read_model_as(
@@ -5901,6 +5902,44 @@ INSERT INTO public.progress_claims (
     '00000000-0000-0000-0000-000000008001', '00000000-0000-0000-0000-000000008001'
   );
 
+INSERT INTO public.progress_claim_revisions
+SELECT (jsonb_populate_record(
+  NULL::public.progress_claim_revisions,
+  to_jsonb(source_revision) || jsonb_build_object(
+    'id', '87000000-0000-4000-8000-000000000012',
+    'claim_id', '87000000-0000-4000-8000-000000000011',
+    'revision_number', 1,
+    'state', 'draft',
+    'jobber_account_id', NULL,
+    'jobber_invoice_id', NULL,
+    'original_jobber_invoice_number', NULL,
+    'observed_jobber_invoice_number', NULL,
+    'accepted_numbering_base', 'Task4-Draft'
+  )
+)).*
+FROM public.progress_claim_revisions AS source_revision
+LIMIT 1;
+
+SET ROLE authenticated;
+SET request.jwt.claim.sub = '00000000-0000-0000-0000-000000008001';
+SELECT is(pg_temp.capture_sqlstate($sql$
+  DELETE FROM public.progress_claim_revisions
+  WHERE id = '87000000-0000-4000-8000-000000000012'
+$sql$), '42501', 'authenticated callers cannot delete a Draft Claim Revision directly');
+RESET ROLE;
+
+SELECT is(pg_temp.capture_sqlstate($sql$
+  DELETE FROM public.progress_claim_revisions
+  WHERE id = '87000000-0000-4000-8000-000000000012'
+$sql$), '55000', 'superuser maintenance cannot delete a Draft Claim Revision');
+
+SELECT is(
+  (SELECT count(*)::INT FROM public.progress_claim_revisions
+   WHERE id = '87000000-0000-4000-8000-000000000012'),
+  1,
+  'the rejected Draft Claim Revision deletion preserves history'
+);
+
 SELECT is(
   (
     SELECT jsonb_object_agg(lower(btrim(series.accepted_numbering_base)), reservation.state)
@@ -6226,6 +6265,77 @@ SELECT is(
   ),
   true,
   'Manual-Series Jobber-null invariants remain intact'
+);
+
+INSERT INTO public.quotes (
+  id, customer_name, customer_address, working_days,
+  formula1_total, formula2_total, formula3_total, formula4_total, formula5_total,
+  selected_min, selected_max, interior_selected_min, interior_selected_max,
+  exterior_selected_min, exterior_selected_max, roof_selected_min, roof_selected_max,
+  subtotal, final_total, pricing_settings_snapshot, created_by
+) VALUES
+  (
+    '87000000-0000-4000-8000-000000000040', 'Active Quote', '1 Quote Street', 1,
+    1000, 1000, 1000, 1000, 1000, 1, 1, 1, 1, 1, 1, 1, 1,
+    1000, 1100, '{}'::JSONB, '00000000-0000-0000-0000-000000008001'
+  ),
+  (
+    '87000000-0000-4000-8000-000000000041', 'Void Quote', '2 Quote Street', 1,
+    1000, 1000, 1000, 1000, 1000, 1, 1, 1, 1, 1, 1, 1, 1,
+    1000, 1100, '{}'::JSONB, '00000000-0000-0000-0000-000000008001'
+  );
+
+INSERT INTO public.progress_invoice_series (
+  id, source_type, quote_id, jobber_account_id, jobber_invoice_id,
+  accepted_numbering_base, base_contract_ex_gst,
+  recipient_name, recipient_address, site_name, site_address, default_description,
+  status, created_by, updated_by
+) VALUES
+  (
+    '87000000-0000-4000-8000-000000000042', 'pbc_quote',
+    '87000000-0000-4000-8000-000000000040', 'task4-quote-account', 'task4-active-invoice',
+    'Task4-Quote-Active', 1000,
+    'Active Quote', 'Billing', 'Site', 'Site address', 'Works', 'active',
+    '00000000-0000-0000-0000-000000008001', '00000000-0000-0000-0000-000000008001'
+  ),
+  (
+    '87000000-0000-4000-8000-000000000043', 'pbc_quote',
+    '87000000-0000-4000-8000-000000000041', 'task4-quote-account', 'task4-void-invoice',
+    'Task4-Quote-Void', 1000,
+    'Void Quote', 'Billing', 'Site', 'Site address', 'Works', 'void',
+    '00000000-0000-0000-0000-000000008001', '00000000-0000-0000-0000-000000008001'
+  );
+
+SELECT is(pg_temp.capture_sqlstate($sql$
+  UPDATE public.progress_invoice_series SET quote_id = NULL
+  WHERE id = '87000000-0000-4000-8000-000000000042'
+$sql$), '55000', 'direct active-Series Quote provenance clearing remains forbidden');
+
+SELECT lives_ok($sql$
+  DELETE FROM public.quotes WHERE id = '87000000-0000-4000-8000-000000000040'
+$sql$, 'active-Series Quote deletion may apply the legitimate FK SET NULL transition');
+
+SELECT is(
+  (SELECT quote_id FROM public.progress_invoice_series
+   WHERE id = '87000000-0000-4000-8000-000000000042'),
+  NULL::UUID,
+  'active-Series Quote deletion clears only the FK link'
+);
+
+SELECT is(pg_temp.capture_sqlstate($sql$
+  UPDATE public.progress_invoice_series SET quote_id = NULL
+  WHERE id = '87000000-0000-4000-8000-000000000043'
+$sql$), '55000', 'direct Void-Series Quote provenance clearing remains forbidden');
+
+SELECT lives_ok($sql$
+  DELETE FROM public.quotes WHERE id = '87000000-0000-4000-8000-000000000041'
+$sql$, 'Void-Series Quote deletion may apply the legitimate FK SET NULL transition');
+
+SELECT is(
+  (SELECT quote_id FROM public.progress_invoice_series
+   WHERE id = '87000000-0000-4000-8000-000000000043'),
+  NULL::UUID,
+  'Void-Series Quote deletion clears only the FK link while keeping the Series archived'
 );
 
 SELECT * FROM finish();

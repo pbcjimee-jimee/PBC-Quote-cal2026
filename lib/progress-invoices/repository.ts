@@ -1064,7 +1064,7 @@ function parseVoidSeriesResult(value: unknown): VoidProgressInvoiceSeriesRpcResu
   const seriesId = uuidField(candidate, 'series_id')
   const version = positiveIntegerField(candidate, 'version')
   const revisionSetId = nullableUuidField(candidate, 'revision_set_id')
-  if (!seriesId || !version || candidate.mode !== 'direct' || revisionSetId === undefined) return null
+  if (!seriesId || !version || candidate.mode !== 'direct' || revisionSetId !== null) return null
   return {
     series_id: seriesId,
     version,
