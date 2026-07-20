@@ -1,7 +1,7 @@
 CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA extensions;
 CREATE EXTENSION IF NOT EXISTS dblink WITH SCHEMA extensions;
 
-SELECT plan(313);
+SELECT plan(315);
 
 DELETE FROM public.business_invoice_profiles;
 DELETE FROM auth.users
@@ -5885,6 +5885,11 @@ INSERT INTO public.progress_invoice_series (
     '87000000-0000-4000-8000-000000000030', 'manual', 'Task4-Legacy-Void', 1000,
     'Task 4 Void', 'Task 4 Billing', 'Task 4 Site', 'Task 4 Site address', 'Task 4 works',
     'void', '00000000-0000-0000-0000-000000008001', '00000000-0000-0000-0000-000000008001'
+  ),
+  (
+    '87000000-0000-4000-8000-000000000050', 'manual', 'Task4-Lifetime-Issued', 1000,
+    'Task 4 Lifetime Issued', 'Task 4 Billing', 'Task 4 Site', 'Task 4 Site address', 'Task 4 works',
+    'active', '00000000-0000-0000-0000-000000008001', '00000000-0000-0000-0000-000000008001'
   );
 
 INSERT INTO public.progress_claims (
@@ -5899,6 +5904,11 @@ INSERT INTO public.progress_claims (
   (
     '87000000-0000-4000-8000-000000000021', '87000000-0000-4000-8000-000000000020',
     1, 'progress', 'P01', 'Task4-Issued-P01', 'issued', now(),
+    '00000000-0000-0000-0000-000000008001', '00000000-0000-0000-0000-000000008001'
+  ),
+  (
+    '87000000-0000-4000-8000-000000000051', '87000000-0000-4000-8000-000000000050',
+    1, 'progress', 'P01', 'Task4-Lifetime-Issued-P01', 'void', now(),
     '00000000-0000-0000-0000-000000008001', '00000000-0000-0000-0000-000000008001'
   );
 
@@ -6092,6 +6102,58 @@ SELECT is(
    WHERE series.id = '87000000-0000-4000-8000-000000000020'),
   '{"same_events":true,"same_series":true}'::JSONB,
   'Issued-Claim direct Void failure makes no mutation'
+);
+
+CREATE TEMP TABLE task4_before_lifetime_issued_void AS
+SELECT
+  to_jsonb(series) AS series_state,
+  (SELECT to_jsonb(claim) FROM public.progress_claims AS claim
+   WHERE claim.id = '87000000-0000-4000-8000-000000000051') AS claim_state,
+  (SELECT to_jsonb(reservation)
+   FROM public.progress_invoice_numbering_base_reservations AS reservation
+   WHERE reservation.series_id = series.id) AS reservation_state,
+  (SELECT count(*) FROM public.progress_invoice_events AS event
+   WHERE event.series_id = series.id) AS event_count,
+  (SELECT count(*) FROM public.progress_invoice_events AS event
+   WHERE event.series_id = series.id
+     AND event.command_name = 'void_progress_invoice_series'
+     AND event.correlation_key = '87000000-0000-4000-8000-000000000111') AS idempotency_count
+FROM public.progress_invoice_series AS series
+WHERE series.id = '87000000-0000-4000-8000-000000000050';
+
+SELECT throws_ok($sql$
+  SELECT * FROM public.void_progress_invoice_series(jsonb_build_object(
+    'series_id', '87000000-0000-4000-8000-000000000050',
+    'expected_version', 1,
+    'expected_current_revision_set_id', NULL,
+    'expected_current_manifest_hash', NULL,
+    'prepared_revision_set_id', NULL,
+    'reason', 'Void lifetime-issued series',
+    'correlation_key', '87000000-0000-4000-8000-000000000111'
+  ))
+$sql$, 'P0001', 'PROGRESS_CLAIM_VOID_REQUIRED',
+  'a historically Issued Claim requires the official Void workflow even after its status becomes Void');
+
+SELECT is(
+  (SELECT jsonb_build_object(
+    'same_series', to_jsonb(series) = before_state.series_state,
+    'same_claim', (SELECT to_jsonb(claim) FROM public.progress_claims AS claim
+      WHERE claim.id = '87000000-0000-4000-8000-000000000051') = before_state.claim_state,
+    'same_reservation', (SELECT to_jsonb(reservation)
+      FROM public.progress_invoice_numbering_base_reservations AS reservation
+      WHERE reservation.series_id = series.id) = before_state.reservation_state,
+    'same_events', (SELECT count(*) FROM public.progress_invoice_events AS event
+      WHERE event.series_id = series.id) = before_state.event_count,
+    'same_idempotency', (SELECT count(*) FROM public.progress_invoice_events AS event
+      WHERE event.series_id = series.id
+        AND event.command_name = 'void_progress_invoice_series'
+        AND event.correlation_key = '87000000-0000-4000-8000-000000000111') = before_state.idempotency_count
+  )
+   FROM public.progress_invoice_series AS series
+   CROSS JOIN task4_before_lifetime_issued_void AS before_state
+   WHERE series.id = '87000000-0000-4000-8000-000000000050'),
+  '{"same_claim":true,"same_events":true,"same_idempotency":true,"same_reservation":true,"same_series":true}'::JSONB,
+  'historically Issued Claim rejection preserves Series, Claim, reservation, event, and idempotency state'
 );
 
 CREATE TEMP TABLE task4_free_void AS
