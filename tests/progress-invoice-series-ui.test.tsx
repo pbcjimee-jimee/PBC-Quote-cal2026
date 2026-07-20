@@ -250,6 +250,30 @@ describe('Progress Invoice series detail workspace', () => {
     expect(draftMarkup).toContain(`href="${editorHref}"`)
   })
 
+  it.each(['draft', 'void'] as const)('hides New Claim when a %s FINAL Claim exists', (status) => {
+    const finalWorkspace = {
+      ...workspace,
+      capabilities: { ...workspace.capabilities, canCreateClaim: true },
+      claims: workspace.claims.map((claim) => ({
+        ...claim,
+        kind: 'final' as const,
+        suffix: 'FINAL',
+        taxInvoiceNumber: '2906-FINAL',
+        status,
+        originalIssuedAt: status === 'draft' ? null : claim.originalIssuedAt,
+        currentRevision: claim.currentRevision
+          ? { ...claim.currentRevision, state: status === 'draft' ? 'draft' as const : claim.currentRevision.state }
+          : null,
+      })),
+    }
+    const markup = renderToStaticMarkup(createElement(ProgressInvoiceSeriesDetailView, {
+      workspace: finalWorkspace,
+      historyResult: { ok: true, data: { events: [], nextCursor: null } },
+    }))
+
+    expect(markup).not.toContain(`href="/progress-invoices/${workspace.series.id}/claims/new"`)
+  })
+
   it('makes a Void Series entirely read-only and blocks Issued direct Void', () => {
     const voidMarkup = renderToStaticMarkup(createElement(ProgressInvoiceSeriesDetailView, {
       workspace: {

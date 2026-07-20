@@ -1,7 +1,7 @@
 CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA extensions;
 CREATE EXTENSION IF NOT EXISTS dblink WITH SCHEMA extensions;
 
-SELECT plan(400);
+SELECT plan(405);
 
 DELETE FROM public.business_invoice_profiles;
 DELETE FROM auth.users
@@ -6876,11 +6876,38 @@ CREATE TEMP TABLE task6_final AS SELECT public.create_progress_claim_draft(jsonb
 SELECT is((SELECT dto->>'suffix' FROM task6_final),'FINAL','FINAL uses permanent FINAL suffix');
 SELECT is((SELECT dto->>'current_claim_inc_gst' FROM task6_final),'1100.00','FINAL consumes exact residual Inc GST');
 SELECT is((SELECT dto->>'remaining_inc_gst' FROM task6_final),'0.00','FINAL leaves zero exact residual');
+SELECT is((public.get_progress_invoice_workspace('{"series_id":"92000000-0000-4000-8000-000000000001"}'::jsonb)
+  #>> '{capabilities,can_create_claim}')::BOOLEAN,false,
+  'workspace disables Claim creation whenever a FINAL Claim exists');
+SELECT is((public.get_progress_claim_defaults('{"series_id":"92000000-0000-4000-8000-000000000001"}'::jsonb)
+  ->>'can_save')::BOOLEAN,false,
+  'new Claim defaults cannot save whenever a FINAL Claim exists');
+SELECT is((public.get_progress_claim_editor(jsonb_build_object('claim_id',(SELECT dto->>'claim_id' FROM task6_final)))
+  ->>'can_save')::BOOLEAN,true,
+  'the existing FINAL Draft editor remains saveable');
 SELECT is(pg_temp.capture_sqlstate($sql$SELECT public.create_progress_claim_draft(jsonb_build_object(
   'series_id','92000000-0000-4000-8000-000000000001','kind','progress','input_mode','current_claim_amount','authoritative_value','1.00',
   'issue_date','2026-07-21','due_date','2026-08-04','description','After Final','notes',null,'expected_series_version',2,
   'expected_current_revision_set_id',null,'expected_current_manifest_hash',null,'correlation_key','92000000-0000-4000-8000-000000000011'))$sql$),
   '23514','no Claim may be created after FINAL');
+RESET ROLE;
+UPDATE public.progress_claims SET status='issued',original_issued_at=now()
+WHERE id=(SELECT (dto->>'claim_id')::UUID FROM task6_final);
+SET ROLE authenticated; SET request.jwt.claim.sub='00000000-0000-0000-0000-000000008001';
+SELECT ok((public.get_progress_invoice_workspace('{"series_id":"92000000-0000-4000-8000-000000000001"}'::jsonb)
+    #>> '{capabilities,can_create_claim}')::BOOLEAN IS FALSE
+    AND (public.get_progress_claim_defaults('{"series_id":"92000000-0000-4000-8000-000000000001"}'::jsonb)
+      ->>'can_save')::BOOLEAN IS FALSE,
+  'Issued FINAL keeps workspace and new-Claim defaults closed');
+RESET ROLE;
+UPDATE public.progress_claims SET status='void'
+WHERE id=(SELECT (dto->>'claim_id')::UUID FROM task6_final);
+SET ROLE authenticated; SET request.jwt.claim.sub='00000000-0000-0000-0000-000000008001';
+SELECT ok((public.get_progress_invoice_workspace('{"series_id":"92000000-0000-4000-8000-000000000001"}'::jsonb)
+    #>> '{capabilities,can_create_claim}')::BOOLEAN IS FALSE
+    AND (public.get_progress_claim_defaults('{"series_id":"92000000-0000-4000-8000-000000000001"}'::jsonb)
+      ->>'can_save')::BOOLEAN IS FALSE,
+  'Void FINAL permanently keeps workspace and new-Claim defaults closed');
 
 RESET ROLE;
 INSERT INTO public.progress_invoice_series(id,source_type,accepted_numbering_base,base_contract_ex_gst,recipient_name,recipient_address,site_name,site_address,default_description,created_by,updated_by)

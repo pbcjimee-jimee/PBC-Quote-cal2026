@@ -42,6 +42,7 @@ export function ProgressInvoiceSeriesDetailView({
     (claim) => claim.status === 'issued' || claim.originalIssuedAt !== null,
   )
   const hasDraftClaims = workspace.claims.some((claim) => claim.status === 'draft')
+  const hasFinalClaim = workspace.claims.some((claim) => claim.kind === 'final')
 
   return (
     <div className="pbc-progress-series-detail">
@@ -202,7 +203,7 @@ export function ProgressInvoiceSeriesDetailView({
 
       <section className="pbc-card pbc-card--pad" aria-labelledby="progress-claims-heading">
         <div className="pbc-progress-section-heading"><h2 id="progress-claims-heading">Claims</h2>
-          {capabilities.canCreateClaim ? <Link className="pbc-btn pbc-btn--primary pbc-btn--sm" href={`/progress-invoices/${series.id}/claims/new`}>New Claim</Link> : null}
+          {capabilities.canCreateClaim && !hasFinalClaim ? <Link className="pbc-btn pbc-btn--primary pbc-btn--sm" href={`/progress-invoices/${series.id}/claims/new`}>New Claim</Link> : null}
         </div>
         <ClaimTimeline seriesId={series.id} claims={workspace.claims} />
       </section>
