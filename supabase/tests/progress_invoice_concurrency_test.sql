@@ -1,7 +1,7 @@
 CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA extensions;
 CREATE EXTENSION IF NOT EXISTS dblink WITH SCHEMA extensions;
 
-SELECT plan(6);
+SELECT plan(9);
 
 DELETE FROM auth.users
 WHERE id = '00000000-0000-0000-0000-000000009001';
@@ -153,6 +153,69 @@ SELECT is(
 
 SELECT extensions.dblink_disconnect('progress_race_a');
 SELECT extensions.dblink_disconnect('progress_race_b');
+
+INSERT INTO public.progress_payments (
+  id, series_id, source, jobber_payment_id, created_by, updated_by
+) VALUES
+  ('00000000-0000-0000-0000-000000009510','00000000-0000-0000-0000-000000009101','manual',NULL,
+   '00000000-0000-0000-0000-000000009001','00000000-0000-0000-0000-000000009001'),
+  ('00000000-0000-0000-0000-000000009511','00000000-0000-0000-0000-000000009101','jobber','jobber-ledger-pair',
+   '00000000-0000-0000-0000-000000009001','00000000-0000-0000-0000-000000009001');
+INSERT INTO public.progress_payment_revisions (
+  id,payment_id,revision_number,received_date,observed_amount,effective_receipt_amount,
+  sync_state,status,created_by,jobber_source,raw_signed_amount,direction,payment_eligibility_treatment
+) VALUES
+  ('00000000-0000-0000-0000-000000009520','00000000-0000-0000-0000-000000009510',1,'2026-07-20',50,50,
+   'manual','active','00000000-0000-0000-0000-000000009001',NULL,NULL,NULL,NULL),
+  ('00000000-0000-0000-0000-000000009521','00000000-0000-0000-0000-000000009511',1,'2026-07-20',50,50,
+   'observed','active','00000000-0000-0000-0000-000000009001','payment_record',50,'receipt','active');
+UPDATE public.progress_payments SET current_revision_id=CASE id
+  WHEN '00000000-0000-0000-0000-000000009510'::UUID THEN '00000000-0000-0000-0000-000000009520'::UUID
+  ELSE '00000000-0000-0000-0000-000000009521'::UUID END
+WHERE id IN ('00000000-0000-0000-0000-000000009510','00000000-0000-0000-0000-000000009511');
+
+SELECT extensions.dblink_connect('ledger_pair_a','host=host.docker.internal port=54322 dbname=postgres user=postgres password=postgres');
+SELECT extensions.dblink_connect('ledger_pair_b','host=host.docker.internal port=54322 dbname=postgres user=postgres password=postgres');
+SELECT extensions.dblink_exec('ledger_pair_a','BEGIN');
+SELECT extensions.dblink_exec('ledger_pair_a',$$SET LOCAL ROLE authenticated; SET LOCAL request.jwt.claim.sub='00000000-0000-0000-0000-000000009001'$$);
+SELECT * FROM extensions.dblink('ledger_pair_a',$sql$
+  SELECT id,series_id,series_version,version,revision_id,conflict,current
+  FROM public.reconcile_progress_payment('{
+    "jobber_payment_id":"00000000-0000-0000-0000-000000009511",
+    "manual_payment_id":"00000000-0000-0000-0000-000000009510",
+    "jobber_expected_version":1,"manual_expected_version":1,"reason":"First operator match",
+    "correlation_key":"00000000-0000-4000-8000-000000009610"}'::jsonb)
+$sql$) AS result(id UUID,series_id UUID,series_version INT,version INT,revision_id UUID,conflict BOOLEAN,current JSONB);
+SELECT extensions.dblink_exec('ledger_pair_b','BEGIN');
+SELECT extensions.dblink_exec('ledger_pair_b',$$SET LOCAL ROLE authenticated; SET LOCAL request.jwt.claim.sub='00000000-0000-0000-0000-000000009001'$$);
+SELECT extensions.dblink_send_query('ledger_pair_b',$sql$
+  SELECT id,series_id,series_version,version,revision_id,conflict,current
+  FROM public.reconcile_progress_payment('{
+    "jobber_payment_id":"00000000-0000-0000-0000-000000009511",
+    "manual_payment_id":"00000000-0000-0000-0000-000000009510",
+    "jobber_expected_version":1,"manual_expected_version":1,"reason":"Second operator match",
+    "correlation_key":"00000000-0000-4000-8000-000000009611"}'::jsonb)
+$sql$);
+SELECT pg_sleep(0.1);
+SELECT is(extensions.dblink_is_busy('ledger_pair_b'),1,'concurrent match waits on the Series-first lock');
+SELECT extensions.dblink_exec('ledger_pair_a','COMMIT');
+CREATE TEMP TABLE ledger_pair_second AS
+SELECT * FROM extensions.dblink_get_result('ledger_pair_b',false)
+  AS result(id UUID,series_id UUID,series_version INT,version INT,revision_id UUID,conflict BOOLEAN,current JSONB);
+SELECT is((SELECT conflict FROM ledger_pair_second),true,'concurrent stale match returns a version conflict after the winner commits');
+SELECT is((
+  SELECT jobber.matched_manual_payment_id=manual.id
+    AND count(revision.id) FILTER (WHERE revision.status='superseded')=1
+  FROM public.progress_payments jobber
+  JOIN public.progress_payments manual ON manual.id=jobber.matched_manual_payment_id
+  JOIN public.progress_payment_revisions revision ON revision.payment_id=manual.id
+  WHERE jobber.id='00000000-0000-0000-0000-000000009511'
+  GROUP BY jobber.matched_manual_payment_id,manual.id
+),true,'concurrent match creates one canonical pointer and one Superseded Manual revision');
+SELECT * FROM extensions.dblink_get_result('ledger_pair_b',false) AS result(status TEXT);
+SELECT extensions.dblink_exec('ledger_pair_b','ROLLBACK');
+SELECT extensions.dblink_disconnect('ledger_pair_a');
+SELECT extensions.dblink_disconnect('ledger_pair_b');
 
 SELECT extensions.dblink_connect(
   'progress_base_a',

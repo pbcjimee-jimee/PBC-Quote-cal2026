@@ -7,6 +7,7 @@ import { requireAllowedUser } from '@/lib/security/require-allowed-user'
 import {
   approveProgressAdjustment as approveAdjustment,
   createProgressAdjustment as createAdjustment,
+  rejectProgressAdjustment as rejectAdjustment,
   supersedeProgressAdjustment as supersedeAdjustment,
   updateDraftProgressAdjustment as updateAdjustment,
   type ProgressAdjustmentDetail,
@@ -16,6 +17,7 @@ import {
 import {
   approveProgressAdjustmentSchema,
   createProgressAdjustmentSchema,
+  rejectProgressAdjustmentSchema,
   supersedeProgressAdjustmentSchema,
   updateProgressAdjustmentDraftSchema,
 } from '@/lib/progress-invoices/validators'
@@ -76,6 +78,14 @@ export async function approveProgressAdjustment(
   const parsed = approveProgressAdjustmentSchema.safeParse(input)
   if (!parsed.success) return validationFailure()
   return execute(() => approveAdjustment(parsed.data))
+}
+
+export async function rejectProgressAdjustment(
+  input: unknown
+): Promise<ActionResult<ProgressAdjustmentMutationResult, ProgressAdjustmentDetail>> {
+  const parsed = rejectProgressAdjustmentSchema.safeParse(input)
+  if (!parsed.success) return validationFailure()
+  return execute(() => rejectAdjustment(parsed.data))
 }
 
 export async function supersedeProgressAdjustment(

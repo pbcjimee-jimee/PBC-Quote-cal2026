@@ -1761,6 +1761,18 @@ export interface Database {
         Args: { payload: Json }
         Returns: Array<{ id: string; version: number }>
       }
+      create_manual_progress_payment: {
+        Args: { payload: Json }
+        Returns: {
+          conflict: boolean
+          current: Json
+          id: string
+          revision_id: string
+          series_id: string
+          series_version: number
+          version: number
+        }[]
+      }
       create_progress_invoice_series_from_jobber: {
         Args: { payload: Json }
         Returns: {
@@ -1855,6 +1867,42 @@ export interface Database {
           version: number
         }[]
       }
+      reconcile_progress_payment: {
+        Args: { payload: Json }
+        Returns: {
+          conflict: boolean
+          current: Json
+          id: string
+          revision_id: string
+          series_id: string
+          series_version: number
+          version: number
+        }[]
+      }
+      reject_progress_adjustment: {
+        Args: { payload: Json }
+        Returns: Array<{
+          conflict: boolean
+          current: Json
+          id: string
+          quote_id: string | null
+          replacement_id: string
+          series_id: string
+          version: number
+        }>
+      }
+      replace_manual_progress_payment: {
+        Args: { payload: Json }
+        Returns: {
+          conflict: boolean
+          current: Json
+          id: string
+          revision_id: string
+          series_id: string
+          series_version: number
+          version: number
+        }[]
+      }
       save_business_invoice_profile: {
         Args: { payload: Json }
         Returns: {
@@ -1913,6 +1961,30 @@ export interface Database {
           quote_id: string | null
           version: number
         }>
+      }
+      undo_progress_payment_reconciliation: {
+        Args: { payload: Json }
+        Returns: {
+          conflict: boolean
+          current: Json
+          id: string
+          revision_id: string
+          series_id: string
+          series_version: number
+          version: number
+        }[]
+      }
+      void_manual_progress_payment: {
+        Args: { payload: Json }
+        Returns: {
+          conflict: boolean
+          current: Json
+          id: string
+          revision_id: string
+          series_id: string
+          series_version: number
+          version: number
+        }[]
       }
       void_progress_invoice_series: {
         Args: { payload: Json }

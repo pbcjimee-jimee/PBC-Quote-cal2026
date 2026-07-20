@@ -6,6 +6,7 @@ import type {
   ProgressInvoiceSeriesWorkspaceDto,
 } from '@/lib/progress-invoices/workspace-service'
 import { ClaimTimeline } from './claim-timeline'
+import { AdjustmentRegister } from './adjustment-register'
 import { HistoryPanel } from './history-panel'
 import { PaymentLedger } from './payment-ledger'
 import { SeriesEditForm } from './series-edit-form'
@@ -192,17 +193,11 @@ export function ProgressInvoiceSeriesDetailView({
 
       <section className="pbc-card pbc-card--pad" aria-labelledby="progress-adjustments-heading">
         <h2 id="progress-adjustments-heading">Adjustments</h2>
-        {workspace.adjustments.length === 0 ? <p className="pbc-progress-empty">No adjustments.</p> : (
-          <div className="pbc-progress-table-scroll" tabIndex={0} aria-label="Adjustments table">
-            <table className="pbc-progress-detail-table">
-              <caption>Variation and Credit adjustments</caption>
-              <thead><tr><th scope="col">Date</th><th scope="col">Type</th><th scope="col">Description</th><th scope="col">Amount Ex GST</th><th scope="col">Status</th></tr></thead>
-              <tbody>{workspace.adjustments.map((adjustment) => (
-                <tr key={adjustment.id}><td>{adjustment.effectiveDate}</td><td>{statusLabel(adjustment.type)}</td><th scope="row">{adjustment.description}</th><td>{formatMoney(adjustment.amountExGst)}</td><td>{statusLabel(adjustment.status)}</td></tr>
-              ))}</tbody>
-            </table>
-          </div>
-        )}
+        <AdjustmentRegister
+          seriesId={series.id}
+          adjustments={workspace.adjustments}
+          readOnly={series.status === 'void'}
+        />
       </section>
 
       <section className="pbc-card pbc-card--pad" aria-labelledby="progress-claims-heading">
@@ -212,7 +207,12 @@ export function ProgressInvoiceSeriesDetailView({
 
       <section className="pbc-card pbc-card--pad" aria-labelledby="progress-payments-heading">
         <h2 id="progress-payments-heading">Payments</h2>
-        <PaymentLedger payments={workspace.payments} />
+        <PaymentLedger
+          payments={workspace.payments}
+          seriesId={series.id}
+          expectedSeriesVersion={series.version}
+          readOnly={series.status === 'void'}
+        />
       </section>
 
       <section className="pbc-card pbc-card--pad" aria-labelledby="progress-documents-heading">

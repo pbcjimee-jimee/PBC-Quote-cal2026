@@ -260,6 +260,13 @@ export const approveProgressAdjustmentSchema = z.strictObject({
   correlationKey: uuidSchema,
 })
 
+export const rejectProgressAdjustmentSchema = z.strictObject({
+  adjustmentId: uuidSchema,
+  expectedVersion: expectedVersionSchema,
+  reason: requiredText(PROGRESS_INVOICE_TEXT_LIMITS.revisionReason),
+  correlationKey: uuidSchema,
+})
+
 export const supersedeProgressAdjustmentSchema = z.strictObject({
   adjustmentId: uuidSchema,
   expectedVersion: expectedVersionSchema,
@@ -354,17 +361,20 @@ const manualPaymentShape = {
 
 export const createManualProgressPaymentSchema = z.strictObject({
   seriesId: uuidSchema,
+  expectedSeriesVersion: expectedVersionSchema,
   ...manualPaymentShape,
   correlationKey: uuidSchema,
 })
 
-export const reviseManualProgressPaymentSchema = z.strictObject({
+export const replaceManualProgressPaymentSchema = z.strictObject({
   paymentId: uuidSchema,
   expectedVersion: expectedVersionSchema,
   ...manualPaymentShape,
   reason: requiredText(PROGRESS_INVOICE_TEXT_LIMITS.revisionReason),
   correlationKey: uuidSchema,
 })
+
+export const reviseManualProgressPaymentSchema = replaceManualProgressPaymentSchema
 
 export const voidManualProgressPaymentSchema = z.strictObject({
   paymentId: uuidSchema,
@@ -382,8 +392,10 @@ const paymentMatchShape = {
   idempotencyKey: uuidSchema,
 }
 
-export const matchProgressPaymentsSchema = z.strictObject(paymentMatchShape)
-export const undoProgressPaymentMatchSchema = z.strictObject(paymentMatchShape)
+export const reconcileProgressPaymentSchema = z.strictObject(paymentMatchShape)
+export const undoProgressPaymentReconciliationSchema = z.strictObject(paymentMatchShape)
+export const matchProgressPaymentsSchema = reconcileProgressPaymentSchema
+export const undoProgressPaymentMatchSchema = undoProgressPaymentReconciliationSchema
 
 export const progressInvoiceDocumentRequestSchema = z.strictObject({
   seriesId: uuidSchema,
@@ -442,6 +454,9 @@ export type UpdateProgressAdjustmentDraftInput = z.infer<
 export type ApproveProgressAdjustmentInput = z.infer<
   typeof approveProgressAdjustmentSchema
 >
+export type RejectProgressAdjustmentInput = z.infer<
+  typeof rejectProgressAdjustmentSchema
+>
 export type SupersedeProgressAdjustmentInput = z.infer<
   typeof supersedeProgressAdjustmentSchema
 >
@@ -453,4 +468,16 @@ export type SaveProgressClaimDraftInput = z.infer<
 >
 export type CreateManualProgressPaymentInput = z.infer<
   typeof createManualProgressPaymentSchema
+>
+export type ReplaceManualProgressPaymentInput = z.infer<
+  typeof replaceManualProgressPaymentSchema
+>
+export type VoidManualProgressPaymentInput = z.infer<
+  typeof voidManualProgressPaymentSchema
+>
+export type ReconcileProgressPaymentInput = z.infer<
+  typeof reconcileProgressPaymentSchema
+>
+export type UndoProgressPaymentReconciliationInput = z.infer<
+  typeof undoProgressPaymentReconciliationSchema
 >

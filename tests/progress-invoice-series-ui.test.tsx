@@ -8,7 +8,10 @@ const routeMocks = vi.hoisted(() => ({
   notFound: vi.fn(() => { throw new Error('NEXT_NOT_FOUND') }),
 }))
 
-vi.mock('next/navigation', () => ({ notFound: routeMocks.notFound }))
+vi.mock('next/navigation', () => ({
+  notFound: routeMocks.notFound,
+  useRouter: () => ({ refresh: vi.fn() }),
+}))
 vi.mock('@/lib/actions/progress-invoice-series', () => ({
   getProgressInvoiceSeriesWorkspace: routeMocks.getWorkspace,
   listProgressInvoiceSeriesHistory: routeMocks.listHistory,

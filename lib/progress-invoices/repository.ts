@@ -404,6 +404,50 @@ export interface SupersedeProgressAdjustmentPayload {
   correlation_key: string
 }
 
+export interface RejectProgressAdjustmentPayload {
+  adjustment_id: string
+  expected_version: number
+  reason: string
+  correlation_key: string
+}
+
+export interface CreateManualProgressPaymentPayload {
+  series_id: string
+  expected_series_version: number
+  received_date: string
+  amount: string
+  method: string
+  reference?: string | null
+  correlation_key: string
+}
+
+export interface ReplaceManualProgressPaymentPayload {
+  payment_id: string
+  expected_version: number
+  received_date: string
+  amount: string
+  method: string
+  reference?: string | null
+  reason: string
+  correlation_key: string
+}
+
+export interface VoidManualProgressPaymentPayload {
+  payment_id: string
+  expected_version: number
+  reason: string
+  correlation_key: string
+}
+
+export interface ReconcileProgressPaymentPayload {
+  jobber_payment_id: string
+  manual_payment_id: string
+  jobber_expected_version: number
+  manual_expected_version: number
+  reason: string
+  correlation_key: string
+}
+
 export interface VersionedMutationRpcResult {
   id: string
   version: number
@@ -417,6 +461,30 @@ export interface AdjustmentMutationRpcResult extends VersionedMutationRpcResult 
   series_id: string
   replacement_id?: string
   quote_id: string | null
+}
+
+export interface PaymentMutationRpcResult extends VersionedMutationRpcResult {
+  series_id: string
+  series_version: number
+  revision_id: string
+}
+
+export type ProgressPaymentStaleCurrentRpcDto = {
+  series_id: string
+  series_version: number
+} | {
+  id: string
+  series_id: string
+  source: 'jobber' | 'manual'
+  version: number
+  matched_manual_payment_id: string | null
+  revision_id: string
+  revision_number: number
+  received_date: string
+  observed_amount: string
+  effective_receipt_amount: string
+  status: 'active' | 'superseded' | 'unconfirmed' | 'void'
+  sync_state: ProgressInvoicePaymentRevisionRpcDto['sync_state']
 }
 
 export interface ProgressAdjustmentRpcDetail {
@@ -609,6 +677,36 @@ export interface ProgressInvoiceCommandMap {
     result: AdjustmentMutationRpcResult
     current: ProgressAdjustmentRpcDetail
   }
+  reject_progress_adjustment: {
+    payload: RejectProgressAdjustmentPayload
+    result: AdjustmentMutationRpcResult
+    current: ProgressAdjustmentRpcDetail
+  }
+  create_manual_progress_payment: {
+    payload: CreateManualProgressPaymentPayload
+    result: PaymentMutationRpcResult
+    current: ProgressPaymentStaleCurrentRpcDto
+  }
+  replace_manual_progress_payment: {
+    payload: ReplaceManualProgressPaymentPayload
+    result: PaymentMutationRpcResult
+    current: ProgressPaymentStaleCurrentRpcDto
+  }
+  void_manual_progress_payment: {
+    payload: VoidManualProgressPaymentPayload
+    result: PaymentMutationRpcResult
+    current: ProgressPaymentStaleCurrentRpcDto
+  }
+  reconcile_progress_payment: {
+    payload: ReconcileProgressPaymentPayload
+    result: PaymentMutationRpcResult
+    current: ProgressPaymentStaleCurrentRpcDto
+  }
+  undo_progress_payment_reconciliation: {
+    payload: ReconcileProgressPaymentPayload
+    result: PaymentMutationRpcResult
+    current: ProgressPaymentStaleCurrentRpcDto
+  }
 }
 
 export interface ProgressInvoiceJobberPersistenceCommandMap {
@@ -677,6 +775,8 @@ const DOMAIN_ERROR_CODES: Readonly<Record<string, { code: ActionErrorCode; error
     code: 'RECONCILIATION_REQUIRED',
     error: 'PROGRESS_RECONCILIATION_REQUIRED',
   },
+  PROGRESS_PAYMENT_IMMUTABLE: { code: 'VALIDATION', error: 'PROGRESS_PAYMENT_IMMUTABLE' },
+  PROGRESS_PAYMENT_MATCH_INVALID: { code: 'VALIDATION', error: 'PROGRESS_PAYMENT_MATCH_INVALID' },
   PROGRESS_JOBBER_ERROR: { code: 'JOBBER_ERROR', error: 'PROGRESS_JOBBER_ERROR' },
   PROGRESS_JOBBER_LINK_LOCKED: { code: 'VALIDATION', error: 'PROGRESS_JOBBER_LINK_LOCKED' },
   PROGRESS_DOCUMENT_ERROR: { code: 'DOCUMENT_ERROR', error: 'PROGRESS_DOCUMENT_ERROR' },
@@ -1053,6 +1153,70 @@ function parseDashboardItem(value: unknown): ProgressInvoiceDashboardRpcItem | n
     last_successful_jobber_sync_at: lastSync,
     last_jobber_sync_error_code: syncError,
     version,
+  }
+}
+
+const PAYMENT_COMMANDS = new Set<ProgressInvoiceCommand>([
+  'create_manual_progress_payment',
+  'replace_manual_progress_payment',
+  'void_manual_progress_payment',
+  'reconcile_progress_payment',
+  'undo_progress_payment_reconciliation',
+])
+
+function isPaymentCommand(command: ProgressInvoiceCommand): boolean {
+  return PAYMENT_COMMANDS.has(command)
+}
+
+function parsePaymentMutation(value: unknown): PaymentMutationRpcResult | null {
+  const candidate = singleton(value)
+  if (!isRecord(candidate)) return null
+  const id = uuidField(candidate, 'id')
+  const seriesId = uuidField(candidate, 'series_id')
+  const seriesVersion = positiveIntegerField(candidate, 'series_version')
+  const version = positiveIntegerField(candidate, 'version')
+  const revisionId = uuidField(candidate, 'revision_id')
+  return id && seriesId && seriesVersion && version && revisionId
+    ? { id, series_id: seriesId, series_version: seriesVersion, version, revision_id: revisionId }
+    : null
+}
+
+function parsePaymentStaleCurrent(value: unknown): ProgressPaymentStaleCurrentRpcDto | null {
+  if (!isRecord(value)) return null
+  if (hasExactKeys(value, ['series_id', 'series_version'])) {
+    const seriesId = uuidField(value, 'series_id')
+    const seriesVersion = positiveIntegerField(value, 'series_version')
+    return seriesId && seriesVersion ? { series_id: seriesId, series_version: seriesVersion } : null
+  }
+  if (!hasExactKeys(value, [
+    'id', 'series_id', 'source', 'version', 'matched_manual_payment_id', 'revision_id',
+    'revision_number', 'received_date', 'observed_amount', 'effective_receipt_amount',
+    'status', 'sync_state',
+  ])) return null
+  const id = uuidField(value, 'id')
+  const seriesId = uuidField(value, 'series_id')
+  const source = stringField(value, 'source')
+  const version = positiveIntegerField(value, 'version')
+  const matchedId = nullableUuidField(value, 'matched_manual_payment_id')
+  const revisionId = uuidField(value, 'revision_id')
+  const revisionNumber = positiveIntegerField(value, 'revision_number')
+  const receivedDate = dateField(value, 'received_date')
+  const observedAmount = nonNegativeMoneyField(value, 'observed_amount')
+  const effectiveAmount = moneyField(value, 'effective_receipt_amount')
+  const status = stringField(value, 'status')
+  const syncState = nullableStringField(value, 'sync_state')
+  if (!id || !seriesId || (source !== 'jobber' && source !== 'manual') || !version
+    || matchedId === undefined || !revisionId || !revisionNumber || !receivedDate
+    || !observedAmount || !effectiveAmount
+    || !['active', 'superseded', 'unconfirmed', 'void'].includes(status ?? '')
+    || syncState === undefined
+    || (syncState !== null && !['manual', 'observed', 'changed', 'disappeared', 'refunded', 'reversed', 'ambiguous'].includes(syncState))) return null
+  return {
+    id, series_id: seriesId, source, version, matched_manual_payment_id: matchedId,
+    revision_id: revisionId, revision_number: revisionNumber, received_date: receivedDate,
+    observed_amount: observedAmount, effective_receipt_amount: effectiveAmount,
+    status: status as 'active' | 'superseded' | 'unconfirmed' | 'void',
+    sync_state: syncState as ProgressInvoicePaymentRevisionRpcDto['sync_state'],
   }
 }
 
@@ -1482,6 +1646,7 @@ const SAFE_SIMPLE_EVENT_FIELDS: Readonly<Record<string, SafeEventScalarValidator
   quote_id: isEventUuid,
   adjustment_id: isEventUuid,
   replacement_id: isEventUuid,
+  payment_id: isEventUuid,
 }
 
 const SAFE_CHANGE_EVENT_FIELDS: Readonly<Record<string, SafeEventScalarValidator>> = {
@@ -1682,6 +1847,7 @@ function parseSuccess<TCommand extends ProgressInvoiceCommand>(
   if (command === 'list_progress_invoice_history') return parseHistory(value) as CommandResult<TCommand> | null
   if (command === 'get_progress_invoice_jobber_context') return parseJobberContext(value) as CommandResult<TCommand> | null
   if (command === 'accept_progress_jobber_invoice_number') return parseVersioned(value) as CommandResult<TCommand> | null
+  if (isPaymentCommand(command)) return parsePaymentMutation(value) as CommandResult<TCommand> | null
   return parseAdjustment(value) as CommandResult<TCommand> | null
 }
 
@@ -1707,7 +1873,9 @@ export class ProgressInvoiceRepository {
         const current = command === 'update_progress_invoice_series'
           || command === 'accept_progress_jobber_invoice_number'
           ? parseSeriesDetail(candidate.current)
-          : parseAdjustmentDetail(candidate.current)
+          : isPaymentCommand(command)
+            ? parsePaymentStaleCurrent(candidate.current)
+            : parseAdjustmentDetail(candidate.current)
         if (!current) return { ok: false, error: 'PROGRESS_RESPONSE_INVALID' }
         return {
           ok: false,

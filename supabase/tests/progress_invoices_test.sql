@@ -1,7 +1,7 @@
 CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA extensions;
 CREATE EXTENSION IF NOT EXISTS dblink WITH SCHEMA extensions;
 
-SELECT plan(315);
+SELECT plan(336);
 
 DELETE FROM public.business_invoice_profiles;
 DELETE FROM auth.users
@@ -1974,6 +1974,45 @@ SELECT is(
   true,
   'supersession recalculates from Approved adjustments and Current claim revisions only'
 );
+
+CREATE TEMP TABLE task5_partial_receipt AS
+SELECT * FROM public.create_manual_progress_payment(jsonb_build_object(
+  'series_id',(SELECT id FROM task5_standalone_result),
+  'expected_series_version',(SELECT version FROM public.progress_invoice_series WHERE id=(SELECT id FROM task5_standalone_result)),
+  'received_date','2026-07-20','amount','100.00','method','EFT','reference','PARTIAL',
+  'correlation_key','81000000-0000-4000-8000-000000000021'
+));
+SELECT is((
+  SELECT current_actual_receipts=100 AND current_outstanding_receivable=890
+    AND current_credit_balance=0 AND current_payment_state='part_paid'
+  FROM public.progress_invoice_series WHERE id=(SELECT id FROM task5_standalone_result)
+),true,'Current-manifest Claim cache records a partial actual receipt');
+
+CREATE TEMP TABLE task5_full_receipt AS
+SELECT * FROM public.create_manual_progress_payment(jsonb_build_object(
+  'series_id',(SELECT id FROM task5_standalone_result),
+  'expected_series_version',(SELECT version FROM public.progress_invoice_series WHERE id=(SELECT id FROM task5_standalone_result)),
+  'received_date','2026-07-20','amount','890.00','method','EFT','reference','FULL',
+  'correlation_key','81000000-0000-4000-8000-000000000022'
+));
+SELECT is((
+  SELECT current_actual_receipts=990 AND current_outstanding_receivable=0
+    AND current_credit_balance=0 AND current_payment_state='paid'
+  FROM public.progress_invoice_series WHERE id=(SELECT id FROM task5_standalone_result)
+),true,'Current-manifest Claim cache records full payment exactly');
+
+CREATE TEMP TABLE task5_overpayment AS
+SELECT * FROM public.create_manual_progress_payment(jsonb_build_object(
+  'series_id',(SELECT id FROM task5_standalone_result),
+  'expected_series_version',(SELECT version FROM public.progress_invoice_series WHERE id=(SELECT id FROM task5_standalone_result)),
+  'received_date','2026-07-20','amount','10.00','method','EFT','reference','OVER',
+  'correlation_key','81000000-0000-4000-8000-000000000023'
+));
+SELECT is((
+  SELECT current_actual_receipts=1000 AND current_outstanding_receivable=0
+    AND current_credit_balance=10 AND current_payment_state='credit_balance'
+  FROM public.progress_invoice_series WHERE id=(SELECT id FROM task5_standalone_result)
+),true,'Current-manifest Claim cache exposes uncapped overpayment as Credit Balance');
 
 RESET ROLE;
 INSERT INTO public.progress_invoice_series (
@@ -6399,5 +6438,169 @@ SELECT is(
   NULL::UUID,
   'Void-Series Quote deletion clears only the FK link while keeping the Series archived'
 );
+
+-- Task 5 ledger command assertions
+RESET ROLE;
+INSERT INTO public.progress_invoice_series (
+  id, source_type, accepted_numbering_base, base_contract_ex_gst,
+  recipient_name, recipient_address, site_name, site_address, default_description,
+  created_by, updated_by
+) VALUES (
+  '88000000-0000-4000-8000-000000000001', 'manual', 'TASK5-LEDGER', 1000,
+  'Ledger Builder', '1 Billing Street', 'Ledger Site', '2 Site Street', 'Ledger works',
+  '00000000-0000-0000-0000-000000008001', '00000000-0000-0000-0000-000000008001'
+);
+
+SELECT is((
+  SELECT bool_and(
+    has_function_privilege('authenticated', to_regprocedure(signature), 'EXECUTE')
+    AND NOT has_function_privilege('anon', to_regprocedure(signature), 'EXECUTE')
+    AND NOT has_function_privilege('service_role', to_regprocedure(signature), 'EXECUTE')
+  )
+  FROM unnest(ARRAY[
+    'public.reject_progress_adjustment(jsonb)',
+    'public.create_manual_progress_payment(jsonb)',
+    'public.replace_manual_progress_payment(jsonb)',
+    'public.void_manual_progress_payment(jsonb)',
+    'public.reconcile_progress_payment(jsonb)',
+    'public.undo_progress_payment_reconciliation(jsonb)'
+  ]) signature
+), true, 'Task 5 ledger RPC ACL exposes authenticated only');
+
+SELECT is((
+  SELECT bool_and(proconfig @> ARRAY['search_path=""'])
+  FROM pg_proc
+  WHERE oid = ANY(ARRAY[
+    to_regprocedure('public.reject_progress_adjustment(jsonb)'),
+    to_regprocedure('public.create_manual_progress_payment(jsonb)'),
+    to_regprocedure('public.replace_manual_progress_payment(jsonb)'),
+    to_regprocedure('public.void_manual_progress_payment(jsonb)'),
+    to_regprocedure('public.reconcile_progress_payment(jsonb)'),
+    to_regprocedure('public.undo_progress_payment_reconciliation(jsonb)')
+  ])
+), true, 'Task 5 ledger RPCs pin an empty search path');
+
+INSERT INTO public.progress_adjustments (
+  id, series_id, type, status, effective_date, description, amount_ex_gst, created_by, updated_by
+) VALUES (
+  '88000000-0000-4000-8000-000000000002', '88000000-0000-4000-8000-000000000001',
+  'credit', 'draft', '2026-07-20', 'Entered in error', 10,
+  '00000000-0000-0000-0000-000000008001', '00000000-0000-0000-0000-000000008001'
+);
+
+SET ROLE authenticated;
+SET request.jwt.claim.sub = '00000000-0000-0000-0000-000000008001';
+
+CREATE TEMP TABLE task5_ledger_reject AS
+SELECT * FROM public.reject_progress_adjustment(jsonb_build_object(
+  'adjustment_id','88000000-0000-4000-8000-000000000002','expected_version',1,
+  'reason','Entered in error','correlation_key','88000000-0000-4000-8000-000000000010'
+));
+SELECT is((SELECT status='rejected' AND version=2 FROM public.progress_adjustments WHERE id='88000000-0000-4000-8000-000000000002'),true,
+  'Draft Adjustment rejection is terminal and versioned');
+SELECT is(pg_temp.capture_sqlstate($sql$UPDATE public.progress_adjustments SET description='forbidden' WHERE id='88000000-0000-4000-8000-000000000002'$sql$),'42501',
+  'authenticated callers cannot mutate rejected Adjustment evidence');
+
+SELECT is(pg_temp.capture_sqlstate($sql$
+  SELECT * FROM public.create_manual_progress_payment('{"series_id":"88000000-0000-4000-8000-000000000001","expected_series_version":1,"received_date":"2026-07-20","amount":"25.00","method":"EFT","reference":null,"correlation_key":"88000000-0000-4000-8000-000000000011","retention":"1.00"}'::jsonb)
+$sql$),'22023','ledger payload rejects unknown Retention keys');
+
+CREATE TEMP TABLE task5_manual_create AS
+SELECT * FROM public.create_manual_progress_payment(jsonb_build_object(
+  'series_id','88000000-0000-4000-8000-000000000001','expected_series_version',1,
+  'received_date','2026-07-20','amount','100.00','method','EFT','reference','M-1',
+  'correlation_key','88000000-0000-4000-8000-000000000012'
+));
+SELECT is((SELECT current_actual_receipts=100 AND current_credit_balance=100 FROM public.progress_invoice_series WHERE id='88000000-0000-4000-8000-000000000001'),true,
+  'Manual actual receipt updates authoritative caches and allows overpayment credit');
+SELECT is((SELECT count(*)=1 AND min(revision_number)=1 AND bool_and(status='active') FROM public.progress_payment_revisions WHERE payment_id=(SELECT id FROM task5_manual_create)),true,
+  'Manual create appends Revision 1 Active');
+
+SELECT * FROM public.create_manual_progress_payment(jsonb_build_object(
+  'series_id','88000000-0000-4000-8000-000000000001','expected_series_version',1,
+  'received_date','2026-07-20','amount','100.00','method','EFT','reference','M-1',
+  'correlation_key','88000000-0000-4000-8000-000000000012'
+));
+SELECT is((SELECT count(*) FROM public.progress_payment_revisions WHERE payment_id=(SELECT id FROM task5_manual_create)),1::BIGINT,
+  'exact Manual create replay appends no duplicate revision');
+SELECT is(pg_temp.capture_sqlstate($sql$
+  SELECT * FROM public.create_manual_progress_payment('{"series_id":"88000000-0000-4000-8000-000000000001","expected_series_version":1,"received_date":"2026-07-20","amount":"101.00","method":"EFT","reference":"M-1","correlation_key":"88000000-0000-4000-8000-000000000012"}'::jsonb)
+$sql$),'P0001','reused Manual correlation key with different payload fails');
+
+CREATE TEMP TABLE task5_manual_replace AS
+SELECT * FROM public.replace_manual_progress_payment(jsonb_build_object(
+  'payment_id',(SELECT id FROM task5_manual_create),'expected_version',1,'received_date','2026-07-20',
+  'amount','120.00','method','EFT','reference','M-2','reason','Correct receipt',
+  'correlation_key','88000000-0000-4000-8000-000000000013'
+));
+SELECT is((SELECT count(*)=2 AND max(revision_number)=2 AND bool_and(predecessor_revision_id IS NOT NULL) FILTER (WHERE revision_number=2)
+  FROM public.progress_payment_revisions WHERE payment_id=(SELECT id FROM task5_manual_create)),true,
+  'Manual replacement is append-only with a predecessor pointer');
+
+RESET ROLE;
+INSERT INTO public.progress_payments(id,series_id,source,jobber_payment_id,created_by,updated_by)
+VALUES('88000000-0000-4000-8000-000000000020','88000000-0000-4000-8000-000000000001','jobber','JOBBER-1',
+  '00000000-0000-0000-0000-000000008001','00000000-0000-0000-0000-000000008001');
+INSERT INTO public.progress_payment_revisions(id,payment_id,revision_number,received_date,observed_amount,effective_receipt_amount,
+  sync_state,status,created_by,jobber_source,raw_signed_amount,direction,payment_eligibility_treatment)
+VALUES('88000000-0000-4000-8000-000000000021','88000000-0000-4000-8000-000000000020',1,'2026-07-20',120,120,
+  'observed','active','00000000-0000-0000-0000-000000008001','payment_record',120,'receipt','active');
+UPDATE public.progress_payments SET current_revision_id='88000000-0000-4000-8000-000000000021' WHERE id='88000000-0000-4000-8000-000000000020';
+SELECT public.progress_recalculate_series_read_model_as('88000000-0000-4000-8000-000000000001','00000000-0000-0000-0000-000000008001');
+SET ROLE authenticated;
+SET request.jwt.claim.sub = '00000000-0000-0000-0000-000000008001';
+
+CREATE TEMP TABLE task5_match AS SELECT * FROM public.reconcile_progress_payment(jsonb_build_object(
+  'jobber_payment_id','88000000-0000-4000-8000-000000000020','manual_payment_id',(SELECT id FROM task5_manual_create),
+  'jobber_expected_version',1,'manual_expected_version',2,'reason','Same bank receipt',
+  'correlation_key','88000000-0000-4000-8000-000000000014'
+));
+SELECT is((SELECT current_actual_receipts=120 FROM public.progress_invoice_series WHERE id='88000000-0000-4000-8000-000000000001'),true,
+  'explicit match prevents Manual and Jobber double counting');
+SELECT is((SELECT j.matched_manual_payment_id=m.id AND r.status='superseded' AND r.effective_receipt_amount=0
+  FROM public.progress_payments j JOIN public.progress_payments m ON m.id=j.matched_manual_payment_id
+  JOIN public.progress_payment_revisions r ON r.id=m.current_revision_id WHERE j.id='88000000-0000-4000-8000-000000000020'),true,
+  'match keeps Jobber Active and appends a Superseded Manual revision');
+
+SELECT * FROM public.undo_progress_payment_reconciliation(jsonb_build_object(
+  'jobber_payment_id','88000000-0000-4000-8000-000000000020','manual_payment_id',(SELECT id FROM task5_manual_create),
+  'jobber_expected_version',2,'manual_expected_version',3,'reason','Not the same receipt',
+  'correlation_key','88000000-0000-4000-8000-000000000015'
+));
+SELECT is((SELECT current_actual_receipts=240 FROM public.progress_invoice_series WHERE id='88000000-0000-4000-8000-000000000001'),true,
+  'undo restores the independent Manual effective receipt');
+SELECT is((SELECT j.matched_manual_payment_id IS NULL AND r.status='active' AND r.revision_number=4
+  FROM public.progress_payments j CROSS JOIN public.progress_payments m
+  JOIN public.progress_payment_revisions r ON r.id=m.current_revision_id
+  WHERE j.id='88000000-0000-4000-8000-000000000020' AND m.id=(SELECT id FROM task5_manual_create)),true,
+  'undo clears the pointer and appends a restored Active Manual revision');
+
+SELECT is(pg_temp.capture_sqlstate($sql$
+  SELECT * FROM public.void_manual_progress_payment('{"payment_id":"88000000-0000-4000-8000-000000000020","expected_version":3,"reason":"forbidden","correlation_key":"88000000-0000-4000-8000-000000000016"}'::jsonb)
+$sql$),'55000','Jobber receipt revisions remain read-only to Manual mutation commands');
+
+RESET ROLE;
+INSERT INTO public.progress_payments(id,series_id,source,jobber_payment_id,created_by,updated_by)
+VALUES('88000000-0000-4000-8000-000000000022','88000000-0000-4000-8000-000000000001','jobber','JOBBER-REFUND',
+  '00000000-0000-0000-0000-000000008001','00000000-0000-0000-0000-000000008001');
+INSERT INTO public.progress_payment_revisions(id,payment_id,revision_number,received_date,observed_amount,effective_receipt_amount,
+  sync_state,status,created_by,jobber_source,raw_signed_amount,direction,payment_eligibility_treatment)
+VALUES('88000000-0000-4000-8000-000000000023','88000000-0000-4000-8000-000000000022',1,'2026-07-20',25,-25,
+  'refunded','active','00000000-0000-0000-0000-000000008001','nested_refund',-25,'refund','active');
+UPDATE public.progress_payments SET current_revision_id='88000000-0000-4000-8000-000000000023' WHERE id='88000000-0000-4000-8000-000000000022';
+SELECT public.progress_recalculate_series_read_model_as('88000000-0000-4000-8000-000000000001','00000000-0000-0000-0000-000000008001');
+SELECT is((SELECT current_actual_receipts=215 FROM public.progress_invoice_series WHERE id='88000000-0000-4000-8000-000000000001'),true,
+  'signed Jobber refund effects remain independent in the authoritative ledger');
+
+UPDATE public.progress_invoice_series SET status='void' WHERE id='88000000-0000-4000-8000-000000000001';
+SET ROLE authenticated;
+SET request.jwt.claim.sub = '00000000-0000-0000-0000-000000008001';
+SELECT is(pg_temp.capture_sqlstate($sql$
+  SELECT * FROM public.create_manual_progress_payment('{"series_id":"88000000-0000-4000-8000-000000000001","expected_series_version":7,"received_date":"2026-07-20","amount":"1.00","method":"EFT","reference":null,"correlation_key":"88000000-0000-4000-8000-000000000017"}'::jsonb)
+$sql$),'P0001','Void Series rejects ledger mutation');
+
+RESET ROLE;
+SELECT is(pg_temp.capture_sqlstate($sql$DELETE FROM public.progress_payments WHERE id='88000000-0000-4000-8000-000000000020'$sql$),'55000',
+  'Payment identities have no DELETE path');
 
 SELECT * FROM finish();

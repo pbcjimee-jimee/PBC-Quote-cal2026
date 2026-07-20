@@ -7,6 +7,7 @@ import {
 import type {
   ApproveProgressAdjustmentInput,
   CreateProgressAdjustmentInput,
+  RejectProgressAdjustmentInput,
   SupersedeProgressAdjustmentInput,
   UpdateProgressAdjustmentDraftInput,
 } from './validators'
@@ -117,6 +118,19 @@ export async function approveProgressAdjustment(
   const result = await repository.call('approve_progress_adjustment', {
     adjustment_id: input.adjustmentId,
     expected_version: input.expectedVersion,
+    correlation_key: input.correlationKey,
+  })
+  return mapMutation(result)
+}
+
+export async function rejectProgressAdjustment(
+  input: RejectProgressAdjustmentInput
+): Promise<ActionResult<ProgressAdjustmentServiceMutationResult, ProgressAdjustmentDetail>> {
+  const repository = await createProgressInvoiceRepository()
+  const result = await repository.call('reject_progress_adjustment', {
+    adjustment_id: input.adjustmentId,
+    expected_version: input.expectedVersion,
+    reason: input.reason,
     correlation_key: input.correlationKey,
   })
   return mapMutation(result)
