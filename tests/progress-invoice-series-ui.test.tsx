@@ -236,7 +236,7 @@ describe('Progress Invoice series detail workspace', () => {
     expect(markup).toContain('number and numbering base remain permanently reserved')
   })
 
-  it('places the Progress Invoices table after Summary and links every Claim state to detail', () => {
+  it('places the Progress Invoices table after Summary and makes every Claim state a labelled row link', () => {
     const issuedMarkup = renderToStaticMarkup(createElement(ProgressInvoiceSeriesDetailView, {
       workspace,
       historyResult: { ok: true, data: { events: [], nextCursor: null } },
@@ -251,12 +251,11 @@ describe('Progress Invoice series detail workspace', () => {
       },
       historyResult: { ok: true, data: { events: [], nextCursor: null } },
     }))
-    const editorHref = `/progress-invoices/${workspace.series.id}/claims/${workspace.claims[0]!.id}`
-
     expect(issuedMarkup.indexOf('>Summary<')).toBeLessThan(issuedMarkup.indexOf('>Progress Invoices<'))
     expect(issuedMarkup.indexOf('>Progress Invoices<')).toBeLessThan(issuedMarkup.indexOf('>Availability<'))
-    expect(issuedMarkup).toContain(`href="${editorHref}"`)
-    expect(draftMarkup).toContain(`href="${editorHref}"`)
+    expect(issuedMarkup).toContain('role="link"')
+    expect(issuedMarkup).toContain('aria-label="Open Tax Invoice 2906-P01"')
+    expect(draftMarkup).toContain('role="link"')
     for (const label of [
       'Tax Invoice number', 'Status', 'Created date', 'Issue date', 'Due date',
       'Claim price Inc GST', 'Collected Inc GST', 'Collected date',
@@ -281,6 +280,7 @@ describe('Progress Invoice series detail workspace', () => {
       const row = container.querySelectorAll('tr')[1]
       expect(row?.getAttribute('role')).toBe('link')
       expect(row?.getAttribute('tabindex')).toBe('0')
+      expect(row?.querySelectorAll('a').length).toBe(0)
 
       await act(async () => row?.dispatchEvent(new MouseEvent('click', { bubbles: true })))
       const enter = new Event('keydown', { bubbles: true, cancelable: true })

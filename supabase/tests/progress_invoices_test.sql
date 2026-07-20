@@ -1,7 +1,7 @@
 CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA extensions;
 CREATE EXTENSION IF NOT EXISTS dblink WITH SCHEMA extensions;
 
-SELECT plan(434);
+SELECT plan(435);
 
 DELETE FROM public.business_invoice_profiles;
 DELETE FROM auth.users
@@ -7120,12 +7120,26 @@ SET ROLE authenticated; SET request.jwt.claim.sub='00000000-0000-0000-0000-00000
 SELECT is((SELECT claim->>'collected_date' FROM jsonb_array_elements(public.get_progress_invoice_workspace('{"series_id":"84000000-0000-4000-8000-000000000001"}'::jsonb)->'claims') claim
   WHERE claim->>'id'='84000000-0000-4000-8000-000000000020'),'2026-07-03','collected date is the latest threshold re-crossing date');
 
+RESET ROLE;
+UPDATE public.progress_invoice_series
+SET current_claimed_inc_gst=999,current_payment_state='paid',updated_by='00000000-0000-0000-0000-000000008002'
+WHERE id='91000000-0000-4000-8000-000000000001';
+SET ROLE authenticated; SET request.jwt.claim.sub='00000000-0000-0000-0000-000000008001';
 CREATE TEMP TABLE task6b_void AS SELECT public.void_progress_claim_draft(jsonb_build_object(
   'series_id','91000000-0000-4000-8000-000000000001','claim_id',(SELECT dto->>'claim_id' FROM task6_p02),
   'expected_series_version',7,'expected_claim_version',2,'expected_current_revision_set_id',null,'expected_current_manifest_hash',null,
   'reason','Created in error','correlation_key','91000000-0000-4000-8000-000000000030')) AS dto;
 SELECT is((SELECT dto FROM task6b_void),jsonb_build_object('series_id','91000000-0000-4000-8000-000000000001','claim_id',(SELECT dto->>'claim_id' FROM task6_p02),'series_version',8,'claim_version',3,'status','void'),
   'Draft Void increments Claim and Series versions and returns a strict response');
+SELECT is((SELECT jsonb_build_object(
+    'claimed_inc_gst',pg_catalog.to_char(series.current_claimed_inc_gst,'FM999999999999990.00'),
+    'payment_state',series.current_payment_state,
+    'updated_by',series.updated_by,
+    'version',series.version)
+  FROM public.progress_invoice_series AS series
+  WHERE series.id='91000000-0000-4000-8000-000000000001'),
+  '{"claimed_inc_gst":"0.00","payment_state":"unpaid","updated_by":"00000000-0000-0000-0000-000000008001","version":8}'::jsonb,
+  'Draft Void atomically recalculates the authoritative Series read model without a second version increment');
 SELECT is((SELECT public.void_progress_claim_draft(jsonb_build_object(
   'series_id','91000000-0000-4000-8000-000000000001','claim_id',(SELECT dto->>'claim_id' FROM task6_p02),
   'expected_series_version',7,'expected_claim_version',2,'expected_current_revision_set_id',null,'expected_current_manifest_hash',null,

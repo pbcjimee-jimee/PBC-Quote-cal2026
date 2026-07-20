@@ -1,6 +1,5 @@
 'use client'
 
-import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 
 import type { ProgressInvoiceClaimListItemDto } from '@/lib/progress-invoices/workspace-service'
@@ -51,16 +50,13 @@ export function ClaimTimeline({ seriesId, claims }: { seriesId: string; claims: 
           const navigate = () => router.push(href)
           return <tr key={claim.id} className="pbc-progress-claim-row" role="link" tabIndex={0}
             aria-label={`Open Tax Invoice ${claim.taxInvoiceNumber}`}
-            onClick={(event) => {
-              if (event.target instanceof Element && event.target.closest?.('a,button')) return
-              navigate()
-            }}
+            onClick={navigate}
             onKeyDown={(event) => {
               if (event.key !== 'Enter' && event.key !== ' ') return
               event.preventDefault()
               navigate()
             }}>
-            <th scope="row"><Link href={href}>{claim.taxInvoiceNumber}</Link></th>
+            <th scope="row">{claim.taxInvoiceNumber}</th>
             <td><span className={`pbc-badge pbc-badge--${claim.status}`}>{statusLabel(claim.status)}</span></td>
             <td>{formatSydneyDate(claim.createdAt)}</td>
             <td>{revision ? formatDateOnly(revision.issueDate) : '—'}</td>
