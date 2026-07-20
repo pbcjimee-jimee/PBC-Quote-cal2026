@@ -631,6 +631,7 @@ export interface Database {
           authoritative_cumulative_percentage: number | null
           authoritative_current_claim_inc_gst: number | null
           calculation_policy_version: string
+          calculation_snapshot: Json
           claim_id: string
           created_at: string
           created_by: string
@@ -650,6 +651,7 @@ export interface Database {
           issue_date: string
           jobber_account_id: string | null
           jobber_invoice_id: string | null
+          jobber_observation_snapshot: Json
           notes: string
           observed_jobber_invoice_number: string | null
           original_jobber_invoice_number: string | null
@@ -657,6 +659,7 @@ export interface Database {
           previous_claims_ex_gst: number
           previous_claims_gst: number
           previous_claims_inc_gst: number
+          previous_claim_snapshot: Json
           recipient_abn: string | null
           recipient_address: string
           recipient_company: string | null
@@ -703,6 +706,7 @@ export interface Database {
           authoritative_cumulative_percentage?: number | null
           authoritative_current_claim_inc_gst?: number | null
           calculation_policy_version: string
+          calculation_snapshot?: Json
           claim_id: string
           created_at?: string
           created_by: string
@@ -722,6 +726,7 @@ export interface Database {
           issue_date: string
           jobber_account_id?: string | null
           jobber_invoice_id?: string | null
+          jobber_observation_snapshot?: Json
           notes?: string
           observed_jobber_invoice_number?: string | null
           original_jobber_invoice_number?: string | null
@@ -729,6 +734,7 @@ export interface Database {
           previous_claims_ex_gst?: number
           previous_claims_gst?: number
           previous_claims_inc_gst?: number
+          previous_claim_snapshot?: Json
           recipient_abn?: string | null
           recipient_address: string
           recipient_company?: string | null
@@ -775,6 +781,7 @@ export interface Database {
           authoritative_cumulative_percentage?: number | null
           authoritative_current_claim_inc_gst?: number | null
           calculation_policy_version?: string
+          calculation_snapshot?: Json
           claim_id?: string
           created_at?: string
           created_by?: string
@@ -794,6 +801,7 @@ export interface Database {
           issue_date?: string
           jobber_account_id?: string | null
           jobber_invoice_id?: string | null
+          jobber_observation_snapshot?: Json
           notes?: string
           observed_jobber_invoice_number?: string | null
           original_jobber_invoice_number?: string | null
@@ -801,6 +809,7 @@ export interface Database {
           previous_claims_ex_gst?: number
           previous_claims_gst?: number
           previous_claims_inc_gst?: number
+          previous_claim_snapshot?: Json
           recipient_abn?: string | null
           recipient_address?: string
           recipient_company?: string | null
@@ -1757,6 +1766,10 @@ export interface Database {
           version: number
         }>
       }
+      create_progress_claim_draft: {
+        Args: { payload: Json }
+        Returns: Json
+      }
       create_manual_progress_invoice_series: {
         Args: { payload: Json }
         Returns: Array<{ id: string; version: number }>
@@ -1782,6 +1795,14 @@ export interface Database {
           version: number
         }[]
       }
+      get_progress_claim_defaults: {
+        Args: { payload: Json }
+        Returns: Json
+      }
+      get_progress_claim_editor: {
+        Args: { payload: Json }
+        Returns: Json
+      }
       get_progress_invoice_jobber_context: {
         Args: { payload: Json }
         Returns: {
@@ -1795,6 +1816,10 @@ export interface Database {
         }[]
       }
       get_progress_invoice_series: {
+        Args: { payload: Json }
+        Returns: Json
+      }
+      save_progress_claim_draft: {
         Args: { payload: Json }
         Returns: Json
       }

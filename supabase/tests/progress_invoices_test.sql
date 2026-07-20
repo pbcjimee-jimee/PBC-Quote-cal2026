@@ -1,7 +1,7 @@
 CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA extensions;
 CREATE EXTENSION IF NOT EXISTS dblink WITH SCHEMA extensions;
 
-SELECT plan(351);
+SELECT plan(400);
 
 DELETE FROM public.business_invoice_profiles;
 DELETE FROM auth.users
@@ -6771,5 +6771,271 @@ SELECT is((SELECT to_jsonb(replayed) FROM public.undo_progress_payment_reconcili
 SELECT is(pg_temp.capture_sqlstate($sql$
   SELECT * FROM public.create_manual_progress_payment('{"series_id":"89000000-0000-4000-8000-000000000001","expected_series_version":1,"received_date":"2026-07-20","amount":"999.00","method":"EFT","reference":"RP-1","correlation_key":"89000000-0000-4000-8000-000000000011"}'::jsonb)
 $sql$),'P0001','reused replay key with a different fingerprint still fails after Series Void');
+
+-- Task 6: Draft Claim numbering, snapshots, calculations, literal dates and private replay.
+RESET ROLE;
+DELETE FROM public.business_invoice_profiles;
+INSERT INTO public.business_invoice_profiles(
+  legal_name,trading_name,abn,contractor_licence,business_address,phone,email,bank_name,bsb,bank_account_name,bank_account_number,
+  gst_rate,business_timezone,default_payment_term_days,created_by,updated_by
+) VALUES('Paint Buddy & Co Pty Ltd','Paint Buddy & Co','51824753556','LIC-1','1 Paint Street, Sydney NSW 2000','0400000000',
+  'accounts@example.test','Test Bank','000-000','Paint Buddy & Co','12345678',0.10,'Australia/Sydney',14,
+  '00000000-0000-0000-0000-000000008001','00000000-0000-0000-0000-000000008001');
+INSERT INTO public.progress_invoice_series(id,source_type,accepted_numbering_base,base_contract_ex_gst,recipient_name,recipient_address,
+  site_name,site_address,default_description,reference,created_by,updated_by)
+VALUES('91000000-0000-4000-8000-000000000001','manual','900001',10000,'Builder','1 Builder Street','Site A','2 Site Street',
+  'Progress painting works','SITE-A','00000000-0000-0000-0000-000000008001','00000000-0000-0000-0000-000000008001');
+
+SET ROLE authenticated;
+SET request.jwt.claim.sub = '00000000-0000-0000-0000-000000008001';
+CREATE TEMP TABLE task6_p01 AS SELECT public.create_progress_claim_draft(jsonb_build_object(
+  'series_id','91000000-0000-4000-8000-000000000001','kind','progress','input_mode','cumulative_percentage',
+  'authoritative_value','90.000000','issue_date','2026-07-20','due_date','2026-08-03','description','Progress painting works',
+  'notes',null,'expected_series_version',1,'expected_current_revision_set_id',null,'expected_current_manifest_hash',null,
+  'correlation_key','91000000-0000-4000-8000-000000000010')) AS dto;
+SELECT is((SELECT dto->>'suffix' FROM task6_p01),'P01','first Draft reserves P01');
+SELECT is((SELECT dto->>'tax_invoice_number' FROM task6_p01),'900001-P01','Tax Invoice number preserves visible accepted base');
+SELECT is((SELECT dto->>'current_claim_inc_gst' FROM task6_p01),'9900.00','arbitrary 90 percent Draft derives exact Inc GST');
+SELECT is((SELECT dto->>'cumulative_percentage' FROM task6_p01),'90.000000','percentage persistence retains NUMERIC(9,6) precision');
+SELECT ok((SELECT dto->'jobber_account_id'='null'::jsonb AND dto->'jobber_invoice_id'='null'::jsonb
+  AND dto->'original_jobber_invoice_number'='null'::jsonb AND dto->'observed_jobber_invoice_number'='null'::jsonb FROM task6_p01),
+  'Manual Draft snapshots all-null Jobber evidence');
+SELECT is((SELECT state FROM public.progress_invoice_numbering_base_reservations WHERE series_id='91000000-0000-4000-8000-000000000001'),
+  'permanent','first Draft permanently promotes numbering-base reservation');
+
+CREATE TEMP TABLE task6_save AS SELECT public.save_progress_claim_draft(jsonb_build_object(
+  'claim_id',(SELECT dto->>'claim_id' FROM task6_p01),'expected_claim_version',1,'expected_series_version',2,
+  'expected_current_revision_set_id',null,'expected_current_manifest_hash',null,'input_mode','current_claim_amount',
+  'authoritative_value','1000.00','issue_date','2026-07-21','due_date','2026-08-04','description','Updated progress works','notes','Internal note',
+  'correlation_key','91000000-0000-4000-8000-000000000011')) AS dto;
+SELECT is((SELECT dto->>'input_mode' FROM task6_save),'current_claim_amount','save changes the authoritative mode on Draft Revision 1');
+SELECT is((SELECT dto->>'current_claim_inc_gst' FROM task6_save),'1000.00','amount mode persists the authoritative cents exactly');
+SELECT is((SELECT dto->>'revision_number' FROM task6_save),'1','save retains Draft Revision 1 identity');
+SELECT is(pg_temp.capture_sqlstate($sql$
+  SELECT public.save_progress_claim_draft(jsonb_build_object(
+    'claim_id',(SELECT dto->>'claim_id' FROM task6_p01),'expected_claim_version',1,'expected_series_version',2,
+    'expected_current_revision_set_id',null,'expected_current_manifest_hash',null,'input_mode','current_claim_amount',
+    'authoritative_value','1001.00','issue_date','2026-07-21','due_date','2026-08-04','description','Updated progress works','notes','Internal note',
+    'correlation_key','91000000-0000-4000-8000-000000000011'))
+$sql$),'P0001','same save key with changed fingerprint is rejected');
+
+RESET ROLE;
+UPDATE public.progress_claims SET status='void' WHERE id=(SELECT (dto->>'claim_id')::uuid FROM task6_p01);
+SET ROLE authenticated;
+SET request.jwt.claim.sub = '00000000-0000-0000-0000-000000008001';
+CREATE TEMP TABLE task6_p02 AS SELECT public.create_progress_claim_draft(jsonb_build_object(
+  'series_id','91000000-0000-4000-8000-000000000001','kind','progress','input_mode','current_claim_amount','authoritative_value','100.00',
+  'issue_date','2026-07-22','due_date','2026-08-05','description','Second Draft','notes',null,'expected_series_version',3,
+  'expected_current_revision_set_id',null,'expected_current_manifest_hash',null,'correlation_key','91000000-0000-4000-8000-000000000012')) AS dto;
+SELECT is((SELECT dto->>'suffix' FROM task6_p02),'P02','Void P01 identity is not reused');
+SELECT is((SELECT count(*)::int FROM public.progress_claims WHERE series_id='91000000-0000-4000-8000-000000000001' AND suffix='P01'),1,
+  'historical P01 remains unique and permanent');
+
+RESET ROLE;
+INSERT INTO public.progress_claims(series_id,sequence,kind,suffix,tax_invoice_number,status,created_by,updated_by)
+SELECT '91000000-0000-4000-8000-000000000001',n,'progress','P'||lpad(n::text,2,'0'),'900001-P'||lpad(n::text,2,'0'),'void',
+  '00000000-0000-0000-0000-000000008001','00000000-0000-0000-0000-000000008001' FROM generate_series(3,9) n;
+SET ROLE authenticated; SET request.jwt.claim.sub='00000000-0000-0000-0000-000000008001';
+CREATE TEMP TABLE task6_p10 AS SELECT public.create_progress_claim_draft(jsonb_build_object(
+  'series_id','91000000-0000-4000-8000-000000000001','kind','progress','input_mode','current_claim_amount','authoritative_value','100.00',
+  'issue_date','2026-07-23','due_date','2026-08-06','description','Tenth Draft','notes',null,'expected_series_version',4,
+  'expected_current_revision_set_id',null,'expected_current_manifest_hash',null,'correlation_key','91000000-0000-4000-8000-000000000013')) AS dto;
+SELECT is((SELECT dto->>'suffix' FROM task6_p10),'P10','sequence 10 uses P10');
+RESET ROLE;
+INSERT INTO public.progress_claims(series_id,sequence,kind,suffix,tax_invoice_number,status,created_by,updated_by)
+SELECT '91000000-0000-4000-8000-000000000001',n,'progress','P'||n::text,'900001-P'||n::text,'void',
+  '00000000-0000-0000-0000-000000008001','00000000-0000-0000-0000-000000008001' FROM generate_series(11,99) n;
+SET ROLE authenticated; SET request.jwt.claim.sub='00000000-0000-0000-0000-000000008001';
+CREATE TEMP TABLE task6_p100 AS SELECT public.create_progress_claim_draft(jsonb_build_object(
+  'series_id','91000000-0000-4000-8000-000000000001','kind','progress','input_mode','current_claim_amount','authoritative_value','100.00',
+  'issue_date','2026-07-24','due_date','2026-08-07','description','Hundredth Draft','notes',null,'expected_series_version',5,
+  'expected_current_revision_set_id',null,'expected_current_manifest_hash',null,'correlation_key','91000000-0000-4000-8000-000000000014')) AS dto;
+SELECT is((SELECT dto->>'suffix' FROM task6_p100),'P100','sequence 100 uses P100 without truncation');
+SELECT is((SELECT public.create_progress_claim_draft(jsonb_build_object(
+  'series_id','91000000-0000-4000-8000-000000000001','kind','progress','input_mode','cumulative_percentage',
+  'authoritative_value','90.000000','issue_date','2026-07-20','due_date','2026-08-03','description','Progress painting works',
+  'notes',null,'expected_series_version',1,'expected_current_revision_set_id',null,'expected_current_manifest_hash',null,
+  'correlation_key','91000000-0000-4000-8000-000000000010'))),
+  (SELECT dto FROM task6_p01),'create exact replay returns original DTO after later saves and Series version changes');
+SELECT is((SELECT public.save_progress_claim_draft(jsonb_build_object(
+  'claim_id',(SELECT dto->>'claim_id' FROM task6_p01),'expected_claim_version',1,'expected_series_version',2,
+  'expected_current_revision_set_id',null,'expected_current_manifest_hash',null,'input_mode','current_claim_amount','authoritative_value','1000.00',
+  'issue_date','2026-07-21','due_date','2026-08-04','description','Updated progress works','notes','Internal note',
+  'correlation_key','91000000-0000-4000-8000-000000000011'))),
+  (SELECT dto FROM task6_save),'save exact replay returns original DTO after later Series changes');
+
+RESET ROLE;
+INSERT INTO public.progress_invoice_series(id,source_type,accepted_numbering_base,base_contract_ex_gst,recipient_name,recipient_address,site_name,site_address,default_description,created_by,updated_by)
+VALUES('92000000-0000-4000-8000-000000000001','manual','FINAL-1',1000,'Builder','Billing','Final Site','Site','Final works',
+  '00000000-0000-0000-0000-000000008001','00000000-0000-0000-0000-000000008001');
+SET ROLE authenticated; SET request.jwt.claim.sub='00000000-0000-0000-0000-000000008001';
+CREATE TEMP TABLE task6_final AS SELECT public.create_progress_claim_draft(jsonb_build_object(
+  'series_id','92000000-0000-4000-8000-000000000001','kind','final','input_mode','current_claim_amount','authoritative_value','1100.00',
+  'issue_date','2026-07-20','due_date','2026-08-03','description','Final works','notes',null,'expected_series_version',1,
+  'expected_current_revision_set_id',null,'expected_current_manifest_hash',null,'correlation_key','92000000-0000-4000-8000-000000000010')) AS dto;
+SELECT is((SELECT dto->>'suffix' FROM task6_final),'FINAL','FINAL uses permanent FINAL suffix');
+SELECT is((SELECT dto->>'current_claim_inc_gst' FROM task6_final),'1100.00','FINAL consumes exact residual Inc GST');
+SELECT is((SELECT dto->>'remaining_inc_gst' FROM task6_final),'0.00','FINAL leaves zero exact residual');
+SELECT is(pg_temp.capture_sqlstate($sql$SELECT public.create_progress_claim_draft(jsonb_build_object(
+  'series_id','92000000-0000-4000-8000-000000000001','kind','progress','input_mode','current_claim_amount','authoritative_value','1.00',
+  'issue_date','2026-07-21','due_date','2026-08-04','description','After Final','notes',null,'expected_series_version',2,
+  'expected_current_revision_set_id',null,'expected_current_manifest_hash',null,'correlation_key','92000000-0000-4000-8000-000000000011'))$sql$),
+  '23514','no Claim may be created after FINAL');
+
+RESET ROLE;
+INSERT INTO public.progress_invoice_series(id,source_type,accepted_numbering_base,base_contract_ex_gst,recipient_name,recipient_address,site_name,site_address,default_description,created_by,updated_by)
+VALUES('93000000-0000-4000-8000-000000000001','manual','ADJ-1',1000,'Builder','Billing','Adjusted Site','Site','Adjusted works',
+  '00000000-0000-0000-0000-000000008001','00000000-0000-0000-0000-000000008001');
+INSERT INTO public.progress_adjustments(series_id,type,status,effective_date,description,amount_ex_gst,display_order,created_by,updated_by)
+VALUES('93000000-0000-4000-8000-000000000001','variation','approved','2026-07-20','Approved extra',100,1,'00000000-0000-0000-0000-000000008001','00000000-0000-0000-0000-000000008001'),
+('93000000-0000-4000-8000-000000000001','credit','approved','2026-07-20','Approved credit',20,2,'00000000-0000-0000-0000-000000008001','00000000-0000-0000-0000-000000008001'),
+('93000000-0000-4000-8000-000000000001','variation','draft','2026-07-20','Draft excluded',999,3,'00000000-0000-0000-0000-000000008001','00000000-0000-0000-0000-000000008001');
+SET ROLE authenticated; SET request.jwt.claim.sub='00000000-0000-0000-0000-000000008001';
+CREATE TEMP TABLE task6_defaults AS SELECT public.get_progress_claim_defaults('{"series_id":"93000000-0000-4000-8000-000000000001"}'::jsonb) AS dto;
+SELECT is((SELECT dto->>'approved_variations_ex_gst' FROM task6_defaults),'100.00','defaults snapshot includes Approved Variations only');
+SELECT is((SELECT dto->>'approved_credits_ex_gst' FROM task6_defaults),'20.00','defaults snapshot includes Approved Credits only');
+SELECT is((SELECT jsonb_array_length(dto->'approved_adjustments') FROM task6_defaults),2,'defaults preserves complete Approved adjustment list');
+SELECT is((SELECT dto->>'adjusted_contract_ex_gst' FROM task6_defaults),'1080.00','Draft adjustment is excluded from adjusted contract');
+SELECT is((SELECT jsonb_array_length(dto->'previous_claims') FROM task6_defaults),0,'defaults predecessors come only from Current manifest');
+SELECT is(((TIMESTAMPTZ '2026-07-19 14:01:00+00' AT TIME ZONE 'Australia/Sydney')::date)::text,'2026-07-20','Sydney date crosses the UTC boundary safely');
+SELECT is((DATE '2028-02-29'+14)::text,'2028-03-14','literal leap-day payment terms add calendar days');
+SELECT is((SELECT ((dto->>'due_date')::date-(dto->>'issue_date')::date)::int FROM task6_defaults),14,'default due date uses snapshotted payment terms');
+SELECT is(pg_temp.capture_sqlstate($sql$SELECT public.create_progress_claim_draft(jsonb_build_object(
+  'series_id','93000000-0000-4000-8000-000000000001','kind','progress','input_mode','current_claim_amount','authoritative_value','1.00',
+  'issue_date','2026-07-21','due_date','2026-07-20','description','Invalid date','notes',null,'expected_series_version',1,
+  'expected_current_revision_set_id',null,'expected_current_manifest_hash',null,'correlation_key','93000000-0000-4000-8000-000000000010'))$sql$),
+  '23514','due date before issue date is rejected');
+SELECT is(has_table_privilege('authenticated','public.progress_claim_command_results','SELECT'),false,'authenticated cannot read private Claim command result snapshots');
+SELECT is(has_table_privilege('service_role','public.progress_claim_command_results','SELECT'),false,'service role cannot read private Claim command result snapshots');
+SELECT ok((SELECT bool_and(has_function_privilege('authenticated',signature,'EXECUTE')
+    AND NOT has_function_privilege('anon',signature,'EXECUTE')
+    AND NOT has_function_privilege('service_role',signature,'EXECUTE'))
+  FROM unnest(ARRAY[
+    'public.get_progress_claim_defaults(jsonb)','public.get_progress_claim_editor(jsonb)',
+    'public.create_progress_claim_draft(jsonb)','public.save_progress_claim_draft(jsonb)'
+  ]::TEXT[]) signature),
+  'only authenticated receives the four public Claim RPC grants');
+SELECT ok((SELECT bool_and(NOT has_function_privilege('anon',signature,'EXECUTE')
+    AND NOT has_function_privilege('authenticated',signature,'EXECUTE')
+    AND NOT has_function_privilege('service_role',signature,'EXECUTE'))
+  FROM unnest(ARRAY[
+    'public.progress_claim_money(numeric)','public.progress_claim_percentage(numeric)',
+    'public.progress_claim_assert_text(text,integer,boolean)',
+    'public.progress_claim_profile_ready(public.business_invoice_profiles)',
+    'public.progress_claim_assert_current_set(public.progress_invoice_series,uuid,text)',
+    'public.progress_claim_source_observation(public.progress_invoice_series)',
+    'public.progress_claim_financial_snapshot(public.progress_invoice_series,text,text,text)',
+    'public.progress_claim_defaults_snapshot(public.progress_invoice_series)',
+    'public.progress_claim_editor_dto(uuid,uuid)'
+  ]::TEXT[]) signature),
+  'private Claim helpers are not executable by API roles');
+SELECT is((SELECT count(*)::int FROM public.progress_invoice_events WHERE command_name IN ('create_progress_claim_draft','save_progress_claim_draft')
+  AND (safe_field_changes ? 'recipient_name' OR safe_field_changes ? 'supplier_bank_account_number')),0,'Claim events exclude recipient and bank snapshots');
+SELECT ok((SELECT (public.get_progress_invoice_workspace('{"series_id":"91000000-0000-4000-8000-000000000001"}'::jsonb)->'claims'->1->'current_revision'->>'state')='draft'),
+  'workspace timeline exposes Draft Revision 1 without making it Current-manifest issued truth');
+SELECT is(pg_temp.capture_sqlstate($sql$
+  SELECT public.create_progress_claim_draft(jsonb_build_object(
+    'series_id','91000000-0000-4000-8000-000000000001','kind','progress','input_mode','cumulative_percentage',
+    'authoritative_value','90.000000','issue_date','2026-07-20','due_date','2026-08-03','description','Changed replay payload',
+    'notes',null,'expected_series_version',1,'expected_current_revision_set_id',null,'expected_current_manifest_hash',null,
+    'correlation_key','91000000-0000-4000-8000-000000000010'))
+$sql$),'P0001','create replay key rejects a changed fingerprint before stale-state handling');
+SELECT ok((SELECT (response->>'conflict')::BOOLEAN
+    AND response #>> '{current,claim_id}'=(SELECT dto->>'claim_id' FROM task6_p02)
+  FROM (SELECT public.save_progress_claim_draft(jsonb_build_object(
+    'claim_id',(SELECT dto->>'claim_id' FROM task6_p02),'expected_claim_version',999,'expected_series_version',999,
+    'expected_current_revision_set_id',null,'expected_current_manifest_hash',null,'input_mode','current_claim_amount',
+    'authoritative_value','100.00','issue_date','2026-07-22','due_date','2026-08-05','description','Second Draft','notes',null,
+    'correlation_key','91000000-0000-4000-8000-000000000019')) AS response) stale),
+  'stale Claim and Series versions return the strict current editor conflict DTO');
+RESET ROLE;
+UPDATE public.progress_invoice_revision_sets SET state='superseded',superseded_at=now()
+WHERE series_id='84000000-0000-4000-8000-000000000001' AND state='current';
+UPDATE public.progress_invoice_revision_sets SET state='current',superseded_at=NULL,published_at=COALESCE(published_at,now())
+WHERE id='84000000-0000-4000-8000-000000000032';
+UPDATE public.progress_invoice_series SET current_revision_set_id='84000000-0000-4000-8000-000000000032'
+WHERE id='84000000-0000-4000-8000-000000000001';
+SET ROLE authenticated; SET request.jwt.claim.sub='00000000-0000-0000-0000-000000008001';
+SELECT ok((SELECT (response->>'conflict')::BOOLEAN
+    AND response #>> '{current,expected_current_revision_set_id}'='84000000-0000-4000-8000-000000000032'
+    AND response #>> '{current,expected_current_manifest_hash}'=repeat('e',64)
+  FROM (SELECT public.create_progress_claim_draft(jsonb_build_object(
+    'series_id','84000000-0000-4000-8000-000000000001','kind','progress','input_mode','current_claim_amount',
+    'authoritative_value','1.00','issue_date','2026-07-20','due_date','2026-08-03','description','Stale manifest','notes',null,
+    'expected_series_version',(SELECT version FROM public.progress_invoice_series WHERE id='84000000-0000-4000-8000-000000000001'),
+    'expected_current_revision_set_id','84000000-0000-4000-8000-000000000033',
+    'expected_current_manifest_hash',repeat('f',64),'correlation_key','91000000-0000-4000-8000-000000000020')) AS response) stale),
+  'stale Current-set id and hash return the authoritative Current manifest identity');
+SELECT is(pg_temp.capture_sqlstate($sql$SELECT public.create_progress_claim_draft(jsonb_build_object(
+  'series_id','93000000-0000-4000-8000-000000000001','kind','progress','input_mode','current_claim_amount','authoritative_value','0.00',
+  'issue_date','2026-07-21','due_date','2026-07-22','description','Zero','notes',null,'expected_series_version',1,
+  'expected_current_revision_set_id',null,'expected_current_manifest_hash',null,'correlation_key','93000000-0000-4000-8000-000000000021'))$sql$),
+  '23514','zero-value Draft persistence is rejected');
+SELECT is(pg_temp.capture_sqlstate($sql$SELECT public.create_progress_claim_draft(jsonb_build_object(
+  'series_id','93000000-0000-4000-8000-000000000001','kind','progress','input_mode','current_claim_amount','authoritative_value','1188.01',
+  'issue_date','2026-07-21','due_date','2026-07-22','description','Overclaim','notes',null,'expected_series_version',1,
+  'expected_current_revision_set_id',null,'expected_current_manifest_hash',null,'correlation_key','93000000-0000-4000-8000-000000000022'))$sql$),
+  '23514','overclaim above the adjusted-contract residual is rejected');
+RESET ROLE;
+INSERT INTO public.progress_invoice_series(id,source_type,accepted_numbering_base,base_contract_ex_gst,recipient_name,recipient_address,site_name,site_address,default_description,created_by,updated_by)
+VALUES('94000000-0000-4000-8000-000000000001','manual','FINAL-INVALID',1000,'Builder','Billing','Final Invalid Site','Site','Final works',
+  '00000000-0000-0000-0000-000000008001','00000000-0000-0000-0000-000000008001');
+SET ROLE authenticated; SET request.jwt.claim.sub='00000000-0000-0000-0000-000000008001';
+SELECT is(pg_temp.capture_sqlstate($sql$SELECT public.create_progress_claim_draft(jsonb_build_object(
+  'series_id','94000000-0000-4000-8000-000000000001','kind','final','input_mode','current_claim_amount','authoritative_value','1099.99',
+  'issue_date','2026-07-21','due_date','2026-07-22','description','Invalid final residual','notes',null,'expected_series_version',1,
+  'expected_current_revision_set_id',null,'expected_current_manifest_hash',null,'correlation_key','94000000-0000-4000-8000-000000000010'))$sql$),
+  '23514','FINAL must consume the exact residual');
+RESET ROLE;
+INSERT INTO public.progress_payments(id,series_id,source,created_by,updated_by)
+VALUES('93000000-0000-4000-8000-000000000030','93000000-0000-4000-8000-000000000001','manual',
+  '00000000-0000-0000-0000-000000008001','00000000-0000-0000-0000-000000008001');
+INSERT INTO public.progress_payment_revisions(id,payment_id,revision_number,received_date,observed_amount,effective_receipt_amount,
+  payment_method,reference,sync_state,status,created_by)
+VALUES('93000000-0000-4000-8000-000000000031','93000000-0000-4000-8000-000000000030',1,'2026-07-20',999,999,
+  'EFT','RECEIPT-ONLY','manual','active','00000000-0000-0000-0000-000000008001');
+UPDATE public.progress_payments SET current_revision_id='93000000-0000-4000-8000-000000000031' WHERE id='93000000-0000-4000-8000-000000000030';
+SET ROLE authenticated; SET request.jwt.claim.sub='00000000-0000-0000-0000-000000008001';
+SELECT is((public.get_progress_claim_defaults(
+  '{"series_id":"93000000-0000-4000-8000-000000000001"}'::jsonb)->>'previous_claims_inc_gst'), '0.00',
+  'actual receipts are excluded from Claim financial predecessors');
+RESET ROLE;
+UPDATE public.progress_invoice_series SET jobber_account_id='unsafe-account-id',jobber_invoice_id='unsafe-invoice-id'
+WHERE id='85000000-0000-4000-8000-000000000009';
+SET ROLE authenticated; SET request.jwt.claim.sub='00000000-0000-0000-0000-000000008001';
+SELECT ok((SELECT dto->>'jobber_account_id'='unsafe-account-id' AND dto->>'jobber_invoice_id'='unsafe-invoice-id'
+    AND dto->>'original_jobber_invoice_number'='2875' AND dto->>'observed_jobber_invoice_number'='2875'
+  FROM (SELECT public.get_progress_claim_defaults('{"series_id":"85000000-0000-4000-8000-000000000009"}'::jsonb) AS dto) snapshot),
+  'imported Series Claim defaults use only the stored Jobber snapshot evidence');
+SELECT is((public.get_progress_claim_defaults('{"series_id":"84000000-0000-4000-8000-000000000001"}'::jsonb)
+    #>> '{previous_claims,0,revision_id}'),
+  '84000000-0000-4000-8000-000000000022',
+  'Claim predecessors follow the Current manifest instead of a deliberately different Claim pointer');
+SELECT is(public.get_progress_claim_editor('{"claim_id":"99000000-0000-4000-8000-000000000099"}'::jsonb),NULL::jsonb,
+  'unknown Claim identity returns not found without leaking another Series');
+SELECT ok(NOT has_table_privilege('authenticated','public.progress_claim_command_results','INSERT')
+    AND NOT has_table_privilege('authenticated','public.progress_claim_command_results','UPDATE')
+    AND NOT has_table_privilege('authenticated','public.progress_claim_command_results','DELETE')
+    AND NOT has_table_privilege('service_role','public.progress_claim_command_results','INSERT'),
+  'private replay snapshots block direct DML for authenticated and service roles');
+RESET ROLE;
+UPDATE public.business_invoice_profiles SET email='invalid-email';
+SET ROLE authenticated; SET request.jwt.claim.sub='00000000-0000-0000-0000-000000008001';
+SELECT is(pg_temp.capture_sqlstate($sql$SELECT public.create_progress_claim_draft(jsonb_build_object(
+  'series_id','93000000-0000-4000-8000-000000000001','kind','progress','input_mode','current_claim_amount','authoritative_value','1.00',
+  'issue_date','2026-07-21','due_date','2026-07-22','description','Profile gate','notes',null,'expected_series_version',1,
+  'expected_current_revision_set_id',null,'expected_current_manifest_hash',null,'correlation_key','93000000-0000-4000-8000-000000000011'))$sql$),
+  'P0001','direct Claim RPC rejects a legacy/corrupt profile that fails Task 3A readiness');
+SELECT is((SELECT jsonb_build_object('supplier_email',response->>'supplier_email','supplier_profile_version',response->>'supplier_profile_version')
+  FROM (SELECT public.save_progress_claim_draft(jsonb_build_object(
+    'claim_id',(SELECT dto->>'claim_id' FROM task6_p02),'expected_claim_version',1,'expected_series_version',6,
+    'expected_current_revision_set_id',null,'expected_current_manifest_hash',null,'input_mode','current_claim_amount',
+    'authoritative_value','101.00','issue_date','2026-07-22','due_date','2026-08-05','description','Snapshot-only save','notes',null,
+    'correlation_key','91000000-0000-4000-8000-000000000023')) AS response) saved),
+  '{"supplier_email":"accounts@example.test","supplier_profile_version":"1"}'::jsonb,
+  'Draft save succeeds after live profile corruption and preserves the immutable supplier snapshot');
+SELECT is((public.get_progress_claim_editor(jsonb_build_object(
+  'claim_id',(SELECT dto->>'claim_id' FROM task6_p02)))->>'supplier_email'), 'accounts@example.test',
+  'an existing Draft remains readable from its immutable supplier snapshot after the live profile becomes invalid');
 
 SELECT * FROM finish();

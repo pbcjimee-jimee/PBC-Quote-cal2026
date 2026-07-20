@@ -1080,3 +1080,22 @@
 @media (min-width: 640px) {
   .pbc-tableactions { flex-direction: row; justify-content: flex-end; }
 }
+
+.pbc-progress-claim-editor-grid { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(320px, .85fr); gap: 20px; align-items: start; }
+.pbc-progress-claim-form { display: grid; gap: 16px; min-width: 0; }
+.pbc-progress-claim-form fieldset { display: flex; flex-wrap: wrap; gap: 12px 20px; min-width: 0; border: 0; padding: 0; }
+.pbc-progress-claim-form legend { width: 100%; font-weight: 800; color: var(--foreground); margin-bottom: 4px; }
+.pbc-progress-claim-form fieldset label { display: inline-flex; min-height: 44px; align-items: center; gap: 8px; }
+.pbc-progress-claim-date-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.pbc-progress-claim-preview-heading,
+.pbc-progress-section-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.pbc-progress-draft-mark { color: var(--warning); background: var(--warning-soft); border-radius: var(--r-sm); padding: 6px 10px; letter-spacing: .08em; }
+
+@media (max-width: 900px) {
+  .pbc-progress-claim-editor-grid { grid-template-columns: minmax(0, 1fr); }
+}
+
+@media (max-width: 560px) {
+  .pbc-progress-claim-date-grid { grid-template-columns: minmax(0, 1fr); }
+  .pbc-progress-section-heading { align-items: flex-start; flex-direction: column; }
+}

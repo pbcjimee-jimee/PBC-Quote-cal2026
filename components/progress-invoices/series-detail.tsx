@@ -201,8 +201,10 @@ export function ProgressInvoiceSeriesDetailView({
       </section>
 
       <section className="pbc-card pbc-card--pad" aria-labelledby="progress-claims-heading">
-        <h2 id="progress-claims-heading">Claims</h2>
-        <ClaimTimeline claims={workspace.claims} />
+        <div className="pbc-progress-section-heading"><h2 id="progress-claims-heading">Claims</h2>
+          {capabilities.canCreateClaim ? <Link className="pbc-btn pbc-btn--primary pbc-btn--sm" href={`/progress-invoices/${series.id}/claims/new`}>New Claim</Link> : null}
+        </div>
+        <ClaimTimeline seriesId={series.id} claims={workspace.claims} />
       </section>
 
       <section className="pbc-card pbc-card--pad" aria-labelledby="progress-payments-heading">

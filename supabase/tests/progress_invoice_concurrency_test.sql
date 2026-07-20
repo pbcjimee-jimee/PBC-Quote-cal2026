@@ -1,7 +1,7 @@
 CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA extensions;
 CREATE EXTENSION IF NOT EXISTS dblink WITH SCHEMA extensions;
 
-SELECT plan(9);
+SELECT plan(12);
 
 DELETE FROM auth.users
 WHERE id = '00000000-0000-0000-0000-000000009001';
@@ -307,5 +307,54 @@ SELECT is(
 SELECT extensions.dblink_exec('progress_base_b', 'ROLLBACK');
 SELECT extensions.dblink_disconnect('progress_base_a');
 SELECT extensions.dblink_disconnect('progress_base_b');
+
+RESET ROLE;
+DELETE FROM public.business_invoice_profiles;
+INSERT INTO public.business_invoice_profiles(
+  legal_name,trading_name,abn,contractor_licence,business_address,phone,email,bank_name,bsb,bank_account_name,bank_account_number,
+  gst_rate,business_timezone,default_payment_term_days,created_by,updated_by
+) VALUES('Paint Buddy & Co Pty Ltd','Paint Buddy & Co','51824753556','LIC-1','1 Paint Street, Sydney NSW 2000','0400000000',
+  'accounts@example.test','Test Bank','000-000','Paint Buddy & Co','12345678',0.10,'Australia/Sydney',14,
+  '00000000-0000-0000-0000-000000009001','00000000-0000-0000-0000-000000009001');
+INSERT INTO public.progress_invoice_series(
+  id,source_type,accepted_numbering_base,base_contract_ex_gst,recipient_name,recipient_address,site_name,site_address,
+  default_description,created_by,updated_by
+) VALUES('00000000-0000-4000-8000-000000009200','manual','CLAIM-RACE',1000,'Race Builder','1 Billing Street',
+  'Race Claim Site','1 Site Street','Progress works','00000000-0000-0000-0000-000000009001','00000000-0000-0000-0000-000000009001');
+
+SELECT extensions.dblink_connect('claim_race_a','host=host.docker.internal port=54322 dbname=postgres user=postgres password=postgres');
+SELECT extensions.dblink_connect('claim_race_b','host=host.docker.internal port=54322 dbname=postgres user=postgres password=postgres');
+SELECT extensions.dblink_exec('claim_race_a','BEGIN');
+SELECT extensions.dblink_exec('claim_race_a',$$SET LOCAL ROLE authenticated; SET LOCAL request.jwt.claim.sub='00000000-0000-0000-0000-000000009001'$$);
+CREATE TEMP TABLE claim_race_first AS
+SELECT * FROM extensions.dblink('claim_race_a',$sql$
+  SELECT dto->>'suffix' AS suffix
+  FROM public.create_progress_claim_draft('{
+    "series_id":"00000000-0000-4000-8000-000000009200","kind":"progress","input_mode":"current_claim_amount",
+    "authoritative_value":"100.00","issue_date":"2026-07-20","due_date":"2026-08-03","description":"Race P01","notes":null,
+    "expected_series_version":1,"expected_current_revision_set_id":null,"expected_current_manifest_hash":null,
+    "correlation_key":"00000000-0000-4000-8000-000000009620"}'::jsonb) dto
+$sql$) AS result(suffix TEXT);
+SELECT extensions.dblink_exec('claim_race_b','BEGIN');
+SELECT extensions.dblink_exec('claim_race_b',$$SET LOCAL ROLE authenticated; SET LOCAL request.jwt.claim.sub='00000000-0000-0000-0000-000000009001'$$);
+SELECT extensions.dblink_send_query('claim_race_b',$sql$
+  SELECT dto->>'suffix' AS suffix
+  FROM public.create_progress_claim_draft('{
+    "series_id":"00000000-0000-4000-8000-000000009200","kind":"progress","input_mode":"current_claim_amount",
+    "authoritative_value":"100.00","issue_date":"2026-07-20","due_date":"2026-08-03","description":"Race P02","notes":null,
+    "expected_series_version":2,"expected_current_revision_set_id":null,"expected_current_manifest_hash":null,
+    "correlation_key":"00000000-0000-4000-8000-000000009621"}'::jsonb) dto
+$sql$);
+SELECT pg_sleep(0.1);
+SELECT is(extensions.dblink_is_busy('claim_race_b'),1,'concurrent Claim creation waits on the Series-first lock');
+SELECT extensions.dblink_exec('claim_race_a','COMMIT');
+CREATE TEMP TABLE claim_race_second AS
+SELECT * FROM extensions.dblink_get_result('claim_race_b',false) AS result(suffix TEXT);
+SELECT is((SELECT suffix FROM claim_race_first),'P01','the first serialized Claim reserves P01');
+SELECT is((SELECT suffix FROM claim_race_second),'P02','the waiting Claim observes the committed sequence and reserves P02');
+SELECT * FROM extensions.dblink_get_result('claim_race_b',false) AS result(status TEXT);
+SELECT extensions.dblink_exec('claim_race_b','COMMIT');
+SELECT extensions.dblink_disconnect('claim_race_a');
+SELECT extensions.dblink_disconnect('claim_race_b');
 
 SELECT * FROM finish();

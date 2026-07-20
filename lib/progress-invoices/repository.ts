@@ -269,6 +269,105 @@ export interface ProgressInvoiceClaimRpcDto {
   current_revision: ProgressInvoiceClaimRevisionRpcDto | null
 }
 
+export interface ProgressClaimEditorRpcDto {
+  series_id: string
+  series_version: number
+  series_status: ProgressInvoiceSeriesStatus
+  source_type: ProgressInvoiceSeriesRpcDetail['source_type']
+  accepted_numbering_base: string
+  expected_current_revision_set_id: string | null
+  expected_current_manifest_hash: string | null
+  claim_id: string | null
+  claim_version: number | null
+  claim_status: 'draft' | null
+  claim_kind: 'progress' | 'final' | null
+  sequence: number | null
+  suffix: string | null
+  tax_invoice_number: string | null
+  revision_id: string | null
+  revision_number: 1 | null
+  input_mode: 'cumulative_percentage' | 'current_claim_amount'
+  authoritative_value: string
+  issue_date: string
+  due_date: string
+  description: string
+  notes: string
+  reference: string | null
+  supplier_profile_version: number
+  supplier_legal_name: string
+  supplier_trading_name: string
+  supplier_abn: string
+  supplier_contractor_licence: string
+  supplier_address: string
+  supplier_phone: string
+  supplier_email: string
+  supplier_bank_name: string
+  supplier_bsb: string
+  supplier_bank_account_name: string
+  supplier_bank_account_number: string
+  supplier_gst_rate: '0.10'
+  supplier_timezone: 'Australia/Sydney'
+  supplier_default_payment_term_days: number
+  recipient_name: string
+  recipient_company: string | null
+  recipient_address: string
+  recipient_email: string | null
+  recipient_phone: string | null
+  recipient_abn: string | null
+  site_name: string
+  site_address: string
+  jobber_account_id: string | null
+  jobber_invoice_id: string | null
+  original_jobber_invoice_number: string | null
+  observed_jobber_invoice_number: string | null
+  base_contract_ex_gst: string
+  approved_variations_ex_gst: string
+  approved_credits_ex_gst: string
+  approved_adjustments: Array<{ id: string; type: 'variation' | 'credit'; effective_date: string; description: string; amount_ex_gst: string; gst_rate: '0.10'; version: number }>
+  previous_claims: Array<{ claim_id: string; revision_id: string; sequence: number; tax_invoice_number: string; ex_gst: string; gst: string; inc_gst: string }>
+  adjusted_contract_ex_gst: string
+  adjusted_contract_gst: string
+  adjusted_contract_inc_gst: string
+  previous_claims_ex_gst: string
+  previous_claims_gst: string
+  previous_claims_inc_gst: string
+  cumulative_target_ex_gst: string
+  cumulative_target_gst: string
+  cumulative_target_inc_gst: string
+  current_claim_ex_gst: string
+  current_claim_gst: string
+  current_claim_inc_gst: string
+  cumulative_percentage: string
+  remaining_ex_gst: string
+  remaining_gst: string
+  remaining_inc_gst: string
+  calculation_policy_version: 'progress-claim-v1'
+  financial_snapshot_hash: string
+  can_save: boolean
+  can_issue: false
+}
+
+export interface CreateProgressClaimDraftPayload {
+  series_id: string
+  kind: 'progress' | 'final'
+  input_mode: 'cumulative_percentage' | 'current_claim_amount'
+  authoritative_value: string
+  issue_date: string
+  due_date: string
+  description: string
+  notes: string | null
+  expected_series_version: number
+  expected_current_revision_set_id: string | null
+  expected_current_manifest_hash: string | null
+  correlation_key: string
+}
+
+export interface SaveProgressClaimDraftPayload extends Omit<CreateProgressClaimDraftPayload, 'series_id' | 'kind' | 'expected_series_version'> {
+  claim_id: string
+  expected_claim_version: number
+  expected_series_version: number
+}
+
 export interface ProgressInvoicePaymentRevisionRpcDto {
   id: string
   revision_number: number
@@ -677,6 +776,26 @@ export interface ProgressInvoiceCommandMap {
     result: AdjustmentMutationRpcResult
     current: ProgressAdjustmentRpcDetail
   }
+  get_progress_claim_defaults: {
+    payload: { series_id: string }
+    result: ProgressClaimEditorRpcDto | null
+    current: never
+  }
+  get_progress_claim_editor: {
+    payload: { claim_id: string }
+    result: ProgressClaimEditorRpcDto | null
+    current: never
+  }
+  create_progress_claim_draft: {
+    payload: CreateProgressClaimDraftPayload
+    result: ProgressClaimEditorRpcDto
+    current: ProgressClaimEditorRpcDto
+  }
+  save_progress_claim_draft: {
+    payload: SaveProgressClaimDraftPayload
+    result: ProgressClaimEditorRpcDto
+    current: ProgressClaimEditorRpcDto
+  }
   reject_progress_adjustment: {
     payload: RejectProgressAdjustmentPayload
     result: AdjustmentMutationRpcResult
@@ -801,6 +920,15 @@ const DOMAIN_ERROR_CODES: Readonly<Record<string, { code: ActionErrorCode; error
   },
   PROGRESS_EMAIL_INVALID: { code: 'VALIDATION', error: 'PROGRESS_EMAIL_INVALID' },
   PROGRESS_ABN_INVALID: { code: 'VALIDATION', error: 'PROGRESS_ABN_INVALID' },
+  PROGRESS_CLAIM_AMOUNT_NOT_POSITIVE: { code: 'VALIDATION', error: 'PROGRESS_CLAIM_AMOUNT_NOT_POSITIVE' },
+  PROGRESS_CLAIM_OVER_CONTRACT: { code: 'VALIDATION', error: 'PROGRESS_CLAIM_OVER_CONTRACT' },
+  PROGRESS_FINAL_RESIDUAL_REQUIRED: { code: 'VALIDATION', error: 'PROGRESS_FINAL_RESIDUAL_REQUIRED' },
+  PROGRESS_FINAL_ALREADY_EXISTS: { code: 'VALIDATION', error: 'PROGRESS_FINAL_ALREADY_EXISTS' },
+  PROGRESS_CLAIM_NOT_DRAFT: { code: 'VALIDATION', error: 'PROGRESS_CLAIM_NOT_DRAFT' },
+  PROGRESS_DUE_DATE_INVALID: { code: 'VALIDATION', error: 'PROGRESS_DUE_DATE_INVALID' },
+  PROGRESS_INVOICE_PROFILE_INVALID: { code: 'VALIDATION', error: 'PROGRESS_INVOICE_PROFILE_INVALID' },
+  PROGRESS_NUMBERING_BASE_REQUIRED: { code: 'VALIDATION', error: 'PROGRESS_NUMBERING_BASE_REQUIRED' },
+  PROGRESS_SERIES_STATE_INVALID: { code: 'VALIDATION', error: 'PROGRESS_SERIES_STATE_INVALID' },
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -1796,6 +1924,113 @@ function parseHistory(value: unknown): ProgressInvoiceHistoryRpcResult | null {
   return { events: events as ProgressInvoiceSafeEventRpcDto[], next_cursor: nextCursor }
 }
 
+const CLAIM_EDITOR_KEYS = [
+  'series_id', 'series_version', 'series_status', 'source_type', 'accepted_numbering_base',
+  'expected_current_revision_set_id', 'expected_current_manifest_hash', 'claim_id', 'claim_version',
+  'claim_status', 'claim_kind', 'sequence', 'suffix', 'tax_invoice_number', 'revision_id',
+  'revision_number', 'input_mode', 'authoritative_value', 'issue_date', 'due_date', 'description',
+  'notes', 'reference', 'supplier_profile_version', 'supplier_legal_name', 'supplier_trading_name',
+  'supplier_abn', 'supplier_contractor_licence', 'supplier_address', 'supplier_phone', 'supplier_email',
+  'supplier_bank_name', 'supplier_bsb', 'supplier_bank_account_name', 'supplier_bank_account_number',
+  'supplier_gst_rate', 'supplier_timezone', 'supplier_default_payment_term_days', 'recipient_name',
+  'recipient_company', 'recipient_address', 'recipient_email', 'recipient_phone', 'recipient_abn',
+  'site_name', 'site_address', 'jobber_account_id', 'jobber_invoice_id',
+  'original_jobber_invoice_number', 'observed_jobber_invoice_number', 'base_contract_ex_gst',
+  'approved_variations_ex_gst', 'approved_credits_ex_gst', 'approved_adjustments', 'previous_claims',
+  'adjusted_contract_ex_gst', 'adjusted_contract_gst', 'adjusted_contract_inc_gst',
+  'previous_claims_ex_gst', 'previous_claims_gst', 'previous_claims_inc_gst',
+  'cumulative_target_ex_gst', 'cumulative_target_gst', 'cumulative_target_inc_gst',
+  'current_claim_ex_gst', 'current_claim_gst', 'current_claim_inc_gst', 'cumulative_percentage',
+  'remaining_ex_gst', 'remaining_gst', 'remaining_inc_gst', 'calculation_policy_version',
+  'financial_snapshot_hash', 'can_save', 'can_issue',
+] as const
+
+function parseClaimAdjustmentSnapshot(value: unknown): ProgressClaimEditorRpcDto['approved_adjustments'][number] | null {
+  if (!isRecord(value) || !hasExactKeys(value, ['id', 'type', 'effective_date', 'description', 'amount_ex_gst', 'gst_rate', 'version'])) return null
+  const id = uuidField(value, 'id'); const type = stringField(value, 'type'); const date = dateField(value, 'effective_date')
+  const description = stringField(value, 'description'); const amount = nonNegativeMoneyField(value, 'amount_ex_gst')
+  const version = positiveIntegerField(value, 'version')
+  if (!id || !['variation', 'credit'].includes(type ?? '') || !date || description === null || !amount
+    || value.gst_rate !== '0.10' || !version) return null
+  return { id, type: type as 'variation' | 'credit', effective_date: date, description, amount_ex_gst: amount, gst_rate: '0.10', version }
+}
+
+function parseClaimPredecessorSnapshot(value: unknown): ProgressClaimEditorRpcDto['previous_claims'][number] | null {
+  if (!isRecord(value) || !hasExactKeys(value, ['claim_id', 'revision_id', 'sequence', 'tax_invoice_number', 'ex_gst', 'gst', 'inc_gst'])) return null
+  const claimId = uuidField(value, 'claim_id'); const revisionId = uuidField(value, 'revision_id')
+  const sequence = positiveIntegerField(value, 'sequence'); const number = stringField(value, 'tax_invoice_number')
+  const ex = nonNegativeMoneyField(value, 'ex_gst'); const gst = nonNegativeMoneyField(value, 'gst'); const inc = nonNegativeMoneyField(value, 'inc_gst')
+  if (!claimId || !revisionId || !sequence || !number || !ex || !gst || !inc) return null
+  return { claim_id: claimId, revision_id: revisionId, sequence, tax_invoice_number: number, ex_gst: ex, gst, inc_gst: inc }
+}
+
+function parseClaimEditor(value: unknown): ProgressClaimEditorRpcDto | null {
+  const candidate = singleton(value)
+  if (!isRecord(candidate) || !hasExactKeys(candidate, CLAIM_EDITOR_KEYS)) return null
+  const seriesId = uuidField(candidate, 'series_id'); const seriesVersion = positiveIntegerField(candidate, 'series_version')
+  const setId = nullableUuidField(candidate, 'expected_current_revision_set_id')
+  const setHash = nullableStringField(candidate, 'expected_current_manifest_hash')
+  const claimId = nullableUuidField(candidate, 'claim_id'); const revisionId = nullableUuidField(candidate, 'revision_id')
+  const claimVersion = candidate.claim_version === null ? null : positiveIntegerField(candidate, 'claim_version')
+  const sequence = candidate.sequence === null ? null : positiveIntegerField(candidate, 'sequence')
+  const revisionNumber = candidate.revision_number === null ? null : positiveIntegerField(candidate, 'revision_number')
+  const profileVersion = positiveIntegerField(candidate, 'supplier_profile_version')
+  const termDays = nonNegativeIntegerField(candidate, 'supplier_default_payment_term_days')
+  const issueDate = dateField(candidate, 'issue_date'); const dueDate = dateField(candidate, 'due_date')
+  const percentageValue = percentageField(candidate, 'cumulative_percentage')
+  const authoritative = stringField(candidate, 'authoritative_value')
+  if (!seriesId || !seriesVersion || setId === undefined || setHash === undefined
+    || ((setId === null) !== (setHash === null)) || (setHash !== null && !/^[0-9a-f]{64}$/.test(setHash))
+    || claimId === undefined || revisionId === undefined || claimVersion === null && candidate.claim_version !== null
+    || sequence === null && candidate.sequence !== null || revisionNumber === null && candidate.revision_number !== null
+    || !profileVersion || termDays === null || termDays > 365 || !issueDate || !dueDate || dueDate < issueDate
+    || !percentageValue || !authoritative || typeof candidate.can_save !== 'boolean' || candidate.can_issue !== false) return null
+  const hasClaim = claimId !== null
+  const linked = [claimVersion, candidate.claim_status, candidate.claim_kind, sequence, candidate.suffix,
+    candidate.tax_invoice_number, revisionId, revisionNumber]
+  if (hasClaim ? linked.some((entry) => entry === null) : linked.some((entry) => entry !== null)) return null
+  if (hasClaim && (candidate.claim_status !== 'draft' || !['progress', 'final'].includes(String(candidate.claim_kind)) || revisionNumber !== 1)) return null
+  const inputMode = stringField(candidate, 'input_mode')
+  if (!['cumulative_percentage', 'current_claim_amount'].includes(inputMode ?? '')
+    || (inputMode === 'cumulative_percentage' ? !/^(?:0|[1-9]\d*)\.\d{6}$/.test(authoritative) : !/^(?:0|[1-9]\d*)\.\d{2}$/.test(authoritative))) return null
+  const seriesStatus = stringField(candidate, 'series_status'); const sourceType = stringField(candidate, 'source_type')
+  if (!['draft', 'active', 'completed', 'reconciliation_required', 'void'].includes(seriesStatus ?? '')
+    || !['pbc_quote', 'jobber_job', 'jobber_invoice', 'manual'].includes(sourceType ?? '')) return null
+  const moneyKeys = ['base_contract_ex_gst', 'approved_variations_ex_gst', 'approved_credits_ex_gst',
+    'adjusted_contract_ex_gst', 'adjusted_contract_gst', 'adjusted_contract_inc_gst', 'previous_claims_ex_gst',
+    'previous_claims_gst', 'previous_claims_inc_gst', 'cumulative_target_ex_gst', 'cumulative_target_gst',
+    'cumulative_target_inc_gst', 'current_claim_ex_gst', 'current_claim_gst', 'current_claim_inc_gst',
+    'remaining_ex_gst', 'remaining_gst', 'remaining_inc_gst'] as const
+  const money = Object.fromEntries(moneyKeys.map((key) => [key, nonNegativeMoneyField(candidate, key)]))
+  if (Object.values(money).some((entry) => entry === null) || !Array.isArray(candidate.approved_adjustments)
+    || candidate.approved_adjustments.length > 250 || !Array.isArray(candidate.previous_claims) || candidate.previous_claims.length > 100) return null
+  const adjustments = candidate.approved_adjustments.map(parseClaimAdjustmentSnapshot)
+  const predecessors = candidate.previous_claims.map(parseClaimPredecessorSnapshot)
+  if (adjustments.some((entry) => entry === null) || predecessors.some((entry) => entry === null)) return null
+  const requiredStrings = ['accepted_numbering_base', 'description', 'notes', 'supplier_legal_name', 'supplier_trading_name',
+    'supplier_abn', 'supplier_contractor_licence', 'supplier_address', 'supplier_phone', 'supplier_email', 'supplier_bank_name',
+    'supplier_bsb', 'supplier_bank_account_name', 'supplier_bank_account_number', 'recipient_name', 'recipient_address', 'site_name', 'site_address'] as const
+  if (requiredStrings.some((key) => typeof candidate[key] !== 'string') || candidate.accepted_numbering_base === ''
+    || candidate.supplier_gst_rate !== '0.10' || candidate.supplier_timezone !== 'Australia/Sydney'
+    || candidate.calculation_policy_version !== 'progress-claim-v1'
+    || typeof candidate.financial_snapshot_hash !== 'string' || !/^[0-9a-f]{64}$/.test(candidate.financial_snapshot_hash)) return null
+  const nullableStrings = ['reference', 'recipient_company', 'recipient_email', 'recipient_phone', 'recipient_abn',
+    'jobber_account_id', 'jobber_invoice_id', 'original_jobber_invoice_number', 'observed_jobber_invoice_number'] as const
+  if (nullableStrings.some((key) => candidate[key] !== null && typeof candidate[key] !== 'string')) return null
+  const jobberValues = [candidate.jobber_account_id, candidate.jobber_invoice_id, candidate.original_jobber_invoice_number, candidate.observed_jobber_invoice_number]
+  if (sourceType === 'manual' ? jobberValues.some((entry) => entry !== null) : jobberValues.some((entry) => entry === null)) return null
+  return {
+    ...(candidate as unknown as ProgressClaimEditorRpcDto),
+    series_id: seriesId, series_version: seriesVersion,
+    expected_current_revision_set_id: setId, expected_current_manifest_hash: setHash,
+    claim_id: claimId, claim_version: claimVersion, sequence, revision_id: revisionId,
+    revision_number: revisionNumber as 1 | null, input_mode: inputMode as ProgressClaimEditorRpcDto['input_mode'],
+    authoritative_value: authoritative, issue_date: issueDate, due_date: dueDate,
+    approved_adjustments: adjustments as ProgressClaimEditorRpcDto['approved_adjustments'],
+    previous_claims: predecessors as ProgressClaimEditorRpcDto['previous_claims'],
+  }
+}
+
 function parseRpcError(error: ProgressInvoiceRpcError): { message: string; code: string } {
   return {
     message: typeof error.message === 'string' ? error.message : '',
@@ -1850,6 +2085,13 @@ function parseSuccess<TCommand extends ProgressInvoiceCommand>(
   if (command === 'get_progress_invoice_workspace') return parseWorkspace(value) as CommandResult<TCommand> | null
   if (command === 'list_progress_invoice_history') return parseHistory(value) as CommandResult<TCommand> | null
   if (command === 'get_progress_invoice_jobber_context') return parseJobberContext(value) as CommandResult<TCommand> | null
+  if (command === 'get_progress_claim_defaults' || command === 'get_progress_claim_editor') {
+    const candidate = singleton(value)
+    return (candidate === null ? null : parseClaimEditor(candidate)) as CommandResult<TCommand> | null
+  }
+  if (command === 'create_progress_claim_draft' || command === 'save_progress_claim_draft') {
+    return parseClaimEditor(value) as CommandResult<TCommand> | null
+  }
   if (command === 'accept_progress_jobber_invoice_number') return parseVersioned(value) as CommandResult<TCommand> | null
   if (isPaymentCommand(command)) return parsePaymentMutation(value) as CommandResult<TCommand> | null
   return parseAdjustment(value) as CommandResult<TCommand> | null
@@ -1865,16 +2107,25 @@ export class ProgressInvoiceRepository {
     const { data, error } = await this.executor.execute(command, toJson(payload))
     if (error) return mapRpcError(error)
 
+    if ((command === 'get_progress_claim_defaults' || command === 'get_progress_claim_editor')
+      && singleton(data) === null) {
+      return { ok: true, data: null } as ActionResult<CommandResult<TCommand>, CommandCurrent<TCommand>>
+    }
+
     if (command !== 'save_business_invoice_profile'
       && command !== 'create_manual_progress_invoice_series'
       && command !== 'list_progress_invoice_series'
       && command !== 'get_progress_invoice_series'
       && command !== 'get_progress_invoice_workspace'
       && command !== 'list_progress_invoice_history'
-      && command !== 'get_progress_invoice_jobber_context') {
+      && command !== 'get_progress_invoice_jobber_context'
+      && command !== 'get_progress_claim_defaults'
+      && command !== 'get_progress_claim_editor') {
       const candidate = singleton(data)
       if (isRecord(candidate) && candidate.conflict === true) {
-        const current = command === 'update_progress_invoice_series'
+        const current = command === 'create_progress_claim_draft' || command === 'save_progress_claim_draft'
+          ? parseClaimEditor(candidate.current)
+          : command === 'update_progress_invoice_series'
           || command === 'accept_progress_jobber_invoice_number'
           ? parseSeriesDetail(candidate.current)
           : isPaymentCommand(command)

@@ -228,6 +228,28 @@ describe('Progress Invoice series detail workspace', () => {
     expect(markup).toContain('number and numbering base remain permanently reserved')
   })
 
+  it('links only Draft Claims to the Draft editor', () => {
+    const issuedMarkup = renderToStaticMarkup(createElement(ProgressInvoiceSeriesDetailView, {
+      workspace,
+      historyResult: { ok: true, data: { events: [], nextCursor: null } },
+    }))
+    const draftMarkup = renderToStaticMarkup(createElement(ProgressInvoiceSeriesDetailView, {
+      workspace: {
+        ...workspace,
+        claims: workspace.claims.map((claim) => ({
+          ...claim, status: 'draft' as const, originalIssuedAt: null,
+          currentRevision: claim.currentRevision ? { ...claim.currentRevision, state: 'draft' as const } : null,
+        })),
+      },
+      historyResult: { ok: true, data: { events: [], nextCursor: null } },
+    }))
+    const editorHref = `/progress-invoices/${workspace.series.id}/claims/${workspace.claims[0]!.id}`
+
+    expect(issuedMarkup).not.toContain(`href="${editorHref}"`)
+    expect(issuedMarkup).toContain('2906-P01')
+    expect(draftMarkup).toContain(`href="${editorHref}"`)
+  })
+
   it('makes a Void Series entirely read-only and blocks Issued direct Void', () => {
     const voidMarkup = renderToStaticMarkup(createElement(ProgressInvoiceSeriesDetailView, {
       workspace: {

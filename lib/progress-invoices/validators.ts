@@ -320,15 +320,34 @@ export const createProgressClaimDraftSchema = z.strictObject({
   seriesId: uuidSchema,
   kind: z.enum(['progress', 'final']),
   ...claimDraftShape,
+  expectedSeriesVersion: expectedVersionSchema,
+  expectedCurrentRevisionSetId: uuidSchema.nullable(),
+  expectedCurrentManifestHash: sha256Schema.nullable(),
   correlationKey: uuidSchema,
-}).superRefine(validateClaimDraft)
+}).superRefine((input, context) => {
+  validateClaimDraft(input, context)
+  if ((input.expectedCurrentRevisionSetId === null) !== (input.expectedCurrentManifestHash === null)) {
+    context.addIssue({ code: 'custom', path: ['expectedCurrentRevisionSetId'], message: 'Current set ID and hash must be provided together' })
+  }
+})
 
 export const saveProgressClaimDraftSchema = z.strictObject({
   claimId: uuidSchema,
-  expectedVersion: expectedVersionSchema,
+  expectedClaimVersion: expectedVersionSchema,
+  expectedSeriesVersion: expectedVersionSchema,
+  expectedCurrentRevisionSetId: uuidSchema.nullable(),
+  expectedCurrentManifestHash: sha256Schema.nullable(),
   ...claimDraftShape,
   correlationKey: uuidSchema,
-}).superRefine(validateClaimDraft)
+}).superRefine((input, context) => {
+  validateClaimDraft(input, context)
+  if ((input.expectedCurrentRevisionSetId === null) !== (input.expectedCurrentManifestHash === null)) {
+    context.addIssue({ code: 'custom', path: ['expectedCurrentRevisionSetId'], message: 'Current set ID and hash must be provided together' })
+  }
+})
+
+export const getProgressClaimDefaultsSchema = z.strictObject({ seriesId: uuidSchema })
+export const getProgressClaimEditorSchema = z.strictObject({ claimId: uuidSchema })
 
 export const issueProgressClaimSchema = z.strictObject({
   claimId: uuidSchema,

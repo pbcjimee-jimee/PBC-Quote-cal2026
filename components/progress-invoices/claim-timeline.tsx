@@ -1,3 +1,5 @@
+import Link from 'next/link'
+
 import type { ProgressInvoiceClaimListItemDto } from '@/lib/progress-invoices/workspace-service'
 
 function formatMoney(value: string): string {
@@ -7,8 +9,8 @@ function formatMoney(value: string): string {
   return `${sign}$${digits.replace(/\B(?=(\d{3})+(?!\d))/g, ',')}.${cents ?? '00'}`
 }
 
-export function ClaimTimeline({ claims }: { claims: readonly ProgressInvoiceClaimListItemDto[] }) {
-  if (claims.length === 0) return <p className="pbc-progress-empty">No claims issued.</p>
+export function ClaimTimeline({ seriesId, claims }: { seriesId: string; claims: readonly ProgressInvoiceClaimListItemDto[] }) {
+  if (claims.length === 0) return <p className="pbc-progress-empty">No claims issued or Draft Claims created.</p>
 
   return (
     <div className="pbc-progress-table-scroll" tabIndex={0} aria-label="Claim timeline table">
@@ -31,7 +33,9 @@ export function ClaimTimeline({ claims }: { claims: readonly ProgressInvoiceClai
             const revision = claim.currentRevision
             return (
               <tr key={claim.id}>
-                <th scope="row">{claim.taxInvoiceNumber}</th>
+                <th scope="row">{claim.status === 'draft'
+                  ? <Link href={`/progress-invoices/${seriesId}/claims/${claim.id}`}>{claim.taxInvoiceNumber}</Link>
+                  : claim.taxInvoiceNumber}</th>
                 <td>{claim.status}</td>
                 <td>{revision?.issueDate ?? 'Not issued'}</td>
                 <td>{revision?.dueDate ?? 'Not set'}</td>
