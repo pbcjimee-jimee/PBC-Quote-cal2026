@@ -266,6 +266,10 @@ export interface ProgressInvoiceClaimRpcDto {
   original_issued_at: string | null
   latest_revised_at: string | null
   version: number
+  created_at: string
+  collected_inc_gst: string | null
+  collected_date: string | null
+  outstanding_inc_gst: string | null
   current_revision: ProgressInvoiceClaimRevisionRpcDto | null
 }
 
@@ -366,6 +370,25 @@ export interface SaveProgressClaimDraftPayload extends Omit<CreateProgressClaimD
   claim_id: string
   expected_claim_version: number
   expected_series_version: number
+}
+
+export interface VoidProgressClaimDraftPayload {
+  series_id: string
+  claim_id: string
+  expected_series_version: number
+  expected_claim_version: number
+  expected_current_revision_set_id: string | null
+  expected_current_manifest_hash: string | null
+  reason: string
+  correlation_key: string
+}
+
+export interface VoidProgressClaimDraftRpcResult {
+  series_id: string
+  claim_id: string
+  series_version: number
+  claim_version: number
+  status: 'void'
 }
 
 export interface ProgressInvoicePaymentRevisionRpcDto {
@@ -795,6 +818,11 @@ export interface ProgressInvoiceCommandMap {
     payload: SaveProgressClaimDraftPayload
     result: ProgressClaimEditorRpcDto
     current: ProgressClaimEditorRpcDto
+  }
+  void_progress_claim_draft: {
+    payload: VoidProgressClaimDraftPayload
+    result: VoidProgressClaimDraftRpcResult
+    current: never
   }
   reject_progress_adjustment: {
     payload: RejectProgressAdjustmentPayload
@@ -1633,7 +1661,8 @@ function parseClaimRevision(value: unknown): ProgressInvoiceClaimRevisionRpcDto 
 function parseWorkspaceClaim(value: unknown): ProgressInvoiceClaimRpcDto | null {
   if (!isRecord(value) || !hasExactKeys(value, [
     'id', 'sequence', 'kind', 'suffix', 'tax_invoice_number', 'status',
-    'original_issued_at', 'latest_revised_at', 'version', 'current_revision',
+    'original_issued_at', 'latest_revised_at', 'version', 'created_at',
+    'collected_inc_gst', 'collected_date', 'outstanding_inc_gst', 'current_revision',
   ])) return null
   const id = uuidField(value, 'id')
   const sequence = positiveIntegerField(value, 'sequence')
@@ -1644,13 +1673,44 @@ function parseWorkspaceClaim(value: unknown): ProgressInvoiceClaimRpcDto | null 
   const originalIssuedAt = nullableTimestampField(value, 'original_issued_at')
   const latestRevisedAt = nullableTimestampField(value, 'latest_revised_at')
   const version = positiveIntegerField(value, 'version')
+  const createdAt = timestampField(value, 'created_at')
+  const collected = value.collected_inc_gst === null ? null : nonNegativeMoneyField(value, 'collected_inc_gst')
+  const collectedDate = value.collected_date === null ? null : dateField(value, 'collected_date')
+  const outstanding = value.outstanding_inc_gst === null ? null : nonNegativeMoneyField(value, 'outstanding_inc_gst')
   const revision = value.current_revision === null ? null : parseClaimRevision(value.current_revision)
   if (!id || !sequence || (kind !== 'progress' && kind !== 'final') || !suffix || !invoiceNumber
     || !['draft', 'issued', 'void'].includes(status ?? '') || originalIssuedAt === undefined
-    || latestRevisedAt === undefined || !version || (value.current_revision !== null && !revision)) return null
+    || latestRevisedAt === undefined || !version || !createdAt
+    || (value.collected_inc_gst !== null && !collected)
+    || (value.collected_date !== null && !collectedDate)
+    || (value.outstanding_inc_gst !== null && !outstanding)
+    || ((collected === null) !== (outstanding === null))
+    || (status !== 'issued' && (collected !== null || collectedDate !== null || outstanding !== null))
+    || (value.current_revision !== null && !revision)) return null
   return { id, sequence, kind, suffix, tax_invoice_number: invoiceNumber,
     status: status as ProgressInvoiceClaimRpcDto['status'], original_issued_at: originalIssuedAt,
-    latest_revised_at: latestRevisedAt, version, current_revision: revision }
+    latest_revised_at: latestRevisedAt, version, created_at: createdAt,
+    collected_inc_gst: collected, collected_date: collectedDate,
+    outstanding_inc_gst: outstanding, current_revision: revision }
+}
+
+function parseVoidClaimDraftResult(value: unknown): VoidProgressClaimDraftRpcResult | null {
+  const candidate = singleton(value)
+  if (!isRecord(candidate) || !hasExactKeys(candidate, [
+    'series_id', 'claim_id', 'series_version', 'claim_version', 'status',
+  ])) return null
+  const seriesId = uuidField(candidate, 'series_id')
+  const claimId = uuidField(candidate, 'claim_id')
+  const seriesVersion = positiveIntegerField(candidate, 'series_version')
+  const claimVersion = positiveIntegerField(candidate, 'claim_version')
+  if (!seriesId || !claimId || !seriesVersion || !claimVersion || candidate.status !== 'void') return null
+  return {
+    series_id: seriesId,
+    claim_id: claimId,
+    series_version: seriesVersion,
+    claim_version: claimVersion,
+    status: 'void',
+  }
 }
 
 function parsePaymentRevision(value: unknown): ProgressInvoicePaymentRevisionRpcDto | null {
@@ -2091,6 +2151,9 @@ function parseSuccess<TCommand extends ProgressInvoiceCommand>(
   }
   if (command === 'create_progress_claim_draft' || command === 'save_progress_claim_draft') {
     return parseClaimEditor(value) as CommandResult<TCommand> | null
+  }
+  if (command === 'void_progress_claim_draft') {
+    return parseVoidClaimDraftResult(value) as CommandResult<TCommand> | null
   }
   if (command === 'accept_progress_jobber_invoice_number') return parseVersioned(value) as CommandResult<TCommand> | null
   if (isPaymentCommand(command)) return parsePaymentMutation(value) as CommandResult<TCommand> | null

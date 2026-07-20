@@ -8,6 +8,7 @@ import { calculateProgressClaim } from '@/lib/progress-invoices/calculation'
 import type { ProgressClaimEditorDto } from '@/lib/progress-invoices/claim-service'
 import type { ProgressClaimInputMode, ProgressClaimKind } from '@/lib/progress-invoices/types'
 import { TaxInvoicePreview } from './tax-invoice-preview'
+import { ClaimDraftVoidDialog } from './claim-draft-void-dialog'
 
 export function progressClaimEditorKey(editor: ProgressClaimEditorDto): string {
   return [editor.seriesVersion, editor.claimVersion ?? 'new', editor.expectedCurrentRevisionSetId ?? 'none', editor.expectedCurrentManifestHash ?? 'none'].join(':')
@@ -113,6 +114,19 @@ export function ClaimEditor({ editor }: { editor: ProgressClaimEditorDto }) {
         {conflict ? <button type="button" className="pbc-btn pbc-btn--ghost" onClick={() => router.refresh()}>Reload latest Draft</button> : null}
         <div aria-live="polite" role="status">{status}</div>
         <button className="pbc-btn pbc-btn--primary" disabled={pending || !editor.capabilities.canSave || Boolean(preview.error)}>{pending ? 'Saving…' : 'Save Draft'}</button>
+        {editor.claimId && editor.claimVersion && editor.taxInvoiceNumber ? <div className="pbc-progress-claim-delete">
+        <h2>Delete Draft</h2>
+        <p>Delete marks this Draft Void and permanently retains its reserved Tax Invoice number.</p>
+        <ClaimDraftVoidDialog
+          seriesId={editor.seriesId}
+          claimId={editor.claimId}
+          taxInvoiceNumber={editor.taxInvoiceNumber}
+          expectedSeriesVersion={editor.seriesVersion}
+          expectedClaimVersion={editor.claimVersion}
+          expectedCurrentRevisionSetId={editor.expectedCurrentRevisionSetId}
+          expectedCurrentManifestHash={editor.expectedCurrentManifestHash}
+        />
+      </div> : null}
       </form>
       <TaxInvoicePreview calculation={preview.calculation} taxInvoiceNumber={editor.taxInvoiceNumber} />
     </div>

@@ -596,6 +596,14 @@
 .pbc-progress-detail-table th,
 .pbc-progress-detail-table td { padding: 12px; border-bottom: 1px solid var(--border); text-align: left; vertical-align: top; }
 .pbc-progress-detail-table thead th { color: var(--muted-foreground); font-size: 0.78rem; }
+.pbc-progress-claim-table { min-width: 1380px; }
+.pbc-progress-claim-row { cursor: pointer; }
+.pbc-progress-claim-row:hover { background: var(--surface-soft); }
+.pbc-progress-claim-row:focus-visible {
+  outline: 3px solid var(--primary);
+  outline-offset: -3px;
+  background: var(--primary-soft);
+}
 .pbc-progress-history-list { display: grid; gap: 10px; margin: 14px 0 0; padding: 0; list-style: none; }
 .pbc-progress-history-list li { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 12px; border: 1px solid var(--border); border-radius: 12px; }
 .pbc-progress-history-list li div { display: grid; gap: 3px; }
@@ -1087,6 +1095,8 @@
 .pbc-progress-claim-form legend { width: 100%; font-weight: 800; color: var(--foreground); margin-bottom: 4px; }
 .pbc-progress-claim-form fieldset label { display: inline-flex; min-height: 44px; align-items: center; gap: 8px; }
 .pbc-progress-claim-date-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.pbc-progress-claim-delete { display: grid; gap: 10px; padding-top: 16px; border-top: 1px solid var(--border); }
+.pbc-progress-confirmation { display: flex; gap: 10px; align-items: flex-start; }
 .pbc-progress-claim-preview-heading,
 .pbc-progress-section-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .pbc-progress-draft-mark { color: var(--warning); background: var(--warning-soft); border-radius: var(--r-sm); padding: 6px 10px; letter-spacing: .08em; }

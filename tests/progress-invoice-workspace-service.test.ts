@@ -132,6 +132,10 @@ const rawWorkspace = {
     original_issued_at: '2026-07-12T00:00:00+00:00',
     latest_revised_at: null,
     version: 1,
+    created_at: '2026-07-11T22:30:00+00:00',
+    collected_inc_gst: '1000.00',
+    collected_date: null,
+    outstanding_inc_gst: '17942.55',
     current_revision: {
       id: REVISION_ID,
       revision_number: 1,
@@ -272,7 +276,14 @@ describe('Progress Invoice workspace boundary', () => {
           currentManifestClaimCount: 1,
           currentClaimRevisionId: REVISION_ID,
         },
-        claims: [{ id: CLAIM_ID, currentRevision: { id: REVISION_ID } }],
+        claims: [{
+          id: CLAIM_ID,
+          createdAt: '2026-07-11T22:30:00+00:00',
+          collectedIncGst: '1000.00',
+          collectedDate: null,
+          outstandingIncGst: '17942.55',
+          currentRevision: { id: REVISION_ID },
+        }],
         payments: [{ source: 'manual', currentRevision: { status: 'active' } }],
       },
     })
@@ -392,7 +403,14 @@ describe('Progress Invoice workspace boundary', () => {
     const draftClaimWorkspace = structuredClone(rawWorkspace) as unknown as Record<string, unknown>
     const claims = draftClaimWorkspace.claims as Array<Record<string, unknown>>
     draftClaimWorkspace.current_revision_set = null
-    draftClaimWorkspace.claims = [{ ...claims[0], status: 'draft', original_issued_at: null, current_revision: null }]
+    draftClaimWorkspace.claims = [{
+      ...claims[0], status: 'draft', original_issued_at: null,
+      collected_inc_gst: null, collected_date: null, outstanding_inc_gst: null,
+      current_revision: {
+        ...(claims[0]!.current_revision as Record<string, unknown>),
+        state: 'draft',
+      },
+    }]
     ;(draftClaimWorkspace.capabilities as Record<string, unknown>).can_edit_base_contract = false
     mocks.call.mockResolvedValue({ ok: true, data: draftClaimWorkspace })
 
@@ -402,9 +420,36 @@ describe('Progress Invoice workspace boundary', () => {
       ok: true,
       data: {
         currentRevisionSet: null,
-        claims: [{ status: 'draft', currentRevision: null }],
+        claims: [{
+          status: 'draft', collectedIncGst: null, collectedDate: null,
+          outstandingIncGst: null, currentRevision: { state: 'draft' },
+        }],
         capabilities: { canEditBaseContract: false },
         invoiceProfileReady: true,
+      },
+    })
+  })
+
+  it('keeps a safe selected Revision for a historical Void Claim outside Current', async () => {
+    const historical = structuredClone(rawWorkspace) as unknown as Record<string, unknown>
+    historical.current_revision_set = null
+    const historicalClaim = (historical.claims as Array<Record<string, unknown>>)[0]!
+    historicalClaim.status = 'void'
+    historicalClaim.collected_inc_gst = null
+    historicalClaim.collected_date = null
+    historicalClaim.outstanding_inc_gst = null
+
+    const result = await new ProgressInvoiceRepository(executorReturning(historical)).call(
+      'get_progress_invoice_workspace', { series_id: SERIES_ID },
+    )
+
+    expect(result).toMatchObject({
+      ok: true,
+      data: {
+        claims: [{
+          status: 'void', collected_inc_gst: null, outstanding_inc_gst: null,
+          current_revision: { id: REVISION_ID },
+        }],
       },
     })
   })

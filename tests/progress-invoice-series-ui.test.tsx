@@ -1,4 +1,4 @@
-import { createElement } from 'react'
+import { act, createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -6,11 +6,15 @@ const routeMocks = vi.hoisted(() => ({
   getWorkspace: vi.fn(),
   listHistory: vi.fn(),
   notFound: vi.fn(() => { throw new Error('NEXT_NOT_FOUND') }),
+  push: vi.fn(),
 }))
 
 vi.mock('next/navigation', () => ({
   notFound: routeMocks.notFound,
-  useRouter: () => ({ refresh: vi.fn() }),
+  useRouter: () => ({ refresh: vi.fn(), push: routeMocks.push }),
+}))
+vi.mock('next/link', () => ({
+  default: ({ children, ...props }: React.AnchorHTMLAttributes<HTMLAnchorElement>) => createElement('a', props, children),
 }))
 vi.mock('@/lib/actions/progress-invoice-series', () => ({
   getProgressInvoiceSeriesWorkspace: routeMocks.getWorkspace,
@@ -18,9 +22,11 @@ vi.mock('@/lib/actions/progress-invoice-series', () => ({
 }))
 
 import { ProgressInvoiceSeriesDetailView } from '@/components/progress-invoices/series-detail'
+import { ClaimTimeline } from '@/components/progress-invoices/claim-timeline'
 import type { ProgressInvoiceSeriesWorkspaceDto } from '@/lib/progress-invoices/workspace-service'
 import ProgressInvoiceSeriesLoading from '@/app/(app)/progress-invoices/[seriesId]/loading'
 import ProgressInvoiceSeriesPage from '@/app/(app)/progress-invoices/[seriesId]/page'
+import { installTestDom } from '@/tests/helpers/test-dom'
 
 const workspace: ProgressInvoiceSeriesWorkspaceDto = {
   series: {
@@ -63,6 +69,8 @@ const workspace: ProgressInvoiceSeriesWorkspaceDto = {
     id: '33333333-3333-4333-8333-333333333333', sequence: 1, kind: 'progress', suffix: 'P01',
     taxInvoiceNumber: '2906-P01', status: 'issued', originalIssuedAt: '2026-07-12T00:00:00+00:00',
     latestRevisedAt: null, version: 1,
+    createdAt: '2026-07-11T22:30:00+00:00', collectedIncGst: '1000.00',
+    collectedDate: null, outstandingIncGst: '17942.55',
     currentRevision: {
       id: '44444444-4444-4444-8444-444444444444', revisionNumber: 1, state: 'issued',
       issueDate: '2026-07-12', dueDate: '2026-07-26', description: 'Progress painting works', reference: 'Stage one',
@@ -113,7 +121,7 @@ describe('Progress Invoice series detail workspace', () => {
       historyResult: { ok: true, data: { events: workspace.recentEvents, nextCursor: null } },
     }))
 
-    for (const heading of ['Summary', 'Jobber invoice observation', 'Recipient and site', 'Adjustments', 'Claims', 'Payments', 'Documents', 'History']) {
+    for (const heading of ['Summary', 'Progress Invoices', 'Jobber invoice observation', 'Recipient and site', 'Adjustments', 'Payments', 'Documents', 'History']) {
       expect(markup).toContain(`>${heading}<`)
     }
     for (const label of ['Adjusted contract Ex GST', 'Adjusted GST', 'Adjusted contract Inc GST', 'Claimed Inc GST', 'Received Inc GST', 'Outstanding Inc GST', 'Credit balance Inc GST', 'Unclaimed Inc GST']) {
@@ -121,7 +129,7 @@ describe('Progress Invoice series detail workspace', () => {
     }
     expect(markup).toContain('Imported on 16 July 2026')
     expect(markup).not.toMatch(/>Refresh<|>Sync</)
-    expect(markup).toContain('<caption>Claim timeline</caption>')
+    expect(markup).toContain('<caption>Progress Invoices</caption>')
     expect(markup).toContain('<caption>Payment ledger</caption>')
     expect(markup).toContain('<caption>Ready document metadata</caption>')
     expect(markup).not.toContain('storage_path')
@@ -228,7 +236,7 @@ describe('Progress Invoice series detail workspace', () => {
     expect(markup).toContain('number and numbering base remain permanently reserved')
   })
 
-  it('links only Draft Claims to the Draft editor', () => {
+  it('places the Progress Invoices table after Summary and links every Claim state to detail', () => {
     const issuedMarkup = renderToStaticMarkup(createElement(ProgressInvoiceSeriesDetailView, {
       workspace,
       historyResult: { ok: true, data: { events: [], nextCursor: null } },
@@ -245,9 +253,52 @@ describe('Progress Invoice series detail workspace', () => {
     }))
     const editorHref = `/progress-invoices/${workspace.series.id}/claims/${workspace.claims[0]!.id}`
 
-    expect(issuedMarkup).not.toContain(`href="${editorHref}"`)
-    expect(issuedMarkup).toContain('2906-P01')
+    expect(issuedMarkup.indexOf('>Summary<')).toBeLessThan(issuedMarkup.indexOf('>Progress Invoices<'))
+    expect(issuedMarkup.indexOf('>Progress Invoices<')).toBeLessThan(issuedMarkup.indexOf('>Availability<'))
+    expect(issuedMarkup).toContain(`href="${editorHref}"`)
     expect(draftMarkup).toContain(`href="${editorHref}"`)
+    for (const label of [
+      'Tax Invoice number', 'Status', 'Created date', 'Issue date', 'Due date',
+      'Claim price Inc GST', 'Collected Inc GST', 'Collected date',
+      'Outstanding Inc GST', 'Cumulative progress',
+    ]) expect(issuedMarkup).toContain(label)
+    expect(issuedMarkup).toContain('$18,942.55')
+    expect(issuedMarkup).toContain('$1,000.00')
+    expect(issuedMarkup).toContain('$17,942.55')
+  })
+
+  it('opens a Claim detail from the whole row by mouse, Enter, or Space', async () => {
+    const dom = installTestDom()
+    const { createRoot } = await import('react-dom/client')
+    const container = document.createElement('div')
+    const root = createRoot(container)
+    const href = `/progress-invoices/${workspace.series.id}/claims/${workspace.claims[0]!.id}`
+    try {
+      await act(async () => root.render(createElement(ClaimTimeline, {
+        seriesId: workspace.series.id,
+        claims: workspace.claims,
+      })))
+      const row = container.querySelectorAll('tr')[1]
+      expect(row?.getAttribute('role')).toBe('link')
+      expect(row?.getAttribute('tabindex')).toBe('0')
+
+      await act(async () => row?.dispatchEvent(new MouseEvent('click', { bubbles: true })))
+      const enter = new Event('keydown', { bubbles: true, cancelable: true })
+      Object.defineProperty(enter, 'key', { value: 'Enter' })
+      await act(async () => row?.dispatchEvent(enter))
+      const space = new Event('keydown', { bubbles: true, cancelable: true })
+      Object.defineProperty(space, 'key', { value: ' ' })
+      await act(async () => row?.dispatchEvent(space))
+
+      expect(routeMocks.push).toHaveBeenNthCalledWith(1, href)
+      expect(routeMocks.push).toHaveBeenNthCalledWith(2, href)
+      expect(routeMocks.push).toHaveBeenNthCalledWith(3, href)
+      expect(enter.defaultPrevented).toBe(true)
+      expect(space.defaultPrevented).toBe(true)
+    } finally {
+      await act(async () => root.unmount())
+      dom.cleanup()
+    }
   })
 
   it.each(['draft', 'void'] as const)('hides New Claim when a %s FINAL Claim exists', (status) => {
@@ -314,7 +365,7 @@ describe('Progress Invoice series detail workspace', () => {
 
     expect(markup).toContain('Invoice Profile is missing or invalid')
     expect(markup).toContain('href="/settings/invoice"')
-    for (const heading of ['Summary', 'Recipient and site', 'Claims', 'Payments', 'Documents', 'History']) {
+    for (const heading of ['Summary', 'Recipient and site', 'Progress Invoices', 'Payments', 'Documents', 'History']) {
       expect(markup).toContain(`>${heading}<`)
     }
   })
@@ -332,7 +383,7 @@ describe('Progress Invoice series detail workspace', () => {
       historyResult: { ok: false, error: 'PROGRESS_REQUEST_FAILED' },
     }))
 
-    for (const copy of ['No Jobber invoice was imported', 'No adjustments', 'No claims issued', 'No payments recorded', 'No ready documents', 'History could not be loaded']) {
+    for (const copy of ['No Jobber invoice was imported', 'No adjustments', 'No Progress Invoices created', 'No payments recorded', 'No ready documents', 'History could not be loaded']) {
       expect(markup).toContain(copy)
     }
     expect(markup).toContain('Adjusted contract Ex GST')

@@ -1,7 +1,15 @@
 import type { ActionResult } from '@/lib/actions/types'
 import { createProgressInvoiceRepository, type ProgressClaimEditorRpcDto } from './repository'
 import type { ProgressClaimCalculation, ProgressClaimInputMode } from './types'
-import type { CreateProgressClaimDraftInput, SaveProgressClaimDraftInput } from './validators'
+import type { CreateProgressClaimDraftInput, SaveProgressClaimDraftInput, VoidProgressClaimDraftInput } from './validators'
+
+export interface VoidProgressClaimDraftResult {
+  seriesId: string
+  claimId: string
+  seriesVersion: number
+  claimVersion: number
+  status: 'void'
+}
 
 export interface ProgressClaimEditorDto {
   seriesId: string
@@ -128,4 +136,27 @@ export async function saveProgressClaimDraft(input: SaveProgressClaimDraftInput)
     authoritative_value: input.authoritativeValue, issue_date: input.issueDate, due_date: input.dueDate,
     description: input.description, notes: input.notes ?? null, correlation_key: input.correlationKey,
   }))
+}
+
+export async function voidProgressClaimDraft(input: VoidProgressClaimDraftInput): Promise<ActionResult<VoidProgressClaimDraftResult>> {
+  const result = await (await createProgressInvoiceRepository()).call('void_progress_claim_draft', {
+    series_id: input.seriesId,
+    claim_id: input.claimId,
+    expected_series_version: input.expectedSeriesVersion,
+    expected_claim_version: input.expectedClaimVersion,
+    expected_current_revision_set_id: input.expectedCurrentRevisionSetId,
+    expected_current_manifest_hash: input.expectedCurrentManifestHash,
+    reason: input.reason,
+    correlation_key: input.correlationKey,
+  })
+  return result.ok ? {
+    ok: true,
+    data: {
+      seriesId: result.data.series_id,
+      claimId: result.data.claim_id,
+      seriesVersion: result.data.series_version,
+      claimVersion: result.data.claim_version,
+      status: result.data.status,
+    },
+  } : result
 }

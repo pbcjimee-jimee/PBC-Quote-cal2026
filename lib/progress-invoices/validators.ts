@@ -346,6 +346,21 @@ export const saveProgressClaimDraftSchema = z.strictObject({
   }
 })
 
+export const voidProgressClaimDraftSchema = z.strictObject({
+  seriesId: uuidSchema,
+  claimId: uuidSchema,
+  expectedSeriesVersion: expectedVersionSchema,
+  expectedClaimVersion: expectedVersionSchema,
+  expectedCurrentRevisionSetId: uuidSchema.nullable(),
+  expectedCurrentManifestHash: sha256Schema.nullable(),
+  reason: requiredText(PROGRESS_INVOICE_TEXT_LIMITS.revisionReason),
+  correlationKey: uuidSchema,
+}).superRefine((input, context) => {
+  if ((input.expectedCurrentRevisionSetId === null) !== (input.expectedCurrentManifestHash === null)) {
+    context.addIssue({ code: 'custom', path: ['expectedCurrentRevisionSetId'], message: 'Current set ID and hash must be provided together' })
+  }
+})
+
 export const getProgressClaimDefaultsSchema = z.strictObject({ seriesId: uuidSchema })
 export const getProgressClaimEditorSchema = z.strictObject({ claimId: uuidSchema })
 
@@ -484,6 +499,9 @@ export type CreateProgressClaimDraftInput = z.infer<
 >
 export type SaveProgressClaimDraftInput = z.infer<
   typeof saveProgressClaimDraftSchema
+>
+export type VoidProgressClaimDraftInput = z.infer<
+  typeof voidProgressClaimDraftSchema
 >
 export type CreateManualProgressPaymentInput = z.infer<
   typeof createManualProgressPaymentSchema

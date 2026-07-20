@@ -77,6 +77,13 @@ export function ProgressInvoiceSeriesDetailView({
         </dl>
       </section>
 
+      <section className="pbc-card pbc-card--pad" aria-labelledby="progress-claims-heading">
+        <div className="pbc-progress-section-heading"><h2 id="progress-claims-heading">Progress Invoices</h2>
+          {capabilities.canCreateClaim && !hasFinalClaim ? <Link className="pbc-btn pbc-btn--primary pbc-btn--sm" href={`/progress-invoices/${series.id}/claims/new`}>New Claim</Link> : null}
+        </div>
+        <ClaimTimeline seriesId={series.id} claims={workspace.claims} />
+      </section>
+
       <section className="pbc-card pbc-card--pad" aria-labelledby="progress-availability-heading">
         <h2 id="progress-availability-heading">Availability</h2>
         <p className="pbc-progress-imported-copy">
@@ -199,13 +206,6 @@ export function ProgressInvoiceSeriesDetailView({
           adjustments={workspace.adjustments}
           readOnly={series.status === 'void'}
         />
-      </section>
-
-      <section className="pbc-card pbc-card--pad" aria-labelledby="progress-claims-heading">
-        <div className="pbc-progress-section-heading"><h2 id="progress-claims-heading">Claims</h2>
-          {capabilities.canCreateClaim && !hasFinalClaim ? <Link className="pbc-btn pbc-btn--primary pbc-btn--sm" href={`/progress-invoices/${series.id}/claims/new`}>New Claim</Link> : null}
-        </div>
-        <ClaimTimeline seriesId={series.id} claims={workspace.claims} />
       </section>
 
       <section className="pbc-card pbc-card--pad" aria-labelledby="progress-payments-heading">

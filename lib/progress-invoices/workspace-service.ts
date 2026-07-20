@@ -61,6 +61,10 @@ export interface ProgressInvoiceClaimListItemDto {
   originalIssuedAt: string | null
   latestRevisedAt: string | null
   version: number
+  createdAt: string
+  collectedIncGst: string | null
+  collectedDate: string | null
+  outstandingIncGst: string | null
   currentRevision: null | {
     id: string
     revisionNumber: number
@@ -220,6 +224,8 @@ function mapClaim(row: ProgressInvoiceClaimRpcDto): ProgressInvoiceClaimListItem
     id: row.id, sequence: row.sequence, kind: row.kind, suffix: row.suffix,
     taxInvoiceNumber: row.tax_invoice_number, status: row.status,
     originalIssuedAt: row.original_issued_at, latestRevisedAt: row.latest_revised_at, version: row.version,
+    createdAt: row.created_at, collectedIncGst: row.collected_inc_gst,
+    collectedDate: row.collected_date, outstandingIncGst: row.outstanding_inc_gst,
     currentRevision: revision ? {
       id: revision.id, revisionNumber: revision.revision_number, state: revision.state,
       issueDate: revision.issue_date, dueDate: revision.due_date, description: revision.description,

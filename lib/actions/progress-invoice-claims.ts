@@ -9,13 +9,16 @@ import {
   getProgressClaimDefaults as getDefaults,
   getProgressClaimEditor as getEditor,
   saveProgressClaimDraft as saveDraft,
+  voidProgressClaimDraft as voidDraft,
   type ProgressClaimEditorDto,
+  type VoidProgressClaimDraftResult,
 } from '@/lib/progress-invoices/claim-service'
 import {
   createProgressClaimDraftSchema,
   getProgressClaimDefaultsSchema,
   getProgressClaimEditorSchema,
   saveProgressClaimDraftSchema,
+  voidProgressClaimDraftSchema,
 } from '@/lib/progress-invoices/validators'
 
 async function authorize(): Promise<ActionResult<true>> {
@@ -64,5 +67,18 @@ export async function saveProgressClaimDraft(input: unknown): Promise<ActionResu
   if (!parsed.success) return invalid()
   const result = await saveDraft(parsed.data)
   if (result.ok) revalidateClaim(result.data)
+  return result
+}
+
+export async function voidProgressClaimDraft(input: unknown): Promise<ActionResult<VoidProgressClaimDraftResult>> {
+  const authorized = await authorize()
+  if (!authorized.ok) return authorized
+  const parsed = voidProgressClaimDraftSchema.safeParse(input)
+  if (!parsed.success) return invalid()
+  const result = await voidDraft(parsed.data)
+  if (!result.ok) return result
+  revalidatePath('/progress-invoices')
+  revalidatePath(`/progress-invoices/${result.data.seriesId}`)
+  revalidatePath(`/progress-invoices/${result.data.seriesId}/claims/${result.data.claimId}`)
   return result
 }

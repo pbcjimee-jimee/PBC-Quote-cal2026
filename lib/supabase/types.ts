@@ -1823,6 +1823,10 @@ export interface Database {
         Args: { payload: Json }
         Returns: Json
       }
+      void_progress_claim_draft: {
+        Args: { payload: Json }
+        Returns: Json
+      }
       get_progress_invoice_workspace: {
         Args: { payload: Json }
         Returns: Json

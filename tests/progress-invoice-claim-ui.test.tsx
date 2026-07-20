@@ -5,13 +5,14 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { installTestDom } from '@/tests/helpers/test-dom'
 
 const mocks = vi.hoisted(() => ({
-  create: vi.fn(), save: vi.fn(), refresh: vi.fn(), replace: vi.fn(),
+  create: vi.fn(), save: vi.fn(), voidDraft: vi.fn(), refresh: vi.fn(), replace: vi.fn(),
 }))
 
 vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh: mocks.refresh, replace: mocks.replace }) }))
 vi.mock('@/lib/actions/progress-invoice-claims', () => ({
   createProgressClaimDraft: mocks.create,
   saveProgressClaimDraft: mocks.save,
+  voidProgressClaimDraft: mocks.voidDraft,
 }))
 
 import { ClaimEditor, progressClaimEditorKey } from '@/components/progress-invoices/claim-editor'
@@ -64,14 +65,35 @@ async function submit(container: HTMLElement): Promise<void> {
   })
 }
 
+async function click(button: Element | undefined): Promise<void> {
+  if (!button) throw new Error('Missing button')
+  await act(async () => {
+    button.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    await Promise.resolve()
+    await Promise.resolve()
+  })
+}
+
 describe('Claim editor', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mocks.create.mockResolvedValue({ ok: false, error: 'PROGRESS_REQUEST_FAILED' })
+    mocks.voidDraft.mockResolvedValue({ ok: false, error: 'PROGRESS_REQUEST_FAILED' })
   })
 
   it('renders an accessible Draft-only editor with authoritative modes and explicit GST labels', () => {
-    const markup = renderToStaticMarkup(createElement(ClaimEditor, { editor }))
+    const markup = renderToStaticMarkup(createElement(ClaimEditor, { editor: {
+      ...editor,
+      claimId: '61000000-0000-4000-8000-000000000002',
+      claimVersion: 1,
+      claimStatus: 'draft',
+      claimKind: 'progress',
+      sequence: 1,
+      suffix: 'P01',
+      taxInvoiceNumber: '900001-P01',
+      revisionId: '61000000-0000-4000-8000-000000000003',
+      revisionNumber: 1,
+    } }))
     expect(markup).toContain('<fieldset')
     expect(markup).toContain('Cumulative Progress (%)')
     expect(markup).toContain('This Claim Amount (Inc GST)')
@@ -81,6 +103,8 @@ describe('Claim editor', () => {
     expect(markup).toContain('Remaining Inc GST')
     expect(markup).toContain('DRAFT')
     expect(markup).toContain('aria-live="polite"')
+    expect(markup).toContain('Delete draft')
+    expect(markup).toContain('Void')
     expect(markup).not.toMatch(/Issue Claim|Retention|Download|PDF|Excel/i)
   })
 
@@ -140,6 +164,79 @@ describe('Claim editor', () => {
     } finally {
       randomUUID.mockRestore()
       await view.cleanup()
+    }
+  })
+
+  it('requires reason and confirmation, surfaces failures and conflicts, and redirects after Draft Void', async () => {
+    const draftEditor = {
+      ...editor,
+      claimId: '61000000-0000-4000-8000-000000000002',
+      claimVersion: 1,
+      claimStatus: 'draft' as const,
+      claimKind: 'progress' as const,
+      sequence: 1,
+      suffix: 'P01',
+      taxInvoiceNumber: '900001-P01',
+      revisionId: '61000000-0000-4000-8000-000000000003',
+      revisionNumber: 1 as const,
+    } satisfies ProgressClaimEditorDto
+    const randomUUID = vi.spyOn(crypto, 'randomUUID')
+      .mockReturnValueOnce('61000000-0000-4000-8000-000000000020')
+      .mockReturnValueOnce('61000000-0000-4000-8000-000000000021')
+    const dom = installTestDom()
+    const { createRoot } = await import('react-dom/client')
+    const container = document.createElement('div')
+    const root = createRoot(container)
+    try {
+      await act(async () => root.render(createElement(ClaimEditor, { editor: draftEditor })))
+      await click(Array.from(container.querySelectorAll('button')).find((button) => button.textContent === 'Delete draft'))
+
+      const confirm = Array.from(container.querySelectorAll('button'))
+        .find((button) => button.textContent === 'Confirm Delete draft')
+      expect(confirm?.disabled).toBe(true)
+      const textareas = Array.from(container.querySelectorAll('textarea'))
+      const inputs = Array.from(container.querySelectorAll('input'))
+      const reason = textareas[textareas.length - 1]
+      const checkbox = inputs[inputs.length - 1]
+      if (!reason || !checkbox) throw new Error('Missing Draft Void controls')
+      await act(async () => {
+        reason.value = 'Customer requested cancellation'
+        reason.dispatchEvent(new Event('input', { bubbles: true }))
+        checkbox.checked = true
+        checkbox.dispatchEvent(new Event('change', { bubbles: true }))
+      })
+      expect(confirm?.disabled).toBe(false)
+
+      await click(confirm)
+      expect(container.textContent).toContain('The Draft could not be deleted. It remains unchanged.')
+      await click(confirm)
+      expect(mocks.voidDraft.mock.calls[0]?.[0].correlationKey).toBe('61000000-0000-4000-8000-000000000020')
+      expect(mocks.voidDraft.mock.calls[1]?.[0].correlationKey).toBe('61000000-0000-4000-8000-000000000020')
+
+      mocks.voidDraft.mockResolvedValueOnce({
+        ok: false, error: 'PROGRESS_VERSION_CONFLICT', code: 'VERSION_CONFLICT', current: draftEditor,
+      })
+      reason.value = 'Updated cancellation reason'
+      reason.dispatchEvent(new Event('input', { bubbles: true }))
+      await click(confirm)
+      expect(mocks.voidDraft.mock.calls[2]?.[0].correlationKey).toBe('61000000-0000-4000-8000-000000000021')
+      expect(container.textContent).toContain('This Draft or Series changed.')
+      const reload = Array.from(container.querySelectorAll('button'))
+        .find((button) => button.textContent === 'Reload latest Draft')
+      await click(reload)
+      expect(mocks.refresh).toHaveBeenCalledOnce()
+
+      mocks.voidDraft.mockResolvedValueOnce({
+        ok: true,
+        data: { seriesId: editor.seriesId, claimId: draftEditor.claimId, seriesVersion: 8, claimVersion: 2, status: 'void' },
+      })
+      await click(confirm)
+      expect(mocks.replace).toHaveBeenCalledWith(`/progress-invoices/${editor.seriesId}`)
+      expect(mocks.refresh).toHaveBeenCalledTimes(2)
+    } finally {
+      randomUUID.mockRestore()
+      await act(async () => root.unmount())
+      dom.cleanup()
     }
   })
 })

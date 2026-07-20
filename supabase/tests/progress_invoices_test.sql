@@ -1,7 +1,7 @@
 CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA extensions;
 CREATE EXTENSION IF NOT EXISTS dblink WITH SCHEMA extensions;
 
-SELECT plan(405);
+SELECT plan(434);
 
 DELETE FROM public.business_invoice_profiles;
 DELETE FROM auth.users
@@ -7064,5 +7064,172 @@ SELECT is((SELECT jsonb_build_object('supplier_email',response->>'supplier_email
 SELECT is((public.get_progress_claim_editor(jsonb_build_object(
   'claim_id',(SELECT dto->>'claim_id' FROM task6_p02)))->>'supplier_email'), 'accounts@example.test',
   'an existing Draft remains readable from its immutable supplier snapshot after the live profile becomes invalid');
+
+-- Task 6B: per-Claim FIFO collection table and Draft delete-as-Void.
+RESET ROLE;
+UPDATE public.business_invoice_profiles SET email='accounts@example.test';
+SELECT pg_temp.set_task2_receipt('84000000-0000-4000-8000-000000000075',6,0,0);
+SET ROLE authenticated; SET request.jwt.claim.sub='00000000-0000-0000-0000-000000008001';
+SELECT is((SELECT jsonb_build_object('collected',claim->>'collected_inc_gst','outstanding',claim->>'outstanding_inc_gst','date',claim->'collected_date')
+  FROM jsonb_array_elements(public.get_progress_invoice_workspace('{"series_id":"84000000-0000-4000-8000-000000000001"}'::jsonb)->'claims') claim
+  WHERE claim->>'id'='84000000-0000-4000-8000-000000000020'),
+  '{"collected":"0.00","outstanding":"220.00","date":null}'::jsonb,'no receipt allocates zero to the Current Claim');
+RESET ROLE; SELECT pg_temp.set_task2_receipt('84000000-0000-4000-8000-000000000076',7,100,100);
+SET ROLE authenticated; SET request.jwt.claim.sub='00000000-0000-0000-0000-000000008001';
+SELECT is((SELECT (claim->>'collected_inc_gst')||'/'||(claim->>'outstanding_inc_gst')
+  FROM jsonb_array_elements(public.get_progress_invoice_workspace('{"series_id":"84000000-0000-4000-8000-000000000001"}'::jsonb)->'claims') claim
+  WHERE claim->>'id'='84000000-0000-4000-8000-000000000020'),'100.00/120.00','partial receipt allocates FIFO without changing Claim price');
+RESET ROLE; SELECT pg_temp.set_task2_receipt('84000000-0000-4000-8000-000000000077',8,220,220);
+SET ROLE authenticated; SET request.jwt.claim.sub='00000000-0000-0000-0000-000000008001';
+SELECT is((SELECT (claim->>'collected_inc_gst')||'/'||(claim->>'outstanding_inc_gst')
+  FROM jsonb_array_elements(public.get_progress_invoice_workspace('{"series_id":"84000000-0000-4000-8000-000000000001"}'::jsonb)->'claims') claim
+  WHERE claim->>'id'='84000000-0000-4000-8000-000000000020'),'220.00/0.00','full receipt closes the Current Claim');
+RESET ROLE; SELECT pg_temp.set_task2_receipt('84000000-0000-4000-8000-000000000078',9,300,300);
+SET ROLE authenticated; SET request.jwt.claim.sub='00000000-0000-0000-0000-000000008001';
+SELECT is((SELECT (claim->>'collected_inc_gst')||'/'||(claim->>'outstanding_inc_gst')
+  FROM jsonb_array_elements(public.get_progress_invoice_workspace('{"series_id":"84000000-0000-4000-8000-000000000001"}'::jsonb)->'claims') claim
+  WHERE claim->>'id'='84000000-0000-4000-8000-000000000020'),'220.00/0.00','overpayment is clamped to the Claim price');
+RESET ROLE; SELECT pg_temp.set_task2_receipt('84000000-0000-4000-8000-000000000079',10,200,200);
+SET ROLE authenticated; SET request.jwt.claim.sub='00000000-0000-0000-0000-000000008001';
+SELECT is((SELECT (claim->>'collected_inc_gst')||'/'||(claim->>'outstanding_inc_gst')
+  FROM jsonb_array_elements(public.get_progress_invoice_workspace('{"series_id":"84000000-0000-4000-8000-000000000001"}'::jsonb)->'claims') claim
+  WHERE claim->>'id'='84000000-0000-4000-8000-000000000020'),'200.00/20.00','matched Manual receipt is excluded once its Jobber payment is current');
+RESET ROLE; SELECT pg_temp.set_task2_receipt('84000000-0000-4000-8000-000000000080',11,10,-10);
+SET ROLE authenticated; SET request.jwt.claim.sub='00000000-0000-0000-0000-000000008001';
+SELECT is((SELECT jsonb_build_object('collected',claim->>'collected_inc_gst','outstanding',claim->>'outstanding_inc_gst','date',claim->'collected_date')
+  FROM jsonb_array_elements(public.get_progress_invoice_workspace('{"series_id":"84000000-0000-4000-8000-000000000001"}'::jsonb)->'claims') claim
+  WHERE claim->>'id'='84000000-0000-4000-8000-000000000020'),
+  '{"collected":"0.00","outstanding":"220.00","date":null}'::jsonb,'a refund/reversal reopens a previously collected Claim');
+
+RESET ROLE;
+SELECT pg_temp.set_task2_receipt('84000000-0000-4000-8000-000000000081',12,0,0);
+INSERT INTO public.progress_payments(id,series_id,source,jobber_payment_id,created_by,updated_by) VALUES
+('84000000-0000-4000-8000-000000000082','84000000-0000-4000-8000-000000000001','jobber','RECROSS-1','00000000-0000-0000-0000-000000008001','00000000-0000-0000-0000-000000008001'),
+('84000000-0000-4000-8000-000000000084','84000000-0000-4000-8000-000000000001','jobber','RECROSS-2','00000000-0000-0000-0000-000000008001','00000000-0000-0000-0000-000000008001'),
+('84000000-0000-4000-8000-000000000086','84000000-0000-4000-8000-000000000001','jobber','RECROSS-3','00000000-0000-0000-0000-000000008001','00000000-0000-0000-0000-000000008001');
+INSERT INTO public.progress_payment_revisions(id,payment_id,revision_number,received_date,observed_amount,effective_receipt_amount,sync_state,status,created_by) VALUES
+('84000000-0000-4000-8000-000000000083','84000000-0000-4000-8000-000000000082',1,'2026-07-01',250,250,'observed','active','00000000-0000-0000-0000-000000008001'),
+('84000000-0000-4000-8000-000000000085','84000000-0000-4000-8000-000000000084',1,'2026-07-02',100,-100,'reversed','active','00000000-0000-0000-0000-000000008001'),
+('84000000-0000-4000-8000-000000000087','84000000-0000-4000-8000-000000000086',1,'2026-07-03',70,70,'observed','active','00000000-0000-0000-0000-000000008001');
+UPDATE public.progress_payments SET current_revision_id=CASE id
+WHEN '84000000-0000-4000-8000-000000000082' THEN '84000000-0000-4000-8000-000000000083'::uuid
+WHEN '84000000-0000-4000-8000-000000000084' THEN '84000000-0000-4000-8000-000000000085'::uuid
+WHEN '84000000-0000-4000-8000-000000000086' THEN '84000000-0000-4000-8000-000000000087'::uuid END
+WHERE id IN ('84000000-0000-4000-8000-000000000082','84000000-0000-4000-8000-000000000084','84000000-0000-4000-8000-000000000086');
+SET ROLE authenticated; SET request.jwt.claim.sub='00000000-0000-0000-0000-000000008001';
+SELECT is((SELECT claim->>'collected_date' FROM jsonb_array_elements(public.get_progress_invoice_workspace('{"series_id":"84000000-0000-4000-8000-000000000001"}'::jsonb)->'claims') claim
+  WHERE claim->>'id'='84000000-0000-4000-8000-000000000020'),'2026-07-03','collected date is the latest threshold re-crossing date');
+
+CREATE TEMP TABLE task6b_void AS SELECT public.void_progress_claim_draft(jsonb_build_object(
+  'series_id','91000000-0000-4000-8000-000000000001','claim_id',(SELECT dto->>'claim_id' FROM task6_p02),
+  'expected_series_version',7,'expected_claim_version',2,'expected_current_revision_set_id',null,'expected_current_manifest_hash',null,
+  'reason','Created in error','correlation_key','91000000-0000-4000-8000-000000000030')) AS dto;
+SELECT is((SELECT dto FROM task6b_void),jsonb_build_object('series_id','91000000-0000-4000-8000-000000000001','claim_id',(SELECT dto->>'claim_id' FROM task6_p02),'series_version',8,'claim_version',3,'status','void'),
+  'Draft Void increments Claim and Series versions and returns a strict response');
+SELECT is((SELECT public.void_progress_claim_draft(jsonb_build_object(
+  'series_id','91000000-0000-4000-8000-000000000001','claim_id',(SELECT dto->>'claim_id' FROM task6_p02),
+  'expected_series_version',7,'expected_claim_version',2,'expected_current_revision_set_id',null,'expected_current_manifest_hash',null,
+  'reason','Created in error','correlation_key','91000000-0000-4000-8000-000000000030'))),(SELECT dto FROM task6b_void),'exact Draft Void replay returns the original response');
+SELECT is(pg_temp.capture_sqlstate($sql$SELECT public.void_progress_claim_draft(jsonb_build_object(
+  'series_id','91000000-0000-4000-8000-000000000001','claim_id',(SELECT dto->>'claim_id' FROM task6_p02),
+  'expected_series_version',7,'expected_claim_version',2,'expected_current_revision_set_id',null,'expected_current_manifest_hash',null,
+  'reason','Different reason','correlation_key','91000000-0000-4000-8000-000000000030'))$sql$),'P0001','same Draft Void key with a different fingerprint is rejected');
+SELECT is(pg_temp.capture_sqlstate($sql$SELECT public.void_progress_claim_draft(jsonb_build_object(
+  'series_id','91000000-0000-4000-8000-000000000001','claim_id',(SELECT dto->>'claim_id' FROM task6_p10),
+  'expected_series_version',999,'expected_claim_version',1,'expected_current_revision_set_id',null,'expected_current_manifest_hash',null,
+  'reason','Stale Series','correlation_key','91000000-0000-4000-8000-000000000031'))$sql$),'P0001','stale Series version rejects Draft Void');
+SELECT is(pg_temp.capture_sqlstate($sql$SELECT public.void_progress_claim_draft(jsonb_build_object(
+  'series_id','91000000-0000-4000-8000-000000000001','claim_id',(SELECT dto->>'claim_id' FROM task6_p10),
+  'expected_series_version',8,'expected_claim_version',999,'expected_current_revision_set_id',null,'expected_current_manifest_hash',null,
+  'reason','Stale Claim','correlation_key','91000000-0000-4000-8000-000000000032'))$sql$),'P0001','stale Claim version rejects Draft Void');
+SELECT is(pg_temp.capture_sqlstate($sql$SELECT public.void_progress_claim_draft(jsonb_build_object(
+  'series_id','91000000-0000-4000-8000-000000000001','claim_id',(SELECT dto->>'claim_id' FROM task6_p10),
+  'expected_series_version',8,'expected_claim_version',1,'expected_current_revision_set_id','84000000-0000-4000-8000-000000000032','expected_current_manifest_hash',repeat('e',64),
+  'reason','Stale set','correlation_key','91000000-0000-4000-8000-000000000033'))$sql$),'P0001','stale Current-set identity rejects Draft Void');
+SELECT is(pg_temp.capture_sqlstate($sql$SELECT public.void_progress_claim_draft(jsonb_build_object(
+  'series_id','84000000-0000-4000-8000-000000000001','claim_id','84000000-0000-4000-8000-000000000064',
+  'expected_series_version',(SELECT version FROM public.progress_invoice_series WHERE id='84000000-0000-4000-8000-000000000001'),
+  'expected_claim_version',1,'expected_current_revision_set_id','84000000-0000-4000-8000-000000000031','expected_current_manifest_hash',repeat('e',64),
+  'reason','Independent stale set','correlation_key','84000000-0000-4000-8000-000000000090'))$sql$),'P0001','Current-set ID is checked independently from the manifest hash');
+SELECT is(pg_temp.capture_sqlstate($sql$SELECT public.void_progress_claim_draft(jsonb_build_object(
+  'series_id','84000000-0000-4000-8000-000000000001','claim_id','84000000-0000-4000-8000-000000000064',
+  'expected_series_version',(SELECT version FROM public.progress_invoice_series WHERE id='84000000-0000-4000-8000-000000000001'),
+  'expected_claim_version',1,'expected_current_revision_set_id','84000000-0000-4000-8000-000000000032','expected_current_manifest_hash',repeat('f',64),
+  'reason','Independent stale hash','correlation_key','84000000-0000-4000-8000-000000000091'))$sql$),'P0001','Current manifest hash is checked independently from the Current-set ID');
+SELECT is(pg_temp.capture_sqlstate($sql$SELECT public.void_progress_claim_draft(jsonb_build_object(
+  'series_id','91000000-0000-4000-8000-000000000001','claim_id',(SELECT dto->>'claim_id' FROM task6_p10),
+  'expected_series_version',8,'expected_claim_version',1,'expected_current_revision_set_id',null,'expected_current_manifest_hash',null,
+  'reason',' ','correlation_key','91000000-0000-4000-8000-000000000034'))$sql$),'23514','Draft Void requires a bounded non-empty reason');
+SELECT is(pg_temp.capture_sqlstate($sql$SELECT public.void_progress_claim_draft(jsonb_build_object(
+  'series_id','93000000-0000-4000-8000-000000000001','claim_id',(SELECT dto->>'claim_id' FROM task6_p100),
+  'expected_series_version',8,'expected_claim_version',1,'expected_current_revision_set_id',null,'expected_current_manifest_hash',null,
+  'reason','Wrong Series','correlation_key','91000000-0000-4000-8000-000000000035'))$sql$),'P0001','cross-Series Draft Void is rejected');
+SELECT ok((SELECT claim.status='void' AND claim.version=3 AND series.version=8 AND event.event_type='progress_claim_draft_voided'
+  FROM public.progress_claims claim JOIN public.progress_invoice_series series ON series.id=claim.series_id
+  JOIN public.progress_invoice_events event ON event.claim_id=claim.id AND event.command_name='void_progress_claim_draft'
+  WHERE claim.id=(SELECT (dto->>'claim_id')::uuid FROM task6_p02)),'Draft Void retains an auditable actor-stamped Claim and Series mutation');
+SELECT ok((SELECT count(*)=1 FROM public.progress_claims WHERE id=(SELECT (dto->>'claim_id')::uuid FROM task6_p02))
+  AND (SELECT count(*)=1 FROM public.progress_claim_revisions WHERE claim_id=(SELECT (dto->>'claim_id')::uuid FROM task6_p02))
+  AND (SELECT state='permanent' FROM public.progress_invoice_numbering_base_reservations WHERE series_id='91000000-0000-4000-8000-000000000001'),
+  'Draft Void retains Claim, Revision 1, Tax Invoice number, and permanent numbering-base reservation');
+SELECT is(pg_temp.capture_sqlstate($sql$DELETE FROM public.progress_claims WHERE id=(SELECT (dto->>'claim_id')::uuid FROM task6_p02)$sql$),'42501','Claim direct delete remains blocked by the ACL and trigger invariant');
+
+RESET ROLE;
+UPDATE public.progress_claims SET status='issued',original_issued_at=now() WHERE id=(SELECT (dto->>'claim_id')::uuid FROM task6_p10);
+SET ROLE authenticated; SET request.jwt.claim.sub='00000000-0000-0000-0000-000000008001';
+SELECT is(pg_temp.capture_sqlstate($sql$SELECT public.void_progress_claim_draft(jsonb_build_object(
+  'series_id','91000000-0000-4000-8000-000000000001','claim_id',(SELECT dto->>'claim_id' FROM task6_p10),
+  'expected_series_version',8,'expected_claim_version',1,'expected_current_revision_set_id',null,'expected_current_manifest_hash',null,
+  'reason','Issued forbidden','correlation_key','91000000-0000-4000-8000-000000000036'))$sql$),'P0001','Issued Claim rejects Draft-only Void');
+SELECT is(pg_temp.capture_sqlstate($sql$SELECT public.void_progress_claim_draft(jsonb_build_object(
+  'series_id','91000000-0000-4000-8000-000000000001','claim_id',(SELECT dto->>'claim_id' FROM task6_p02),
+  'expected_series_version',8,'expected_claim_version',3,'expected_current_revision_set_id',null,'expected_current_manifest_hash',null,
+  'reason','Void forbidden','correlation_key','91000000-0000-4000-8000-000000000037'))$sql$),'P0001','already Void Claim rejects Draft-only Void');
+
+RESET ROLE;
+INSERT INTO public.progress_invoice_series(id,source_type,accepted_numbering_base,base_contract_ex_gst,recipient_name,recipient_address,site_name,site_address,default_description,created_by,updated_by)
+VALUES('95000000-0000-4000-8000-000000000001','manual','FINAL-VOID',100,'Builder','Billing','Final Void','Site','Final works','00000000-0000-0000-0000-000000008001','00000000-0000-0000-0000-000000008001');
+SET ROLE authenticated; SET request.jwt.claim.sub='00000000-0000-0000-0000-000000008001';
+CREATE TEMP TABLE task6b_final AS SELECT public.create_progress_claim_draft(jsonb_build_object(
+  'series_id','95000000-0000-4000-8000-000000000001','kind','final','input_mode','current_claim_amount','authoritative_value','110.00',
+  'issue_date','2026-07-20','due_date','2026-08-03','description','Final','notes',null,'expected_series_version',1,
+  'expected_current_revision_set_id',null,'expected_current_manifest_hash',null,'correlation_key','95000000-0000-4000-8000-000000000010')) dto;
+SELECT public.void_progress_claim_draft(jsonb_build_object('series_id','95000000-0000-4000-8000-000000000001','claim_id',(SELECT dto->>'claim_id' FROM task6b_final),
+  'expected_series_version',2,'expected_claim_version',1,'expected_current_revision_set_id',null,'expected_current_manifest_hash',null,
+  'reason','Final created in error','correlation_key','95000000-0000-4000-8000-000000000011'));
+SELECT ok((public.get_progress_invoice_workspace('{"series_id":"95000000-0000-4000-8000-000000000001"}'::jsonb)#>>'{capabilities,can_create_claim}')::boolean IS FALSE
+  AND (public.get_progress_claim_defaults('{"series_id":"95000000-0000-4000-8000-000000000001"}'::jsonb)->>'can_save')::boolean IS FALSE,
+  'voided Draft FINAL permanently prevents another Claim');
+
+RESET ROLE;
+UPDATE public.progress_invoice_series SET status='void' WHERE id='91000000-0000-4000-8000-000000000001';
+SET ROLE authenticated; SET request.jwt.claim.sub='00000000-0000-0000-0000-000000008001';
+SELECT is(pg_temp.capture_sqlstate($sql$SELECT public.void_progress_claim_draft(jsonb_build_object(
+  'series_id','91000000-0000-4000-8000-000000000001','claim_id',(SELECT dto->>'claim_id' FROM task6_p100),
+  'expected_series_version',8,'expected_claim_version',1,'expected_current_revision_set_id',null,'expected_current_manifest_hash',null,
+  'reason','Series Void','correlation_key','91000000-0000-4000-8000-000000000038'))$sql$),'P0001','Void Series rejects Draft Void');
+SELECT ok((SELECT claim->>'created_at' IS NOT NULL AND claim->'current_revision' <> 'null'::jsonb
+    AND claim->'collected_inc_gst'='null'::jsonb AND claim->'outstanding_inc_gst'='null'::jsonb
+  FROM jsonb_array_elements(public.get_progress_invoice_workspace('{"series_id":"91000000-0000-4000-8000-000000000001"}'::jsonb)->'claims') claim
+  WHERE claim->>'id'=(SELECT dto->>'claim_id' FROM task6_p02)),'workspace retains safe selected Revision and created timestamp for historical Void');
+SELECT ok((SELECT bool_and(proconfig @> ARRAY['search_path=""']) FROM pg_proc WHERE oid IN (
+  'public.get_progress_invoice_workspace(jsonb)'::regprocedure,'public.void_progress_claim_draft(jsonb)'::regprocedure)),
+  'workspace and Draft Void public functions pin an empty search_path');
+SELECT ok(NOT has_function_privilege('authenticated','public.progress_claim_table_dtos(uuid)','EXECUTE')
+  AND NOT has_function_privilege('service_role','public.progress_claim_table_dtos(uuid)','EXECUTE'),
+  'Claim table allocation helper is private from API roles');
+
+SELECT has_function(
+  'public',
+  'void_progress_claim_draft',
+  ARRAY['jsonb'],
+  'Draft Void command exists'
+);
+SELECT ok(
+  has_function_privilege('authenticated', 'public.void_progress_claim_draft(jsonb)', 'EXECUTE')
+    AND NOT has_function_privilege('anon', 'public.void_progress_claim_draft(jsonb)', 'EXECUTE')
+    AND NOT has_function_privilege('service_role', 'public.void_progress_claim_draft(jsonb)', 'EXECUTE'),
+  'Draft Void command is authenticated-only'
+);
 
 SELECT * FROM finish();
