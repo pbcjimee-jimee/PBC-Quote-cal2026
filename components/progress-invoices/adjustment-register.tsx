@@ -49,24 +49,31 @@ export function AdjustmentRegister({
     description: string
     amountExGst: string
   }>>({})
-  const keys = useRef(new Map<string, string>())
+  const keys = useRef(new Map<string, { signature: string; key: string }>())
 
-  function key(name: string): string {
-    const existing = keys.current.get(name)
-    if (existing) return existing
+  function key(scope: string, payload: unknown): string {
+    const signature = JSON.stringify(payload)
+    const existing = keys.current.get(scope)
+    if (existing?.signature === signature) return existing.key
     const created = crypto.randomUUID()
-    keys.current.set(name, created)
+    keys.current.set(scope, { signature, key: created })
     return created
   }
 
-  function run(operation: () => Promise<{ ok: boolean; error?: string }>): void {
+  function run(
+    scope: string,
+    payload: unknown,
+    operation: (correlationKey: string) => Promise<{ ok: boolean; error?: string }>,
+  ): void {
+    const correlationKey = key(scope, payload)
     setMessage(null)
     startTransition(async () => {
-      const result = await operation()
+      const result = await operation(correlationKey)
       if (!result.ok) {
         setMessage(safeError(result.error ?? 'PROGRESS_REQUEST_FAILED'))
         return
       }
+      if (keys.current.get(scope)?.key === correlationKey) keys.current.delete(scope)
       setMessage('Adjustment saved.')
       router.refresh()
     })
@@ -74,10 +81,11 @@ export function AdjustmentRegister({
 
   function create(event: FormEvent<HTMLFormElement>): void {
     event.preventDefault()
-    run(() => createProgressAdjustment({
+    const payload = {
       seriesId, type, effectiveDate: date, description, amountExGst: amount,
-      gstRate: '0.10', pbcQuoteItemId: null, correlationKey: key('create'),
-    }))
+      gstRate: '0.10' as const, pbcQuoteItemId: null,
+    }
+    run('create', payload, (correlationKey) => createProgressAdjustment({ ...payload, correlationKey }))
   }
 
   return (
@@ -132,21 +140,26 @@ export function AdjustmentRegister({
                     <input aria-label={`Edit date for ${adjustment.description}`} className="pbc-input" type="date" value={rowDraft.effectiveDate} onChange={(event) => setRow({ effectiveDate: event.target.value })} disabled={isPending} />
                     <input aria-label={`Edit description for ${adjustment.description}`} className="pbc-input" value={rowDraft.description} onChange={(event) => setRow({ description: event.target.value })} disabled={isPending} />
                     <input aria-label={`Edit amount for ${adjustment.description}`} className="pbc-input" value={rowDraft.amountExGst} onChange={(event) => setRow({ amountExGst: event.target.value })} disabled={isPending} />
-                    <button type="button" className="pbc-btn pbc-btn--secondary" disabled={isPending} onClick={() => run(() => updateDraftProgressAdjustment({
-                      adjustmentId: adjustment.id, expectedVersion: adjustment.version, type: rowDraft.type,
-                      effectiveDate: rowDraft.effectiveDate, description: rowDraft.description,
-                      amountExGst: rowDraft.amountExGst, gstRate: '0.10', pbcQuoteItemId: null,
-                      correlationKey: key(`edit-${adjustment.id}`),
-                    }))}>Edit</button>
-                    <button type="button" className="pbc-btn pbc-btn--primary" disabled={isPending} onClick={() => run(() => approveProgressAdjustment({
-                      adjustmentId: adjustment.id, expectedVersion: adjustment.version,
-                      correlationKey: key(`approve-${adjustment.id}`),
-                    }))}>Approve</button>
+                    <button type="button" className="pbc-btn pbc-btn--secondary" disabled={isPending} onClick={() => {
+                      const payload = {
+                        adjustmentId: adjustment.id, expectedVersion: adjustment.version, type: rowDraft.type,
+                        effectiveDate: rowDraft.effectiveDate, description: rowDraft.description,
+                        amountExGst: rowDraft.amountExGst, gstRate: '0.10' as const, pbcQuoteItemId: null,
+                      }
+                      run(`edit-${adjustment.id}`, payload, (correlationKey) => updateDraftProgressAdjustment({ ...payload, correlationKey }))
+                    }}>Edit</button>
+                    <button type="button" className="pbc-btn pbc-btn--primary" disabled={isPending} onClick={() => {
+                      const payload = { adjustmentId: adjustment.id, expectedVersion: adjustment.version }
+                      run(`approve-${adjustment.id}`, payload, (correlationKey) => approveProgressAdjustment({ ...payload, correlationKey }))
+                    }}>Approve</button>
                     <input aria-label={`Reject reason for ${adjustment.description}`} className="pbc-input" value={reasons[adjustment.id] ?? ''} onChange={(event) => setReasons((current) => ({ ...current, [adjustment.id]: event.target.value }))} disabled={isPending} />
-                    <button type="button" className="pbc-btn pbc-btn--danger" disabled={isPending || !(reasons[adjustment.id]?.trim())} onClick={() => run(() => rejectProgressAdjustment({
-                      adjustmentId: adjustment.id, expectedVersion: adjustment.version,
-                      reason: reasons[adjustment.id], correlationKey: key(`reject-${adjustment.id}`),
-                    }))}>Reject</button>
+                    <button type="button" className="pbc-btn pbc-btn--danger" disabled={isPending || !(reasons[adjustment.id]?.trim())} onClick={() => {
+                      const payload = {
+                        adjustmentId: adjustment.id, expectedVersion: adjustment.version,
+                        reason: reasons[adjustment.id] ?? '',
+                      }
+                      run(`reject-${adjustment.id}`, payload, (correlationKey) => rejectProgressAdjustment({ ...payload, correlationKey }))
+                    }}>Reject</button>
                   </div>
                 ) : !readOnly && adjustment.status === 'approved' ? (
                   <div className="pbc-alert__actions">
@@ -157,11 +170,13 @@ export function AdjustmentRegister({
                     <input aria-label={`Correction description for ${adjustment.description}`} className="pbc-input" value={rowDraft.description} onChange={(event) => setRow({ description: event.target.value })} disabled={isPending} />
                     <input aria-label={`Correction amount for ${adjustment.description}`} className="pbc-input" value={rowDraft.amountExGst} onChange={(event) => setRow({ amountExGst: event.target.value })} disabled={isPending} />
                     <input aria-label={`Correction reason for ${adjustment.description}`} className="pbc-input" value={reasons[adjustment.id] ?? ''} onChange={(event) => setReasons((current) => ({ ...current, [adjustment.id]: event.target.value }))} disabled={isPending} />
-                    <button type="button" className="pbc-btn pbc-btn--secondary" disabled={isPending || !(reasons[adjustment.id]?.trim())} onClick={() => run(() => supersedeProgressAdjustment({
-                      adjustmentId: adjustment.id, expectedVersion: adjustment.version, reason: reasons[adjustment.id],
-                      replacement: { ...rowDraft, gstRate: '0.10', pbcQuoteItemId: null },
-                      correlationKey: key(`correct-${adjustment.id}`),
-                    }))}>Correct</button>
+                    <button type="button" className="pbc-btn pbc-btn--secondary" disabled={isPending || !(reasons[adjustment.id]?.trim())} onClick={() => {
+                      const payload = {
+                        adjustmentId: adjustment.id, expectedVersion: adjustment.version, reason: reasons[adjustment.id] ?? '',
+                        replacement: { ...rowDraft, gstRate: '0.10' as const, pbcQuoteItemId: null },
+                      }
+                      run(`correct-${adjustment.id}`, payload, (correlationKey) => supersedeProgressAdjustment({ ...payload, correlationKey }))
+                    }}>Correct</button>
                   </div>
                 ) : 'Read-only'}</td>
               </tr>

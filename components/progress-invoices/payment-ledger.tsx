@@ -27,6 +27,7 @@ function safeError(error: string): string {
   if (error === 'PROGRESS_VERSION_CONFLICT') return 'A receipt changed. Refresh before trying again.'
   if (error === 'PROGRESS_SERIES_VOID') return 'This Void Series is read-only.'
   if (error === 'PROGRESS_PAYMENT_MATCH_INVALID') return 'These receipts can no longer be matched. Refresh and compare them again.'
+  if (error === 'PROGRESS_PAYMENT_MATCH_PARENT_MISMATCH') return 'Receipts from different Series cannot be matched.'
   return 'The receipt could not be saved. Check the fields and try again.'
 }
 
@@ -55,26 +56,35 @@ export function PaymentLedger({
   const [draft, setDraft] = useState(EMPTY_DRAFT)
   const [rowDrafts, setRowDrafts] = useState<Record<string, PaymentDraft>>({})
   const [matchReasons, setMatchReasons] = useState<Record<string, string>>({})
+  const [comparingPair, setComparingPair] = useState<string | null>(null)
   const [message, setMessage] = useState<string | null>(null)
   const [isPending, startTransition] = useTransition()
-  const keys = useRef(new Map<string, string>())
+  const keys = useRef(new Map<string, { signature: string; key: string }>())
+  const compareButtons = useRef(new Map<string, HTMLButtonElement>())
 
-  function key(name: string): string {
-    const existing = keys.current.get(name)
-    if (existing) return existing
+  function key(scope: string, payload: unknown): string {
+    const signature = JSON.stringify(payload)
+    const existing = keys.current.get(scope)
+    if (existing?.signature === signature) return existing.key
     const created = crypto.randomUUID()
-    keys.current.set(name, created)
+    keys.current.set(scope, { signature, key: created })
     return created
   }
 
-  function run(operation: () => Promise<{ ok: boolean; error?: string }>): void {
+  function run(
+    scope: string,
+    payload: unknown,
+    operation: (correlationKey: string) => Promise<{ ok: boolean; error?: string }>,
+  ): void {
+    const correlationKey = key(scope, payload)
     setMessage(null)
     startTransition(async () => {
-      const result = await operation()
+      const result = await operation(correlationKey)
       if (!result.ok) {
         setMessage(safeError(result.error ?? 'PROGRESS_REQUEST_FAILED'))
         return
       }
+      if (keys.current.get(scope)?.key === correlationKey) keys.current.delete(scope)
       setMessage('Receipt ledger saved.')
       router.refresh()
     })
@@ -83,15 +93,15 @@ export function PaymentLedger({
   function create(event: FormEvent<HTMLFormElement>): void {
     event.preventDefault()
     if (!seriesId || !expectedSeriesVersion) return
-    run(() => createManualProgressPayment({
+    const payload = {
       seriesId,
       expectedSeriesVersion,
       receivedDate: draft.receivedDate,
       amount: draft.amount,
       method: draft.method,
       reference: draft.reference.trim() || null,
-      correlationKey: key('create'),
-    }))
+    }
+    run('create', payload, (correlationKey) => createManualProgressPayment({ ...payload, correlationKey }))
   }
 
   const manualCandidates = payments.filter((payment) => (
@@ -150,15 +160,18 @@ export function PaymentLedger({
                       <input aria-label="Replacement reference" className="pbc-input" value={rowDraft.reference} onChange={(event) => setRowDrafts((current) => ({ ...current, [payment.id]: { ...rowDraft, reference: event.target.value } }))} disabled={isPending} />
                       <input aria-label="Replacement or Void reason" className="pbc-input" value={rowDraft.reason} onChange={(event) => setRowDrafts((current) => ({ ...current, [payment.id]: { ...rowDraft, reason: event.target.value } }))} disabled={isPending} />
                       <div className="pbc-alert__actions">
-                        <button type="button" className="pbc-btn pbc-btn--secondary" disabled={isPending || !rowDraft.reason.trim()} onClick={() => run(() => replaceManualProgressPayment({
-                          paymentId: payment.id, expectedVersion: payment.version, receivedDate: rowDraft.receivedDate,
-                          amount: rowDraft.amount, method: rowDraft.method, reference: rowDraft.reference.trim() || null,
-                          reason: rowDraft.reason, correlationKey: key(`replace-${payment.id}`),
-                        }))}>Replace</button>
-                        <button type="button" className="pbc-btn pbc-btn--danger" disabled={isPending || !rowDraft.reason.trim()} onClick={() => run(() => voidManualProgressPayment({
-                          paymentId: payment.id, expectedVersion: payment.version, reason: rowDraft.reason,
-                          correlationKey: key(`void-${payment.id}`),
-                        }))}>Void payment</button>
+                        <button type="button" className="pbc-btn pbc-btn--secondary" disabled={isPending || !rowDraft.reason.trim()} onClick={() => {
+                          const payload = {
+                            paymentId: payment.id, expectedVersion: payment.version, receivedDate: rowDraft.receivedDate,
+                            amount: rowDraft.amount, method: rowDraft.method, reference: rowDraft.reference.trim() || null,
+                            reason: rowDraft.reason,
+                          }
+                          run(`replace-${payment.id}`, payload, (correlationKey) => replaceManualProgressPayment({ ...payload, correlationKey }))
+                        }}>Replace</button>
+                        <button type="button" className="pbc-btn pbc-btn--danger" disabled={isPending || !rowDraft.reason.trim()} onClick={() => {
+                          const payload = { paymentId: payment.id, expectedVersion: payment.version, reason: rowDraft.reason }
+                          run(`void-${payment.id}`, payload, (correlationKey) => voidManualProgressPayment({ ...payload, correlationKey }))
+                        }}>Void payment</button>
                       </div>
                     </div>
                   ) : 'Read-only'}</td>
@@ -177,12 +190,66 @@ export function PaymentLedger({
           <section className="pbc-formgroup" key={pair}>
             <h3>Compare Jobber and Manual receipts</h3>
             <p>{canonicalSuggestion ? 'Same canonical date and amount; identity still requires confirmation.' : 'Dates or amounts differ. Compare the source records before confirming.'}</p>
-            <button type="button" className="pbc-btn pbc-btn--secondary" disabled={isPending}>Compare</button>
-            <label className="pbc-field"><span className="pbc-field__label">Match reason</span><input className="pbc-input" value={matchReasons[pair] ?? ''} onChange={(event) => setMatchReasons((current) => ({ ...current, [pair]: event.target.value }))} disabled={isPending} /></label>
-            <button type="button" className="pbc-btn pbc-btn--primary" disabled={isPending || !matchReasons[pair]?.trim()} onClick={() => run(() => reconcileProgressPayment({
-              jobberPaymentId: jobber.id, manualPaymentId: manual.id, jobberExpectedVersion: jobber.version,
-              manualExpectedVersion: manual.version, reason: matchReasons[pair], idempotencyKey: key(`match-${pair}`),
-            }))}>Confirm Match</button>
+            <button
+              ref={(node) => { if (node) compareButtons.current.set(pair, node); else compareButtons.current.delete(pair) }}
+              type="button"
+              className="pbc-btn pbc-btn--secondary"
+              disabled={isPending}
+              aria-expanded={comparingPair === pair}
+              aria-controls={`payment-comparison-${jobber.id}-${manual.id}`}
+              onClick={() => setComparingPair(pair)}
+            >Compare</button>
+            {comparingPair === pair && (
+              <div
+                id={`payment-comparison-${jobber.id}-${manual.id}`}
+                className="pbc-formgroup"
+                role="region"
+                aria-labelledby={`payment-comparison-heading-${jobber.id}-${manual.id}`}
+              >
+                <h4 id={`payment-comparison-heading-${jobber.id}-${manual.id}`}>Receipt comparison</h4>
+                <div className="pbc-progress-form-grid">
+                  <section aria-label="Jobber receipt details">
+                    <h5>Jobber receipt details</h5>
+                    <dl>
+                      <dt>Source</dt><dd>Jobber</dd>
+                      <dt>Received date</dt><dd>{jobber.currentRevision?.receivedDate ?? 'Not available'}</dd>
+                      <dt>Observed Inc GST</dt><dd>{jobber.currentRevision ? formatMoney(jobber.currentRevision.observedAmount) : 'Not available'}</dd>
+                      <dt>Effective receipt Inc GST</dt><dd>{jobber.currentRevision ? formatMoney(jobber.currentRevision.effectiveReceiptAmount) : 'Not available'}</dd>
+                      <dt>Method</dt><dd>{jobber.currentRevision?.paymentMethod ?? 'Not available'}</dd>
+                      <dt>Reference</dt><dd>{jobber.currentRevision?.reference ?? 'Not available'}</dd>
+                    </dl>
+                  </section>
+                  <section aria-label="Manual receipt details">
+                    <h5>Manual receipt details</h5>
+                    <dl>
+                      <dt>Source</dt><dd>Manual</dd>
+                      <dt>Received date</dt><dd>{manual.currentRevision?.receivedDate ?? 'Not available'}</dd>
+                      <dt>Observed Inc GST</dt><dd>{manual.currentRevision ? formatMoney(manual.currentRevision.observedAmount) : 'Not available'}</dd>
+                      <dt>Effective receipt Inc GST</dt><dd>{manual.currentRevision ? formatMoney(manual.currentRevision.effectiveReceiptAmount) : 'Not available'}</dd>
+                      <dt>Method</dt><dd>{manual.currentRevision?.paymentMethod ?? 'Not available'}</dd>
+                      <dt>Reference</dt><dd>{manual.currentRevision?.reference ?? 'Not available'}</dd>
+                    </dl>
+                  </section>
+                </div>
+                <form onSubmit={(event) => {
+                  event.preventDefault()
+                  const payload = {
+                    jobberPaymentId: jobber.id, manualPaymentId: manual.id, jobberExpectedVersion: jobber.version,
+                    manualExpectedVersion: manual.version, reason: matchReasons[pair] ?? '',
+                  }
+                  run(`match-${pair}`, payload, (idempotencyKey) => reconcileProgressPayment({ ...payload, idempotencyKey }))
+                }}>
+                  <label className="pbc-field"><span className="pbc-field__label">Match reason</span><input aria-label="Match reason" className="pbc-input" value={matchReasons[pair] ?? ''} onChange={(event) => setMatchReasons((current) => ({ ...current, [pair]: event.target.value }))} disabled={isPending} required /></label>
+                  <div className="pbc-alert__actions">
+                    <button type="submit" className="pbc-btn pbc-btn--primary" disabled={isPending || !matchReasons[pair]?.trim()}>Confirm Match</button>
+                    <button type="button" className="pbc-btn pbc-btn--secondary" disabled={isPending} onClick={() => {
+                      setComparingPair(null)
+                      compareButtons.current.get(pair)?.focus()
+                    }}>Cancel comparison</button>
+                  </div>
+                </form>
+              </div>
+            )}
           </section>
         )
       }))}
@@ -195,10 +262,13 @@ export function PaymentLedger({
           <section className="pbc-formgroup" key={pair}>
             <h3>Matched receipt</h3>
             <label className="pbc-field"><span className="pbc-field__label">Undo reason</span><input className="pbc-input" value={matchReasons[pair] ?? ''} onChange={(event) => setMatchReasons((current) => ({ ...current, [pair]: event.target.value }))} disabled={isPending} /></label>
-            <button type="button" className="pbc-btn pbc-btn--secondary" disabled={isPending || !matchReasons[pair]?.trim()} onClick={() => run(() => undoProgressPaymentReconciliation({
-              jobberPaymentId: jobber.id, manualPaymentId: manual.id, jobberExpectedVersion: jobber.version,
-              manualExpectedVersion: manual.version, reason: matchReasons[pair], idempotencyKey: key(`undo-${pair}`),
-            }))}>Undo Match</button>
+            <button type="button" className="pbc-btn pbc-btn--secondary" disabled={isPending || !matchReasons[pair]?.trim()} onClick={() => {
+              const payload = {
+                jobberPaymentId: jobber.id, manualPaymentId: manual.id, jobberExpectedVersion: jobber.version,
+                manualExpectedVersion: manual.version, reason: matchReasons[pair] ?? '',
+              }
+              run(`undo-${pair}`, payload, (idempotencyKey) => undoProgressPaymentReconciliation({ ...payload, idempotencyKey }))
+            }}>Undo Match</button>
           </section>
         )
       })}

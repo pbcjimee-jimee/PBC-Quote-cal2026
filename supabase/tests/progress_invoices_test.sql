@@ -1,7 +1,7 @@
 CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA extensions;
 CREATE EXTENSION IF NOT EXISTS dblink WITH SCHEMA extensions;
 
-SELECT plan(336);
+SELECT plan(351);
 
 DELETE FROM public.business_invoice_profiles;
 DELETE FROM auth.users
@@ -6592,6 +6592,81 @@ SELECT public.progress_recalculate_series_read_model_as('88000000-0000-4000-8000
 SELECT is((SELECT current_actual_receipts=215 FROM public.progress_invoice_series WHERE id='88000000-0000-4000-8000-000000000001'),true,
   'signed Jobber refund effects remain independent in the authoritative ledger');
 
+SET ROLE authenticated;
+SET request.jwt.claim.sub = '00000000-0000-0000-0000-000000008001';
+SELECT is((SELECT conflict FROM public.reconcile_progress_payment(jsonb_build_object(
+  'jobber_payment_id','88000000-0000-4000-8000-000000000020','manual_payment_id',(SELECT id FROM task5_manual_create),
+  'jobber_expected_version',1,'manual_expected_version',4,'reason','Stale Jobber version',
+  'correlation_key','88000000-0000-4000-8000-000000000018'))),true,
+  'match returns a stale-current conflict for a stale Jobber version');
+SELECT is((SELECT conflict FROM public.reconcile_progress_payment(jsonb_build_object(
+  'jobber_payment_id','88000000-0000-4000-8000-000000000020','manual_payment_id',(SELECT id FROM task5_manual_create),
+  'jobber_expected_version',3,'manual_expected_version',1,'reason','Stale Manual version',
+  'correlation_key','88000000-0000-4000-8000-000000000019'))),true,
+  'match returns a stale-current conflict for a stale Manual version');
+SELECT is(pg_temp.capture_sqlstate($sql$
+  SELECT * FROM public.undo_progress_payment_reconciliation(jsonb_build_object(
+    'jobber_payment_id','88000000-0000-4000-8000-000000000020','manual_payment_id',(SELECT id FROM task5_manual_create),
+    'jobber_expected_version',3,'manual_expected_version',4,'reason','No active match exists',
+    'correlation_key','88000000-0000-4000-8000-000000000024'))
+$sql$),'23514','undo rejects an otherwise-current pair without an active match');
+SELECT is(pg_temp.capture_sqlstate($sql$
+  SELECT * FROM public.reconcile_progress_payment(jsonb_build_object(
+    'jobber_payment_id',(SELECT id FROM task5_manual_create),'manual_payment_id','88000000-0000-4000-8000-000000000020',
+    'jobber_expected_version',4,'manual_expected_version',3,'reason','Sources are reversed',
+    'correlation_key','88000000-0000-4000-8000-000000000025'))
+$sql$),'23514','match rejects reversed Manual/Jobber source roles');
+
+RESET ROLE;
+INSERT INTO public.progress_invoice_series (
+  id, source_type, accepted_numbering_base, base_contract_ex_gst,
+  recipient_name, recipient_address, site_name, site_address, default_description, created_by, updated_by
+) VALUES (
+  '88000000-0000-4000-8000-000000000030','manual','TASK5-OTHER',100,
+  'Other Builder','Other Billing','Other Site','Other address','Other works',
+  '00000000-0000-0000-0000-000000008001','00000000-0000-0000-0000-000000008001'
+);
+INSERT INTO public.progress_payments(id,series_id,source,created_by,updated_by)
+VALUES('88000000-0000-4000-8000-000000000031','88000000-0000-4000-8000-000000000030','manual',
+  '00000000-0000-0000-0000-000000008001','00000000-0000-0000-0000-000000008001');
+INSERT INTO public.progress_payment_revisions(id,payment_id,revision_number,received_date,observed_amount,effective_receipt_amount,
+  sync_state,status,created_by)
+VALUES('88000000-0000-4000-8000-000000000032','88000000-0000-4000-8000-000000000031',1,'2026-07-20',10,10,
+  'manual','active','00000000-0000-0000-0000-000000008001');
+UPDATE public.progress_payments SET current_revision_id='88000000-0000-4000-8000-000000000032'
+WHERE id='88000000-0000-4000-8000-000000000031';
+SET ROLE authenticated;
+SET request.jwt.claim.sub = '00000000-0000-0000-0000-000000008001';
+SELECT is(pg_temp.capture_sqlstate($sql$
+  SELECT * FROM public.reconcile_progress_payment(jsonb_build_object(
+    'jobber_payment_id','88000000-0000-4000-8000-000000000020','manual_payment_id','88000000-0000-4000-8000-000000000031',
+    'jobber_expected_version',3,'manual_expected_version',1,'reason','Different Series',
+    'correlation_key','88000000-0000-4000-8000-000000000026'))
+$sql$),'23514','match rejects receipts owned by different Series');
+
+CREATE TEMP TABLE task5_rematch AS SELECT * FROM public.reconcile_progress_payment(jsonb_build_object(
+  'jobber_payment_id','88000000-0000-4000-8000-000000000020','manual_payment_id',(SELECT id FROM task5_manual_create),
+  'jobber_expected_version',3,'manual_expected_version',4,'reason','Verified again',
+  'correlation_key','88000000-0000-4000-8000-000000000027'));
+SELECT is(pg_temp.capture_sqlstate($sql$
+  SELECT * FROM public.reconcile_progress_payment(jsonb_build_object(
+    'jobber_payment_id','88000000-0000-4000-8000-000000000020','manual_payment_id',(SELECT id FROM task5_manual_create),
+    'jobber_expected_version',4,'manual_expected_version',5,'reason','Already matched',
+    'correlation_key','88000000-0000-4000-8000-000000000028'))
+$sql$),'23514','match rejects current versions in already Matched/Superseded state');
+SELECT is(pg_temp.capture_sqlstate($sql$
+  SELECT * FROM public.replace_manual_progress_payment(jsonb_build_object(
+    'payment_id',(SELECT id FROM task5_manual_create),'expected_version',5,'received_date','2026-07-20',
+    'amount','120.00','method','EFT','reference','M-2','reason','Forbidden matched replacement',
+    'correlation_key','88000000-0000-4000-8000-000000000029'))
+$sql$),'55000','replace rejects a Matched/Superseded Manual receipt');
+SELECT is(pg_temp.capture_sqlstate($sql$
+  SELECT * FROM public.void_manual_progress_payment(jsonb_build_object(
+    'payment_id',(SELECT id FROM task5_manual_create),'expected_version',5,'reason','Forbidden matched Void',
+    'correlation_key','88000000-0000-4000-8000-000000000033'))
+$sql$),'55000','Void rejects a Matched/Superseded Manual receipt');
+
+RESET ROLE;
 UPDATE public.progress_invoice_series SET status='void' WHERE id='88000000-0000-4000-8000-000000000001';
 SET ROLE authenticated;
 SET request.jwt.claim.sub = '00000000-0000-0000-0000-000000008001';
@@ -6602,5 +6677,99 @@ $sql$),'P0001','Void Series rejects ledger mutation');
 RESET ROLE;
 SELECT is(pg_temp.capture_sqlstate($sql$DELETE FROM public.progress_payments WHERE id='88000000-0000-4000-8000-000000000020'$sql$),'55000',
   'Payment identities have no DELETE path');
+
+-- Task 5 review: exact idempotent results survive later terminal/current-state changes.
+INSERT INTO public.progress_invoice_series (
+  id, source_type, accepted_numbering_base, base_contract_ex_gst,
+  recipient_name, recipient_address, site_name, site_address, default_description,
+  created_by, updated_by
+) VALUES (
+  '89000000-0000-4000-8000-000000000001', 'manual', 'TASK5-REPLAY', 1000,
+  'Replay Builder', '1 Replay Street', 'Replay Site', '2 Replay Street', 'Replay works',
+  '00000000-0000-0000-0000-000000008001', '00000000-0000-0000-0000-000000008001'
+);
+INSERT INTO public.progress_adjustments (
+  id, series_id, type, status, effective_date, description, amount_ex_gst, created_by, updated_by
+) VALUES (
+  '89000000-0000-4000-8000-000000000002', '89000000-0000-4000-8000-000000000001',
+  'variation', 'draft', '2026-07-20', 'Replay adjustment', 10,
+  '00000000-0000-0000-0000-000000008001', '00000000-0000-0000-0000-000000008001'
+);
+SET ROLE authenticated;
+SET request.jwt.claim.sub = '00000000-0000-0000-0000-000000008001';
+
+CREATE TEMP TABLE task5_replay_reject AS SELECT * FROM public.reject_progress_adjustment(jsonb_build_object(
+  'adjustment_id','89000000-0000-4000-8000-000000000002','expected_version',1,'reason','No longer required',
+  'correlation_key','89000000-0000-4000-8000-000000000010'));
+CREATE TEMP TABLE task5_replay_create AS SELECT * FROM public.create_manual_progress_payment(jsonb_build_object(
+  'series_id','89000000-0000-4000-8000-000000000001','expected_series_version',1,'received_date','2026-07-20',
+  'amount','100.00','method','EFT','reference','RP-1','correlation_key','89000000-0000-4000-8000-000000000011'));
+CREATE TEMP TABLE task5_replay_replace AS SELECT * FROM public.replace_manual_progress_payment(jsonb_build_object(
+  'payment_id',(SELECT id FROM task5_replay_create),'expected_version',1,'received_date','2026-07-21',
+  'amount','101.00','method','EFT','reference','RP-2','reason','Bank correction',
+  'correlation_key','89000000-0000-4000-8000-000000000012'));
+CREATE TEMP TABLE task5_replay_void AS SELECT * FROM public.void_manual_progress_payment(jsonb_build_object(
+  'payment_id',(SELECT id FROM task5_replay_create),'expected_version',2,'reason','Duplicate entry',
+  'correlation_key','89000000-0000-4000-8000-000000000013'));
+CREATE TEMP TABLE task5_replay_match_manual AS SELECT * FROM public.create_manual_progress_payment(jsonb_build_object(
+  'series_id','89000000-0000-4000-8000-000000000001','expected_series_version',4,'received_date','2026-07-22',
+  'amount','75.00','method','Card','reference','RP-M','correlation_key','89000000-0000-4000-8000-000000000014'));
+
+RESET ROLE;
+INSERT INTO public.progress_payments(id,series_id,source,jobber_payment_id,created_by,updated_by)
+VALUES('89000000-0000-4000-8000-000000000020','89000000-0000-4000-8000-000000000001','jobber','JOBBER-REPLAY',
+  '00000000-0000-0000-0000-000000008001','00000000-0000-0000-0000-000000008001');
+INSERT INTO public.progress_payment_revisions(id,payment_id,revision_number,received_date,observed_amount,effective_receipt_amount,
+  payment_method,reference,sync_state,status,created_by,jobber_source,raw_signed_amount,direction,payment_eligibility_treatment)
+VALUES('89000000-0000-4000-8000-000000000021','89000000-0000-4000-8000-000000000020',1,'2026-07-22',75,75,
+  'Card','JB-RP','observed','active','00000000-0000-0000-0000-000000008001','payment_record',75,'receipt','active');
+UPDATE public.progress_payments SET current_revision_id='89000000-0000-4000-8000-000000000021'
+WHERE id='89000000-0000-4000-8000-000000000020';
+
+SET ROLE authenticated;
+SET request.jwt.claim.sub = '00000000-0000-0000-0000-000000008001';
+CREATE TEMP TABLE task5_replay_reconcile AS SELECT * FROM public.reconcile_progress_payment(jsonb_build_object(
+  'jobber_payment_id','89000000-0000-4000-8000-000000000020','manual_payment_id',(SELECT id FROM task5_replay_match_manual),
+  'jobber_expected_version',1,'manual_expected_version',1,'reason','Verified same receipt',
+  'correlation_key','89000000-0000-4000-8000-000000000015'));
+CREATE TEMP TABLE task5_replay_undo AS SELECT * FROM public.undo_progress_payment_reconciliation(jsonb_build_object(
+  'jobber_payment_id','89000000-0000-4000-8000-000000000020','manual_payment_id',(SELECT id FROM task5_replay_match_manual),
+  'jobber_expected_version',2,'manual_expected_version',2,'reason','Match was incorrect',
+  'correlation_key','89000000-0000-4000-8000-000000000016'));
+
+RESET ROLE;
+UPDATE public.progress_invoice_series SET status='void' WHERE id='89000000-0000-4000-8000-000000000001';
+SET ROLE authenticated;
+SET request.jwt.claim.sub = '00000000-0000-0000-0000-000000008001';
+
+SELECT is((SELECT to_jsonb(replayed) FROM public.reject_progress_adjustment(jsonb_build_object(
+  'adjustment_id','89000000-0000-4000-8000-000000000002','expected_version',1,'reason','No longer required',
+  'correlation_key','89000000-0000-4000-8000-000000000010')) replayed),
+  (SELECT to_jsonb(saved) FROM task5_replay_reject saved), 'reject replay returns the exact prior result after Series Void');
+SELECT is((SELECT to_jsonb(replayed) FROM public.create_manual_progress_payment(jsonb_build_object(
+  'series_id','89000000-0000-4000-8000-000000000001','expected_series_version',1,'received_date','2026-07-20',
+  'amount','100.00','method','EFT','reference','RP-1','correlation_key','89000000-0000-4000-8000-000000000011')) replayed),
+  (SELECT to_jsonb(saved) FROM task5_replay_create saved), 'create replay returns the exact prior result after Series Void');
+SELECT is((SELECT to_jsonb(replayed) FROM public.replace_manual_progress_payment(jsonb_build_object(
+  'payment_id',(SELECT id FROM task5_replay_create),'expected_version',1,'received_date','2026-07-21','amount','101.00',
+  'method','EFT','reference','RP-2','reason','Bank correction','correlation_key','89000000-0000-4000-8000-000000000012')) replayed),
+  (SELECT to_jsonb(saved) FROM task5_replay_replace saved), 'replace replay returns the exact prior result after later Void/current-state changes');
+SELECT is((SELECT to_jsonb(replayed) FROM public.void_manual_progress_payment(jsonb_build_object(
+  'payment_id',(SELECT id FROM task5_replay_create),'expected_version',2,'reason','Duplicate entry',
+  'correlation_key','89000000-0000-4000-8000-000000000013')) replayed),
+  (SELECT to_jsonb(saved) FROM task5_replay_void saved), 'Void replay returns the exact prior result after Series Void');
+SELECT is((SELECT to_jsonb(replayed) FROM public.reconcile_progress_payment(jsonb_build_object(
+  'jobber_payment_id','89000000-0000-4000-8000-000000000020','manual_payment_id',(SELECT id FROM task5_replay_match_manual),
+  'jobber_expected_version',1,'manual_expected_version',1,'reason','Verified same receipt',
+  'correlation_key','89000000-0000-4000-8000-000000000015')) replayed),
+  (SELECT to_jsonb(saved) FROM task5_replay_reconcile saved), 'match replay returns the exact prior result after undo and Series Void');
+SELECT is((SELECT to_jsonb(replayed) FROM public.undo_progress_payment_reconciliation(jsonb_build_object(
+  'jobber_payment_id','89000000-0000-4000-8000-000000000020','manual_payment_id',(SELECT id FROM task5_replay_match_manual),
+  'jobber_expected_version',2,'manual_expected_version',2,'reason','Match was incorrect',
+  'correlation_key','89000000-0000-4000-8000-000000000016')) replayed),
+  (SELECT to_jsonb(saved) FROM task5_replay_undo saved), 'undo replay returns the exact prior result after Series Void');
+SELECT is(pg_temp.capture_sqlstate($sql$
+  SELECT * FROM public.create_manual_progress_payment('{"series_id":"89000000-0000-4000-8000-000000000001","expected_series_version":1,"received_date":"2026-07-20","amount":"999.00","method":"EFT","reference":"RP-1","correlation_key":"89000000-0000-4000-8000-000000000011"}'::jsonb)
+$sql$),'P0001','reused replay key with a different fingerprint still fails after Series Void');
 
 SELECT * FROM finish();

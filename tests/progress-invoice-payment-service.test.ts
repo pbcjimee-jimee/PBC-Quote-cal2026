@@ -80,4 +80,25 @@ describe('progress payment command contract', () => {
       },
     })
   })
+
+  it('maps a cross-Series match rejection to the exact safe domain error', async () => {
+    const execute = vi.fn().mockResolvedValue({
+      data: null,
+      error: { code: '23514', message: 'PROGRESS_PAYMENT_MATCH_PARENT_MISMATCH' },
+    })
+    const repository = new ProgressInvoiceRepository({ execute } as ProgressInvoiceRpcExecutor)
+
+    await expect(repository.call('reconcile_progress_payment', {
+      jobber_payment_id: PAYMENT_ID,
+      manual_payment_id: '44444444-4444-4444-8444-444444444444',
+      jobber_expected_version: 1,
+      manual_expected_version: 1,
+      reason: 'Same receipt',
+      correlation_key: KEY,
+    })).resolves.toEqual({
+      ok: false,
+      code: 'VALIDATION',
+      error: 'PROGRESS_PAYMENT_MATCH_PARENT_MISMATCH',
+    })
+  })
 })
