@@ -104,7 +104,7 @@ describe('Progress Invoice series detail workspace', () => {
     vi.clearAllMocks()
   })
 
-  it('renders all eight accessible read-only sections with explicit GST labels', () => {
+  it('renders the lifecycle edit and Void controls with explicit GST labels', () => {
     const markup = renderToStaticMarkup(createElement(ProgressInvoiceSeriesDetailView, {
       workspace,
       historyResult: { ok: true, data: { events: workspace.recentEvents, nextCursor: null } },
@@ -134,10 +134,15 @@ describe('Progress Invoice series detail workspace', () => {
     expect(markup).toContain('No historical metadata available')
     const capabilitySection = markup.match(/<section[^>]*aria-labelledby="progress-availability-heading"[\s\S]*?<\/section>/)?.[0]
     expect(capabilitySection).toBeDefined()
-    expect(capabilitySection).not.toContain('<button')
-    expect(capabilitySection).not.toContain('href=')
-    expect(capabilitySection).toContain('Eligibility is informational only')
-    expect(capabilitySection).toContain('Actions and downloads are unavailable on this read-only page')
+    expect(markup).toContain('Edit Series defaults')
+    expect(markup).toContain('Base Contract Ex GST')
+    expect(markup).toContain('Existing Claim and document snapshots never change')
+    expect(markup).toContain('Variation or Credit')
+    expect(markup).toContain('Void Series')
+    expect(markup).toContain('official Claim Void workflow')
+    expect(markup).not.toContain('name="acceptedNumberingBase"')
+    expect(markup).not.toContain('name="sourceType"')
+    expect(markup).not.toContain('name="jobberInvoiceId"')
   })
 
   it('renders all seven server-derived capability states without live mutation or download controls', () => {
@@ -165,6 +170,86 @@ describe('Progress Invoice series detail workspace', () => {
     expect(markup).toContain('No current metadata available')
     expect(markup).toContain('Historical metadata available')
     expect(markup).not.toContain('Download now')
+  })
+
+  it('keeps an active Claim-free Series base editable and explains reusable numbering after Void', () => {
+    const claimFree = {
+      ...workspace,
+      currentRevisionSet: null,
+      claims: [],
+      capabilities: {
+        ...workspace.capabilities,
+        canEditSeries: true,
+        canEditBaseContract: true,
+        canVoidSeriesDirectly: true,
+        requiresClaimVoidWorkflow: false,
+      },
+    }
+    const markup = renderToStaticMarkup(createElement(ProgressInvoiceSeriesDetailView, {
+      workspace: claimFree,
+      historyResult: { ok: true, data: { events: [], nextCursor: null } },
+    }))
+
+    expect(markup).toMatch(/name="baseContractExGst"[^>]*value="17220.50"/)
+    expect(markup).not.toMatch(/name="baseContractExGst"[^>]*disabled/)
+    expect(markup).toContain('Claim-free numbering base becomes reusable')
+    expect(markup).toContain('aria-live="polite"')
+    expect(markup).toContain('type="checkbox"')
+    expect(markup).toContain('I understand this Series will be Void')
+  })
+
+  it('locks the base after a Draft Claim and warns that reservations stay permanent', () => {
+    const draftOnly = {
+      ...workspace,
+      currentRevisionSet: null,
+      claims: workspace.claims.map((claim) => ({
+        ...claim,
+        status: 'draft' as const,
+        originalIssuedAt: null,
+        currentRevision: claim.currentRevision ? { ...claim.currentRevision, state: 'draft' as const } : null,
+      })),
+      capabilities: {
+        ...workspace.capabilities,
+        canEditBaseContract: false,
+        canVoidSeriesDirectly: true,
+        requiresClaimVoidWorkflow: false,
+      },
+    }
+    const markup = renderToStaticMarkup(createElement(ProgressInvoiceSeriesDetailView, {
+      workspace: draftOnly,
+      historyResult: { ok: true, data: { events: [], nextCursor: null } },
+    }))
+
+    expect(markup).toMatch(/<input(?=[^>]*name="baseContractExGst")(?=[^>]*disabled)[^>]*>/)
+    expect(markup).toContain('Draft Claims become Void')
+    expect(markup).toContain('number and numbering base remain permanently reserved')
+  })
+
+  it('makes a Void Series entirely read-only and blocks Issued direct Void', () => {
+    const voidMarkup = renderToStaticMarkup(createElement(ProgressInvoiceSeriesDetailView, {
+      workspace: {
+        ...workspace,
+        series: { ...workspace.series, status: 'void' },
+        capabilities: {
+          ...workspace.capabilities,
+          canEditSeries: false,
+          canEditBaseContract: false,
+          canVoidSeriesDirectly: false,
+        },
+      },
+      historyResult: { ok: true, data: { events: [], nextCursor: null } },
+    }))
+    expect(voidMarkup).toContain('This Void Series is read-only')
+    expect(voidMarkup).not.toContain('<form')
+    expect(voidMarkup).not.toContain('>Void Series</button>')
+
+    const issuedMarkup = renderToStaticMarkup(createElement(ProgressInvoiceSeriesDetailView, {
+      workspace,
+      historyResult: { ok: true, data: { events: [], nextCursor: null } },
+    }))
+    expect(issuedMarkup).toContain('Issued Claim blocks direct Series Void')
+    expect(issuedMarkup).toContain('official Claim Void workflow')
+    expect(issuedMarkup).not.toContain('I understand this Series will be Void')
   })
 
   it('keeps every read section available while linking an invalid Invoice Profile setup gate', () => {

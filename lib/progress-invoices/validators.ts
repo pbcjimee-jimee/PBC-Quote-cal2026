@@ -27,6 +27,7 @@ const uuidSchema = z.string().uuid()
 export const progressJobberExternalIdSchema = z.string().trim().min(1).max(512)
 const expectedVersionSchema = z.number().int().positive()
 const dateSchema = z.iso.date()
+const sha256Schema = z.string().regex(/^[0-9a-fA-F]{64}$/).transform((value) => value.toLowerCase())
 
 const requiredText = (limit: number) => z.string().trim().min(1).max(limit)
 const optionalText = (limit: number) => z.string().trim().max(limit).nullable().optional()
@@ -161,6 +162,25 @@ export const updateProgressInvoiceSeriesSchema = z.strictObject({
   defaultDescription: seriesEditableShape.defaultDescription.optional(),
   reference: seriesEditableShape.reference,
   correlationKey: uuidSchema,
+})
+
+export const voidProgressInvoiceSeriesSchema = z.strictObject({
+  seriesId: uuidSchema,
+  expectedVersion: expectedVersionSchema,
+  expectedCurrentRevisionSetId: uuidSchema.nullable(),
+  expectedCurrentManifestHash: sha256Schema.nullable(),
+  preparedRevisionSetId: uuidSchema.nullable(),
+  reason: requiredText(500),
+  correlationKey: uuidSchema,
+}).superRefine((input, context) => {
+  if ((input.expectedCurrentRevisionSetId === null)
+    !== (input.expectedCurrentManifestHash === null)) {
+    context.addIssue({
+      code: 'custom',
+      path: ['expectedCurrentRevisionSetId'],
+      message: 'Current Revision Set ID and manifest hash must be provided together',
+    })
+  }
 })
 
 export const progressInvoiceListSchema = z.strictObject({
@@ -400,6 +420,9 @@ export type CreateStandaloneProgressInvoiceFromJobberInput = z.infer<
 >
 export type UpdateProgressInvoiceSeriesInput = z.infer<
   typeof updateProgressInvoiceSeriesSchema
+>
+export type VoidProgressInvoiceSeriesInput = z.infer<
+  typeof voidProgressInvoiceSeriesSchema
 >
 export type LinkProgressJobberInvoiceInput = z.infer<
   typeof linkProgressJobberInvoiceSchema

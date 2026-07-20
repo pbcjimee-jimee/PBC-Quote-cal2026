@@ -13,6 +13,7 @@ const mocks = vi.hoisted(() => ({
   getProgressInvoiceSeries: vi.fn(),
   createManualProgressInvoiceSeries: vi.fn(),
   updateProgressInvoiceSeries: vi.fn(),
+  voidProgressInvoiceSeries: vi.fn(),
   getProgressInvoiceSeriesWorkspace: vi.fn(),
   listProgressInvoiceSeriesHistory: vi.fn(),
   createProgressAdjustment: vi.fn(),
@@ -37,6 +38,7 @@ vi.mock('@/lib/progress-invoices/series-service', () => ({
   getProgressInvoiceSeries: mocks.getProgressInvoiceSeries,
   createManualProgressInvoiceSeries: mocks.createManualProgressInvoiceSeries,
   updateProgressInvoiceSeries: mocks.updateProgressInvoiceSeries,
+  voidProgressInvoiceSeries: mocks.voidProgressInvoiceSeries,
 }))
 
 vi.mock('@/lib/progress-invoices/adjustment-service', () => ({
@@ -65,6 +67,7 @@ import {
   listProgressInvoiceSeriesHistory,
   saveBusinessInvoiceProfile,
   updateProgressInvoiceSeries,
+  voidProgressInvoiceSeries,
 } from '@/lib/actions/progress-invoice-series'
 import {
   approveProgressAdjustment,
@@ -521,6 +524,97 @@ describe('Progress Invoice Server Actions', () => {
       error: 'PROGRESS_VERSION_CONFLICT',
       code: 'VERSION_CONFLICT',
       current,
+    })
+    expect(mocks.revalidatePath).not.toHaveBeenCalled()
+  })
+
+  it('authorizes a strict Series Void and revalidates dashboard, detail, and linked Quote only on success', async () => {
+    const input = {
+      seriesId: SERIES_ID,
+      expectedVersion: 3,
+      expectedCurrentRevisionSetId: '55555555-5555-4555-8555-555555555555',
+      expectedCurrentManifestHash: 'A'.repeat(64),
+      preparedRevisionSetId: null,
+      reason: '  Duplicate series  ',
+      correlationKey: CORRELATION_KEY,
+    }
+    mocks.voidProgressInvoiceSeries.mockResolvedValue({
+      ok: true,
+      data: {
+        seriesId: SERIES_ID,
+        version: 4,
+        mode: 'direct',
+        revisionSetId: null,
+      },
+    })
+    mocks.getProgressInvoiceSeries.mockResolvedValue({ ok: true, data: { quoteId: QUOTE_ID } })
+
+    expect(await voidProgressInvoiceSeries(input)).toEqual({
+      ok: true,
+      data: {
+        seriesId: SERIES_ID,
+        version: 4,
+        mode: 'direct',
+        revisionSetId: null,
+      },
+    })
+    expect(mocks.voidProgressInvoiceSeries).toHaveBeenCalledWith({
+      ...input,
+      expectedCurrentManifestHash: 'a'.repeat(64),
+      reason: 'Duplicate series',
+    })
+    expect(mocks.revalidatePath.mock.calls).toEqual([
+      ['/progress-invoices'],
+      [`/progress-invoices/${SERIES_ID}`],
+      [`/quotes/${QUOTE_ID}`],
+    ])
+  })
+
+  it('rejects invalid or unauthorized Series Void commands before persistence', async () => {
+    expect(await voidProgressInvoiceSeries({
+      seriesId: SERIES_ID,
+      expectedVersion: 1,
+      expectedCurrentRevisionSetId: null,
+      expectedCurrentManifestHash: 'a'.repeat(64),
+      preparedRevisionSetId: null,
+      reason: 'Duplicate series',
+      correlationKey: CORRELATION_KEY,
+    })).toMatchObject({ ok: false, code: 'VALIDATION' })
+    expect(mocks.requireAllowedUser).not.toHaveBeenCalled()
+
+    mocks.requireAllowedUser.mockResolvedValue({ ok: false, error: 'Authentication required' })
+    expect(await voidProgressInvoiceSeries({
+      seriesId: SERIES_ID,
+      expectedVersion: 1,
+      expectedCurrentRevisionSetId: null,
+      expectedCurrentManifestHash: null,
+      preparedRevisionSetId: null,
+      reason: 'Duplicate series',
+      correlationKey: CORRELATION_KEY,
+    })).toEqual({ ok: false, error: 'Authentication required' })
+    expect(mocks.voidProgressInvoiceSeries).not.toHaveBeenCalled()
+    expect(mocks.revalidatePath).not.toHaveBeenCalled()
+  })
+
+  it('preserves reconciliation-required Void failures without revalidation', async () => {
+    mocks.voidProgressInvoiceSeries.mockResolvedValue({
+      ok: false,
+      error: 'PROGRESS_CLAIM_VOID_REQUIRED',
+      code: 'RECONCILIATION_REQUIRED',
+    })
+
+    expect(await voidProgressInvoiceSeries({
+      seriesId: SERIES_ID,
+      expectedVersion: 3,
+      expectedCurrentRevisionSetId: null,
+      expectedCurrentManifestHash: null,
+      preparedRevisionSetId: null,
+      reason: 'Series must be voided',
+      correlationKey: CORRELATION_KEY,
+    })).toEqual({
+      ok: false,
+      error: 'PROGRESS_CLAIM_VOID_REQUIRED',
+      code: 'RECONCILIATION_REQUIRED',
     })
     expect(mocks.revalidatePath).not.toHaveBeenCalled()
   })

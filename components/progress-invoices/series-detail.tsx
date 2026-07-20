@@ -8,6 +8,8 @@ import type {
 import { ClaimTimeline } from './claim-timeline'
 import { HistoryPanel } from './history-panel'
 import { PaymentLedger } from './payment-ledger'
+import { SeriesEditForm } from './series-edit-form'
+import { SeriesVoidDialog } from './series-void-dialog'
 
 function formatMoney(value: string): string {
   const [whole, cents] = value.split('.')
@@ -35,6 +37,10 @@ export function ProgressInvoiceSeriesDetailView({
 }) {
   const { series, summary, importedJobberObservation: observation } = workspace
   const { capabilities } = workspace
+  const hasIssuedClaims = workspace.claims.some(
+    (claim) => claim.status === 'issued' || claim.originalIssuedAt !== null,
+  )
+  const hasDraftClaims = workspace.claims.some((claim) => claim.status === 'draft')
 
   return (
     <div className="pbc-progress-series-detail">
@@ -72,12 +78,12 @@ export function ProgressInvoiceSeriesDetailView({
       <section className="pbc-card pbc-card--pad" aria-labelledby="progress-availability-heading">
         <h2 id="progress-availability-heading">Availability</h2>
         <p className="pbc-progress-imported-copy">
-          Eligibility is informational only. Actions and downloads are unavailable on this read-only page.
+          These permissions come from the server and control the actions available on this page.
         </p>
         <dl className="pbc-progress-capability-grid">
           <div>
             <dt>Series editing</dt>
-            <dd>{capabilities.canEditSeries ? 'Available in a later workflow' : 'Read-only for this Series'}</dd>
+            <dd>{capabilities.canEditSeries ? 'Edit controls available' : 'Read-only for this Series'}</dd>
           </div>
           <div>
             <dt>Base contract editing</dt>
@@ -113,6 +119,38 @@ export function ProgressInvoiceSeriesDetailView({
             <dd>{capabilities.canDownloadHistorical ? 'Historical metadata available' : 'No historical metadata available'}</dd>
           </div>
         </dl>
+      </section>
+
+      <section className="pbc-card pbc-card--pad" aria-labelledby="progress-lifecycle-heading">
+        <h2 id="progress-lifecycle-heading">Edit Series defaults</h2>
+        {series.status === 'void' ? (
+          <p className="pbc-alert pbc-alert--warning">This Void Series is read-only. Its history remains available below.</p>
+        ) : (
+          <>
+            {capabilities.canEditSeries ? (
+              <SeriesEditForm
+                series={series}
+                canEditBaseContract={capabilities.canEditBaseContract}
+              />
+            ) : <p>Series defaults are read-only.</p>}
+            <div className="pbc-formgroup">
+              <h3>Void Series</h3>
+              {hasIssuedClaims || capabilities.requiresClaimVoidWorkflow ? (
+                <p className="pbc-alert pbc-alert--warning">
+                  Issued Claim blocks direct Series Void. Use the official Claim Void workflow first.
+                </p>
+              ) : capabilities.canVoidSeriesDirectly ? (
+                <SeriesVoidDialog
+                  seriesId={series.id}
+                  expectedVersion={series.version}
+                  expectedCurrentRevisionSetId={workspace.currentRevisionSet?.id ?? null}
+                  expectedCurrentManifestHash={workspace.currentRevisionSet?.revisionManifestHash ?? null}
+                  hasDraftClaims={hasDraftClaims}
+                />
+              ) : <p>Direct Series Void is unavailable.</p>}
+            </div>
+          </>
+        )}
       </section>
 
       <section className="pbc-card pbc-card--pad" aria-labelledby="progress-jobber-heading">

@@ -125,6 +125,23 @@ export interface UpdateProgressInvoiceSeriesPayload {
   correlation_key: string
 }
 
+export interface VoidProgressInvoiceSeriesPayload {
+  series_id: string
+  expected_version: number
+  expected_current_revision_set_id: string | null
+  expected_current_manifest_hash: string | null
+  prepared_revision_set_id: string | null
+  reason: string
+  correlation_key: string
+}
+
+export interface VoidProgressInvoiceSeriesRpcResult {
+  series_id: string
+  version: number
+  mode: 'direct'
+  revision_set_id: string | null
+}
+
 export interface ProgressInvoiceListPayload {
   query: string
   statuses: string[]
@@ -537,6 +554,11 @@ export interface ProgressInvoiceCommandMap {
     result: ProgressInvoiceSeriesMutationRpcResult
     current: ProgressInvoiceSeriesRpcDetail
   }
+  void_progress_invoice_series: {
+    payload: VoidProgressInvoiceSeriesPayload
+    result: VoidProgressInvoiceSeriesRpcResult
+    current: never
+  }
   list_progress_invoice_series: {
     payload: ProgressInvoiceListPayload
     result: ProgressInvoiceDashboardRpcResult
@@ -661,6 +683,18 @@ const DOMAIN_ERROR_CODES: Readonly<Record<string, { code: ActionErrorCode; error
   PROGRESS_STORAGE_ERROR: { code: 'STORAGE_ERROR', error: 'PROGRESS_STORAGE_ERROR' },
   IDEMPOTENCY_KEY_REUSED: { code: 'VALIDATION', error: 'IDEMPOTENCY_KEY_REUSED' },
   PROGRESS_UNIQUE_CONFLICT: { code: 'VALIDATION', error: 'PROGRESS_UNIQUE_CONFLICT' },
+  PROGRESS_NUMBERING_BASE_CONFLICT: { code: 'VALIDATION', error: 'PROGRESS_NUMBERING_BASE_CONFLICT' },
+  PROGRESS_BASE_CONTRACT_LOCKED: { code: 'VALIDATION', error: 'PROGRESS_BASE_CONTRACT_LOCKED' },
+  PROGRESS_SERIES_VOID: { code: 'VALIDATION', error: 'PROGRESS_SERIES_VOID' },
+  PROGRESS_CURRENT_SET_CONFLICT: { code: 'VERSION_CONFLICT', error: 'PROGRESS_CURRENT_SET_CONFLICT' },
+  PROGRESS_CLAIM_VOID_REQUIRED: {
+    code: 'RECONCILIATION_REQUIRED',
+    error: 'PROGRESS_CLAIM_VOID_REQUIRED',
+  },
+  PROGRESS_PREPARED_SET_UNSUPPORTED: {
+    code: 'VALIDATION',
+    error: 'PROGRESS_PREPARED_SET_UNSUPPORTED',
+  },
   PROGRESS_EMAIL_INVALID: { code: 'VALIDATION', error: 'PROGRESS_EMAIL_INVALID' },
   PROGRESS_ABN_INVALID: { code: 'VALIDATION', error: 'PROGRESS_ABN_INVALID' },
 }
@@ -1019,6 +1053,23 @@ function parseDashboardItem(value: unknown): ProgressInvoiceDashboardRpcItem | n
     last_successful_jobber_sync_at: lastSync,
     last_jobber_sync_error_code: syncError,
     version,
+  }
+}
+
+function parseVoidSeriesResult(value: unknown): VoidProgressInvoiceSeriesRpcResult | null {
+  const candidate = singleton(value)
+  if (!isRecord(candidate) || !hasExactKeys(candidate, [
+    'series_id', 'version', 'mode', 'revision_set_id',
+  ])) return null
+  const seriesId = uuidField(candidate, 'series_id')
+  const version = positiveIntegerField(candidate, 'version')
+  const revisionSetId = nullableUuidField(candidate, 'revision_set_id')
+  if (!seriesId || !version || candidate.mode !== 'direct' || revisionSetId === undefined) return null
+  return {
+    series_id: seriesId,
+    version,
+    mode: 'direct',
+    revision_set_id: revisionSetId,
   }
 }
 
@@ -1624,6 +1675,7 @@ function parseSuccess<TCommand extends ProgressInvoiceCommand>(
     return parseVersioned(value) as CommandResult<TCommand> | null
   }
   if (command === 'update_progress_invoice_series') return parseSeriesMutation(value) as CommandResult<TCommand> | null
+  if (command === 'void_progress_invoice_series') return parseVoidSeriesResult(value) as CommandResult<TCommand> | null
   if (command === 'list_progress_invoice_series') return parseDashboard(value) as CommandResult<TCommand> | null
   if (command === 'get_progress_invoice_series') return parseSeriesRead(value) as CommandResult<TCommand> | null
   if (command === 'get_progress_invoice_workspace') return parseWorkspace(value) as CommandResult<TCommand> | null

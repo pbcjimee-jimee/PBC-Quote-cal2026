@@ -12,10 +12,12 @@ import {
   listProgressInvoiceSeries as listSeries,
   saveBusinessInvoiceProfile as saveProfile,
   updateProgressInvoiceSeries as updateSeries,
+  voidProgressInvoiceSeries as voidSeries,
   type BusinessInvoiceProfileDto,
   type ProgressInvoiceDashboardDto,
   type ProgressInvoiceListInput,
   type ProgressInvoiceSeriesDetail,
+  type VoidProgressInvoiceSeriesResult,
 } from '@/lib/progress-invoices/series-service'
 import type { VersionedMutationRpcResult } from '@/lib/progress-invoices/repository'
 import {
@@ -24,6 +26,7 @@ import {
   progressInvoiceSeriesIdSchema,
   saveBusinessInvoiceProfileSchema,
   updateProgressInvoiceSeriesSchema,
+  voidProgressInvoiceSeriesSchema,
 } from '@/lib/progress-invoices/validators'
 import {
   getProgressInvoiceSeriesWorkspace as getSeriesWorkspace,
@@ -144,4 +147,21 @@ export async function updateProgressInvoiceSeries(
   if (!result.ok) return result
   revalidateSeries(result.data.id, result.data.quoteId)
   return { ok: true, data: { id: result.data.id, version: result.data.version } }
+}
+
+export async function voidProgressInvoiceSeries(
+  input: unknown,
+): Promise<ActionResult<VoidProgressInvoiceSeriesResult>> {
+  const parsed = voidProgressInvoiceSeriesSchema.safeParse(input)
+  if (!parsed.success) return validationFailure()
+  const authorized = await authorize()
+  if (!authorized.ok) return authorized
+  const result = await voidSeries(parsed.data)
+  if (!result.ok) return result
+  const series = await getSeries(result.data.seriesId)
+  revalidateSeries(
+    result.data.seriesId,
+    series.ok ? series.data?.quoteId : null,
+  )
+  return result
 }

@@ -33,6 +33,7 @@ interface ProgressInvoiceSeriesFieldsProps {
   idPrefix?: string
   baseContractHelp?: string
   seriesDetailsCopy?: string
+  baseContractDisabled?: boolean
 }
 
 const POSITIVE_MONEY_PATTERN = /^(?:0|[1-9]\d*)(?:\.\d+)?$/
@@ -74,6 +75,7 @@ export function ProgressInvoiceSeriesFields({
   idPrefix = 'progress-invoice-series',
   baseContractHelp = 'Enter the original accepted contract amount before Variations or Credits, excluding GST.',
   seriesDetailsCopy = 'These values stay in PBC after creation.',
+  baseContractDisabled = false,
 }: ProgressInvoiceSeriesFieldsProps) {
   function inputProps(field: ProgressInvoiceSeriesField) {
     const error = errors[field]
@@ -81,7 +83,7 @@ export function ProgressInvoiceSeriesFields({
       id: `${idPrefix}-${field}`,
       name: field,
       value: draft[field],
-      disabled,
+      disabled: disabled || (field === 'baseContractExGst' && baseContractDisabled),
       'aria-invalid': error ? true : undefined,
       'aria-describedby': fieldDescription(
         idPrefix,

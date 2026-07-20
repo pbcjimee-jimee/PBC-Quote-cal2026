@@ -7,6 +7,7 @@ import {
   type ProgressInvoiceSeriesRpcDetail,
   type ProgressInvoiceSeriesStatus,
   type VersionedMutationRpcResult,
+  type VoidProgressInvoiceSeriesRpcResult,
 } from './repository'
 
 export type ProgressInvoiceDisplayPaymentState = 'no_claims' | ProgressInvoicePaymentState
@@ -23,6 +24,7 @@ import type {
   CreateManualProgressInvoiceSeriesInput,
   SaveBusinessInvoiceProfileInput,
   UpdateProgressInvoiceSeriesInput,
+  VoidProgressInvoiceSeriesInput,
 } from './validators'
 
 export interface BusinessInvoiceProfileDto {
@@ -118,6 +120,13 @@ export interface ProgressInvoiceSeriesDetail {
 
 export interface ProgressInvoiceSeriesMutationResult extends VersionedMutationRpcResult {
   quoteId: string | null
+}
+
+export interface VoidProgressInvoiceSeriesResult {
+  seriesId: string
+  version: number
+  mode: 'direct'
+  revisionSetId: string | null
 }
 
 export type ManualProgressInvoiceSeriesCommand = CreateManualProgressInvoiceSeriesInput & {
@@ -276,6 +285,32 @@ export async function updateProgressInvoiceSeries(
       id: result.data.id,
       version: result.data.version,
       quoteId: result.data.quote_id,
+    },
+  }
+}
+
+export async function voidProgressInvoiceSeries(
+  input: VoidProgressInvoiceSeriesInput,
+): Promise<ActionResult<VoidProgressInvoiceSeriesResult>> {
+  const repository = await createProgressInvoiceRepository()
+  const result = await repository.call('void_progress_invoice_series', {
+    series_id: input.seriesId,
+    expected_version: input.expectedVersion,
+    expected_current_revision_set_id: input.expectedCurrentRevisionSetId,
+    expected_current_manifest_hash: input.expectedCurrentManifestHash?.toLowerCase() ?? null,
+    prepared_revision_set_id: input.preparedRevisionSetId,
+    reason: input.reason.trim(),
+    correlation_key: input.correlationKey,
+  })
+  if (!result.ok) return result
+  const data: VoidProgressInvoiceSeriesRpcResult = result.data
+  return {
+    ok: true,
+    data: {
+      seriesId: data.series_id,
+      version: data.version,
+      mode: data.mode,
+      revisionSetId: data.revision_set_id,
     },
   }
 }

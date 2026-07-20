@@ -1,7 +1,7 @@
 CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA extensions;
 CREATE EXTENSION IF NOT EXISTS dblink WITH SCHEMA extensions;
 
-SELECT plan(270);
+SELECT plan(304);
 
 DELETE FROM public.business_invoice_profiles;
 DELETE FROM auth.users
@@ -467,8 +467,12 @@ DELETE FROM public.progress_payment_revisions AS revision
 USING public.progress_payments AS payment
 WHERE revision.payment_id = payment.id
   AND payment.series_id = (SELECT series_id FROM task2_standalone_import_result);
+ALTER TABLE public.progress_payments
+  DISABLE TRIGGER trg_progress_payments_protect_identity;
 DELETE FROM public.progress_payments
 WHERE series_id = (SELECT series_id FROM task2_standalone_import_result);
+ALTER TABLE public.progress_payments
+  ENABLE TRIGGER trg_progress_payments_protect_identity;
 ALTER TABLE public.progress_payment_revisions
   ENABLE TRIGGER trg_progress_payment_revisions_immutable;
 COMMIT;
@@ -482,8 +486,22 @@ DELETE FROM public.progress_jobber_invoice_snapshots
 WHERE series_id = (SELECT series_id FROM task2_standalone_import_result);
 ALTER TABLE public.progress_jobber_invoice_snapshots
   ENABLE TRIGGER trg_progress_jobber_snapshots_immutable;
+ALTER TABLE public.progress_invoice_numbering_base_reservations
+  DISABLE TRIGGER trg_progress_numbering_base_reservation_protect;
+DELETE FROM public.progress_invoice_numbering_base_reservations
+WHERE series_id = (SELECT series_id FROM task2_standalone_import_result);
+ALTER TABLE public.progress_invoice_numbering_base_reservations
+  ENABLE TRIGGER trg_progress_numbering_base_reservation_protect;
+ALTER TABLE public.progress_invoice_series
+  DISABLE TRIGGER trg_progress_series_locked_link;
+ALTER TABLE public.progress_invoice_series
+  DISABLE TRIGGER trg_progress_series_sync_numbering_base;
 DELETE FROM public.progress_invoice_series
 WHERE id = (SELECT series_id FROM task2_standalone_import_result);
+ALTER TABLE public.progress_invoice_series
+  ENABLE TRIGGER trg_progress_series_sync_numbering_base;
+ALTER TABLE public.progress_invoice_series
+  ENABLE TRIGGER trg_progress_series_locked_link;
 
 SET ROLE anon;
 SELECT is(
@@ -4508,11 +4526,17 @@ INSERT INTO public.progress_claims (
   created_by, updated_by
 ) VALUES (
   '83000000-0000-4000-8000-000000000010',
-  (SELECT id FROM manual_create_first),
+  (
+    SELECT id
+    FROM public.progress_invoice_series
+    WHERE source_type = 'manual'
+      AND accepted_numbering_base = '2907'
+      AND created_by = '00000000-0000-0000-0000-000000008002'
+  ),
   1,
   'progress',
   'P01',
-  '2906-P01-MANUAL-TEST',
+  '2907-P01-MANUAL-TEST',
   '00000000-0000-0000-0000-000000008001',
   '00000000-0000-0000-0000-000000008001'
 );
@@ -4532,7 +4556,7 @@ SELECT lives_ok(
           'jobber_invoice_id', NULL,
           'original_jobber_invoice_number', NULL,
           'observed_jobber_invoice_number', NULL,
-          'accepted_numbering_base', '2906'
+          'accepted_numbering_base', '2907'
         )
     )).* FROM public.progress_claim_revisions AS source_revision LIMIT 1
   $sql$,
@@ -4554,7 +4578,7 @@ SELECT is(
           'jobber_invoice_id', NULL,
           'original_jobber_invoice_number', NULL,
           'observed_jobber_invoice_number', NULL,
-          'accepted_numbering_base', '2906'
+          'accepted_numbering_base', '2907'
         )
     )).* FROM public.progress_claim_revisions AS source_revision LIMIT 1
   $sql$),
@@ -4854,9 +4878,6 @@ SELECT public.progress_recalculate_series_read_model_as(
 );
 SELECT public.progress_recalculate_series_read_model_as(
   '84000000-0000-4000-8000-000000000002', '00000000-0000-0000-0000-000000008001'
-);
-SELECT public.progress_recalculate_series_read_model_as(
-  '84000000-0000-4000-8000-000000000003', '00000000-0000-0000-0000-000000008001'
 );
 
 SELECT is(
@@ -5777,5 +5798,434 @@ SET request.jwt.claim.sub = '00000000-0000-0000-0000-000000008001';
 SELECT is(pg_temp.capture_sqlstate($sql$
   SELECT public.get_progress_invoice_workspace('{"series_id":"86000000-0000-4000-8000-000000000010"}'::JSONB)
 $sql$), 'P0001', 'workspace fails closed when a bounded collection reaches cap plus one');
+
+RESET ROLE;
+
+-- Task 4: Series lifecycle, lifetime numbering-base reservations, and direct Void.
+SELECT has_table(
+  'public',
+  'progress_invoice_numbering_base_reservations',
+  'numbering-base reservations are a first-class RLS table'
+);
+
+SELECT has_function(
+  'public',
+  'void_progress_invoice_series',
+  ARRAY['jsonb'],
+  'direct Series Void is exposed through one JSON command RPC'
+);
+
+SELECT is(
+  (
+    SELECT relrowsecurity
+    FROM pg_catalog.pg_class
+    WHERE oid = 'public.progress_invoice_numbering_base_reservations'::regclass
+  ),
+  true,
+  'numbering-base reservations enable RLS'
+);
+
+SELECT is(
+  has_table_privilege('authenticated', 'public.progress_invoice_numbering_base_reservations', 'SELECT'),
+  true,
+  'authenticated users can inspect reservation state'
+);
+
+SELECT is(
+  has_table_privilege('authenticated', 'public.progress_invoice_numbering_base_reservations', 'INSERT')
+    OR has_table_privilege('authenticated', 'public.progress_invoice_numbering_base_reservations', 'UPDATE')
+    OR has_table_privilege('authenticated', 'public.progress_invoice_numbering_base_reservations', 'DELETE'),
+  false,
+  'authenticated users have no direct reservation write surface'
+);
+
+SELECT is(
+  has_function_privilege('authenticated', 'public.void_progress_invoice_series(jsonb)', 'EXECUTE')
+    AND NOT has_function_privilege('anon', 'public.void_progress_invoice_series(jsonb)', 'EXECUTE')
+    AND NOT has_function_privilege('service_role', 'public.void_progress_invoice_series(jsonb)', 'EXECUTE'),
+  true,
+  'only authenticated users can execute direct Series Void'
+);
+
+SELECT is(
+  (
+    SELECT bool_and('search_path=""' = ANY(function_row.proconfig))
+    FROM pg_catalog.pg_proc AS function_row
+    JOIN pg_catalog.pg_namespace AS namespace ON namespace.oid = function_row.pronamespace
+    WHERE namespace.nspname = 'public'
+      AND function_row.proname IN ('update_progress_invoice_series', 'void_progress_invoice_series')
+      AND pg_catalog.pg_get_function_identity_arguments(function_row.oid) = 'payload jsonb'
+  ),
+  true,
+  'Series mutation RPCs pin an empty search_path'
+);
+
+INSERT INTO public.progress_invoice_series (
+  id, source_type, accepted_numbering_base, base_contract_ex_gst,
+  recipient_name, recipient_address, site_name, site_address, default_description,
+  status, created_by, updated_by
+) VALUES
+  (
+    '87000000-0000-4000-8000-000000000001', 'manual', ' Task4-Free ', 1000,
+    'Task 4 Free', 'Task 4 Billing', 'Task 4 Site', 'Task 4 Site address', 'Task 4 works',
+    'active', '00000000-0000-0000-0000-000000008001', '00000000-0000-0000-0000-000000008001'
+  ),
+  (
+    '87000000-0000-4000-8000-000000000010', 'manual', 'Task4-Draft', 1000,
+    'Task 4 Draft', 'Task 4 Billing', 'Task 4 Site', 'Task 4 Site address', 'Task 4 works',
+    'active', '00000000-0000-0000-0000-000000008001', '00000000-0000-0000-0000-000000008001'
+  ),
+  (
+    '87000000-0000-4000-8000-000000000020', 'manual', 'Task4-Issued', 1000,
+    'Task 4 Issued', 'Task 4 Billing', 'Task 4 Site', 'Task 4 Site address', 'Task 4 works',
+    'active', '00000000-0000-0000-0000-000000008001', '00000000-0000-0000-0000-000000008001'
+  ),
+  (
+    '87000000-0000-4000-8000-000000000030', 'manual', 'Task4-Legacy-Void', 1000,
+    'Task 4 Void', 'Task 4 Billing', 'Task 4 Site', 'Task 4 Site address', 'Task 4 works',
+    'void', '00000000-0000-0000-0000-000000008001', '00000000-0000-0000-0000-000000008001'
+  );
+
+INSERT INTO public.progress_claims (
+  id, series_id, sequence, kind, suffix, tax_invoice_number, status,
+  original_issued_at, created_by, updated_by
+) VALUES
+  (
+    '87000000-0000-4000-8000-000000000011', '87000000-0000-4000-8000-000000000010',
+    1, 'progress', 'P01', 'Task4-Draft-P01', 'draft', NULL,
+    '00000000-0000-0000-0000-000000008001', '00000000-0000-0000-0000-000000008001'
+  ),
+  (
+    '87000000-0000-4000-8000-000000000021', '87000000-0000-4000-8000-000000000020',
+    1, 'progress', 'P01', 'Task4-Issued-P01', 'issued', now(),
+    '00000000-0000-0000-0000-000000008001', '00000000-0000-0000-0000-000000008001'
+  );
+
+SELECT is(
+  (
+    SELECT jsonb_object_agg(lower(btrim(series.accepted_numbering_base)), reservation.state)
+    FROM public.progress_invoice_series AS series
+    JOIN public.progress_invoice_numbering_base_reservations AS reservation
+      ON reservation.series_id = series.id
+    WHERE series.id IN (
+      '87000000-0000-4000-8000-000000000001',
+      '87000000-0000-4000-8000-000000000010',
+      '87000000-0000-4000-8000-000000000020',
+      '87000000-0000-4000-8000-000000000030'
+    )
+  ),
+  '{"task4-draft":"permanent","task4-free":"active","task4-issued":"permanent","task4-legacy-void":"released"}'::JSONB,
+  'insert and first-Claim triggers maintain active, permanent, and released reservation states'
+);
+
+SELECT is(
+  (
+    SELECT first_claim_id
+    FROM public.progress_invoice_numbering_base_reservations
+    WHERE series_id = '87000000-0000-4000-8000-000000000010'
+  ),
+  '87000000-0000-4000-8000-000000000011'::UUID,
+  'the earliest Claim permanently owns the numbering-base reservation provenance'
+);
+
+SELECT is(pg_temp.capture_sqlstate($sql$
+  UPDATE public.progress_invoice_numbering_base_reservations
+  SET normalized_base = 'mutated'
+  WHERE series_id = '87000000-0000-4000-8000-000000000010'
+$sql$), '55000', 'reservation identity is immutable');
+
+SELECT is(pg_temp.capture_sqlstate($sql$
+  UPDATE public.progress_invoice_numbering_base_reservations
+  SET state = 'released'
+  WHERE series_id = '87000000-0000-4000-8000-000000000010'
+$sql$), '55000', 'a permanent reservation can never be released');
+
+SELECT is(pg_temp.capture_sqlstate($sql$
+  DELETE FROM public.progress_invoice_numbering_base_reservations
+  WHERE series_id = '87000000-0000-4000-8000-000000000010'
+$sql$), '55000', 'reservation rows cannot be deleted');
+
+SELECT is(pg_temp.capture_sqlstate($sql$
+  DELETE FROM public.progress_invoice_series
+  WHERE id = '87000000-0000-4000-8000-000000000001'
+$sql$), '55000', 'Series rows cannot be hard-deleted even without children');
+
+SELECT is(pg_temp.capture_sqlstate($sql$
+  UPDATE public.progress_invoice_series
+  SET created_at = created_at + interval '1 second'
+  WHERE id = '87000000-0000-4000-8000-000000000001'
+$sql$), '55000', 'Series creator and creation time provenance is immutable');
+
+SELECT is(pg_temp.capture_sqlstate($sql$
+  UPDATE public.progress_invoice_series
+  SET accepted_numbering_base = 'Task4-Changed'
+  WHERE id = '87000000-0000-4000-8000-000000000010'
+$sql$), '55000', 'accepted numbering is immutable after any Claim exists');
+
+SET ROLE authenticated;
+SET request.jwt.claim.sub = '00000000-0000-0000-0000-000000008001';
+
+CREATE TEMP TABLE task4_preclaim_update AS
+SELECT * FROM public.update_progress_invoice_series(jsonb_build_object(
+  'series_id', '87000000-0000-4000-8000-000000000001',
+  'expected_version', 1,
+  'base_contract_ex_gst', '1250.00',
+  'recipient_name', 'Future Recipient',
+  'correlation_key', '87000000-0000-4000-8000-000000000101'
+));
+
+SELECT is(
+  (SELECT jsonb_build_object(
+    'version', series.version,
+    'base', to_char(series.base_contract_ex_gst, 'FM999999999999990.00'),
+    'adjusted', to_char(series.current_adjusted_contract_ex_gst, 'FM999999999999990.00'),
+    'recipient', series.recipient_name
+  ) FROM public.progress_invoice_series AS series
+  WHERE series.id = '87000000-0000-4000-8000-000000000001'),
+  '{"version":2,"base":"1250.00","adjusted":"1250.00","recipient":"Future Recipient"}'::JSONB,
+  'a pre-Claim base edit recalculates the read model and future defaults'
+);
+
+SELECT results_eq(
+  $sql$ SELECT id, version, quote_id, conflict FROM public.update_progress_invoice_series(jsonb_build_object(
+    'series_id', '87000000-0000-4000-8000-000000000001',
+    'expected_version', 1,
+    'base_contract_ex_gst', '1250.00',
+    'recipient_name', 'Future Recipient',
+    'correlation_key', '87000000-0000-4000-8000-000000000101'
+  )) $sql$,
+  $sql$ SELECT id, version, quote_id, conflict FROM task4_preclaim_update $sql$,
+  'exact update replay returns the original result before current-state rejection'
+);
+
+SELECT is(pg_temp.capture_sqlstate($sql$
+  SELECT * FROM public.update_progress_invoice_series(jsonb_build_object(
+    'series_id', '87000000-0000-4000-8000-000000000001',
+    'expected_version', 2,
+    'recipient_name', 'Changed fingerprint',
+    'correlation_key', '87000000-0000-4000-8000-000000000101'
+  ))
+$sql$), 'P0001', 'a changed update fingerprint is rejected');
+
+SELECT is(pg_temp.capture_sqlstate($sql$
+  SELECT * FROM public.update_progress_invoice_series(jsonb_build_object(
+    'series_id', '87000000-0000-4000-8000-000000000010',
+    'expected_version', 1,
+    'base_contract_ex_gst', '1500.00',
+    'correlation_key', '87000000-0000-4000-8000-000000000102'
+  ))
+$sql$), 'P0001', 'a Draft Claim permanently locks Base Contract Ex GST');
+
+SELECT lives_ok($sql$
+  SELECT * FROM public.update_progress_invoice_series(jsonb_build_object(
+    'series_id', '87000000-0000-4000-8000-000000000010',
+    'expected_version', 1,
+    'reference', 'Future claims only',
+    'correlation_key', '87000000-0000-4000-8000-000000000103'
+  ))
+$sql$, 'future recipient/site/reference/description defaults remain editable after a Claim');
+
+CREATE TEMP TABLE task4_before_issued_void AS
+SELECT to_jsonb(series) AS series_state,
+  (SELECT count(*) FROM public.progress_invoice_events WHERE series_id = series.id) AS event_count
+FROM public.progress_invoice_series AS series
+WHERE series.id = '87000000-0000-4000-8000-000000000020';
+
+SELECT is(pg_temp.capture_sqlstate($sql$
+  SELECT * FROM public.void_progress_invoice_series(jsonb_build_object(
+    'series_id', '87000000-0000-4000-8000-000000000020',
+    'expected_version', 1,
+    'expected_current_revision_set_id', NULL,
+    'expected_current_manifest_hash', NULL,
+    'prepared_revision_set_id', NULL,
+    'reason', 'Void issued series',
+    'correlation_key', '87000000-0000-4000-8000-000000000104'
+  ))
+$sql$), 'P0001', 'an Issued Claim requires the official reconciliation workflow');
+
+SELECT is(
+  (SELECT jsonb_build_object(
+    'same_series', to_jsonb(series) = before_state.series_state,
+    'same_events', (SELECT count(*) FROM public.progress_invoice_events WHERE series_id = series.id) = before_state.event_count
+  )
+   FROM public.progress_invoice_series AS series
+   CROSS JOIN task4_before_issued_void AS before_state
+   WHERE series.id = '87000000-0000-4000-8000-000000000020'),
+  '{"same_events":true,"same_series":true}'::JSONB,
+  'Issued-Claim direct Void failure makes no mutation'
+);
+
+CREATE TEMP TABLE task4_free_void AS
+SELECT * FROM public.void_progress_invoice_series(jsonb_build_object(
+  'series_id', '87000000-0000-4000-8000-000000000001',
+  'expected_version', 2,
+  'expected_current_revision_set_id', NULL,
+  'expected_current_manifest_hash', NULL,
+  'prepared_revision_set_id', NULL,
+  'reason', 'Claim-free duplicate',
+  'correlation_key', '87000000-0000-4000-8000-000000000105'
+));
+
+SELECT is(
+  (SELECT jsonb_build_object(
+    'series', result.series_id,
+    'version', result.version,
+    'mode', result.mode,
+    'revision_set', result.revision_set_id,
+    'status', series.status,
+    'reservation', reservation.state
+  )
+   FROM task4_free_void AS result
+   JOIN public.progress_invoice_series AS series ON series.id = result.series_id
+   JOIN public.progress_invoice_numbering_base_reservations AS reservation ON reservation.series_id = series.id),
+  '{"series":"87000000-0000-4000-8000-000000000001","version":3,"mode":"direct","revision_set":null,"status":"void","reservation":"released"}'::JSONB,
+  'Claim-free direct Void archives the Series and releases its active base'
+);
+
+SELECT results_eq(
+  $sql$ SELECT series_id, version, mode, revision_set_id FROM public.void_progress_invoice_series(jsonb_build_object(
+    'series_id', '87000000-0000-4000-8000-000000000001',
+    'expected_version', 2,
+    'expected_current_revision_set_id', NULL,
+    'expected_current_manifest_hash', NULL,
+    'prepared_revision_set_id', NULL,
+    'reason', 'Claim-free duplicate',
+    'correlation_key', '87000000-0000-4000-8000-000000000105'
+  )) $sql$,
+  $sql$ SELECT series_id, version, mode, revision_set_id FROM task4_free_void $sql$,
+  'exact direct-Void replay succeeds even though the Series is now Void'
+);
+
+SELECT is(pg_temp.capture_sqlstate($sql$
+  SELECT * FROM public.update_progress_invoice_series(jsonb_build_object(
+    'series_id', '87000000-0000-4000-8000-000000000001',
+    'expected_version', 3,
+    'reference', 'Forbidden after Void',
+    'correlation_key', '87000000-0000-4000-8000-000000000106'
+  ))
+$sql$), 'P0001', 'new edits are rejected for a Void Series');
+
+SELECT is(pg_temp.capture_sqlstate($sql$
+  SELECT * FROM public.void_progress_invoice_series(jsonb_build_object(
+    'series_id', '87000000-0000-4000-8000-000000000001',
+    'expected_version', 3,
+    'expected_current_revision_set_id', NULL,
+    'expected_current_manifest_hash', NULL,
+    'prepared_revision_set_id', NULL,
+    'reason', 'Changed fingerprint',
+    'correlation_key', '87000000-0000-4000-8000-000000000105'
+  ))
+$sql$), 'P0001', 'changed direct-Void fingerprint is rejected');
+
+SELECT is(pg_temp.capture_sqlstate($sql$
+  SELECT * FROM public.void_progress_invoice_series(jsonb_build_object(
+    'series_id', '87000000-0000-4000-8000-000000000010',
+    'expected_version', 1,
+    'expected_current_revision_set_id', NULL,
+    'expected_current_manifest_hash', NULL,
+    'prepared_revision_set_id', NULL,
+    'reason', 'Stale version',
+    'correlation_key', '87000000-0000-4000-8000-000000000107'
+  ))
+$sql$), 'P0001', 'stale direct-Void Series version is rejected without mutation');
+
+CREATE TEMP TABLE task4_draft_void AS
+SELECT * FROM public.void_progress_invoice_series(jsonb_build_object(
+  'series_id', '87000000-0000-4000-8000-000000000010',
+  'expected_version', 2,
+  'expected_current_revision_set_id', NULL,
+  'expected_current_manifest_hash', NULL,
+  'prepared_revision_set_id', NULL,
+  'reason', 'Draft-only duplicate',
+  'correlation_key', '87000000-0000-4000-8000-000000000108'
+));
+
+SELECT is(
+  (SELECT jsonb_build_object(
+    'series_status', series.status,
+    'claim_status', claim.status,
+    'claim_number', claim.tax_invoice_number,
+    'reservation', reservation.state,
+    'first_claim', reservation.first_claim_id
+  )
+   FROM public.progress_invoice_series AS series
+   JOIN public.progress_claims AS claim ON claim.series_id = series.id
+   JOIN public.progress_invoice_numbering_base_reservations AS reservation ON reservation.series_id = series.id
+   WHERE series.id = '87000000-0000-4000-8000-000000000010'),
+  '{"series_status":"void","claim_status":"void","claim_number":"Task4-Draft-P01","reservation":"permanent","first_claim":"87000000-0000-4000-8000-000000000011"}'::JSONB,
+  'Draft-only direct Void preserves Claim identity and permanent numbering/base reservations'
+);
+
+RESET ROLE;
+
+SELECT is(pg_temp.capture_sqlstate($sql$
+  INSERT INTO public.progress_invoice_series (
+    source_type, accepted_numbering_base, base_contract_ex_gst,
+    recipient_name, recipient_address, site_name, site_address, default_description,
+    created_by, updated_by
+  ) VALUES (
+    'manual', ' task4-draft ', 1000, 'Reuse', 'Billing', 'Site', 'Address', 'Works',
+    '00000000-0000-0000-0000-000000008001', '00000000-0000-0000-0000-000000008001'
+  )
+$sql$), '23505', 'a permanent normalized base remains unavailable after Draft-only Void');
+
+SELECT lives_ok($sql$
+  INSERT INTO public.progress_invoice_series (
+    source_type, accepted_numbering_base, base_contract_ex_gst,
+    recipient_name, recipient_address, site_name, site_address, default_description,
+    created_by, updated_by
+  ) VALUES (
+    'manual', 'task4-free', 1000, 'Reuse', 'Billing', 'Site', 'Address', 'Works',
+    '00000000-0000-0000-0000-000000008001', '00000000-0000-0000-0000-000000008001'
+  )
+$sql$, 'a released Claim-free normalized base can be reserved by a new Series');
+
+SET ROLE authenticated;
+SET request.jwt.claim.sub = '00000000-0000-0000-0000-000000008001';
+
+SELECT is(pg_temp.capture_sqlstate($sql$
+  SELECT * FROM public.void_progress_invoice_series(jsonb_build_object(
+    'series_id', '87000000-0000-4000-8000-000000000020',
+    'expected_version', 1,
+    'expected_current_revision_set_id', '87000000-0000-4000-8000-000000000099',
+    'expected_current_manifest_hash', repeat('a', 64),
+    'prepared_revision_set_id', NULL,
+    'reason', 'Stale Current set',
+    'correlation_key', '87000000-0000-4000-8000-000000000109'
+  ))
+$sql$), 'P0001', 'exact Current-set pointer and canonical manifest hash are required');
+
+SELECT is(pg_temp.capture_sqlstate($sql$
+  SELECT * FROM public.void_progress_invoice_series(jsonb_build_object(
+    'series_id', '87000000-0000-4000-8000-000000000020',
+    'expected_version', 1,
+    'expected_current_revision_set_id', NULL,
+    'expected_current_manifest_hash', NULL,
+    'prepared_revision_set_id', '87000000-0000-4000-8000-000000000099',
+    'reason', 'Prepared set is not supported',
+    'correlation_key', '87000000-0000-4000-8000-000000000110'
+  ))
+$sql$), 'P0001', 'Task 4 rejects a non-null prepared Revision Set');
+
+RESET ROLE;
+
+SELECT is(pg_temp.capture_sqlstate($sql$
+  UPDATE public.progress_invoice_series
+  SET jobber_account_id = 'forbidden', jobber_invoice_id = 'forbidden'
+  WHERE id = '87000000-0000-4000-8000-000000000010'
+$sql$), '55000', 'Claim existence freezes applicable Jobber identity and selectors');
+
+SELECT is(
+  (
+    SELECT jobber_account_id IS NULL
+      AND jobber_invoice_id IS NULL
+      AND selected_jobber_job_id IS NULL
+      AND selected_jobber_property_id IS NULL
+    FROM public.progress_invoice_series
+    WHERE id = '87000000-0000-4000-8000-000000000010'
+  ),
+  true,
+  'Manual-Series Jobber-null invariants remain intact'
+);
 
 SELECT * FROM finish();

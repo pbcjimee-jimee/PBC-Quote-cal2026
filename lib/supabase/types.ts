@@ -853,6 +853,60 @@ export interface Database {
           },
         ]
       }
+      progress_invoice_numbering_base_reservations: {
+        Row: {
+          created_at: string
+          created_by: string
+          first_claim_id: string | null
+          id: string
+          normalized_base: string
+          series_id: string
+          state: string
+          state_changed_at: string
+          updated_at: string
+          updated_by: string
+        }
+        Insert: {
+          created_at?: string
+          created_by: string
+          first_claim_id?: string | null
+          id?: string
+          normalized_base: string
+          series_id: string
+          state: string
+          state_changed_at?: string
+          updated_at?: string
+          updated_by: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string
+          first_claim_id?: string | null
+          id?: string
+          normalized_base?: string
+          series_id?: string
+          state?: string
+          state_changed_at?: string
+          updated_at?: string
+          updated_by?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "progress_invoice_numbering_base_reservation_first_claim_id_fkey"
+            columns: ["first_claim_id"]
+            isOneToOne: false
+            referencedRelation: "progress_claims"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "progress_invoice_numbering_base_reservations_series_id_fkey"
+            columns: ["series_id"]
+            isOneToOne: false
+            referencedRelation: "progress_invoice_series"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       progress_invoice_revision_sets: {
         Row: {
           aggregate_financial_manifest_hash: string
@@ -1857,6 +1911,15 @@ export interface Database {
           current: Json
           id: string
           quote_id: string | null
+          version: number
+        }>
+      }
+      void_progress_invoice_series: {
+        Args: { payload: Json }
+        Returns: Array<{
+          mode: string
+          revision_set_id: string
+          series_id: string
           version: number
         }>
       }
