@@ -445,6 +445,75 @@ describe('Standalone Progress Invoice workspace', () => {
     expect(markup).not.toContain('Auto sync')
   })
 
+  it('treats the Jobber 3023 balance as Inc GST while keeping Jobber amounts comparison-only', async () => {
+    const invoice3023Search = {
+      ...searchResponse,
+      data: {
+        ...searchResponse.data,
+        invoices: [{
+          ...searchResponse.data.invoices[0],
+          id: 'invoice-3023',
+          invoiceNumber: '3023',
+          rawStatus: 'DRAFT',
+          normalizedStatus: 'draft',
+        }],
+      },
+    }
+    const invoice3023Preview = {
+      ...previewResponse,
+      data: {
+        ...previewResponse.data,
+        invoiceId: 'invoice-3023',
+        invoiceNumber: '3023',
+        rawStatus: 'DRAFT',
+        normalizedStatus: 'draft',
+        amounts: {
+          subtotal: '25849.52',
+          taxAmount: '2459.70',
+          total: '27056.74',
+          invoiceBalance: '3759.45',
+          paymentsTotal: '0.00',
+        },
+      },
+    }
+    vi.stubGlobal('fetch', vi.fn()
+      .mockResolvedValueOnce(jsonResponse(invoice3023Search))
+      .mockResolvedValueOnce(jsonResponse(invoice3023Preview)))
+    const mounted = await mountCreateWorkspace()
+
+    try {
+      await submitSearch(mounted.container, '3023')
+      await flushReact()
+      await selectCandidate(mounted.container, '3023')
+      await flushReact()
+
+      expect(inputByName(mounted.container, 'baseContractExGst').value).toBe('')
+      for (const label of [
+        'Jobber reported subtotal Ex GST',
+        'Difference to net invoice (derived) Ex GST',
+        'Net invoice (derived) Ex GST',
+        'Invoice GST',
+        'Invoice total Inc GST',
+        'Deposits / receipts applied (derived) Inc GST',
+        'Invoice balance Inc GST',
+      ]) expect(mounted.container.textContent).toContain(label)
+      for (const amount of [
+        '$25,849.52',
+        '-$1,252.48',
+        '$24,597.04',
+        '$2,459.70',
+        '$27,056.74',
+        '$3,759.45',
+      ]) expect(mounted.container.textContent).toContain(amount)
+      expect(mounted.container.textContent).toContain('The balance is already Inc GST')
+      expect(mounted.container.textContent).toContain('Jobber amounts are comparison-only')
+      expect(mounted.container.textContent).not.toContain('Use Jobber net invoice Ex GST')
+      expect(inputByName(mounted.container, 'baseContractExGst').value).toBe('')
+    } finally {
+      await mounted.cleanup()
+    }
+  })
+
   it('defaults to an accessible Jobber tab and associates each mode with its panel', async () => {
     vi.stubGlobal('fetch', vi.fn())
     const mounted = await mountCreateWorkspace()

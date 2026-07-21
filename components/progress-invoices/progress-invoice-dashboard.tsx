@@ -129,27 +129,27 @@ function DashboardStats({ data }: { data: ProgressInvoiceDashboardDto }) {
   return (
     <div className="pbc-stats pbc-progress-stats" aria-label="Progress invoice totals for all matching series">
       <div className="pbc-stat">
-        <span className="pbc-stat__label">Adjusted contract Ex GST</span>
+        <span className="pbc-stat__label">PBC adjusted contract Ex GST</span>
         <span className="pbc-stat__value mono">{formatMoney(data.summary.adjustedContractExGst)}</span>
       </div>
       <div className="pbc-stat">
-        <span className="pbc-stat__label">Claimed Inc GST</span>
+        <span className="pbc-stat__label">Issued PBC claims Inc GST</span>
         <span className="pbc-stat__value mono">{formatMoney(data.summary.claimedIncGst)}</span>
       </div>
       <div className="pbc-stat">
-        <span className="pbc-stat__label">Received Inc GST</span>
+        <span className="pbc-stat__label">Actual receipts Inc GST</span>
         <span className="pbc-stat__value mono">{formatMoney(data.summary.receivedIncGst)}</span>
       </div>
       <div className="pbc-stat">
-        <span className="pbc-stat__label">Outstanding Inc GST</span>
+        <span className="pbc-stat__label">Outstanding issued claims Inc GST</span>
         <span className="pbc-stat__value mono">{formatMoney(data.summary.outstandingIncGst)}</span>
       </div>
       <div className="pbc-stat">
-        <span className="pbc-stat__label">Credit balance Inc GST</span>
+        <span className="pbc-stat__label">Unallocated receipts Inc GST</span>
         <span className="pbc-stat__value mono">{formatMoney(data.summary.creditBalanceIncGst)}</span>
       </div>
       <div className="pbc-stat">
-        <span className="pbc-stat__label">Unclaimed Inc GST</span>
+        <span className="pbc-stat__label">Remaining contract to claim Inc GST</span>
         <span className="pbc-stat__value mono">{formatMoney(data.summary.unclaimedIncGst)}</span>
       </div>
     </div>
@@ -188,12 +188,12 @@ function SeriesCards({ data }: { data: ProgressInvoiceDashboardDto }) {
             </dl>
 
             <dl className="pbc-progress-series__money">
-              <div><dt>Adjusted contract Ex GST</dt><dd>{formatMoney(item.adjustedContractExGst)}</dd></div>
-              <div><dt>Claimed Inc GST</dt><dd>{formatMoney(item.claimedIncGst)}</dd></div>
-              <div><dt>Received Inc GST</dt><dd>{formatMoney(item.receivedIncGst)}</dd></div>
-              <div><dt>Outstanding Inc GST</dt><dd>{formatMoney(item.outstandingReceivable)}</dd></div>
-              <div><dt>Credit balance Inc GST</dt><dd>{formatMoney(item.creditBalanceIncGst)}</dd></div>
-              <div><dt>Unclaimed Inc GST</dt><dd>{formatMoney(item.unclaimedIncGst)}</dd></div>
+              <div><dt>PBC adjusted contract Ex GST</dt><dd>{formatMoney(item.adjustedContractExGst)}</dd></div>
+              <div><dt>Issued PBC claims Inc GST</dt><dd>{formatMoney(item.claimedIncGst)}</dd></div>
+              <div><dt>Actual receipts Inc GST</dt><dd>{formatMoney(item.receivedIncGst)}</dd></div>
+              <div><dt>Outstanding issued claims Inc GST</dt><dd>{formatMoney(item.outstandingReceivable)}</dd></div>
+              <div><dt>Unallocated receipts Inc GST</dt><dd>{formatMoney(item.creditBalanceIncGst)}</dd></div>
+              <div><dt>Remaining contract to claim Inc GST</dt><dd>{formatMoney(item.unclaimedIncGst)}</dd></div>
               <div><dt>Progress</dt><dd>{new Decimal(item.cumulativePercentage).toFixed(2)}%</dd></div>
             </dl>
 

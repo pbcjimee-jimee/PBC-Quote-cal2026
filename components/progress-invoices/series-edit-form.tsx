@@ -92,7 +92,7 @@ export function SeriesEditForm({
         onChange={change}
         idPrefix="series-edit"
         baseContractHelp={canEditBaseContract
-          ? 'Base Contract Ex GST is editable until the first Claim exists.'
+          ? 'Enter the original accepted full contract excluding GST. A Jobber invoice balance already includes GST and is not the Base Contract.'
           : 'Base Contract Ex GST is locked because a Claim exists. Use a Variation or Credit for contract changes.'}
         seriesDetailsCopy="Existing Claim and document snapshots never change when Series defaults are edited."
       />

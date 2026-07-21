@@ -5,6 +5,7 @@ import type {
   ProgressInvoiceHistoryPageDto,
   ProgressInvoiceSeriesWorkspaceDto,
 } from '@/lib/progress-invoices/workspace-service'
+import { calculateJobberInvoicePosition } from '@/lib/progress-invoices/jobber-invoice-position'
 import { ClaimTimeline } from './claim-timeline'
 import { AdjustmentRegister } from './adjustment-register'
 import { HistoryPanel } from './history-panel'
@@ -43,6 +44,25 @@ export function ProgressInvoiceSeriesDetailView({
   )
   const hasDraftClaims = workspace.claims.some((claim) => claim.status === 'draft')
   const hasFinalClaim = workspace.claims.some((claim) => claim.kind === 'final')
+  const jobberPayments = workspace.payments.filter((payment) => payment.source === 'jobber')
+  const hasCompleteJobberPaymentEvidence = jobberPayments
+    .every((payment) => payment.currentRevision !== null)
+  const jobberReceiptEffects = hasCompleteJobberPaymentEvidence
+    ? jobberPayments.flatMap((payment) => (
+      payment.currentRevision?.status === 'active'
+        ? [payment.currentRevision.effectiveReceiptAmount]
+        : []
+    ))
+    : undefined
+  const jobberPosition = observation ? calculateJobberInvoicePosition({
+    subtotal: observation.invoiceSubtotal,
+    taxAmount: observation.invoiceTax,
+    total: observation.invoiceTotal,
+    invoiceBalance: observation.invoiceBalance,
+  }, jobberReceiptEffects) : null
+  const jobberBalanceMismatch = jobberPosition?.balanceVarianceIncGst
+    ? jobberPosition.balanceVarianceIncGst !== '0.00'
+    : false
 
   return (
     <div className="pbc-progress-series-detail">
@@ -57,24 +77,63 @@ export function ProgressInvoiceSeriesDetailView({
 
       <section className="pbc-card pbc-card--pad" aria-labelledby="progress-summary-heading">
         <h2 id="progress-summary-heading">Summary</h2>
-        <dl className="pbc-progress-summary-grid">
-          {[
-            ['Adjusted contract Ex GST', summary.adjustedExGst],
-            ['Adjusted GST', summary.adjustedGst],
-            ['Adjusted contract Inc GST', summary.adjustedIncGst],
-            ['Claimed Inc GST', summary.claimedIncGst],
-            ['Received Inc GST', summary.receivedIncGst],
-            ['Outstanding Inc GST', summary.outstandingIncGst],
-            ['Credit balance Inc GST', summary.creditBalanceIncGst],
-            ['Unclaimed Inc GST', summary.unclaimedIncGst],
-          ].map(([label, value]) => (
-            <div key={label}>
-              <dt>{label}</dt>
-              <dd>{formatMoney(value!)}</dd>
-            </div>
-          ))}
-          <div><dt>Cumulative progress</dt><dd>{summary.cumulativePercentage}%</dd></div>
-        </dl>
+        <div className="pbc-progress-summary-section">
+          <h3>PBC progress billing position</h3>
+          <p className="pbc-progress-imported-copy">
+            Issued claims and actual receipts are tracked separately. Remaining contract to claim does not subtract deposits.
+          </p>
+          <dl className="pbc-progress-summary-grid">
+            {[
+              ['PBC adjusted contract Ex GST', summary.adjustedExGst],
+              ['PBC contract GST', summary.adjustedGst],
+              ['PBC adjusted contract Inc GST', summary.adjustedIncGst],
+              ['Issued PBC claims Inc GST', summary.claimedIncGst],
+              ['Actual receipts Inc GST', summary.receivedIncGst],
+              ['Outstanding issued claims Inc GST', summary.outstandingIncGst],
+              ['Unallocated receipts Inc GST', summary.creditBalanceIncGst],
+              ['Remaining contract to claim Inc GST', summary.unclaimedIncGst],
+            ].map(([label, value]) => (
+              <div key={label}>
+                <dt>{label}</dt>
+                <dd>{formatMoney(value!)}</dd>
+              </div>
+            ))}
+            <div><dt>Cumulative progress</dt><dd>{summary.cumulativePercentage}%</dd></div>
+          </dl>
+        </div>
+        {jobberPosition ? (
+          <div className="pbc-progress-summary-section">
+            <h3>Imported Jobber invoice position</h3>
+            <p className="pbc-progress-imported-copy">
+              Applied amount is derived from invoice total less balance. The PBC ledger amount uses stored active Jobber receipts.
+            </p>
+            <dl className="pbc-progress-summary-grid">
+              {[
+                ['Jobber reported subtotal Ex GST', jobberPosition.subtotalExGst],
+                ['Difference to net invoice (derived) Ex GST', jobberPosition.derivedSubtotalDifferenceExGst],
+                ['Net invoice (derived) Ex GST', jobberPosition.netInvoiceExGst],
+                ['Invoice GST', jobberPosition.gst],
+                ['Invoice total Inc GST', jobberPosition.totalIncGst],
+                ['Deposits / receipts applied (derived) Inc GST', jobberPosition.appliedAgainstInvoiceIncGst],
+                ['Net Jobber receipts in PBC ledger Inc GST', jobberPosition.netLedgerReceiptsIncGst],
+                ['Invoice balance Inc GST', jobberPosition.balanceIncGst],
+              ].map(([label, value]) => (
+                <div key={label}>
+                  <dt>{label}</dt>
+                  <dd>{value === null ? '—' : formatMoney(value)}</dd>
+                </div>
+              ))}
+            </dl>
+            <p className="pbc-alert pbc-alert--warning pbc-progress-money-basis-note">
+              Jobber invoice balance is Inc GST. Do not enter it as Base Contract Ex GST.
+            </p>
+            {jobberBalanceMismatch ? (
+              <p className="pbc-alert pbc-alert--warning">
+                Imported Jobber payment records do not reconcile to the observed invoice balance. Review the Payment ledger.
+              </p>
+            ) : null}
+          </div>
+        ) : null}
       </section>
 
       <section className="pbc-card pbc-card--pad" aria-labelledby="progress-claims-heading">
@@ -170,10 +229,8 @@ export function ProgressInvoiceSeriesDetailView({
             <dl className="pbc-progress-detail-dl">
               <div><dt>Invoice number</dt><dd>{observation.observedInvoiceNumber}</dd></div>
               <div><dt>Status</dt><dd>{statusLabel(observation.normalizedStatus)}</dd></div>
-              <div><dt>Invoice subtotal Ex GST</dt><dd>{observation.invoiceSubtotal ? formatMoney(observation.invoiceSubtotal) : '—'}</dd></div>
-              <div><dt>Invoice tax GST</dt><dd>{observation.invoiceTax ? formatMoney(observation.invoiceTax) : '—'}</dd></div>
-              <div><dt>Invoice total Inc GST</dt><dd>{observation.invoiceTotal ? formatMoney(observation.invoiceTotal) : '—'}</dd></div>
-              <div><dt>Invoice balance Inc GST</dt><dd>{observation.invoiceBalance ? formatMoney(observation.invoiceBalance) : '—'}</dd></div>
+              <div><dt>Issued date</dt><dd>{observation.issuedDate ?? '—'}</dd></div>
+              <div><dt>Due date</dt><dd>{observation.dueDate ?? '—'}</dd></div>
             </dl>
           </>
         ) : <p className="pbc-progress-empty">No Jobber invoice was imported for this series.</p>}

@@ -14,6 +14,7 @@ import {
   type JobberInvoiceCandidateDto,
   type JobberInvoicePreviewDto,
 } from '@/lib/progress-invoices/standalone-import-contract'
+import { calculateJobberInvoicePosition } from '@/lib/progress-invoices/jobber-invoice-position'
 import {
   isValidProgressInvoiceMoney,
   ProgressInvoiceSeriesFields,
@@ -230,8 +231,9 @@ export function jobberProgressInvoiceReducer(
 
 function formatMoney(value: string): string {
   const [whole, fraction] = new Decimal(value).toFixed(2).split('.')
-  const groupedWhole = whole.replace(/\B(?=(\d{3})+(?!\d))/g, ',')
-  return `$${groupedWhole}.${fraction}`
+  const sign = whole.startsWith('-') ? '-' : ''
+  const groupedWhole = whole.replace('-', '').replace(/\B(?=(\d{3})+(?!\d))/g, ',')
+  return `${sign}$${groupedWhole}.${fraction}`
 }
 
 function statusLabel(status: string): string {
@@ -287,6 +289,12 @@ function InvoiceCandidates({
 }
 
 function ComparisonPanel({ preview }: { preview: JobberInvoicePreviewDto }) {
+  const position = preview.amounts ? calculateJobberInvoicePosition({
+    subtotal: preview.amounts.subtotal,
+    taxAmount: preview.amounts.taxAmount,
+    total: preview.amounts.total,
+    invoiceBalance: preview.amounts.invoiceBalance,
+  }) : null
   return (
     <div className="pbc-softpanel pbc-progress-comparison" aria-label="Jobber invoice comparison">
       <div className="pbc-panelhead">
@@ -298,13 +306,21 @@ function ComparisonPanel({ preview }: { preview: JobberInvoicePreviewDto }) {
           Imported once on save
         </span>
       </div>
-      {preview.amounts ? (
-        <dl className="pbc-progress-comparison-grid">
-          <div><dt>Subtotal</dt><dd>{formatMoney(preview.amounts.subtotal)}</dd></div>
-          <div><dt>GST</dt><dd>{formatMoney(preview.amounts.taxAmount)}</dd></div>
-          <div><dt>Total</dt><dd>{formatMoney(preview.amounts.total)}</dd></div>
-          <div><dt>Balance</dt><dd>{formatMoney(preview.amounts.invoiceBalance)}</dd></div>
-        </dl>
+      {position ? (
+        <>
+          <dl className="pbc-progress-comparison-grid">
+            <div><dt>Jobber reported subtotal Ex GST</dt><dd>{formatMoney(position.subtotalExGst!)}</dd></div>
+            <div><dt>Difference to net invoice (derived) Ex GST</dt><dd>{formatMoney(position.derivedSubtotalDifferenceExGst!)}</dd></div>
+            <div><dt>Net invoice (derived) Ex GST</dt><dd>{formatMoney(position.netInvoiceExGst!)}</dd></div>
+            <div><dt>Invoice GST</dt><dd>{formatMoney(position.gst!)}</dd></div>
+            <div><dt>Invoice total Inc GST</dt><dd>{formatMoney(position.totalIncGst!)}</dd></div>
+            <div><dt>Deposits / receipts applied (derived) Inc GST</dt><dd>{formatMoney(position.appliedAgainstInvoiceIncGst!)}</dd></div>
+            <div><dt>Invoice balance Inc GST</dt><dd>{formatMoney(position.balanceIncGst!)}</dd></div>
+          </dl>
+          <p className="pbc-panelsub">
+            Applied receipts are derived from total less balance. The balance is already Inc GST. Jobber amounts are comparison-only; enter the original accepted Base Contract Ex GST manually.
+          </p>
+        </>
       ) : (
         <p className="pbc-panelsub">Jobber amount details are unavailable for this invoice.</p>
       )}
@@ -652,7 +668,7 @@ export function StandaloneProgressInvoiceForm({
           showAcceptedNumberingBase={false}
           errors={viewModel.fieldErrors}
           idPrefix="jobber-progress-invoice"
-          baseContractHelp="Enter the original accepted contract amount before Variations or Credits, excluding GST. Do not use the adjusted Jobber subtotal."
+          baseContractHelp="Enter the original accepted full contract excluding GST. Do not enter the Jobber invoice balance; it already includes GST. Record Variations or Credits separately."
           seriesDetailsCopy="These values stay in PBC after the one-time import."
           onChange={(field, value) => dispatch({ type: 'draftChanged', field, value })}
         />

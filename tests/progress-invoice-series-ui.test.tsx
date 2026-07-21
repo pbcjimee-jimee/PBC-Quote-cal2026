@@ -133,7 +133,12 @@ describe('Progress Invoice series detail workspace', () => {
     for (const heading of ['Summary', 'Progress Invoices', 'Jobber invoice observation', 'Recipient and site', 'Adjustments', 'Payments', 'Documents', 'History']) {
       expect(markup).toContain(`>${heading}<`)
     }
-    for (const label of ['Adjusted contract Ex GST', 'Adjusted GST', 'Adjusted contract Inc GST', 'Claimed Inc GST', 'Received Inc GST', 'Outstanding Inc GST', 'Credit balance Inc GST', 'Unclaimed Inc GST']) {
+    for (const label of [
+      'PBC adjusted contract Ex GST', 'PBC contract GST', 'PBC adjusted contract Inc GST',
+      'Issued PBC claims Inc GST', 'Actual receipts Inc GST',
+      'Outstanding issued claims Inc GST', 'Unallocated receipts Inc GST',
+      'Remaining contract to claim Inc GST',
+    ]) {
       expect(markup).toContain(label)
     }
     expect(markup).toContain('Imported on 16 July 2026')
@@ -163,6 +168,136 @@ describe('Progress Invoice series detail workspace', () => {
     expect(markup).not.toContain('name="acceptedNumberingBase"')
     expect(markup).not.toContain('name="sourceType"')
     expect(markup).not.toContain('name="jobberInvoiceId"')
+  })
+
+  it('separates the Jobber 3023 GST-inclusive invoice position from the PBC claim position', () => {
+    const invoice3023: ProgressInvoiceSeriesWorkspaceDto = {
+      ...workspace,
+      series: {
+        ...workspace.series,
+        baseContractExGst: '24597.04',
+        adjustedContractExGst: '24597.04',
+        adjustedContractGst: '2459.70',
+        adjustedContractIncGst: '27056.74',
+        claimedExGst: '0.00',
+        claimedGst: '0.00',
+        claimedIncGst: '0.00',
+        unclaimedExGst: '24597.04',
+        unclaimedGst: '2459.70',
+        unclaimedIncGst: '27056.74',
+        cumulativePercentage: '0.000000',
+      },
+      summary: {
+        adjustedExGst: '24597.04',
+        adjustedGst: '2459.70',
+        adjustedIncGst: '27056.74',
+        claimedIncGst: '0.00',
+        receivedIncGst: '23297.29',
+        outstandingIncGst: '0.00',
+        creditBalanceIncGst: '23297.29',
+        unclaimedIncGst: '27056.74',
+        cumulativePercentage: '0.000000',
+      },
+      importedJobberObservation: {
+        ...workspace.importedJobberObservation!,
+        originalInvoiceNumber: '3023',
+        observedInvoiceNumber: '3023',
+        invoiceSubtotal: '25849.52',
+        invoiceTax: '2459.70',
+        invoiceTotal: '27056.74',
+        invoiceBalance: '3759.45',
+      },
+      currentRevisionSet: null,
+      claims: [],
+      payments: [
+        {
+          ...workspace.payments[0]!,
+          id: '77777777-7777-4777-8777-777777777771',
+          source: 'jobber',
+          currentRevision: {
+            ...workspace.payments[0]!.currentRevision!,
+            id: '88888888-8888-4888-8888-888888888881',
+            observedAmount: '2617.67',
+            effectiveReceiptAmount: '2617.67',
+            status: 'active',
+          },
+        },
+        {
+          ...workspace.payments[0]!,
+          id: '77777777-7777-4777-8777-777777777772',
+          source: 'jobber',
+          currentRevision: {
+            ...workspace.payments[0]!.currentRevision!,
+            id: '88888888-8888-4888-8888-888888888882',
+            observedAmount: '20679.62',
+            effectiveReceiptAmount: '20679.62',
+            status: 'active',
+          },
+        },
+      ],
+      capabilities: {
+        ...workspace.capabilities,
+        canEditBaseContract: true,
+      },
+    }
+
+    const markup = renderToStaticMarkup(createElement(ProgressInvoiceSeriesDetailView, {
+      workspace: invoice3023,
+      historyResult: { ok: true, data: { events: [], nextCursor: null } },
+    }))
+
+    for (const label of [
+      'PBC adjusted contract Ex GST',
+      'Issued PBC claims Inc GST',
+      'Actual receipts Inc GST',
+      'Outstanding issued claims Inc GST',
+      'Unallocated receipts Inc GST',
+      'Remaining contract to claim Inc GST',
+      'Jobber reported subtotal Ex GST',
+      'Difference to net invoice (derived) Ex GST',
+      'Net invoice (derived) Ex GST',
+      'Deposits / receipts applied (derived) Inc GST',
+      'Net Jobber receipts in PBC ledger Inc GST',
+      'Invoice balance Inc GST',
+    ]) expect(markup).toContain(label)
+
+    for (const amount of [
+      '$25,849.52',
+      '-$1,252.48',
+      '$24,597.04',
+      '$27,056.74',
+      '$23,297.29',
+      '$3,759.45',
+    ]) expect(markup).toContain(amount)
+
+    expect(markup).toContain('Jobber invoice balance is Inc GST')
+    expect(markup).toContain('<dt>PBC adjusted contract Ex GST</dt><dd>$24,597.04</dd>')
+    expect(markup).toContain('<dt>Remaining contract to claim Inc GST</dt><dd>$27,056.74</dd>')
+    expect(markup).toContain('<dt>Invoice balance Inc GST</dt><dd>$3,759.45</dd>')
+    expect(markup).not.toContain('Use Jobber net invoice Ex GST')
+    expect(markup).not.toContain('>Unclaimed Inc GST<')
+    expect(markup).not.toContain('>Credit balance Inc GST<')
+  })
+
+  it('renders a complete empty Jobber payment import as zero receipts', () => {
+    const noPaymentWorkspace: ProgressInvoiceSeriesWorkspaceDto = {
+      ...workspace,
+      importedJobberObservation: {
+        ...workspace.importedJobberObservation!,
+        invoiceSubtotal: '100.00',
+        invoiceTax: '10.00',
+        invoiceTotal: '110.00',
+        invoiceBalance: '110.00',
+      },
+      payments: [],
+    }
+    const markup = renderToStaticMarkup(createElement(ProgressInvoiceSeriesDetailView, {
+      workspace: noPaymentWorkspace,
+      historyResult: { ok: true, data: { events: [], nextCursor: null } },
+    }))
+
+    expect(markup).toContain('<dt>Net Jobber receipts in PBC ledger Inc GST</dt><dd>$0.00</dd>')
+    expect(markup).not.toContain('Imported Jobber payment records do not reconcile')
   })
 
   it('renders all seven server-derived capability states without live mutation or download controls', () => {
@@ -395,7 +530,7 @@ describe('Progress Invoice series detail workspace', () => {
     for (const copy of ['No Jobber invoice was imported', 'No adjustments', 'No Progress Invoices created', 'No payments recorded', 'No ready documents', 'History could not be loaded']) {
       expect(markup).toContain(copy)
     }
-    expect(markup).toContain('Adjusted contract Ex GST')
+    expect(markup).toContain('PBC adjusted contract Ex GST')
     expect(markup).toContain('Recipient and site')
   })
 

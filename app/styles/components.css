@@ -553,6 +553,9 @@
 }
 .pbc-progress-detail-heading h1 { margin: 2px 0 4px; }
 .pbc-progress-detail-heading p { margin: 0; color: var(--muted-foreground); }
+.pbc-progress-summary-section { margin-top: 18px; }
+.pbc-progress-summary-section > h3 { margin: 0; }
+.pbc-progress-summary-section .pbc-progress-imported-copy { margin-top: 6px; }
 .pbc-progress-summary-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -590,6 +593,7 @@
 .pbc-progress-detail-columns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
 .pbc-progress-imported-copy,
 .pbc-progress-empty { margin: 12px 0 0; color: var(--muted-foreground); }
+.pbc-progress-money-basis-note { margin: 12px 0 0; }
 .pbc-progress-table-scroll { overflow-x: auto; margin-top: 12px; border-radius: 12px; }
 .pbc-progress-table-scroll:focus-visible { outline: 3px solid var(--primary); outline-offset: 2px; }
 .pbc-progress-detail-table { width: 100%; min-width: 720px; border-collapse: collapse; }

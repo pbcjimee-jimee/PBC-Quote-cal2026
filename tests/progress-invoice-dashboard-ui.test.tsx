@@ -152,12 +152,12 @@ describe('Progress Invoice dashboard foundation', () => {
       },
     }))
 
-    expect(markup).toContain('Adjusted contract Ex GST')
-    expect(markup).toContain('Claimed Inc GST')
-    expect(markup).toContain('Received Inc GST')
-    expect(markup).toContain('Outstanding Inc GST')
-    expect(markup).toContain('Credit balance Inc GST')
-    expect(markup).toContain('Unclaimed Inc GST')
+    expect(markup).toContain('PBC adjusted contract Ex GST')
+    expect(markup).toContain('Issued PBC claims Inc GST')
+    expect(markup).toContain('Actual receipts Inc GST')
+    expect(markup).toContain('Outstanding issued claims Inc GST')
+    expect(markup).toContain('Unallocated receipts Inc GST')
+    expect(markup).toContain('Remaining contract to claim Inc GST')
     expect(markup).not.toContain('Claimed / Received')
     expect(markup).toContain('$9,000.00')
     expect(markup).toContain('$550.00')
