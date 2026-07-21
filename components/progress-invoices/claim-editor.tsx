@@ -10,10 +10,6 @@ import type { ProgressClaimInputMode, ProgressClaimKind } from '@/lib/progress-i
 import { TaxInvoicePreview } from './tax-invoice-preview'
 import { ClaimDraftVoidDialog } from './claim-draft-void-dialog'
 
-export function progressClaimEditorKey(editor: ProgressClaimEditorDto): string {
-  return [editor.seriesVersion, editor.claimVersion ?? 'new', editor.expectedCurrentRevisionSetId ?? 'none', editor.expectedCurrentManifestHash ?? 'none'].join(':')
-}
-
 export function ClaimEditor({ editor }: { editor: ProgressClaimEditorDto }) {
   const router = useRouter()
   const [mode, setMode] = useState<ProgressClaimInputMode>(editor.inputMode)

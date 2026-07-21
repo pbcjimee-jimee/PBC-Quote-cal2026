@@ -192,3 +192,11 @@ Initial implementation commit: `c2c3076000073c2e450fa49bf5807b9d80bf16aa`
 Independent-review fix subject: `fix: harden draft void and claim navigation`
 
 Fix commit hash: this report is part of that commit; the immutable hash is recorded in the task handoff because a commit cannot embed its own content-derived hash.
+
+## Runtime boundary follow-up
+
+- Reproduced the Next.js runtime failure caused by calling `progressClaimEditorKey` through a Client Component reference from both server Claim routes.
+- Added a source-boundary regression test that fails when either server route imports the helper from `claim-editor.tsx` and requires the helper module itself to remain server-safe.
+- Moved the pure remount-key helper to `lib/progress-invoices/claim-editor-key.ts`; both server routes now import it directly while `ClaimEditor` remains a Client Component.
+- RED: 1 boundary test failed on the unsafe Client Component import.
+- GREEN: 3 focused files, 9 tests passed; typecheck, changed-file ESLint, production build, and `git diff --check` passed.

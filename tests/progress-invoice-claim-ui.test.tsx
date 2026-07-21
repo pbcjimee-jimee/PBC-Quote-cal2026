@@ -15,7 +15,8 @@ vi.mock('@/lib/actions/progress-invoice-claims', () => ({
   voidProgressClaimDraft: mocks.voidDraft,
 }))
 
-import { ClaimEditor, progressClaimEditorKey } from '@/components/progress-invoices/claim-editor'
+import { ClaimEditor } from '@/components/progress-invoices/claim-editor'
+import { progressClaimEditorKey } from '@/lib/progress-invoices/claim-editor-key'
 import type { ProgressClaimEditorDto } from '@/lib/progress-invoices/claim-service'
 
 const editor = {

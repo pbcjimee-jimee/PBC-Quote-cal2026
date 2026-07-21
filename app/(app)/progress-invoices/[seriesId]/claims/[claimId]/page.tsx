@@ -2,7 +2,8 @@ import Link from 'next/link'
 import { notFound } from 'next/navigation'
 
 import { ClaimDetail } from '@/components/progress-invoices/claim-detail'
-import { ClaimEditor, progressClaimEditorKey } from '@/components/progress-invoices/claim-editor'
+import { ClaimEditor } from '@/components/progress-invoices/claim-editor'
+import { progressClaimEditorKey } from '@/lib/progress-invoices/claim-editor-key'
 import { getProgressClaimEditor } from '@/lib/progress-invoices/claim-service'
 import { getProgressInvoiceSeriesWorkspace } from '@/lib/progress-invoices/workspace-service'
 

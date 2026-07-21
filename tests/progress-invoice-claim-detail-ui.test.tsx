@@ -21,7 +21,6 @@ vi.mock('@/lib/progress-invoices/workspace-service', async (importOriginal) => (
 }))
 vi.mock('@/components/progress-invoices/claim-editor', () => ({
   ClaimEditor: ({ editor }: { editor: { taxInvoiceNumber: string } }) => <div>Draft editor for {editor.taxInvoiceNumber}</div>,
-  progressClaimEditorKey: () => 'draft-editor-key',
 }))
 
 import ProgressClaimPage from '@/app/(app)/progress-invoices/[seriesId]/claims/[claimId]/page'
