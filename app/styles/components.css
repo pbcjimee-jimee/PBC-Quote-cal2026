@@ -539,6 +539,7 @@
 
 .pbc-progress-series-detail {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 18px;
   width: min(1180px, 100%);
   margin: 0 auto;

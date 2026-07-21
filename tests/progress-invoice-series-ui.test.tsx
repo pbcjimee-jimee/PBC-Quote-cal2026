@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import { act, createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -113,6 +114,14 @@ const workspace: ProgressInvoiceSeriesWorkspaceDto = {
 describe('Progress Invoice series detail workspace', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+  })
+
+  it('contains wide tables inside the Series detail grid instead of widening the page', () => {
+    const css = readFileSync('app/styles/components.css', 'utf8')
+    const detailRule = css.match(/\.pbc-progress-series-detail\s*\{([^}]*)\}/)?.[1]
+
+    expect(detailRule).toBeDefined()
+    expect(detailRule).toMatch(/grid-template-columns:\s*minmax\(0,\s*1fr\)/)
   })
 
   it('renders the lifecycle edit and Void controls with explicit GST labels', () => {
