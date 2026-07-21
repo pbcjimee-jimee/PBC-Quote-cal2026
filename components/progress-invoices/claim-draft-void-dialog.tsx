@@ -4,6 +4,7 @@ import { useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 
 import { voidProgressClaimDraft } from '@/lib/actions/progress-invoice-claims'
+import { createBrowserUuid } from '@/lib/browser-uuid'
 
 interface ClaimDraftVoidDialogProps {
   seriesId: string
@@ -32,7 +33,7 @@ export function ClaimDraftVoidDialog(props: ClaimDraftVoidDialogProps) {
     const fingerprint = JSON.stringify({ normalizedReason, ...props })
     const correlationKey = retry.current?.fingerprint === fingerprint
       ? retry.current.key
-      : crypto.randomUUID()
+      : createBrowserUuid()
     retry.current = { fingerprint, key: correlationKey }
     setPending(true)
     setError('')

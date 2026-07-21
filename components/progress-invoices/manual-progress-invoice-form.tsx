@@ -4,6 +4,7 @@ import { useRef, type FormEvent } from 'react'
 import { useRouter } from 'next/navigation'
 
 import { createManualProgressInvoiceSeries } from '@/lib/actions/progress-invoice-series'
+import { createBrowserUuid } from '@/lib/browser-uuid'
 import {
   manualRecipientAbnSchema,
   manualRecipientEmailSchema,
@@ -222,7 +223,7 @@ export function ManualProgressInvoiceForm({
     const signature = JSON.stringify(command)
     const attempt = viewModel.saveAttempt?.signature === signature
       ? viewModel.saveAttempt
-      : { signature, correlationKey: crypto.randomUUID() }
+      : { signature, correlationKey: createBrowserUuid() }
     const requestGeneration = ++requestGenerationRef.current
     dispatch({ type: 'saveStarted', requestGeneration, attempt })
 

@@ -2,6 +2,10 @@ import { describe, expect, it } from 'vitest'
 import nextConfig from '@/next.config'
 
 describe('security headers', () => {
+  it('allows the LAN development origin to load Next.js client resources', () => {
+    expect(nextConfig.allowedDevOrigins).toContain('192.168.1.167')
+  })
+
   it('sets baseline browser security headers for every route', async () => {
     expect(nextConfig.headers).toBeTypeOf('function')
     const headers = await nextConfig.headers!()

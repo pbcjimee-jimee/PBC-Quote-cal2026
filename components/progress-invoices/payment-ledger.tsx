@@ -10,6 +10,7 @@ import {
   undoProgressPaymentReconciliation,
   voidManualProgressPayment,
 } from '@/lib/actions/progress-invoice-payments'
+import { createBrowserUuid } from '@/lib/browser-uuid'
 import type { ProgressInvoicePaymentListItemDto } from '@/lib/progress-invoices/workspace-service'
 
 function formatMoney(value: string): string {
@@ -66,7 +67,7 @@ export function PaymentLedger({
     const signature = JSON.stringify(payload)
     const existing = keys.current.get(scope)
     if (existing?.signature === signature) return existing.key
-    const created = crypto.randomUUID()
+    const created = createBrowserUuid()
     keys.current.set(scope, { signature, key: created })
     return created
   }

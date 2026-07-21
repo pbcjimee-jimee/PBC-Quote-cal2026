@@ -3,6 +3,7 @@
 import { useRef, useState, useTransition, type FormEvent } from 'react'
 
 import { updateProgressInvoiceSeries } from '@/lib/actions/progress-invoice-series'
+import { createBrowserUuid } from '@/lib/browser-uuid'
 import type { ProgressInvoiceSeriesDetail } from '@/lib/progress-invoices/series-service'
 import {
   ProgressInvoiceSeriesFields,
@@ -43,7 +44,7 @@ export function SeriesEditForm({
     defaultDescription: series.defaultDescription,
     reference: series.reference,
   })
-  const correlationKey = useRef(crypto.randomUUID())
+  const correlationKey = useRef(createBrowserUuid())
   const [message, setMessage] = useState<string | null>(null)
   const [isPending, startTransition] = useTransition()
 

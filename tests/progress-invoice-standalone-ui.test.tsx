@@ -538,6 +538,41 @@ describe('Standalone Progress Invoice workspace', () => {
     }
   })
 
+  it('creates a Jobber series on LAN HTTP when crypto.randomUUID is unavailable', async () => {
+    vi.stubGlobal('fetch', vi.fn()
+      .mockResolvedValueOnce(jsonResponse(searchResponse))
+      .mockResolvedValueOnce(jsonResponse(previewResponse)))
+    mocks.createStandaloneProgressInvoiceFromJobber.mockResolvedValue({
+      ok: true,
+      data: { seriesId: 'series-lan', version: 1, importedPayments: 0 },
+    })
+    const mounted = await mountCreateWorkspace()
+
+    try {
+      await submitSearch(mounted.container, '2906')
+      await flushReact()
+      await selectCandidate(mounted.container, '2906')
+      await flushReact()
+      vi.stubGlobal('crypto', {
+        getRandomValues(bytes: Uint8Array) {
+          bytes.fill(0xab)
+          return bytes
+        },
+      })
+
+      await saveDraft(mounted.container)
+
+      expect(mocks.createStandaloneProgressInvoiceFromJobber).toHaveBeenCalledWith(
+        expect.objectContaining({
+          correlationKey: 'abababab-abab-4bab-abab-abababababab',
+        }),
+      )
+      expect(mocks.push).toHaveBeenCalledWith('/progress-invoices')
+    } finally {
+      await mounted.cleanup()
+    }
+  })
+
   it('switches to Manual without fetching and renders the accepted base and shared fields', async () => {
     const fetchMock = vi.fn()
     vi.stubGlobal('fetch', fetchMock)

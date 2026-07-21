@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, useTransition, type FormEvent } from 'react'
 
 import { voidProgressInvoiceSeries } from '@/lib/actions/progress-invoice-series'
+import { createBrowserUuid } from '@/lib/browser-uuid'
 
 function safeVoidError(error: string): string {
   if (error === 'PROGRESS_VERSION_CONFLICT' || error === 'PROGRESS_CURRENT_SET_CONFLICT') {
@@ -32,7 +33,7 @@ export function SeriesVoidDialog({
   const [reason, setReason] = useState('')
   const [message, setMessage] = useState<string | null>(null)
   const [isPending, startTransition] = useTransition()
-  const correlationKey = useRef(crypto.randomUUID())
+  const correlationKey = useRef(createBrowserUuid())
   const triggerRef = useRef<HTMLButtonElement>(null)
   const reasonRef = useRef<HTMLTextAreaElement>(null)
 

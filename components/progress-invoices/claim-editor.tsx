@@ -4,6 +4,7 @@ import { useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 
 import { createProgressClaimDraft, saveProgressClaimDraft } from '@/lib/actions/progress-invoice-claims'
+import { createBrowserUuid } from '@/lib/browser-uuid'
 import { calculateProgressClaim } from '@/lib/progress-invoices/calculation'
 import type { ProgressClaimEditorDto } from '@/lib/progress-invoices/claim-service'
 import type { ProgressClaimInputMode, ProgressClaimKind } from '@/lib/progress-invoices/types'
@@ -51,7 +52,7 @@ export function ClaimEditor({ editor }: { editor: ProgressClaimEditorDto }) {
     if (pending || preview.error) return
     const value = mode === 'cumulative_percentage' ? percentage : amount
     const signature = JSON.stringify({ mode, value, kind, issueDate, dueDate, description, notes, editorVersion: editor.claimVersion, seriesVersion: editor.seriesVersion })
-    const correlationKey = retry.current?.signature === signature ? retry.current.key : crypto.randomUUID()
+    const correlationKey = retry.current?.signature === signature ? retry.current.key : createBrowserUuid()
     retry.current = { signature, key: correlationKey }
     setPending(true); setError(''); setConflict(false); setStatus('Saving Draft…')
     const shared = {

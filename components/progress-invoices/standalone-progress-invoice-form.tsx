@@ -5,6 +5,7 @@ import { useRef, type FormEvent } from 'react'
 import { useRouter } from 'next/navigation'
 
 import { createStandaloneProgressInvoiceFromJobber } from '@/lib/actions/progress-invoice-jobber'
+import { createBrowserUuid } from '@/lib/browser-uuid'
 import {
   buildStandaloneDraft,
   formatJobberAddress,
@@ -469,7 +470,7 @@ export function StandaloneProgressInvoiceForm({
     const signature = JSON.stringify(command)
     const attempt = viewModel.saveAttempt?.signature === signature
       ? viewModel.saveAttempt
-      : { signature, correlationKey: crypto.randomUUID() }
+      : { signature, correlationKey: createBrowserUuid() }
     const requestGeneration = ++saveGenerationRef.current
     dispatch({ type: 'saveStarted', requestGeneration, attempt })
 
