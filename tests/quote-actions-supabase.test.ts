@@ -981,6 +981,90 @@ describe('quote actions against Supabase', () => {
     expect(mocks.revalidatePath).toHaveBeenCalledWith(`/quotes/${quoteId}`)
   })
 
+  it('persists an edited RRP for an existing catalog item and recalculates formulas from it', async () => {
+    const productId = '00000000-0000-4000-8000-000000000901'
+    const existingQuote = createSelectSingleBuilder({
+      data: {
+        pricing_settings_snapshot: DEFAULT_PRICING_SETTINGS,
+        subtotal: '600.00',
+        final_total: '660.00',
+      },
+      error: null,
+    })
+    const existingSnapshots = createSelectSingleBuilder({
+      data: {
+        quote_items: [{
+          product_id: productId,
+          product_name_snapshot: 'Saved paint',
+          market_price_snapshot: '100.00',
+          actual_price_snapshot: '80.00',
+          position: 0,
+        }],
+        quote_options: [],
+      },
+      error: null,
+    })
+    const productQuery = createThenableBuilder({
+      data: [{
+        id: productId,
+        name: 'Current catalog paint',
+        market_price: '150.00',
+        actual_price: '80.00',
+        price: null,
+        rrp_price: '150.00',
+      }],
+      error: null,
+    })
+    const latestRevision = createThenableBuilder({ data: [], error: null })
+    const builders: Record<string, unknown[]> = {
+      quotes: [existingQuote, existingSnapshots],
+      products: [productQuery],
+      quote_price_revisions: [latestRevision],
+    }
+    const from = vi.fn((table: string) => {
+      const builder = builders[table]?.shift()
+      if (!builder) throw new Error(`unexpected table ${table}`)
+      return builder
+    })
+    const rpc = vi.fn(async () => ({ data: null, error: null }))
+    mocks.createClient.mockResolvedValueOnce({ auth: createAuthUser(), from, rpc })
+
+    const result = await updateQuote({
+      id: quoteId,
+      ...quoteInput,
+      materialMarket: 125,
+      materialActual: 80,
+      items: [{
+        productId,
+        productNameSnapshot: 'Saved paint',
+        marketPriceSnapshot: 125,
+        actualPriceSnapshot: 80,
+        quantity: 1,
+        workingDays: 1,
+        labourPerDay: 1,
+        areaScopeSnapshot: 'interior',
+        isCustom: false,
+        position: 0,
+      }],
+    })
+
+    expect(result).toEqual({ ok: true, data: { id: quoteId } })
+    expect(rpc).toHaveBeenCalledWith('update_quote_with_children', {
+      payload: expect.objectContaining({
+        quote: expect.objectContaining({
+          formula1_total: '625.00',
+          subtotal: '625.00',
+        }),
+        items: [
+          expect.objectContaining({
+            market_price_snapshot: '125.00',
+            actual_price_snapshot: '80.00',
+          }),
+        ],
+      }),
+    })
+  })
+
   it('returns a conflict error when the update RPC detects a stale quote version', async () => {
     const existingQuote = createSelectSingleBuilder({
       data: {
