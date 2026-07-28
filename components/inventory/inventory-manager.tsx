@@ -1,7 +1,6 @@
 'use client'
 
 import { useMemo, useRef, useState, useTransition } from 'react'
-import type { CSSProperties } from 'react'
 import { Icons } from '@/components/ui/icons'
 import {
   createInventoryItem,
@@ -60,40 +59,6 @@ const INVENTORY_CSV_HEADER = [
 ]
 
 const WORKBOOK_CATEGORY_RANK: Map<string, number> = new Map(WORKBOOK_CATEGORY_ORDER.map((category, index) => [category, index]))
-const inventoryCategoryStyle: CSSProperties = {
-  display: 'flex',
-  alignItems: 'center',
-  justifyContent: 'space-between',
-  gap: '12px',
-  flexWrap: 'wrap',
-  padding: '14px 16px',
-  border: '1px solid color-mix(in srgb, var(--primary) 20%, var(--border))',
-  borderLeft: '5px solid var(--primary)',
-  borderRadius: 'var(--r-md)',
-  background: 'linear-gradient(135deg, var(--primary-soft), #fff)',
-  boxShadow: 'inset 0 0 0 1px color-mix(in srgb, var(--primary) 10%, transparent), 0 10px 24px -20px rgb(15 36 64 / 42%)',
-}
-
-const inventoryCategoryTitleStyle: CSSProperties = {
-  margin: 0,
-  fontSize: '16px',
-  fontWeight: 850,
-  letterSpacing: 0,
-  color: 'var(--foreground)',
-}
-
-const inventoryCategoryCountStyle: CSSProperties = {
-  display: 'inline-flex',
-  alignItems: 'center',
-  padding: '6px 11px',
-  border: '1px solid color-mix(in srgb, var(--primary) 18%, var(--border))',
-  borderRadius: '999px',
-  background: 'rgb(255 255 255 / 82%)',
-  color: 'var(--primary)',
-  fontSize: '11px',
-  fontWeight: 800,
-  boxShadow: '0 1px 3px rgb(15 36 64 / 8%)',
-}
 
 type InventoryGroup = {
   category: string
@@ -816,9 +781,9 @@ export function InventoryManager({ initialItems }: { initialItems: InventoryItem
 
           return (
             <section key={group.category} aria-label={`${group.category} inventory group`} className="space-y-2">
-              <div className="pbc-inventorycategory" style={inventoryCategoryStyle}>
-                <h3 className="pbc-inventorycategory__title" style={inventoryCategoryTitleStyle}>{group.category}</h3>
-                <span className="pbc-inventorycategory__count" style={inventoryCategoryCountStyle}>{group.items.length} items / {outCount} out</span>
+              <div className="pbc-inventorycategory">
+                <h3 className="pbc-inventorycategory__title">{group.category}</h3>
+                <span className="pbc-inventorycategory__count">{group.items.length} items / {outCount} out</span>
               </div>
               <InventoryTable
                 items={group.items}

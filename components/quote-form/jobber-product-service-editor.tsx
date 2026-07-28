@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState, type ChangeEvent, type DragEvent } from 'react'
+import { useEffect, useRef, useState, type ChangeEvent, type DragEvent, type KeyboardEvent as ReactKeyboardEvent } from 'react'
 import { Icons } from '@/components/ui/icons'
 import type { JobberQuoteLineItemDraft } from './types'
 import type { ProductServiceRecord } from '@/lib/product-services/types'
@@ -292,6 +292,20 @@ export function JobberProductServiceEditor({
     setDropTarget(null)
   }
 
+  function moveLine(lineId: string, direction: -1 | 1) {
+    const index = value.findIndex((line) => line.id === lineId)
+    if (index < 0) return
+    const targetIndex = index + direction
+    if (targetIndex < 0 || targetIndex >= value.length) return
+    onChange(
+      reorderJobberQuoteLines(value, lineId, value[targetIndex].id, direction === -1 ? 'before' : 'after')
+    )
+    // 스크롤 컨테이너 안에서 이동한 행이 뷰포트 밖으로 사라지지 않게 DOM 반영 후 따라간다
+    window.requestAnimationFrame(() => {
+      document.getElementById(`${lineId}-drag-handle`)?.scrollIntoView({ block: 'nearest' })
+    })
+  }
+
   function handleListDragOver(event: DragEvent<HTMLDivElement>) {
     if (!draggedLineId) return
     event.preventDefault()
@@ -384,6 +398,8 @@ export function JobberProductServiceEditor({
                 onDragOver={(event) => handleDragOver(line.id, event)}
                 onDrop={(event) => handleDrop(line.id, event)}
                 onDragEnd={handleDragEnd}
+                onMoveUp={() => moveLine(line.id, -1)}
+                onMoveDown={() => moveLine(line.id, 1)}
                 isLookupActive={activeLookupLineId === line.id}
                 onLookupFocus={() => setActiveLookupLineId(line.id)}
                 onLookupBlur={() => setActiveLookupLineId(null)}
@@ -405,6 +421,8 @@ export function JobberProductServiceEditor({
               onDragOver={(event) => handleDragOver(line.id, event)}
               onDrop={(event) => handleDrop(line.id, event)}
               onDragEnd={handleDragEnd}
+              onMoveUp={() => moveLine(line.id, -1)}
+              onMoveDown={() => moveLine(line.id, 1)}
               isLookupActive={activeLookupLineId === line.id}
               onLookupFocus={() => setActiveLookupLineId(line.id)}
               onLookupBlur={() => setActiveLookupLineId(null)}
@@ -429,6 +447,8 @@ interface PricedLineRowProps {
   onDragOver: (event: DragEvent<HTMLDivElement>) => void
   onDrop: (event: DragEvent<HTMLDivElement>) => void
   onDragEnd: () => void
+  onMoveUp: () => void
+  onMoveDown: () => void
   isLookupActive: boolean
   onLookupFocus: () => void
   onLookupBlur: () => void
@@ -436,6 +456,22 @@ interface PricedLineRowProps {
   onApplyProductService: (productService: ProductServiceRecord) => void
   onChange: (line: JobberQuoteLineItemDraft) => void
   onRemove: () => void
+}
+
+function handleReorderKeyDown(
+  event: ReactKeyboardEvent<HTMLButtonElement>,
+  onMoveUp: () => void,
+  onMoveDown: () => void
+) {
+  if (event.key === 'ArrowUp') {
+    event.preventDefault()
+    onMoveUp()
+    return
+  }
+  if (event.key === 'ArrowDown') {
+    event.preventDefault()
+    onMoveDown()
+  }
 }
 
 function getDropTargetClass(dropPlacement: DropPlacement | null) {
@@ -452,6 +488,8 @@ function PricedLineRow({
   onDragOver,
   onDrop,
   onDragEnd,
+  onMoveUp,
+  onMoveDown,
   isLookupActive,
   onLookupFocus,
   onLookupBlur,
@@ -478,8 +516,10 @@ function PricedLineRow({
           draggable
           onDragStart={onDragStart}
           onDragEnd={onDragEnd}
-          aria-label={`Drag ${line.name || 'line item'}`}
-          title="Drag to reorder"
+          id={`${line.id}-drag-handle`}
+          onKeyDown={(event) => handleReorderKeyDown(event, onMoveUp, onMoveDown)}
+          aria-label={`Drag ${line.name || 'line item'}. Use arrow keys to move up or down.`}
+          title="Drag or use arrow keys to reorder"
           className="pbc-iconbtn mt-1 cursor-grab touch-none select-none active:cursor-grabbing"
         >
           ::
@@ -590,6 +630,8 @@ interface TextLineRowProps {
   onDragOver: (event: DragEvent<HTMLDivElement>) => void
   onDrop: (event: DragEvent<HTMLDivElement>) => void
   onDragEnd: () => void
+  onMoveUp: () => void
+  onMoveDown: () => void
   isLookupActive: boolean
   onLookupFocus: () => void
   onLookupBlur: () => void
@@ -607,6 +649,8 @@ function TextLineRow({
   onDragOver,
   onDrop,
   onDragEnd,
+  onMoveUp,
+  onMoveDown,
   isLookupActive,
   onLookupFocus,
   onLookupBlur,
@@ -633,8 +677,10 @@ function TextLineRow({
           draggable
           onDragStart={onDragStart}
           onDragEnd={onDragEnd}
-          aria-label={`Drag ${line.name || 'text line'}`}
-          title="Drag to reorder"
+          id={`${line.id}-drag-handle`}
+          onKeyDown={(event) => handleReorderKeyDown(event, onMoveUp, onMoveDown)}
+          aria-label={`Drag ${line.name || 'text line'}. Use arrow keys to move up or down.`}
+          title="Drag or use arrow keys to reorder"
           className="pbc-iconbtn mt-1 cursor-grab touch-none select-none active:cursor-grabbing"
         >
           ::

@@ -33,7 +33,7 @@ export function SearchInput() {
         value={value}
         onChange={(event) => setValue(event.target.value)}
         className="pbc-search__input"
-        placeholder="Search by customer, address or quote #…"
+        placeholder="Search by customer name…"
       />
     </div>
   )

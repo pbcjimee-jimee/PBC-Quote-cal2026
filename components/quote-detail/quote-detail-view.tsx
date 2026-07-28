@@ -122,10 +122,10 @@ function DetailDescription({ children }: { children: string }) {
 
 function DetailCalculationCard({
   totalWorkingDays,
-  totalLabourDays,
+  labourPerDay,
 }: {
   totalWorkingDays: Decimal
-  totalLabourDays: Decimal
+  labourPerDay: Decimal
 }) {
   return (
     <Card className="pbc-calcpanel">
@@ -136,8 +136,8 @@ function DetailCalculationCard({
           <b className="mono">{totalWorkingDays.toFixed(2)}</b>
         </div>
         <div className="pbc-ministat">
-          <span>Total Labour Days</span>
-          <b className="mono">{totalLabourDays.toFixed(2)}</b>
+          <span>Labour per day</span>
+          <b className="mono">{labourPerDay.toFixed(2)}</b>
         </div>
       </div>
     </Card>
@@ -484,7 +484,7 @@ export function QuoteDetailView({ quote }: QuoteDetailViewProps) {
                 </div>
               </Card>
 
-              <DetailCalculationCard totalWorkingDays={totalWorkingDays} totalLabourDays={labourPerDay} />
+              <DetailCalculationCard totalWorkingDays={totalWorkingDays} labourPerDay={labourPerDay} />
             </div>
           </div>
 

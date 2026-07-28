@@ -133,7 +133,7 @@ export function AppHeader({ userProfile }: { userProfile: UserProfile }) {
           </button>
         </div>
 
-        <nav className="pbc-nav">
+        <nav aria-label="Main navigation" className="pbc-nav">
           <p className={isSidebarCollapsed ? 'sr-only' : 'pbc-nav__head'}>Admin tools</p>
           {navItems.map((item) => {
             const isActive = isNavItemActive(item.href, hasHydrated ? pathname : null)
@@ -143,6 +143,7 @@ export function AppHeader({ userProfile }: { userProfile: UserProfile }) {
                 key={item.href}
                 href={item.href}
                 title={item.label}
+                aria-current={isActive ? 'page' : undefined}
                 className={`pbc-nav__item ${isActive ? 'is-active' : ''} ${isSidebarCollapsed ? 'justify-center' : ''}`}
               >
                 <NavIcon icon={item.icon} />

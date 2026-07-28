@@ -217,7 +217,7 @@ export default async function QuotesPage({ searchParams }: QuotesPageProps) {
           ) : null}
 
           <div className="pbc-qhead">
-            <span /><span>Customer</span><span>Type</span><span>Labour</span><span>Created</span><span>Total</span><span />
+            <span /><span>Customer</span><span>Type</span><span>Labour</span><span>Created</span><span>Subtotal</span><span />
           </div>
           <div className="pbc-qlist">
             {visibleQuotes.length === 0 ? (

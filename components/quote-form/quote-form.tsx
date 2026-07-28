@@ -853,9 +853,9 @@ export function QuoteForm({ settings, areas, productServices = [], quoteLineTemp
         <p>Build the quote, compare formulas, and lock the final total.</p>
       </div>
 
-      {saveError ? <p className="pbc-alert pbc-alert--danger">{saveError}</p> : null}
+      {saveError ? <p role="alert" className="pbc-alert pbc-alert--danger">{saveError}</p> : null}
       {availableDraft ? (
-        <div className="pbc-alert pbc-alert--warning">
+        <div role="status" aria-live="polite" className="pbc-alert pbc-alert--warning">
           <span>Unsaved draft found from {new Date(availableDraft.updatedAt).toLocaleString('en-AU')}.</span>
           <span className="pbc-alert__actions">
             <button type="button" onClick={() => restoreDraft(availableDraft)} className="pbc-btn pbc-btn--primary pbc-btn--sm">
@@ -867,7 +867,7 @@ export function QuoteForm({ settings, areas, productServices = [], quoteLineTemp
           </span>
         </div>
       ) : null}
-      {draftMessage ? <p className="pbc-alert pbc-alert--success">{draftMessage}</p> : null}
+      {draftMessage ? <p role="status" aria-live="polite" className="pbc-alert pbc-alert--success">{draftMessage}</p> : null}
       <div className="mb-4 flex justify-end">
         <button type="button" onClick={clearAllLocalDrafts} className="pbc-btn pbc-btn--ghost pbc-btn--sm">
           Clear local drafts

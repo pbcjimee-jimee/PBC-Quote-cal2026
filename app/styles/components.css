@@ -94,6 +94,26 @@
 .pbc-btn--sm { padding: 6px 12px; font-size: 12.5px; }
 .pbc-btn--full { width: 100%; justify-content: center; }
 .pbc-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.pbc-btn:active:not(:disabled) { transform: translateY(1px) scale(0.99); }
+.pbc-iconbtn:active:not(:disabled) { transform: scale(0.94); }
+.pbc-nav__item:active,
+.pbc-mobile-nav__item:active,
+.pbc-signout:active { opacity: 0.75; }
+.pbc-dropdownitem:active { background: var(--primary-soft); }
+
+/* 로딩 스켈레톤 (route loading.tsx · Settings 탭 lazy load 공용) */
+.pbc-skeleton {
+  display: block;
+  border-radius: var(--r-sm);
+  background: linear-gradient(90deg, var(--surface-soft), var(--border-soft), var(--surface-soft));
+  background-size: 220% 100%;
+  animation: pbc-skeleton-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes pbc-skeleton-pulse {
+  from { background-position: 120% 0; }
+  to { background-position: -120% 0; }
+}
 
 /* Auth */
 .pbc-auth { min-height: 100vh; min-height: 100dvh; display: grid; place-items: center; padding: 16px; padding-right: calc(16px + env(safe-area-inset-right)); padding-bottom: calc(16px + env(safe-area-inset-bottom)); padding-left: calc(16px + env(safe-area-inset-left)); background: linear-gradient(180deg, var(--bg-grad), var(--background)); }
@@ -106,9 +126,9 @@
 /* Notices / dialogs */
 .pbc-alert { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 16px; padding: 10px 13px; border: 1px solid var(--border); border-radius: 10px; font-size: 13px; font-weight: 600; line-height: 1.45; }
 .pbc-alert--stack { align-items: flex-start; flex-direction: column; }
-.pbc-alert--danger { border-color: var(--danger-soft); background: var(--danger-soft); color: var(--danger); }
-.pbc-alert--warning { border-color: #f4d79a; background: var(--warning-soft); color: #8a5a14; }
-.pbc-alert--success { border-color: var(--lo-bd); background: var(--success-soft); color: var(--success); }
+.pbc-alert--danger { border-color: var(--danger-soft); background: var(--danger-soft); color: var(--danger-text); }
+.pbc-alert--warning { border-color: #f4d79a; background: var(--warning-soft); color: var(--warning-text); }
+.pbc-alert--success { border-color: var(--lo-bd); background: var(--success-soft); color: var(--success-text); }
 .pbc-alert__actions { display: flex; gap: 8px; flex-wrap: wrap; }
 .pbc-installguide-wrap { width: 100%; max-width: 1120px; margin: 12px auto 0; padding: 0 24px; }
 .pbc-installguide { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 12px; }
@@ -609,6 +629,7 @@
 .pbc-status--draft { color: var(--warning); }
 .pbc-status--draft b { background: var(--warning); }
 .pbc-qrow__amt { font-size: 15px; font-weight: 700; text-align: right; white-space: nowrap; }
+.pbc-qrow__amt i { font-style: normal; font-weight: 700; font-size: 10px; letter-spacing: 0.02em; color: var(--muted); margin-left: 3px; }
 .pbc-qrow__go { color: var(--muted); display: flex; justify-content: center; transform: rotate(-90deg); }
 .pbc-qrow__go svg { width: 16px; height: 16px; }
 .pbc-qrow:hover .pbc-qrow__go { color: var(--primary); }
@@ -895,6 +916,7 @@
   .pbc-monthselect select { font-size: 16px; }
   .pbc-iconbtn,
   .pbc-iconbtn--compact { min-width: 44px; min-height: 44px; }
+  .pbc-btn { min-height: 44px; }
   .pbc-btn--sm { min-width: 44px; min-height: 44px; }
   .pbc-progress-filters { grid-template-columns: minmax(0, 1fr) minmax(180px, 240px); }
   .pbc-progress-filters__actions { grid-column: 1 / -1; }

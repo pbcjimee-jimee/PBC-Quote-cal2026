@@ -55,7 +55,7 @@
 
 ---
 
-## 3. P0 — 사용 오류·접근성 차단 (3건)
+## 3. P0 — 사용 오류·접근성 차단 (3건) — ✅ 전건 반영(2026-07-28, R1)
 
 ### P0-1. 삭제 확인 다이얼로그에 모달 동작이 없다 — `components/quote-list/quote-delete-button.tsx:56` (M)
 `role="dialog" aria-modal="true"` 선언뿐, 파일 전체에 `keydown`/`Escape`/`.focus()` 0건. 열려도 포커스는 트리거에 남고, Tab이 배경으로 새며, Esc·백드롭으로 닫을 수 없다. 목록·상세 양쪽의 유일한 파괴적 액션("permanently remove")이 이 상태다.
@@ -159,7 +159,9 @@
 
 ---
 
-## 7. Quick Wins (각 30분 이내, 코드 반영은 Codex 5.6-Terra high)
+## 7. Quick Wins (각 30분 이내) — ✅ 전 항목 반영(2026-07-28, R1)
+
+> QW5는 리뷰 검증 결과에 따라 조정 반영: 컬럼 헤더는 116px 고정폭 오버플로를 피해 `Subtotal`로, 행 금액에 `ex GST` 단위를 병기.
 
 1. `.pbc-skeleton` CSS 정의 추가 — Settings 탭 로딩 빈 화면 즉시 해결
 2. `--danger-text`/`--success-text` 토큰 + alert 색 교체 — AA 통과
@@ -180,7 +182,7 @@
 
 | 단계 | 내용 | 규모 | 담당 |
 |---|---|---|---|
-| R1 | P0 3건(다이얼로그 모달화·PaintSearch 키보드·라인 키보드 재정렬) + Quick Wins 12건 | S×12 + M×3 | Terra(S) / Sol(M) |
+| R1 | ✅ 완료(2026-07-28) — P0 3건(다이얼로그 모달화·PaintSearch 키보드·라인 키보드 재정렬) + Quick Wins 12건. diff 적대적 리뷰 8건(critical 2·major 4·minor 2) 추가 반영: PaintSearch isSearching 가드·요청 토큰·Escape 후 Enter 가드, 다이얼로그 pending 중 Esc 차단·트랩 강화, 재정렬 scrollIntoView, 헤더 폭 조정 | S×12 + M×3 | Claude(사용자 직접 지시) |
 | R2 | 금액 표기 통일(§4-A) + 피드백 aria-live(§4-B) — `Alert` 프리미티브 신설 포함 | M | Sol |
 | R3 | 대비 토큰 재배치(§4-C) + 상태 화면(§4-D: error/not-found·스켈레톤·loading 정합) | M | Sol |
 | R4 | 인터랙션 함정(§4-E) + 디자인 시스템 위반 정리(§4-F) + 반응형(§4-G) | M~L | Sol |

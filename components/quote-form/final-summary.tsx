@@ -30,7 +30,7 @@ function getMarginBarWidth(value: number | null): string {
 function getMarginBarTone(value: number | null): string {
   if (value === null) return 'bg-[var(--muted-2)]'
   if (value < 20) return 'bg-[var(--danger)]'
-  if (value < 35) return 'bg-amber-500'
+  if (value < 35) return 'bg-[var(--warning)]'
   return 'bg-[var(--success)]'
 }
 
@@ -60,6 +60,7 @@ export function FinalSummary({
         <div className="pbc-srow"><span>Labour total</span><span className="mono">${labourTotal.toFixed(2)}</span></div>
         <div className="pbc-srow"><span>Material total</span><span className="mono">${materialTotal.toFixed(2)}</span></div>
         <div className="pbc-srow"><span>GST 10%</span><span className="mono">${gstTotal.toFixed(2)}</span></div>
+        <div className="pbc-srow pbc-srow--total"><span>Total inc GST</span><span className="mono">${visibleFinalTotal.toFixed(2)}</span></div>
         {areaBreakdown.unassigned.count > 0 ? (
           <p className="pbc-alert pbc-alert--warning mt-3">
             {areaBreakdown.unassigned.count} {unassignedLabel} an Interior, Exterior, or Roof area before being included in grouped subtotals.

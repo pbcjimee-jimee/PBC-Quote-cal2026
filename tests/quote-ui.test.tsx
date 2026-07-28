@@ -1372,7 +1372,7 @@ describe('quote form pricing UI', () => {
     expect(getQuoteUnexpectedSaveErrorMessage(new Error('Jobber sync failed'))).toBe('Jobber sync failed')
   })
 
-  it('shows the app final total as the GST-exclusive subtotal with GST at the end', () => {
+  it('shows the GST-exclusive subtotal as hero with GST and inc-GST total at the end', () => {
     const markup = renderToStaticMarkup(
       createElement(FinalSummary, {
         labourTotal: new Decimal('1200'),
@@ -1391,8 +1391,13 @@ describe('quote form pricing UI', () => {
     expect(markup).toContain('Final subtotal')
     expect(markup).toContain('$1455.74')
     expect(markup).toContain('Ex GST')
-    expect(markup).not.toContain('$1601.31')
+    expect(markup).toContain('Total inc GST')
+    expect(markup).toContain('$1601.31')
+    expect(markup).toContain('pbc-srow--total')
     expect(markup.lastIndexOf('GST 10%')).toBeGreaterThan(markup.lastIndexOf('Material total'))
+    expect(markup.lastIndexOf('Total inc GST')).toBeGreaterThan(markup.lastIndexOf('GST 10%'))
+    // 히어로는 여전히 ex GST subtotal이어야 한다 (inc GST가 히어로를 대체하면 안 됨)
+    expect(markup.indexOf('$1455.74')).toBeLessThan(markup.indexOf('$1601.31'))
   })
 
   it('uses the shared design-system card styling for final subtotal', () => {
@@ -2530,7 +2535,7 @@ describe('quote form pricing UI', () => {
     expect(leadMarkup).toContain('pbc-dstack')
     expect(calculationMarkup).toContain('pbc-calcpanel')
     expect(calculationMarkup).toContain('Total Working Days')
-    expect(calculationMarkup).toContain('Total Labour Days')
+    expect(calculationMarkup).toContain('Labour per day')
     expect(calculationMarkup).toContain('1.00')
     expect(summaryIndex).toBeLessThan(formulaIndex)
     expect(formulaIndex).toBeLessThan(calculationIndex)

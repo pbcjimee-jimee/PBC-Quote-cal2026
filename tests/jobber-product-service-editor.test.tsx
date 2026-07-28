@@ -137,8 +137,8 @@ describe('JobberProductServiceEditor', () => {
     }))
 
     expect(markup).toContain('draggable="true"')
-    expect(markup).toContain('aria-label="Drag Exterior repaint"')
-    expect(markup).toContain('aria-label="Drag Access notes"')
+    expect(markup).toContain('aria-label="Drag Exterior repaint. Use arrow keys to move up or down."')
+    expect(markup).toContain('aria-label="Drag Access notes. Use arrow keys to move up or down."')
     expect(markup).toContain('touch-none')
     expect(markup).toContain('cursor-grab')
   })
@@ -149,7 +149,7 @@ describe('JobberProductServiceEditor', () => {
       onChange: () => undefined,
     }))
 
-    expect(markup).toContain('aria-label="Drag Exterior repaint"')
+    expect(markup).toContain('aria-label="Drag Exterior repaint. Use arrow keys to move up or down."')
     expect(markup).toContain('aria-label="Delete Exterior repaint"')
     expect(markup).toContain('aria-label="Delete Access notes"')
     expect(markup).toContain('pbc-iconbtn--compact')
