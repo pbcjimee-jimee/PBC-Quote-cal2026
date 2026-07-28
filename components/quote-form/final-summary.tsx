@@ -56,7 +56,6 @@ export function FinalSummary({
         <p className="pbc-summary__heroSub">Ex GST. Interior, exterior, and roof are calculated separately.</p>
       </div>
       <div className="pbc-summary__rows">
-        <div className="pbc-srow pbc-srow--strong"><span>Final subtotal</span><span className="mono">${visibleSubtotal.toFixed(2)}</span></div>
         <div className="pbc-srow"><span>Labour total</span><span className="mono">${labourTotal.toFixed(2)}</span></div>
         <div className="pbc-srow"><span>Material total</span><span className="mono">${materialTotal.toFixed(2)}</span></div>
         <div className="pbc-srow"><span>GST 10%</span><span className="mono">${gstTotal.toFixed(2)}</span></div>

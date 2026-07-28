@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, type ClipboardEvent, type InputHTMLAttributes, type KeyboardEvent } from 'react'
+import { useId, useState, type ClipboardEvent, type InputHTMLAttributes, type KeyboardEvent } from 'react'
 import {
   DECIMAL_INPUT_WARNING,
   getNextDecimalInputValue,
@@ -40,6 +40,9 @@ export function DecimalInput({
   ...inputProps
 }: DecimalInputProps) {
   const [warning, setWarning] = useState<string | null>(null)
+  const generatedId = useId()
+  const inputId = inputProps.id ?? generatedId
+  const warningId = `${inputId}-warning`
 
   function rejectInvalidInput() {
     setWarning(DECIMAL_INPUT_WARNING)
@@ -95,6 +98,7 @@ export function DecimalInput({
       {label}
       <input
         {...inputProps}
+        id={inputId}
         type="text"
         value={value}
         onChange={(event) => changeValue(event.target.value)}
@@ -104,10 +108,10 @@ export function DecimalInput({
         pattern="[0-9]*[.]?[0-9]*"
         className={inputClassName}
         aria-invalid={warning ? true : undefined}
-        aria-describedby={warning && inputProps.id ? `${inputProps.id}-warning` : undefined}
+        aria-describedby={warning ? warningId : undefined}
       />
       {warning ? (
-        <span id={inputProps.id ? `${inputProps.id}-warning` : undefined} className={warningClassName}>
+        <span id={warningId} role="status" aria-live="polite" className={warningClassName}>
           {warning}
         </span>
       ) : null}

@@ -1,5 +1,6 @@
 import Link from 'next/link'
 import { SettingsForm } from '@/components/settings/settings-form'
+import { Alert } from '@/components/ui/card'
 import { Icons } from '@/components/ui/icons'
 import { getPricingSettings } from '@/lib/actions/settings'
 import type { ActionResult } from '@/lib/actions/types'
@@ -46,7 +47,11 @@ export default async function SettingsPage() {
       <div className="pbc-pagehead">
         <h1>Settings</h1>
         <p>Control labour rates, margins, material pricing, work areas and quote templates.</p>
-        {!settingsResult.ok ? <p className="text-[var(--danger)]">{settingsResult.error}</p> : null}
+        {!settingsResult.ok ? (
+          <Alert tone="danger" live={false} className="mt-3">
+            {settingsResult.error} - the form below shows default values. Saving now would overwrite your stored settings; refresh the page first.
+          </Alert>
+        ) : null}
       </div>
       <SettingsForm
         initialSettings={settingsResult.ok ? settingsResult.data : DEFAULT_PRICING_SETTINGS}

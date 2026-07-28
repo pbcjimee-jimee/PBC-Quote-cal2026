@@ -2,6 +2,7 @@
 
 import { useEffect, useId, useRef, useState } from 'react'
 import { searchProducts } from '@/lib/actions/products'
+import { Alert } from '@/components/ui/card'
 import type { ProductRecord } from '@/lib/products/types'
 import type { MaterialItem } from './types'
 import { createCustomMaterialItem, createProductMaterialItem } from './material-item-factory'
@@ -132,7 +133,7 @@ export function PaintSearch({ onAdd }: PaintSearchProps) {
         className="pbc-input"
         placeholder="Search paint or material..."
       />
-      {error ? <p role="alert" className="pbc-alert pbc-alert--danger mt-2">{error}</p> : null}
+      {error ? <Alert tone="danger" className="mt-2">{error}</Alert> : null}
       {isOpen ? (
         <div id={listboxId} role="listbox" aria-label="Paint or material results" className="pbc-dropdown">
           {isSearching ? (

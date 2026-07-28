@@ -405,20 +405,6 @@ export function QuoteDetailView({ quote }: QuoteDetailViewProps) {
                 <DRow label="Material total" mono>${materialTotal.toFixed(2)}</DRow>
                 <DRow label="Total Labour" mono>${labourTotal.toFixed(2)}</DRow>
               </dl>
-              <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
-                <div className="flex justify-between gap-2">
-                  <span className="text-[var(--muted)]">Interior</span>
-                  <span className="mono font-semibold">${areaBreakdown.interior.subtotal.toFixed(2)}</span>
-                </div>
-                <div className="flex justify-between gap-2">
-                  <span className="text-[var(--muted)]">Exterior</span>
-                  <span className="mono font-semibold">${areaBreakdown.exterior.subtotal.toFixed(2)}</span>
-                </div>
-                <div className="flex justify-between gap-2">
-                  <span className="text-[var(--muted)]">Roof</span>
-                  <span className="mono font-semibold">${areaBreakdown.roof.subtotal.toFixed(2)}</span>
-                </div>
-              </div>
             </Card>
 
             <div className="pbc-dstack">

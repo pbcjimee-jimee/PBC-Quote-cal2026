@@ -7,6 +7,7 @@ import type {
 import type { JobberSnapshotChangeStatus } from '@/lib/jobber/snapshot-diff'
 import type { JobberSnapshotChangeSummaryItem } from '@/lib/dev-data'
 import { formatJobberRefreshTime } from '@/components/quote-detail/jobber-refresh-time'
+import { Alert } from '@/components/ui/card'
 
 interface CustomerPanelProps {
   customerName: string
@@ -195,14 +196,14 @@ export function JobberQuoteSummary({ quote }: { quote: JobberQuoteDraft }) {
       <div className="mt-4">
         <p className="pbc-paneltitle">Job Expenses</p>
         {quote.jobExpensesError ? (
-          <div className="pbc-alert pbc-alert--warning mt-2">
+          <Alert tone="warning" live={false} className="mt-2">
             <p>{quote.jobExpensesError}</p>
             {quote.jobExpensesError.includes('Reconnect Jobber') ? (
               <a href="/api/jobber/connect" className="mt-2 inline-flex font-bold text-amber-800 underline underline-offset-2">
                 Reconnect Jobber
               </a>
             ) : null}
-          </div>
+          </Alert>
         ) : null}
         {quote.jobExpenses.length > 0 ? (
           <div className="mt-3 space-y-3">
@@ -249,15 +250,15 @@ function JobberRefreshPreviewPanel({
 }) {
   if (preview.status === 'unchanged') {
     return (
-      <div className="pbc-alert pbc-alert--success">
+      <Alert tone="success">
         No changes since last refresh - {formatJobberRefreshTime(preview.refreshedAt)}
-      </div>
+      </Alert>
     )
   }
 
   if (preview.status !== 'changed') {
     return (
-      <div className="pbc-alert pbc-alert--warning pbc-alert--stack">
+      <Alert tone="warning" stack>
         <span>Jobber refreshed - {formatJobberRefreshTime(preview.refreshedAt)}. Review before applying changes.</span>
         <span className="pbc-alert__actions">
           <button type="button" onClick={onApply} className="pbc-btn pbc-btn--primary pbc-btn--sm">
@@ -267,12 +268,12 @@ function JobberRefreshPreviewPanel({
             Keep current quote
           </button>
         </span>
-      </div>
+      </Alert>
     )
   }
 
   return (
-    <div className="pbc-alert pbc-alert--warning pbc-alert--stack">
+    <Alert tone="warning" stack>
       <div>
         <b>Jobber changes detected</b>
         <ul className="mt-2 space-y-1">
@@ -291,7 +292,7 @@ function JobberRefreshPreviewPanel({
           Keep current quote
         </button>
       </span>
-    </div>
+    </Alert>
   )
 }
 
@@ -340,14 +341,14 @@ export function CustomerPanel(props: CustomerPanelProps) {
           </span>
         ) : null}
         {props.jobberFetchError ? (
-          <span className="pbc-alert pbc-alert--danger pbc-customerline__error">
+          <Alert tone="danger" className="pbc-customerline__error">
             {props.jobberFetchError}
             {props.jobberFetchError.includes('Reconnect Jobber') ? (
               <a href="/api/jobber/connect" className="ml-2 font-bold text-red-700 underline underline-offset-2">
                 Reconnect Jobber
               </a>
             ) : null}
-          </span>
+          </Alert>
         ) : null}
       </div>
       <label className="pbc-field">

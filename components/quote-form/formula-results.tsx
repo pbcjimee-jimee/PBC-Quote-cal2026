@@ -57,11 +57,25 @@ export function FormulaResults({
               </div>
               <div className="mt-3 flex gap-2 text-xs">
                 <label className={`pbc-chip cursor-pointer border ${isMin ? '' : 'pbc-chip--muted'}`}>
-                  <input className="sr-only" type="radio" name={`${namePrefix}-selectedMin`} checked={selectedMin === formulaNum} onChange={() => onSelectedMinChange(formulaNum)} />
+                  <input
+                    className="sr-only"
+                    type="radio"
+                    name={`${namePrefix}-selectedMin`}
+                    checked={selectedMin === formulaNum}
+                    onChange={() => onSelectedMinChange(formulaNum)}
+                    aria-label={`Select F${formulaNum} ${result.name} as the low (minimum) formula`}
+                  />
                   Low
                 </label>
                 <label className={`pbc-chip cursor-pointer border ${isMax ? '' : 'pbc-chip--muted'}`}>
-                  <input className="sr-only" type="radio" name={`${namePrefix}-selectedMax`} checked={selectedMax === formulaNum} onChange={() => onSelectedMaxChange(formulaNum)} />
+                  <input
+                    className="sr-only"
+                    type="radio"
+                    name={`${namePrefix}-selectedMax`}
+                    checked={selectedMax === formulaNum}
+                    onChange={() => onSelectedMaxChange(formulaNum)}
+                    aria-label={`Select F${formulaNum} ${result.name} as the high (maximum) formula`}
+                  />
                   High
                 </label>
               </div>

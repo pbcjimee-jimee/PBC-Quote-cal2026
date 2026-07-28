@@ -19,6 +19,7 @@ import {
 import { updatePricingSettings } from '@/lib/actions/settings'
 import type { ActionResult } from '@/lib/actions/types'
 import { Icons } from '@/components/ui/icons'
+import { Alert } from '@/components/ui/card'
 import { JobberProductServiceEditor } from '@/components/quote-form/jobber-product-service-editor'
 import type { JobberQuoteLineItemDraft } from '@/components/quote-form/types'
 import type { AreaRecord, AreaScope } from '@/lib/areas/types'
@@ -893,7 +894,7 @@ export function QuoteLineTemplateEditor({
               Cancel
             </button>
           ) : null}
-          {message ? <p className="pbc-panelsub">{message}</p> : null}
+          {message ? <p role="status" aria-live="polite" className="pbc-panelsub">{message}</p> : null}
         </div>
       </div>
 
@@ -1609,7 +1610,7 @@ export function SettingsForm({
             <button type="button" onClick={save} disabled={isPending} className="pbc-btn pbc-btn--primary">
               {isPending ? 'Saving...' : 'Save Settings'}
             </button>
-            {message ? <p className="pbc-panelsub">{message}</p> : null}
+            {message ? <p role="status" aria-live="polite" className="pbc-panelsub">{message}</p> : null}
           </div>
           <p className="pbc-alert pbc-alert--warning mt-4">{Icons.lock({ size: 15 })}<span><b>Snapshot protected.</b> Changes affect future quotes only. Existing quotes preserve their saved settings.</span></p>
         </div>
@@ -1684,8 +1685,8 @@ export function SettingsForm({
             disabled={isPending}
           />
           <SettingsTablePager page={safeMaterialPage} total={filteredProducts.length} onPageChange={setMaterialPage} />
-          {materialMessage ? <p className="pbc-alert pbc-alert--success mt-3">{materialMessage}</p> : null}
-          {materialImportError ? <p className="pbc-alert pbc-alert--danger mt-3">{materialImportError}</p> : null}
+          {materialMessage ? <Alert tone="success" className="mt-3">{materialMessage}</Alert> : null}
+          {materialImportError ? <Alert tone="danger" className="mt-3">{materialImportError}</Alert> : null}
         </div>
       ) : activeTab === 'productService' ? (
         <div className="pbc-formsection pbc-formsection--center">
@@ -1744,8 +1745,8 @@ export function SettingsForm({
             disabled={isPending}
           />
           <SettingsTablePager page={safeProductServicePage} total={filteredProductServices.length} onPageChange={setProductServicePage} />
-          {productServiceMessage ? <p className="pbc-alert pbc-alert--success mt-3">{productServiceMessage}</p> : null}
-          {productServiceImportError ? <p className="pbc-alert pbc-alert--danger mt-3">{productServiceImportError}</p> : null}
+          {productServiceMessage ? <Alert tone="success" className="mt-3">{productServiceMessage}</Alert> : null}
+          {productServiceImportError ? <Alert tone="danger" className="mt-3">{productServiceImportError}</Alert> : null}
         </div>
       ) : activeTab === 'template' ? (
         <div className="pbc-formsection pbc-formsection--center">
@@ -1787,7 +1788,7 @@ export function SettingsForm({
               Add Area
             </button>
           </form>
-          {areaMessage ? <p className="pbc-alert pbc-alert--success mt-3">{areaMessage}</p> : null}
+          {areaMessage ? <Alert tone="success" className="mt-3">{areaMessage}</Alert> : null}
 
           <div className="mt-6 grid gap-6 lg:grid-cols-3">
             {AREA_SCOPES.map((scope) => (

@@ -76,6 +76,44 @@ export function Textarea({ className = '', ...props }: TextareaHTMLAttributes<HT
   return <textarea {...props} className={['pbc-textarea', className].filter(Boolean).join(' ')} />
 }
 
+type AlertTone = 'danger' | 'warning' | 'success'
+
+/**
+ * 상태 피드백 알림. tone에 따라 ARIA를 자동 부여한다:
+ * danger → role="alert"(즉시 낭독), warning/success → role="status" aria-live="polite".
+ * 항상 렌더되는 정적 안내문에는 live={false}를 줘 페이지 로드 시 낭독을 막는다.
+ */
+export function Alert({
+  tone,
+  live = true,
+  stack = false,
+  className = '',
+  children,
+}: {
+  tone: AlertTone
+  live?: boolean
+  stack?: boolean
+  className?: string
+  children: ReactNode
+}) {
+  const aria = !live
+    ? {}
+    : tone === 'danger'
+      ? { role: 'alert' as const }
+      : { role: 'status' as const, 'aria-live': 'polite' as const }
+
+  return (
+    <div
+      {...aria}
+      className={['pbc-alert', `pbc-alert--${tone}`, stack ? 'pbc-alert--stack' : '', className]
+        .filter(Boolean)
+        .join(' ')}
+    >
+      {children}
+    </div>
+  )
+}
+
 export function SectionLabel({
   icon,
   children,

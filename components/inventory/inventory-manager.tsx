@@ -2,6 +2,7 @@
 
 import { useMemo, useRef, useState, useTransition } from 'react'
 import { Icons } from '@/components/ui/icons'
+import { Alert } from '@/components/ui/card'
 import {
   createInventoryItem,
   deleteInventoryItem,
@@ -769,8 +770,8 @@ export function InventoryManager({ initialItems }: { initialItems: InventoryItem
         </button>
       </div>
 
-      {message ? <p className="pbc-alert pbc-alert--success mt-3">{message}</p> : null}
-      {error ? <p className="pbc-alert pbc-alert--danger mt-3">{error}</p> : null}
+      {message ? <Alert tone="success" className="mt-3">{message}</Alert> : null}
+      {error ? <Alert tone="danger" className="mt-3">{error}</Alert> : null}
 
       <div className="mt-5 space-y-5">
         {filteredItems.length === 0 ? (

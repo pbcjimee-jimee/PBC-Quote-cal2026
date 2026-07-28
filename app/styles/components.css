@@ -101,6 +101,12 @@
 .pbc-signout:active { opacity: 0.75; }
 .pbc-dropdownitem:active { background: var(--primary-soft); }
 
+/* sr-only 라디오를 품은 chip(공식 Low/High 선택)의 키보드 포커스 가시화 */
+.pbc-chip:has(input:focus-visible) {
+  outline: 3px solid rgb(11 102 216 / 28%);
+  outline-offset: 2px;
+}
+
 /* 로딩 스켈레톤 (route loading.tsx · Settings 탭 lazy load 공용) */
 .pbc-skeleton {
   display: block;

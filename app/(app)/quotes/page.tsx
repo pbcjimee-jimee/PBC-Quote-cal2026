@@ -2,6 +2,7 @@ import Link from 'next/link'
 import { OverviewQuoteRow } from '@/components/quote-list/quote-card'
 import { MonthFilterSelect, type MonthFilterOption } from '@/components/quote-list/month-filter-select'
 import { SearchInput } from '@/components/quote-list/search-input'
+import { Alert } from '@/components/ui/card'
 import { Icons } from '@/components/ui/icons'
 import { searchQuotes } from '@/lib/actions/quotes'
 import type { QuoteRecord } from '@/lib/dev-data'
@@ -173,7 +174,11 @@ export default async function QuotesPage({ searchParams }: QuotesPageProps) {
         <div className="pbc-pagehead">
           <h1>Quotes</h1>
           <p>Every quote your team has built. Search and open one to view or edit.</p>
-          {!result.ok ? <p className="text-[var(--danger)]">{result.error}</p> : null}
+          {!result.ok ? (
+            <Alert tone="danger" live={false} className="mt-3">
+              {result.error} - refresh the page to try again.
+            </Alert>
+          ) : null}
         </div>
 
         <div className="pbc-stats">

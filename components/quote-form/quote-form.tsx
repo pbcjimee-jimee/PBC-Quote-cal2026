@@ -6,6 +6,7 @@ import type { PricingSettings } from '@/lib/calculator'
 import type { QuoteRecord } from '@/lib/dev-data'
 import { createArea } from '@/lib/actions/areas'
 import { Icons } from '@/components/ui/icons'
+import { Alert } from '@/components/ui/card'
 import { CustomerPanel, type JobberRefreshPreview } from './customer-panel'
 import { MaterialsPanel } from './materials-panel'
 import { FinalSummary } from './final-summary'
@@ -853,9 +854,9 @@ export function QuoteForm({ settings, areas, productServices = [], quoteLineTemp
         <p>Build the quote, compare formulas, and lock the final total.</p>
       </div>
 
-      {saveError ? <p role="alert" className="pbc-alert pbc-alert--danger">{saveError}</p> : null}
+      {saveError ? <Alert tone="danger">{saveError}</Alert> : null}
       {availableDraft ? (
-        <div role="status" aria-live="polite" className="pbc-alert pbc-alert--warning">
+        <Alert tone="warning">
           <span>Unsaved draft found from {new Date(availableDraft.updatedAt).toLocaleString('en-AU')}.</span>
           <span className="pbc-alert__actions">
             <button type="button" onClick={() => restoreDraft(availableDraft)} className="pbc-btn pbc-btn--primary pbc-btn--sm">
@@ -865,9 +866,9 @@ export function QuoteForm({ settings, areas, productServices = [], quoteLineTemp
               Discard
             </button>
           </span>
-        </div>
+        </Alert>
       ) : null}
-      {draftMessage ? <p role="status" aria-live="polite" className="pbc-alert pbc-alert--success">{draftMessage}</p> : null}
+      {draftMessage ? <Alert tone="success">{draftMessage}</Alert> : null}
       <div className="mb-4 flex justify-end">
         <button type="button" onClick={clearAllLocalDrafts} className="pbc-btn pbc-btn--ghost pbc-btn--sm">
           Clear local drafts
