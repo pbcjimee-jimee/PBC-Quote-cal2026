@@ -14,12 +14,14 @@ import type { AreaScope } from '@/components/quote-form/types'
 import { QuoteDeleteButton } from '@/components/quote-list/quote-delete-button'
 import { QuoteDuplicateButton } from '@/components/quote-list/quote-duplicate-button'
 import { Card, SectionLabel } from '@/components/ui/card'
+import { SyncedNotice } from './synced-notice'
 import { Icons } from '@/components/ui/icons'
 import { retryJobberQuoteSync } from '@/lib/actions/quotes'
 import { AREA_SCOPE_LABELS } from '@/lib/areas/constants'
 
 interface QuoteDetailViewProps {
   quote: QuoteRecord
+  showSyncedNotice?: boolean
 }
 
 const DETAIL_PREVIEW_LIMIT = 8
@@ -286,7 +288,7 @@ function getPreferredFormulaScopes(
   return scopes.length ? scopes : ['interior', 'exterior', 'roof']
 }
 
-export function QuoteDetailView({ quote }: QuoteDetailViewProps) {
+export function QuoteDetailView({ quote, showSyncedNotice = false }: QuoteDetailViewProps) {
   const materialTotal = itemMaterialTotal(quote)
   const subtotal = new Decimal(quote.subtotal)
   const labourTotal = Decimal.max(subtotal.sub(materialTotal), 0)
@@ -363,6 +365,7 @@ export function QuoteDetailView({ quote }: QuoteDetailViewProps) {
       </header>
 
       <div className="pbc-page">
+        {showSyncedNotice ? <SyncedNotice /> : null}
         <div className="pbc-pagehead pbc-pagehead--detail">
           <div className="min-w-0">
             <Link href="/quotes" className="pbc-back">{Icons.back({ size: 15 })} Back to Quotes</Link>

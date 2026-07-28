@@ -799,7 +799,8 @@ export function QuoteForm({ settings, areas, productServices = [], quoteLineTemp
         if (result.ok) {
           clearDraft()
           isNavigatingRef.current = true
-          router.push(initialQuote ? quoteTargetPath : `/quotes/${result.data.id}`)
+          const successPath = initialQuote ? quoteTargetPath : `/quotes/${result.data.id}`
+          router.push(action === 'sync' ? `${successPath}?synced=1` : successPath)
         } else {
           setSaveError(result.error)
         }

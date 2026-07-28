@@ -652,7 +652,7 @@ describe('quote form pricing UI', () => {
 
     expect(preventedOptions).toBe(importedOptions)
     expect(markup).toContain('Imported')
-    expect(markup).toContain('disabled=""')
+    expect(markup).toContain('pbc-chip')
     expect(markup).not.toContain('Import as option')
   })
 
@@ -695,7 +695,7 @@ describe('quote form pricing UI', () => {
     expect(preventedOptions).toHaveLength(1)
     expect(preventedOptions[0]).toBe(restoredOption)
     expect(markup).toContain('Imported')
-    expect(markup).toContain('disabled=""')
+    expect(markup).toContain('pbc-chip')
     expect(markup).not.toContain('Import as option')
   })
 
@@ -1238,7 +1238,8 @@ describe('quote form pricing UI', () => {
   it('routes newly saved quotes directly to their detail page', () => {
     const source = readFileSync('components/quote-form/quote-form.tsx', 'utf8')
 
-    expect(source).toContain('router.push(initialQuote ? quoteTargetPath : `/quotes/${result.data.id}`)')
+    expect(source).toContain('const successPath = initialQuote ? quoteTargetPath : `/quotes/${result.data.id}`')
+    expect(source).toContain("router.push(action === 'sync' ? `${successPath}?synced=1` : successPath)")
     expect(source).not.toContain('router.push(quoteTargetPath)')
   })
 

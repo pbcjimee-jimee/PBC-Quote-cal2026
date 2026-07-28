@@ -39,14 +39,17 @@ export function JobberOptionImport({
                   {candidate.lines.length} Jobber lines | ${new Decimal(candidate.total).toFixed(2)}
                 </p>
               </div>
-              <button
-                type="button"
-                onClick={() => onImportCandidate(candidate)}
-                disabled={alreadyImported}
-                className="pbc-btn pbc-btn--ghost pbc-btn--sm"
-              >
-                {alreadyImported ? 'Imported' : 'Import as option'}
-              </button>
+              {alreadyImported ? (
+                <span className="pbc-chip pbc-chip--muted border">Imported</span>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => onImportCandidate(candidate)}
+                  className="pbc-btn pbc-btn--soft pbc-btn--sm"
+                >
+                  Import as option
+                </button>
+              )}
             </div>
           )
         })}

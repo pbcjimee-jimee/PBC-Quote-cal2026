@@ -55,6 +55,7 @@ export default async function SettingsPage() {
       </div>
       <SettingsForm
         initialSettings={settingsResult.ok ? settingsResult.data : DEFAULT_PRICING_SETTINGS}
+        pricingLoadFailed={!settingsResult.ok}
       />
       </div>
     </main>

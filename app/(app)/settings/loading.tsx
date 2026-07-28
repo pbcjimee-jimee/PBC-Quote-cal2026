@@ -1,5 +1,5 @@
 function Block({ className = '' }: { className?: string }) {
-  return <div className={`rounded-md bg-[var(--border-soft)] ${className}`} />
+  return <div className={`pbc-skeleton ${className}`} />
 }
 
 export default function SettingsLoading() {
@@ -8,10 +8,11 @@ export default function SettingsLoading() {
       <header className="pbc-topbar">
         <Block className="h-5 w-44" />
         <div className="pbc-topbar__right">
-          <Block className="h-10 w-32" />
+          <Block className="h-10 w-28" />
+          <Block className="h-10 w-36" />
         </div>
       </header>
-      <div className="pbc-page animate-pulse">
+      <div className="pbc-page">
         <span className="sr-only">Loading...</span>
         <div className="pbc-pagehead">
           <Block className="h-9 w-56" />

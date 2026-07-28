@@ -60,9 +60,8 @@
   - `components/quote-detail/quote-detail-view.tsx:336`, `quote-calculation-totals.ts:153`
   - 조치: 저장 로직과 표시 로직이 동일 함수를 공유하도록 통일하거나 미배정 행 폴백.
 
-- [ ] **Settings/Inventory 로드 실패 시 기본값이 폼에 채워지고 Save 시 기존 설정을 조용히 덮어씀** (2026-07-28 UI/UX 리뷰, 검증됨)
-  - `app/(app)/settings/page.tsx:49` — 실패 시 `DEFAULT_PRICING_SETTINGS`로 렌더, 에러는 평문 한 줄.
-  - 조치: 로드 실패 시 Save 비활성화 + `pbc-alert--danger`로 결과("저장하면 기존 설정을 덮어씀") 명시 + 새로고침 액션 제공.
+- [x] **Settings/Inventory 로드 실패 시 기본값이 폼에 채워지고 Save 시 기존 설정을 조용히 덮어씀** (2026-07-28 UI/UX 리뷰 → 같은 날 해결)
+  - `app/(app)/settings/page.tsx` — 실패 시 `pbc-alert--danger`로 덮어쓰기 경고 명시 + `pricingLoadFailed`로 Save Settings 비활성화.
 
 ## P2 — 보안 (사내 2인 도구 맥락에서 medium/low)
 
@@ -117,7 +116,7 @@
 > 상세 발견·근거·권고는 `docs/UI-UX-REVIEW.md` 기준. R1(P0 3건 + Quick Wins 12건)은 2026-07-28 반영 완료.
 
 - [x] **R2 — 금액 표기 위계 + 피드백 aria-live** (2026-07-28 완료): 상세 화면 금액 중복 정리, `Alert` 프리미티브 신설·호출부 교체, DecimalInput aria-describedby, F1~F5 라디오 접근성, Jobber Refresh 진행/성공 피드백 (`UI-UX-REVIEW.md` §4-A·§4-B)
-- [ ] **R3 — 대비 토큰 재배치 + 상태 화면**: `--muted-2` 27곳·상태색 텍스트 AA 확보, error/not-found 바운더리, loading 스켈레톤 실 레이아웃 정합, `/quotes/[id]` loading, 검색·PaintSearch pending, Save & Sync 성공 피드백 (§4-C·§4-D)
+- [x] **R3 — 대비 토큰 재배치 + 상태 화면** (2026-07-28 완료): `--muted`/`--muted-2` 재배치·상태색 텍스트 AA 확보, error/not-found/global-error 바운더리, loading 정합 + `[id]`·`[id]/edit` 신설, 검색 pending, Save & Sync 성공 배너(sync 상태 게이팅) (§4-C·§4-D)
 - [ ] **R4 — 인터랙션 함정 + 디자인 시스템 위반 + 반응형 잔여**: Clear local drafts 확인, Area 포커스 값 소실, 사이드바 접힘 FOUC, OptionTotalsSummary·모바일 헤더 raw recipe, Settings tablist, 모바일 리스트 컬럼 숨김·색 단독 전달, 인벤토리 테이블 (§4-E·§4-F·§4-G)
 - [ ] **R5 — P2/P3 폴리시**: 빈 상태 3분기, 마이크로카피 용어집, radius/spacing 토큰 정리, PWA 배너, 인쇄 CSS 등 (§5·§6)
 

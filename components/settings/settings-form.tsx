@@ -73,6 +73,7 @@ interface SettingsFormProps {
   initialProductServices?: ProductServiceRecord[]
   initialQuoteLineTemplates?: QuoteLineTemplateRecord[]
   initialSettings: PricingSettings
+  pricingLoadFailed?: boolean
 }
 
 type SettingsTab = 'labour' | 'material' | 'productService' | 'template' | 'area'
@@ -930,6 +931,7 @@ export function SettingsForm({
   initialProductServices,
   initialQuoteLineTemplates,
   initialSettings,
+  pricingLoadFailed = false,
 }: SettingsFormProps) {
   const [isPending, startTransition] = useTransition()
   const [activeTab, setActiveTab] = useState<SettingsTab>('labour')
@@ -1607,7 +1609,13 @@ export function SettingsForm({
           </section>
 
           <div className="pbc-savecard__actions mt-6">
-            <button type="button" onClick={save} disabled={isPending} className="pbc-btn pbc-btn--primary">
+            <button
+              type="button"
+              onClick={save}
+              disabled={isPending || pricingLoadFailed}
+              title={pricingLoadFailed ? 'Settings failed to load - refresh the page before saving, or you will overwrite your stored values.' : undefined}
+              className="pbc-btn pbc-btn--primary"
+            >
               {isPending ? 'Saving...' : 'Save Settings'}
             </button>
             {message ? <p role="status" aria-live="polite" className="pbc-panelsub">{message}</p> : null}

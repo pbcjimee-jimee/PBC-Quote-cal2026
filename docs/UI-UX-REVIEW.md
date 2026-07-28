@@ -184,7 +184,7 @@
 |---|---|---|---|
 | R1 | ✅ 완료(2026-07-28) — P0 3건(다이얼로그 모달화·PaintSearch 키보드·라인 키보드 재정렬) + Quick Wins 12건. diff 적대적 리뷰 8건(critical 2·major 4·minor 2) 추가 반영: PaintSearch isSearching 가드·요청 토큰·Escape 후 Enter 가드, 다이얼로그 pending 중 Esc 차단·트랩 강화, 재정렬 scrollIntoView, 헤더 폭 조정 | S×12 + M×3 | Claude(사용자 직접 지시) |
 | R2 | ✅ 완료(2026-07-28) — `Alert` 프리미티브 신설(tone별 role 자동, live={false} 지원)·동적 피드백 호출부 교체, DecimalInput useId, F1~F5 라디오 aria-label + chip 포커스 링, Jobber Refresh aria-busy·상태별 성공 피드백(액션 반환값 기준 3분기·8초 자동 해제), FinalSummary 중복 행·상세 Summary 중복 그리드 제거, 서버 페이지 로드 에러 Alert화(정적이라 live=false). diff 리뷰 7건(major 4·minor 3) 전건 반영 | M | Claude(사용자 직접 지시) |
-| R3 | 대비 토큰 재배치(§4-C) + 상태 화면(§4-D: error/not-found·스켈레톤·loading 정합) | M | Sol |
+| R3 | ✅ 완료(2026-07-28) — `--muted #556070`/`--muted-2 #6b7789` 재배치, 상태색 텍스트 *-text 토큰 전환(progress badge·iconbtn--danger·areachip 포함), Imported muted 배지·Import soft 버튼, error/not-found/global-error 바운더리 신설, quotes·settings loading 실 레이아웃 정합 + `[id]`·`[id]/edit` loading 신설(`pbc-skeleton` 사용), 검색 useTransition 스피너, Save & Sync `?synced=1` 성공 배너(sync 상태 게이팅·1회성 소비), Settings 로드 실패 시 Save 비활성. diff 리뷰 6건 전건 반영. 로컬 :3000 브라우저 검증(토큰·44px·16px·콘솔 0건) | M | Claude(사용자 직접 지시) |
 | R4 | 인터랙션 함정(§4-E) + 디자인 시스템 위반 정리(§4-F) + 반응형(§4-G) | M~L | Sol |
 | R5 | P2 폴리시 일괄(빈 상태·마이크로카피·radius/spacing 토큰 정리) | L | Sol |
 
