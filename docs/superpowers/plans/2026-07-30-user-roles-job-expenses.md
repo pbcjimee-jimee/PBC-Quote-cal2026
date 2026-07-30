@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: superpowers:subagent-driven-development 또는 superpowers:executing-plans로 태스크 단위 실행. 체크박스(`- [ ]`)로 진행 추적.
 >
-> **Status:** DRAFT — 사용자 결정 D1~D6 및 G0 승인 대기
+> **Status:** G0 확정 (2026-07-30 사용자 결정 D1~D6 수신) — 다음 게이트: G1 Jobber 계약 검증
 > **Branch:** `claude/user-roles-expense-tracking-bbda61`
 > **작성:** 2026-07-30
 
@@ -43,19 +43,19 @@
 - **로그인 게이트 이관:** 허용 사용자의 진실의 원천을 `ALLOWED_LOGIN_EMAILS` env에서 `user_profiles`(is_active)로 옮긴다. env allowlist는 초기 admin 부트스트랩·비상용 백스톱으로 유지한다. admin이 Settings → Users에서 사용자 추가/역할 변경/비활성화를 수행하며 Vercel env 변경이 더 이상 필요 없다.
 - **Job 데이터 흐름 (단방향 유지):** Jobber가 진실의 원천. 신규 `lib/jobber/job-client.ts`(invoice-client 패턴)가 read-only GraphQL로 팀원 목록·배정 job 목록·job expense를 조회한다. 결과는 `jobber_job_snapshots` 캐시 테이블(service-role 전용, 클라이언트 직접 접근 불가)에 저장하고 수동 refresh + rate limit(기존 0020 스냅샷 refresh 패턴)를 적용한다. 앱에서 Jobber로의 쓰기는 추가하지 않는다.
 - **Supervisor↔Job 매칭:** `user_profiles.jobber_user_id`에 Jobber 팀원 ID를 연결(admin이 Users 화면에서 지정). job 목록 조회 시 Jobber의 담당자(assignment) 정보로 필터한다. 담당자 필터의 정확한 스키마(assignedTo 필터 vs visits 경유)는 G1에서 GraphiQL로 확정하고, 불가 판명 시 fallback으로 앱 내 수동 배정 테이블(`jobber_job_assignments`)을 쓴다.
-- **Profit 계산:** 기존 `calculateFinancialSummary` 로직을 공용 모듈로 추출해 재사용. job 단위 revenue 기준은 Jobber `job.total`, `profit % = (job.total − expensesTotal) / job.total`. Jobber 자체 `jobCosting`(인건비 포함, Grow plan 필요 가능성)은 G1에서 가용성 확인 후 가능하면 우선 사용하고 불가 시 위 계산식으로 동작한다.
+- **Profit 계산:** 기존 `calculateFinancialSummary` 로직을 공용 모듈로 추출해 재사용. job 단위 revenue 기준은 Jobber `job.total`, `profit % = (job.total − expensesTotal) / job.total`. 사용자 확인(2026-07-30, D4)으로 인건비·자재 사용이 전부 Jobber expense에 입력되는 운영 전제가 확정되어 이 식이 완전한 profit이다. `jobCosting` API는 도입하지 않는다.
 - **금액 처리:** 기존 규칙 그대로 — decimal.js 필수, 서버에서 계산, UI 직전 포맷.
 
-## 사용자 결정 필요 (구현 착수 전 확정)
+## 확정된 결정 (G0 — 2026-07-30 사용자 응답)
 
-| # | 질문 | 기본안 (미응답 시) | 대안 |
-|---|---|---|---|
-| **D1** | supervisor의 Inventory 권한 범위는? | 현행 inventory 페이지 기능 전체(조회+수량 조정+입출고) | (a) 조회만 (b) 조회+수량 조정만, 품목 추가/삭제는 admin |
-| **D2** | supervisor job 매칭 방식은? | Jobber 담당자 자동 매칭 (`jobber_user_id` 연결, G1 검증 전제) | 앱에서 admin이 job을 supervisor에게 수동 배정 |
-| **D3** | supervisor에게 보이는 금액 범위는? | 자기 job의 revenue(job.total)·expense 금액·profit % 전부 표시 | profit %와 expense만 표시, revenue 금액 숨김 (단, %+expense로 역산 가능함에 유의) |
-| **D4** | profit 기준은? | `job.total − expenses` (기존 앱 방식과 동일, 인건비 미포함) | Jobber `jobCosting` (인건비 포함, plan 지원 여부 G1 확인) — 지원되면 이걸 권장 |
-| **D5** | 신규 사용자 계정 발급 방식은? | admin이 임시 비밀번호 생성 후 직접 전달 (SMTP 불필요) | Supabase 초대 메일 (프로젝트 SMTP 설정 필요) |
-| **D6** | supervisor 로그인 첫 화면은? | `/jobs` (자기 job 목록) | `/inventory` |
+| # | 질문 | 확정 내용 |
+|---|---|---|
+| **D1** | supervisor의 Inventory 권한 | **조회 + 수량 조정만.** 수량 조정 = 재고 이동 필드 `quantity`·`status`·`used_date`·`used_location_text` 변경. 품목 추가/삭제/복구 및 식별 필드(name·category·brand·model_specification·colour·size_or_serial·purchase_date·notes·active·source_year) 수정은 admin 전용 |
+| **D2** | supervisor job 매칭 | **Jobber 담당자 배정 기준 자동 연동** (`user_profiles.jobber_user_id` ↔ Jobber 팀원). 담당자 필터 스키마는 G1에서 확정, API가 지원하지 않으면 fallback(수동 배정) 채택 전 사용자 재확인 |
+| **D3** | supervisor 금액 노출 범위 | **revenue(job.total)·expense 금액·profit % 전부 표시** |
+| **D4** | profit 기준 | **`job.total − expenses 합계` 확정.** 근거(사용자 확인): PBC 운영상 인건비·자재 사용이 전부 Jobber expense로 입력되므로 이 식이 완전한 profit. Jobber `jobCosting` API는 도입하지 않음 |
+| **D5** | 계정 발급 방식 | **admin이 임시 비밀번호 생성 후 직접 전달** (SMTP 불필요) |
+| **D6** | supervisor 로그인 첫 화면 | **`/jobs`** |
 
 ## Global Constraints
 
@@ -75,8 +75,8 @@
 
 | Gate | 내용 | 필요 증거 | 차단 조건 |
 |---|---|---|---|
-| **G0 결정 승인** | D1~D6 확정 + DECISIONS.md §1·§7 개정(부록 A) 승인 | 사용자 응답 기록 | 미승인 시 구현 착수 금지 |
-| **G1 Jobber 계약 검증** | pinned 버전(`2025-04-16`) GraphiQL로: ① `users` 쿼리(팀원 목록) 가용성 + 필요 scope ② job 담당자 필터(assignedTo/visits) 정확한 스키마 ③ `jobCosting` 필드 존재·plan 제약 ④ 현재 토큰 scope로 expense·job 조회 가능 여부 | 실제 쿼리·응답 캡처, scope 목록 | scope 추가 필요 판명 시 → 재연결은 G3로 |
+| **G0 결정 승인** | ✅ 완료 (2026-07-30) — D1~D6 확정, role 도입 방향 승인. DECISIONS.md 파일 개정 자체는 Phase 3 태스크로 수행 | 이 문서 "확정된 결정" 섹션 | — |
+| **G1 Jobber 계약 검증** | pinned 버전(`2025-04-16`) GraphiQL로: ① `users` 쿼리(팀원 목록) 가용성 + 필요 scope ② job 담당자 필터(assignedTo/visits) 정확한 스키마 ③ 현재 토큰 scope로 expense·job 전체 페이지네이션 조회 가능 여부 | 실제 쿼리·응답 캡처, scope 목록 | scope 추가 필요 판명 시 → 재연결은 G3로. 담당자 필터 미지원 판명 시 → D2 fallback 사용자 재확인 |
 | **G2 로컬 데이터 검증** | 신규 마이그레이션 로컬 적용 + RLS 역할 매트릭스 테스트 통과 | `tests/rls.test.ts` 확장 그린, 로컬 마이그레이션 로그 | 프로덕션 DB로 검증 대체 금지 |
 | **G3 프로덕션 적용** | 마이그레이션 적용, (필요 시) Jobber scope 변경·재연결, 시드 실행, 배포 | 각 항목 개별 사용자 승인 | 승인 없는 프로덕션 변경 금지 |
 
@@ -92,7 +92,7 @@
   - `user_profiles` RLS: 본인 행 SELECT(`id = auth.uid()`), admin 전체 SELECT(`app_auth.current_role() = 'admin'`), 클라이언트 write 정책 없음(service-role만)
 - [ ] 마이그레이션 `tighten_role_rls.sql` — 기존 `authenticated_all` 정책 교체:
   - **admin 전용:** `quotes`, `quote_items`, `quote_areas`, `quote_options`(+items), `quote_memos`, `quote_price_revisions`, `jobber_quote_lines`, `products`, `pricing_settings`, `product_services`, `quote_line_templates`, progress invoice 전 테이블
-  - **admin+supervisor:** `warehouse_inventory` (D1 답에 따라 SELECT만/전체 분리)
+  - **admin+supervisor:** `warehouse_inventory` — 두 역할 SELECT. UPDATE는 두 역할 허용하되 supervisor는 재고 이동 필드(`quantity`·`status`·`used_date`·`used_location_text`)만 변경 가능 — BEFORE UPDATE 트리거가 supervisor의 그 외 컬럼 변경을 거부(D1). INSERT/DELETE는 admin 전용 정책
   - `jobber_tokens`·progress invoice RPC 권한은 현행 유지 (service-role 전용)
 - [ ] 부트스트랩 시드 스크립트: 현재 auth.users의 기존 admin 2명 → `user_profiles(role='admin')` INSERT (이메일 기준, 멱등)
 - [ ] RLS 역할 매트릭스 테스트: admin/supervisor/미인증 × 주요 테이블 CRUD 기대값 (`tests/rls.test.ts` 확장) — **G2 증거**
@@ -101,7 +101,7 @@
 
 - [ ] `lib/security/require-app-user.ts` 신설: `requireAppUser()` — 세션 확인 + `user_profiles` 조회(React `cache()` 요청 단위 캐시) → `{ user, profile: { role, jobberUserId, displayName } }`. 프로필 없음/비활성 = 거부
 - [ ] `requireRole('admin' | 'supervisor' | 'any')` 헬퍼 — 서버 액션·페이지 공용
-- [ ] 기존 `requireAllowedUser()` 호출부(모든 actions)를 `requireAppUser()`로 교체하고, 견적·설정·progress invoice 액션에는 `requireRole('admin')` 적용, inventory 액션은 D1 답 기준 적용
+- [ ] 기존 `requireAllowedUser()` 호출부(모든 actions)를 `requireAppUser()`로 교체하고, 견적·설정·progress invoice 액션에는 `requireRole('admin')` 적용. inventory 액션은 조회·재고 이동(수량·status·사용일·사용처)만 `requireRole('any')`, 품목 생성·식별 필드 수정·삭제·복구는 `requireRole('admin')` (D1)
 - [ ] 로그인 액션(`lib/actions/auth.ts`): 인증 성공 후 active 프로필 확인, 없으면 즉시 signout + 기존 `USER_NOT_ALLOWED_ERROR`. `ALLOWED_LOGIN_EMAILS`는 "설정돼 있으면 추가 AND 조건"인 백스톱으로 강등 (docs/SECURITY.md 반영)
 - [ ] `lib/user-profiles.ts`(기존 표시 이름 헬퍼)와 신규 프로필 모듈 통합 — 이름 충돌 정리, 표시 이름은 `user_profiles.display_name` 우선
 
@@ -130,7 +130,7 @@
 - [ ] `lib/jobber/job-client.ts` (invoice-client 패턴, 기존 OAuth/token/refresh 인프라 공유):
   - `PbcTeamUsers` — 팀원 목록 (id, name, email, status) [G1에서 scope 확정]
   - `PbcUserJobs` — 담당자 기준 job 목록 (id, jobNumber, title, jobStatus, total, jobberWebUri) [G1에서 필터 스키마 확정, 전체 페이지네이션]
-  - `PbcJobExpenses` — 단일 job의 expense 전체 (`lib/jobber/pagination.ts` 재사용, 기존 first:25 캡 제거), (가능 시) `jobCosting` 필드 포함
+  - `PbcJobExpenses` — 단일 job의 expense 전체 (`lib/jobber/pagination.ts` 재사용, 기존 first:25 캡 제거)
 - [ ] `lib/jobber/financial-summary.ts` — `mapper.ts`의 `calculateFinancialSummary`를 공용 추출, quote 경로와 job 경로가 같은 계산을 사용. job revenue = `job.total` (D4)
 - [ ] 마이그레이션 `add_jobber_job_snapshots.sql`: `jobber_job_snapshots(jobber_job_id text PK, payload jsonb, refreshed_at, refreshed_by uuid)` + (D2 fallback 시) `jobber_job_assignments(jobber_job_id, profile_id, assigned_by, UNIQUE)`. 두 테이블 모두 RLS enable + 클라이언트 정책 없음(service-role 전용) — `jobber_tokens` 패턴
 - [ ] 서버 액션 `lib/actions/jobs.ts`:
@@ -163,7 +163,7 @@
 - 앱에서 expense 입력·수정·삭제 (Jobber가 진실의 원천, 읽기 전용 유지)
 - Jobber로의 신규 write scope·mutation 추가
 - 예약/자동 동기화(스케줄러) — 수동 refresh만
-- 인건비·타임시트 기반 원가 계산 (D4에서 jobCosting 채택 시 Jobber 값 표시로 갈음)
+- 별도 인건비·타임시트 기반 원가 계산 및 Jobber `jobCosting` API — 불필요 확정(D4): 인건비·자재 사용이 전부 Jobber expense로 입력됨
 - supervisor의 견적 열람·작성, 3번째 역할(예: viewer), 세분화된 권한 매트릭스
 - 비밀번호 첫 로그인 강제 변경 플로우 (Supabase 미지원 — 임시 비밀번호 운영 규칙으로 대체)
 - 이메일 초대(SMTP) — D5에서 (b) 선택 시에만 별도 태스크로
@@ -181,7 +181,7 @@
 
 - **§1 (2026-06-26 항목):** "앱 사용자는 관리자 2명으로 고정한다. 별도 role split 도입하지 않는다" → "2026-07-30 사용자 요청으로 폐기. `admin`/`supervisor` 2역할을 도입한다. admin은 전 기능+사용자 관리, supervisor는 Inventory와 자기 Jobber job의 expense/profit 조회만 가능하다."
 - **§7 RLS:** "모든 인증 사용자 동일 권한" → "역할 기반: admin 전용 테이블(견적·가격·progress invoice 계열)과 admin+supervisor 테이블(inventory)로 분리. 역할 판정은 `user_profiles` + `app_auth.current_role()` SECURITY DEFINER 함수. 캐시·토큰 테이블은 service-role 전용."
-- **§2 Jobber 연동 모델 추가:** "Job expense·(가능 시) jobCosting read를 전용 job 모듈로 추가한다. 쓰기 범위는 변경 없음(quote line write-back 한정)."
+- **§2 Jobber 연동 모델 추가:** "Job·팀원·expense read를 전용 job 모듈로 추가한다. job profit은 `job.total − expense 합계`로 계산한다(인건비·자재 사용은 전부 Jobber expense로 입력된다는 운영 전제, 2026-07-30 사용자 확인). 쓰기 범위는 변경 없음(quote line write-back 한정)."
 
 ## 부록 B — 신규/변경 파일 목록 (예상)
 
