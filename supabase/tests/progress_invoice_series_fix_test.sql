@@ -47,6 +47,14 @@ VALUES
   ('00000000-0000-0000-0000-000000009101', 'series-fix-a@example.test', now(), now()),
   ('00000000-0000-0000-0000-000000009102', 'series-fix-b@example.test', now(), now());
 
+INSERT INTO public.user_profiles (id, email, display_name, role, is_active)
+SELECT id, email, split_part(email, '@', 1), 'admin', true
+FROM auth.users
+WHERE id IN (
+  '00000000-0000-0000-0000-000000009101',
+  '00000000-0000-0000-0000-000000009102'
+);
+
 INSERT INTO public.progress_invoice_series (
   id,
   source_type,

@@ -86,16 +86,16 @@
 
 ### 1.1 DB: user_profiles + 역할 함수 + RLS 개편
 
-- [ ] 마이그레이션 `add_user_profiles_and_roles.sql`:
+- [x] 마이그레이션 `add_user_profiles_and_roles.sql`:
   - `user_profiles(id uuid PK → auth.users ON DELETE CASCADE, email text UNIQUE NOT NULL, display_name text, role text NOT NULL CHECK (role IN ('admin','supervisor')), jobber_user_id text UNIQUE NULL, is_active boolean NOT NULL DEFAULT true, created_at/updated_at)`
   - `app_auth` 스키마 + `app_auth.current_role() returns text STABLE SECURITY DEFINER SET search_path` — `auth.uid()`의 active 프로필 role 반환, 없으면 NULL
   - `user_profiles` RLS: 본인 행 SELECT(`id = auth.uid()`), admin 전체 SELECT(`app_auth.current_role() = 'admin'`), 클라이언트 write 정책 없음(service-role만)
-- [ ] 마이그레이션 `tighten_role_rls.sql` — 기존 `authenticated_all` 정책 교체:
+- [x] 마이그레이션 `tighten_role_rls.sql` — 기존 `authenticated_all` 정책 교체:
   - **admin 전용:** `quotes`, `quote_items`, `quote_areas`, `quote_options`(+items), `quote_memos`, `quote_price_revisions`, `jobber_quote_lines`, `products`, `pricing_settings`, `product_services`, `quote_line_templates`, progress invoice 전 테이블
   - **admin+supervisor:** `warehouse_inventory` — 두 역할 SELECT. UPDATE는 두 역할 허용하되 supervisor는 재고 이동 필드(`quantity`·`status`·`used_date`·`used_location_text`)만 변경 가능 — BEFORE UPDATE 트리거가 supervisor의 그 외 컬럼 변경을 거부(D1). INSERT/DELETE는 admin 전용 정책
   - `jobber_tokens`·progress invoice RPC 권한은 현행 유지 (service-role 전용)
-- [ ] 부트스트랩 시드 스크립트: 현재 auth.users의 기존 admin 2명 → `user_profiles(role='admin')` INSERT (이메일 기준, 멱등)
-- [ ] RLS 역할 매트릭스 테스트: admin/supervisor/미인증 × 주요 테이블 CRUD 기대값 (`tests/rls.test.ts` 확장) — **G2 증거**
+- [x] 부트스트랩 시드 스크립트: 현재 auth.users의 기존 admin 2명 → `user_profiles(role='admin')` INSERT (이메일 기준, 멱등)
+- [x] RLS 역할 매트릭스 테스트: admin/supervisor/미인증 × 주요 테이블 CRUD 기대값 (`tests/rls.test.ts` 확장) — **G2 증거**
 
 ### 1.2 서버: 역할 가드 + 로그인 게이트 이관
 

@@ -32,6 +32,15 @@ VALUES
     now()
   );
 
+INSERT INTO public.user_profiles (id, email, display_name, role, is_active)
+SELECT id, email, split_part(email, '@', 1), 'admin', true
+FROM auth.users
+WHERE id IN (
+  '00000000-0000-0000-0000-000000008001',
+  '00000000-0000-0000-0000-000000008002',
+  '00000000-0000-0000-0000-000000008003'
+);
+
 CREATE FUNCTION pg_temp.profile_payload(
   requested_legal_name TEXT,
   requested_abn TEXT DEFAULT '12345678901',
@@ -682,11 +691,11 @@ DELETE FROM public.business_invoice_profiles;
 
 SELECT extensions.dblink_connect(
   'progress_profile_race_a',
-  'host=host.docker.internal port=54322 dbname=postgres user=postgres password=postgres'
+  'host=host.docker.internal port=55422 dbname=postgres user=postgres password=postgres'
 );
 SELECT extensions.dblink_connect(
   'progress_profile_race_b',
-  'host=host.docker.internal port=54322 dbname=postgres user=postgres password=postgres'
+  'host=host.docker.internal port=55422 dbname=postgres user=postgres password=postgres'
 );
 
 SELECT extensions.dblink_exec('progress_profile_race_a', 'BEGIN');
@@ -862,6 +871,15 @@ $$;
 
 INSERT INTO auth.users (id, email, created_at, updated_at)
 VALUES ('00000000-0000-0000-0000-000000008101', 'progress-series@example.test', now(), now());
+
+INSERT INTO public.user_profiles (id, email, display_name, role, is_active)
+VALUES (
+  '00000000-0000-0000-0000-000000008101',
+  'progress-series@example.test',
+  'Progress Series',
+  'admin',
+  true
+);
 
 INSERT INTO public.quotes (
   id, customer_name, customer_address, working_days,
@@ -1557,11 +1575,11 @@ SELECT is(
 
 SELECT extensions.dblink_connect(
   'task5_create_a',
-  'host=host.docker.internal port=54322 dbname=postgres user=postgres password=postgres'
+  'host=host.docker.internal port=55422 dbname=postgres user=postgres password=postgres'
 );
 SELECT extensions.dblink_connect(
   'task5_create_b',
-  'host=host.docker.internal port=54322 dbname=postgres user=postgres password=postgres'
+  'host=host.docker.internal port=55422 dbname=postgres user=postgres password=postgres'
 );
 SELECT extensions.dblink_exec('task5_create_a', 'BEGIN');
 SELECT extensions.dblink_exec('task5_create_a', 'SET LOCAL ROLE authenticated');

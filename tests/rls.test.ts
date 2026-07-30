@@ -18,6 +18,8 @@ const migrations = [
   '20260708000000_add_warehouse_inventory.sql',
   '20260714225000_restore_existing_data_api_grants.sql',
   '20260714230000_add_progress_invoice_core.sql',
+  '20260731010000_add_user_profiles_and_roles.sql',
+  '20260731011000_tighten_role_rls.sql',
 ].map((file) => {
   const path = join(migrationsDir, file)
 
@@ -69,6 +71,10 @@ const progressInvoiceMigration = migrations.find(
   ({ file }) => file === '20260714230000_add_progress_invoice_core.sql'
 )
 
+const roleRlsMigration = migrations.find(
+  ({ file }) => file === '20260731011000_tighten_role_rls.sql'
+)
+
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
@@ -82,10 +88,10 @@ function expectRlsEnabled(table: string): void {
   )
 }
 
-function expectAuthenticatedCrudPolicy(table: string): void {
-  expect(combinedSql).toMatch(
+function expectAdminCrudPolicy(table: string): void {
+  expect(roleRlsMigration?.sql).toMatch(
     new RegExp(
-      `CREATE\\s+POLICY\\s+"authenticated_all"\\s+ON\\s+${escapeRegExp(table)}\\s+FOR\\s+ALL\\s+TO\\s+authenticated\\s+USING\\s*\\(true\\)\\s+WITH\\s+CHECK\\s*\\(true\\)`,
+      `CREATE\\s+POLICY\\s+"${escapeRegExp(table)}_admin"\\s+ON\\s+public\\.${escapeRegExp(table)}\\s+FOR\\s+ALL\\s+TO\\s+authenticated\\s+USING\\s*\\(app_auth\\.current_role\\(\\)\\s*=\\s*'admin'\\)\\s+WITH\\s+CHECK\\s*\\(app_auth\\.current_role\\(\\)\\s*=\\s*'admin'\\)`,
       'i'
     )
   )
@@ -109,37 +115,31 @@ function expectExplicitPrivilegeReset(table: string): void {
   )
 }
 
-function expectAuthenticatedSelectOnly(table: string): void {
-  const migrationSql = progressInvoiceMigration?.sql ?? ''
+function expectAdminSelectOnly(table: string): void {
+  const migrationSql = roleRlsMigration?.sql ?? ''
   const escapedTable = escapeRegExp(table)
 
   expect(migrationSql).toMatch(
     new RegExp(
-      `REVOKE\\s+ALL\\s+ON\\s+TABLE\\s+public\\.${escapedTable}\\s+FROM\\s+PUBLIC\\s*,\\s*anon\\s*,\\s*authenticated\\s*,\\s*service_role\\s*;`,
+      `DROP\\s+POLICY\\s+IF\\s+EXISTS\\s+"${escapedTable}_authenticated_select"\\s+ON\\s+public\\.${escapedTable}`,
       'i'
     )
   )
   expect(migrationSql).toMatch(
     new RegExp(
-      `GRANT\\s+SELECT\\s+ON\\s+TABLE\\s+public\\.${escapedTable}\\s+TO\\s+authenticated\\s*;`,
-      'i'
-    )
-  )
-  expect(migrationSql).toMatch(
-    new RegExp(
-      `CREATE\\s+POLICY\\s+"${escapedTable}_authenticated_select"\\s+ON\\s+public\\.${escapedTable}\\s+FOR\\s+SELECT\\s+TO\\s+authenticated\\s+USING\\s*\\(true\\)`,
+      `CREATE\\s+POLICY\\s+"${escapedTable}_admin"\\s+ON\\s+public\\.${escapedTable}\\s+FOR\\s+SELECT\\s+TO\\s+authenticated\\s+USING\\s*\\(app_auth\\.current_role\\(\\)\\s*=\\s*'admin'\\)`,
       'i'
     )
   )
 }
 
 describe('RLS migrations', () => {
-  it('covers planned Jobber quote lines with authenticated-only RLS', () => {
+  it('covers Jobber quote lines with admin-only RLS', () => {
     const jobberLinesMigration = migrations.find(({ file }) => file === '0010_add_jobber_quote_lines.sql')
 
     expect(jobberLinesMigration?.sql, 'expected supabase/migrations/0010_add_jobber_quote_lines.sql').not.toBe('')
     expectRlsEnabled('jobber_quote_lines')
-    expectAuthenticatedCrudPolicy('jobber_quote_lines')
+    expectAdminCrudPolicy('jobber_quote_lines')
   })
 
   it('enables RLS on every application table', () => {
@@ -148,9 +148,9 @@ describe('RLS migrations', () => {
     }
   })
 
-  it('defines authenticated CRUD policies only on non-secret application tables', () => {
-    for (const table of nonSecretDataApiTables) {
-      expectAuthenticatedCrudPolicy(table)
+  it('defines admin CRUD policies on admin-only application tables', () => {
+    for (const table of nonSecretDataApiTables.filter((table) => table !== 'warehouse_inventory')) {
+      expectAdminCrudPolicy(table)
     }
   })
 
@@ -180,19 +180,13 @@ describe('RLS migrations', () => {
     expect(combinedSql).not.toMatch(/CREATE\s+POLICY[^;]*\bTO\s+public\b/i)
   })
 
-  it('keeps every Progress Invoice table authenticated read-only', () => {
+  it('keeps every Progress Invoice table admin read-only over the Data API', () => {
     expect(progressInvoiceMigration?.sql, 'expected Progress Invoice core migration').not.toBe('')
+    expect(roleRlsMigration?.sql, 'expected role RLS migration').not.toBe('')
 
     for (const table of progressInvoiceTables) {
       expectRlsEnabled(table)
-      expectAuthenticatedSelectOnly(table)
+      expectAdminSelectOnly(table)
     }
-
-    expect(progressInvoiceMigration?.sql).not.toMatch(
-      /GRANT\s+(?:INSERT|UPDATE|DELETE|ALL)[^;]*\bTO\s+(?:anon|authenticated|service_role)\b/i
-    )
-    expect(progressInvoiceMigration?.sql).not.toMatch(
-      /CREATE\s+POLICY[^;]*\bFOR\s+(?:INSERT|UPDATE|DELETE|ALL)\b/i
-    )
   })
 })

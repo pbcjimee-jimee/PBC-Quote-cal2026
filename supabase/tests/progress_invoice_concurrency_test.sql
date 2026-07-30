@@ -88,11 +88,11 @@ INSERT INTO public.progress_payments (
 
 SELECT extensions.dblink_connect(
   'progress_race_a',
-  'host=host.docker.internal port=54322 dbname=postgres user=postgres password=postgres'
+  'host=host.docker.internal port=55422 dbname=postgres user=postgres password=postgres'
 );
 SELECT extensions.dblink_connect(
   'progress_race_b',
-  'host=host.docker.internal port=54322 dbname=postgres user=postgres password=postgres'
+  'host=host.docker.internal port=55422 dbname=postgres user=postgres password=postgres'
 );
 
 SELECT extensions.dblink_exec('progress_race_a', 'BEGIN');

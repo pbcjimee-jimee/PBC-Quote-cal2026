@@ -11,6 +11,10 @@ const config = {
 
 const hasLocalRlsConfig = Object.values(config).every(Boolean)
 const describeLocal = hasLocalRlsConfig ? describe : describe.skip
+const supervisorEmail = process.env.SUPABASE_RLS_TEST_SUPERVISOR_EMAIL
+  ?? 'supervisor.rls@example.test'
+const supervisorPassword = process.env.SUPABASE_RLS_TEST_SUPERVISOR_PASSWORD
+  ?? 'local-supervisor-password'
 
 interface LocalRlsConfig {
   url: string
@@ -49,7 +53,10 @@ describeLocal('Supabase local RLS CRUD integration', () => {
   let admin: SupabaseClient
   let anon: SupabaseClient
   let authed: SupabaseClient
+  let supervisor: SupabaseClient
   let userId: string
+  let supervisorUserId: string
+  let inventoryItemId: string | null = null
   let originalPricingSettings: { f1LabourRate: string; updatedBy: string | null } | null = null
 
   beforeAll(async () => {
@@ -75,6 +82,13 @@ describeLocal('Supabase local RLS CRUD integration', () => {
         persistSession: false,
       },
     })
+    supervisor = createClient(local.url, local.anonKey, {
+      auth: {
+        autoRefreshToken: false,
+        detectSessionInUrl: false,
+        persistSession: false,
+      },
+    })
 
     const created = await admin.auth.admin.createUser({
       email: local.email,
@@ -92,9 +106,54 @@ describeLocal('Supabase local RLS CRUD integration', () => {
     if (signedIn.error) throw signedIn.error
     if (!signedIn.data.user) throw new Error('Supabase test user sign-in did not return a user')
     userId = signedIn.data.user.id
+
+    const createdSupervisor = await admin.auth.admin.createUser({
+      email: supervisorEmail,
+      password: supervisorPassword,
+      email_confirm: true,
+    })
+    if (createdSupervisor.error && !createdSupervisor.error.message.toLowerCase().includes('already')) {
+      throw createdSupervisor.error
+    }
+    const supervisorSignedIn = await supervisor.auth.signInWithPassword({
+      email: supervisorEmail,
+      password: supervisorPassword,
+    })
+    if (supervisorSignedIn.error) throw supervisorSignedIn.error
+    if (!supervisorSignedIn.data.user) {
+      throw new Error('Supabase supervisor test sign-in did not return a user')
+    }
+    supervisorUserId = supervisorSignedIn.data.user.id
+
+    expectNoError(
+      await admin.from('user_profiles').upsert([
+        {
+          id: userId,
+          email: local.email.toLowerCase(),
+          display_name: 'RLS Admin',
+          role: 'admin',
+          is_active: true,
+        },
+        {
+          id: supervisorUserId,
+          email: supervisorEmail,
+          display_name: 'RLS Supervisor',
+          role: 'supervisor',
+          is_active: true,
+        },
+      ])
+    )
   })
 
   afterAll(async () => {
+    if (inventoryItemId) {
+      const removedInventory = await admin
+        .from('warehouse_inventory')
+        .delete()
+        .eq('id', inventoryItemId)
+      if (removedInventory.error) throw removedInventory.error
+    }
+
     if (originalPricingSettings !== null) {
       const restored = await admin
         .from('pricing_settings')
@@ -108,6 +167,10 @@ describeLocal('Supabase local RLS CRUD integration', () => {
 
     if (userId) {
       const deleted = await admin.auth.admin.deleteUser(userId)
+      if (deleted.error) throw deleted.error
+    }
+    if (supervisorUserId) {
+      const deleted = await admin.auth.admin.deleteUser(supervisorUserId)
       if (deleted.error) throw deleted.error
     }
   })
@@ -148,6 +211,96 @@ describeLocal('Supabase local RLS CRUD integration', () => {
       await admin.from('jobber_tokens').select('user_id').eq('user_id', userId).single()
     )
     expectNoError(await admin.from('jobber_tokens').delete().eq('user_id', userId))
+  })
+
+  it('exposes only the current profile to supervisors and all profiles to admins', async () => {
+    const supervisorProfiles = expectNoError(
+      await supervisor.from('user_profiles').select('id, role')
+    )
+    expect(supervisorProfiles.data).toEqual([
+      { id: supervisorUserId, role: 'supervisor' },
+    ])
+
+    const adminProfiles = expectNoError(
+      await authed.from('user_profiles').select('id, role').order('role')
+    )
+    expect(adminProfiles.data).toEqual(expect.arrayContaining([
+      { id: userId, role: 'admin' },
+      { id: supervisorUserId, role: 'supervisor' },
+    ]))
+  })
+
+  it('denies supervisors admin tables and Progress Invoice RPCs', async () => {
+    const products = expectNoError(await supervisor.from('products').select('id').limit(1))
+    expect(products.data).toEqual([])
+
+    const productInsert = await supervisor.from('products').insert({
+      name: 'supervisor-must-not-create',
+      unit: 'gallon',
+      market_price: '1.00',
+      actual_price: '1.00',
+    })
+    expect(productInsert.error?.code).toBe('42501')
+
+    const progressRows = expectNoError(
+      await supervisor.from('progress_invoice_series').select('id').limit(1)
+    )
+    expect(progressRows.data).toEqual([])
+
+    const progressRpc = await supervisor.rpc('list_progress_invoice_series', {
+      payload: {
+        query: '',
+        statuses: [],
+        page: 1,
+        page_size: 10,
+        quote_id: null,
+      },
+    })
+    expect(progressRpc.error?.code).toBe('42501')
+    expect(progressRpc.error?.message).toContain('APP_ADMIN_REQUIRED')
+  })
+
+  it('allows supervisor inventory movement but rejects identity edits', async () => {
+    const inserted = expectNoError(
+      await admin
+        .from('warehouse_inventory')
+        .insert({
+          name: 'RLS movement fixture',
+          category: 'Tools',
+          quantity: '2.00',
+          status: 'in_stock',
+          active: true,
+        })
+        .select('id')
+        .single()
+    )
+    inventoryItemId = expectData(inserted.data).id
+
+    const moved = expectNoError(
+      await supervisor
+        .from('warehouse_inventory')
+        .update({
+          quantity: '1.00',
+          status: 'out',
+          used_date: '2026-07-31',
+          used_location_text: 'Local RLS test',
+        })
+        .eq('id', inventoryItemId)
+        .select('quantity, status, used_location_text')
+        .single()
+    )
+    expect(moved.data).toEqual({
+      quantity: 1,
+      status: 'out',
+      used_location_text: 'Local RLS test',
+    })
+
+    const renamed = await supervisor
+      .from('warehouse_inventory')
+      .update({ name: 'Supervisor identity edit denied' })
+      .eq('id', inventoryItemId)
+    expect(renamed.error?.code).toBe('42501')
+    expect(renamed.error?.message).toContain('INVENTORY_ADMIN_FIELDS_REQUIRED')
   })
 
   it('keeps Progress Invoice tables authenticated read-only', async () => {
