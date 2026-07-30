@@ -180,9 +180,31 @@ F5 margin   [30] %
   Existing quotes preserve their snapshot.
 ```
 
-Settings also includes Material, Product & Service, Template, and Area tabs. The Template tab stores reusable Product / Service line item and text item sets. Those templates appear in `/quotes/new` and quote edit Product / Service sections and copy their saved rows into the current quote when selected.
+Settings is admin-only and also includes Material, Product & Service, Template, and Area tabs. The Template tab stores reusable Product / Service line item and text item sets. Those templates appear in `/quotes/new` and quote edit Product / Service sections and copy their saved rows into the current quote when selected.
 
-Inventory is managed on a separate Settings child page at `/settings/inventory`, not inside the Settings tab set. It supports warehouse stock search, add, edit, soft delete, CSV import/export, purchase date, used date, used location text, and in-stock/out tracking. Rows are grouped by workbook-style categories such as `Tools`, `Sample`, `Primer`, `Weathershield`, `Acratex`, and `Interior walls`; new manual items use the same category select. Out rows use a checkbox control, stronger background treatment, and line-through item text. Inventory rows are app-only and are not used in quote calculation or Jobber write-back.
+`/settings/users` is an admin-only user management page. It lists email, display name, role, active state, and Jobber user connection. Admin actions create an Auth user plus profile, change role/active state, and connect a profile to a Jobber team user; role decisions always come from the current server session rather than client payloads.
+
+---
+
+## 5. Inventory (`/inventory`)
+
+Inventory is a top-level page shared by admin and supervisor. `/settings/inventory` redirects here. It supports warehouse stock search, category grouping, purchase/usage metadata, and in-stock/out tracking. Admin can add, fully edit, soft-delete, and import/export CSV. Supervisor can only record stock movement fields (quantity, status, used date, used location); UI guards and database RLS/trigger rules enforce the same boundary. Inventory remains app-only and is not used in quote calculation or Jobber write-back.
+
+---
+
+## 6. Jobs (`/jobs`)
+
+Jobs is available to both roles and is the supervisor landing page. A supervisor sees only jobs returned by Jobber's `visitsAssignedToUserId` filter for the `user_profiles.jobber_user_id` linked to the current session. Admin sees all jobs and may filter by an active supervisor profile. The table shows job number/title, status, revenue, expense total, profit amount/percentage, and last refresh time. Missing Jobber linkage and no-assignment states have explicit guidance, and refresh is manual with a server-enforced cooldown.
+
+`/jobs/[jobberJobId]` displays the selected job's revenue/expense/profit summary using the quote financial panel tone, the expense lines (title, description, date, amount, entered/paid/reimbursable user), refresh control, and a link to the Jobber source. A supervisor direct URL is accepted only when Jobber confirms that job is assigned to the current linked user.
+
+---
+
+## 7. 역할별 내비게이션과 라우트 경계
+
+- admin: 기존 Overview/Quotes/Progress Invoices/Settings 기능과 Jobs/Inventory/Users를 사용한다.
+- supervisor: Jobs와 Inventory만 내비게이션에 표시되며 `/`, `/quotes`, admin Settings, progress invoice route에 직접 접근해도 서버 가드가 `/jobs`로 돌려보내거나 거부한다.
+- 미들웨어는 세션 유무만 판정하고 실제 역할은 서버 컴포넌트·Server Action·RLS가 세션 `auth.uid()` 기준으로 재검증한다.
 
 ---
 

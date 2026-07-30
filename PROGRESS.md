@@ -22,7 +22,7 @@
 ## ✅ 완료 (요약)
 
 ### 인프라 & 셋업
-- Next.js 16.2.6 + React 19.2.4 + TS + Tailwind 4 스캐폴드, `package.json` 스크립트(dev/build/test/verify 등), 핵심 의존성(decimal.js, zod, @supabase/*, vitest).
+- Next.js 16.2.12 + React 19.2.4 + TS + Tailwind 4 스캐폴드, `package.json` 스크립트(dev/build/test/verify 등), 핵심 의존성(decimal.js, zod, @supabase/*, vitest).
 - Vercel 배포 설정, `.env.example`, `.gitignore`. 프로젝트별 CLI 접근(GitHub SSH alias, Vercel/Supabase CLI link, `scripts/check-cli-context.cmd`).
 
 ### DB 마이그레이션
@@ -36,7 +36,7 @@
 - 테스트: `tests/calculator.test.ts`(100% 커버리지 강제), `quote-labour`, `quote-calculation-totals`, `decimal-input-utils`, `material-item-factory`, `tests/fixtures/historical-quotes.ts`(회귀 fixture).
 
 ### Auth & Supabase 클라이언트
-- `lib/supabase/{client,server,middleware,types,env}.ts`, `lib/actions/auth*.ts`, 로그인 폼·인증 가드(`app/(app)/layout.tsx`), `proxy.ts`(라우팅 게이트). rate limit(`lib/security/auth-policy.ts`).
+- `lib/supabase/{client,server,middleware,types,env}.ts`, `lib/actions/auth*.ts`, active `user_profiles` 기반 `requireAppUser()`/`requireRole()` 서버 가드, 로그인 폼·인증 레이아웃, `proxy.ts`(세션 게이트). rate limit(`lib/security/auth-policy.ts`).
 
 ### 견적 핵심 플로우 (v1.0)
 - `/quotes/new`·`/quotes`·`/quotes/[id]` 라우트, `components/quote-form/*`, PaintSearch, area 스냅샷, 5공식 실시간 계산, min/max→subtotal→final(GST), 로컬 draft(`quote-draft.ts`), 상세/수정/삭제.
@@ -47,10 +47,11 @@
 - OAuth + GraphQL 견적 조회 + 토큰 자동 refresh + AES-256-GCM 암호화(`lib/jobber/*`, `app/api/jobber/*`).
 - Controlled write-back: 공개 Product / Service line item만 같은 Jobber quote에 동기화, material 가격·내부 상세 미전송. GraphQL mutation 차단 가드 + write scope 최소화로 read-only 원칙 강제.
 - `jobber_snapshot` 캐시 + 수동 refresh + 변경 감지 diff 알림. Jobber option line preview/manual import. sync preview/retry.
+- G1 계약의 팀원·배정 job·expense read-only 조회, service-role 전용 `jobber_job_snapshots`, Decimal 기반 revenue/expense/profit 계산과 `/jobs` 목록·상세 수동 refresh를 추가했다. 기존 quote write-back 외 Jobber mutation이나 scope 변경은 없다.
 - Product & Service catalog(CSV import)·quote line template.
 
 ### 테스트/검증
-- RLS 회귀(`tests/rls.test.ts`) + 조건부 통합(`tests/rls-local-integration.test.ts`). Server Actions 80%+ 커버리지 threshold. 보안 정적 검색 테스트. `npm.cmd run verify` 통과.
+- 역할 RLS 회귀(`tests/rls.test.ts`) + 로컬 통합(`tests/rls-local-integration.test.ts`), supervisor admin 라우트/액션 차단 정적 테스트. Server Actions 80%+ 커버리지 threshold. 보안 정적 검색 테스트. `npm.cmd run verify` 통과.
 - `/gstack-qa` 브라우저 QA 완료. Production Supabase anon Data API smoke로 미인증 노출 없음 확인.
 
 ### v1.1 보완 (2026-06-26, 구현·검증 완료)
@@ -77,10 +78,17 @@
 - 기존 Quote Jobber fetch/write-back 경로를 변경하지 않는 전용 read-only Jobber Invoice/Payment gateway를 추가했다. 시리즈당 Jobber Invoice 1개, 수락 번호·연결 잠금, 조회 observation/snapshot과 수동 refresh 경계를 반영했다.
 - 검증: Vitest 84 files·799 tests 통과(환경 조건 1 file·5 tests skip), coverage threshold 통과, pgTAP 5 files·308 tests 통과, 로컬 RLS 5 tests 통과, typecheck·lint·Next production build·audit 0 vulnerabilities 통과.
 
+### 역할 분리 + Job expense/profit (2026-07-31, role 브랜치 로컬 G2 완료)
+- `user_profiles`와 `app_auth.current_role()`을 도입하고 기존 Auth 사용자를 admin으로 부트스트랩한다. 견적·가격·progress invoice 계열은 admin 전용, Inventory는 admin+supervisor로 분리했으며 supervisor는 재고 이동 필드만 수정한다.
+- 역할 기반 로그인/Server Action/route/nav 경계를 적용했다. supervisor의 기본·허용 화면은 `/jobs`와 `/inventory`뿐이며 `/settings/inventory`는 `/inventory`로 redirect한다. admin은 `/settings/users`에서 사용자 생성·역할/활성 상태 변경·Jobber 팀원 연결을 관리한다.
+- G1에서 검증한 `PbcTeamUsers`/`PbcUserJobs`/`PbcJobExpenses` 셰이프를 fixture 기반 client/gateway에 구현했다. supervisor는 Jobber visit 담당자 기준 자기 job만, admin은 전체 또는 supervisor 필터로 보고 expense·profit 금액/비율을 확인한다.
+- G2: 로컬 마이그레이션 reset 성공, pgTAP 5 files·308 tests 및 실제 로컬 Supabase 역할 RLS 1 file·9 tests 통과. 전체 verify는 Vitest 96 files·857 tests 통과(조건부 1 file·9 tests skip), statements 82.73% / branches 69.74% / functions 91.79% / lines 88.11%, Next production build, production dependency audit 0 vulnerabilities를 확인했다.
+
 ---
 
 ## 🔲 남은 작업
 
+- **역할/Jobs G3 운영 적용**: 사용자 승인 후에만 production Supabase 역할·snapshot 마이그레이션과 기존 admin 부트스트랩 시드를 적용한다. 그 뒤 기존 admin 2명 로그인, supervisor 실계정 역할/Jobber expense·profit QA, `docs/DECISIONS.md` 부록 A 개정, Vercel 배포·카나리를 수행한다.
 - **Progress Invoice 후속·운영 적용**: 원격 Supabase에는 `20260714225000`~`20260714231200` 마이그레이션이 아직 적용되지 않았다. DB CLI 인증을 복구한 뒤 dry-run과 운영 적용이 필요하다. 시리즈 상세/실제 청구 작성·입금 ledger UI, XLSX/PDF Tax Invoice 생성·현재/전체 시리즈 다운로드는 후속 구현 범위다.
 - **감사 발견 이슈** (2026-07-06): 우선순위별로 `docs/BACKLOG.md`에 등록. 2026-07-04 hardening으로 마진 CHECK·서버 액션 allowlist 해결, 2026-07-07 quote save conflict hardening으로 견적 저장 트랜잭션·동시 편집 충돌·product 스냅샷 재고정·Jobber 부분 성공 line id 보존을 반영. 남은 항목은 `docs/BACKLOG.md`의 미체크 항목 기준으로 처리.
 - **Supabase 실제 데이터 백업**: 운영 결정 대기(`TODOS.md` #2). Pro/PITR 우선, cron export는 restore 검증 포함 시만.
@@ -101,6 +109,7 @@
 
 | 날짜 | 작업 | 담당 |
 |---|---|---|
+| 2026-07-31 | `role` 브랜치에서 admin/supervisor 역할 분리와 Jobber job expense/profit 화면을 구현하고 G2 로컬 검증 완료. `user_profiles`/역할 RLS, 역할 서버 가드·nav, `/inventory`, `/settings/users`, read-only Jobber job client/cache/actions, `/jobs` 목록·상세를 반영. 전체 verify 96 files/857 tests 통과(1 file/9 tests skip), coverage 82.73/69.74/91.79/88.11%, pgTAP 5 files/308 tests, 로컬 RLS 1 file/9 tests, build/audit 0 vulnerabilities 통과. Production migration·seed·DECISIONS 개정·배포는 G3 승인 대기. | Codex 5.6-Sol high |
 | 2026-07-16 | Progress Invoice 기반을 로컬 `main`에 통합. 독립 대시보드/navigation, 진행률·금액 계산/검증, 시리즈·Variation/Credit 데이터/RPC/RLS, 기존 Quote 연동과 분리된 Jobber Invoice/Payment read-only 조회·연결·refresh를 반영. 리뷰에서 Jobber 오류 분류, 잠긴 연결 오류 매핑, 범위 밖 페이지 재조회 문제를 수정. Vitest 84 files/799 tests, coverage, pgTAP 5 files/308 tests, RLS 5 tests, typecheck/lint/build/audit 0 vulnerabilities 통과. 원격 Supabase migration과 청구·입금·문서 생성 UI는 후속. | Codex 5.6-Sol high |
 | 2026-07-16 | New Quote `Add Text` 제목의 Product & Service 추천 누락 회귀 수정. 제목 검색을 이름 기준으로 제한하고 서버의 6개 선제 제한과 클라이언트 6개 제한을 제거해 관련 항목을 최대 300개까지 스크롤 목록에 표시. Supabase·dev 검색 회귀 테스트 추가. 전체 verify 67 files/561 tests, coverage/build/audit 0 vulnerabilities 통과. | Codex 5.6-Sol high |
 | 2026-07-15 | Jobber 견적 fetch scope 회귀 수정. Jobber가 반환하는 `read_clients`·`read_quotes` 등 prefix형 read scope와 기존 승인된 `write_quotes` 최소 scope를 검증기가 정상 인식하도록 보완하고 실제 연결 scope 회귀 테스트를 추가. Jobber focused 14 files/122 tests, typecheck, 변경 파일 lint 통과. | Codex 5.6-Sol high |
