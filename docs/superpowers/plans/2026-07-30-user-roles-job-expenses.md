@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: superpowers:subagent-driven-development 또는 superpowers:executing-plans로 태스크 단위 실행. 체크박스(`- [ ]`)로 진행 추적.
 >
-> **Status:** G0 확정 (2026-07-30 사용자 결정 D1~D6 수신) — 다음 게이트: G1 Jobber 계약 검증
-> **Branch:** `claude/user-roles-expense-tracking-bbda61`
-> **작성:** 2026-07-30
+> **Status:** G0·G1 완료 (2026-07-30) — 구현 착수 가능. 남은 게이트: G2(로컬 데이터 검증), G3(프로덕션 적용)
+> **Branch:** `role`
+> **작성:** 2026-07-30 · G1 증거: `docs/jobber/2026-07-30-role-job-expense-g1.md`
 
 ---
 
@@ -42,7 +42,7 @@
 - **인가 계층 3중화:** ① RLS(역할별 정책, 최종 방어선) ② 서버 액션 가드(`requireRole('admin')` 등) ③ UI(역할별 nav·라우트 가드). 클라이언트가 보내는 어떤 값도 역할 판정에 쓰지 않는다.
 - **로그인 게이트 이관:** 허용 사용자의 진실의 원천을 `ALLOWED_LOGIN_EMAILS` env에서 `user_profiles`(is_active)로 옮긴다. env allowlist는 초기 admin 부트스트랩·비상용 백스톱으로 유지한다. admin이 Settings → Users에서 사용자 추가/역할 변경/비활성화를 수행하며 Vercel env 변경이 더 이상 필요 없다.
 - **Job 데이터 흐름 (단방향 유지):** Jobber가 진실의 원천. 신규 `lib/jobber/job-client.ts`(invoice-client 패턴)가 read-only GraphQL로 팀원 목록·배정 job 목록·job expense를 조회한다. 결과는 `jobber_job_snapshots` 캐시 테이블(service-role 전용, 클라이언트 직접 접근 불가)에 저장하고 수동 refresh + rate limit(기존 0020 스냅샷 refresh 패턴)를 적용한다. 앱에서 Jobber로의 쓰기는 추가하지 않는다.
-- **Supervisor↔Job 매칭:** `user_profiles.jobber_user_id`에 Jobber 팀원 ID를 연결(admin이 Users 화면에서 지정). job 목록 조회 시 Jobber의 담당자(assignment) 정보로 필터한다. 담당자 필터의 정확한 스키마(assignedTo 필터 vs visits 경유)는 G1에서 GraphiQL로 확정하고, 불가 판명 시 fallback으로 앱 내 수동 배정 테이블(`jobber_job_assignments`)을 쓴다.
+- **Supervisor↔Job 매칭:** `user_profiles.jobber_user_id`에 Jobber 팀원 ID를 연결(admin이 Users 화면에서 지정). job 목록은 `jobs(filter: { visitsAssignedToUserId: $jobberUserId })`로 조회한다 — G1 라이브 검증 완료(Jobber 배정은 visit 단위이며 이 필터가 "자기 visit이 있는 job"을 정확히 반환). 수동 배정 fallback(`jobber_job_assignments`)은 불필요로 확정되어 제거.
 - **Profit 계산:** 기존 `calculateFinancialSummary` 로직을 공용 모듈로 추출해 재사용. job 단위 revenue 기준은 Jobber `job.total`, `profit % = (job.total − expensesTotal) / job.total`. 사용자 확인(2026-07-30, D4)으로 인건비·자재 사용이 전부 Jobber expense에 입력되는 운영 전제가 확정되어 이 식이 완전한 profit이다. `jobCosting` API는 도입하지 않는다.
 - **금액 처리:** 기존 규칙 그대로 — decimal.js 필수, 서버에서 계산, UI 직전 포맷.
 
@@ -51,7 +51,7 @@
 | # | 질문 | 확정 내용 |
 |---|---|---|
 | **D1** | supervisor의 Inventory 권한 | **조회 + 수량 조정만.** 수량 조정 = 재고 이동 필드 `quantity`·`status`·`used_date`·`used_location_text` 변경. 품목 추가/삭제/복구 및 식별 필드(name·category·brand·model_specification·colour·size_or_serial·purchase_date·notes·active·source_year) 수정은 admin 전용 |
-| **D2** | supervisor job 매칭 | **Jobber 담당자 배정 기준 자동 연동** (`user_profiles.jobber_user_id` ↔ Jobber 팀원). 담당자 필터 스키마는 G1에서 확정, API가 지원하지 않으면 fallback(수동 배정) 채택 전 사용자 재확인 |
+| **D2** | supervisor job 매칭 | **Jobber 담당자 배정 기준 자동 연동** (`user_profiles.jobber_user_id` ↔ Jobber 팀원). G1에서 `jobs(filter: { visitsAssignedToUserId })` 라이브 검증 완료 — fallback 불필요 확정 |
 | **D3** | supervisor 금액 노출 범위 | **revenue(job.total)·expense 금액·profit % 전부 표시** |
 | **D4** | profit 기준 | **`job.total − expenses 합계` 확정.** 근거(사용자 확인): PBC 운영상 인건비·자재 사용이 전부 Jobber expense로 입력되므로 이 식이 완전한 profit. Jobber `jobCosting` API는 도입하지 않음 |
 | **D5** | 계정 발급 방식 | **admin이 임시 비밀번호 생성 후 직접 전달** (SMTP 불필요) |
@@ -76,9 +76,9 @@
 | Gate | 내용 | 필요 증거 | 차단 조건 |
 |---|---|---|---|
 | **G0 결정 승인** | ✅ 완료 (2026-07-30) — D1~D6 확정, role 도입 방향 승인. DECISIONS.md 파일 개정 자체는 Phase 3 태스크로 수행 | 이 문서 "확정된 결정" 섹션 | — |
-| **G1 Jobber 계약 검증** | pinned 버전(`2025-04-16`) GraphiQL로: ① `users` 쿼리(팀원 목록) 가용성 + 필요 scope ② job 담당자 필터(assignedTo/visits) 정확한 스키마 ③ 현재 토큰 scope로 expense·job 전체 페이지네이션 조회 가능 여부 | 실제 쿼리·응답 캡처, scope 목록 | scope 추가 필요 판명 시 → 재연결은 G3로. 담당자 필터 미지원 판명 시 → D2 fallback 사용자 재확인 |
+| **G1 Jobber 계약 검증** | ✅ 완료 (2026-07-30) — 증거: `docs/jobber/2026-07-30-role-job-expense-g1.md`. ① `users` 쿼리 현재 토큰으로 동작(scope 변경·재연결 **불필요**) ② 담당자 필터 = `jobs(filter: { visitsAssignedToUserId })` 라이브 검증 완료 ③ `job.expenses` pageInfo 페이지네이션 검증, 실데이터에서 labour/paint expense 확인(D4 전제 재확인) | 증거 문서 내 쿼리·응답 | — |
 | **G2 로컬 데이터 검증** | 신규 마이그레이션 로컬 적용 + RLS 역할 매트릭스 테스트 통과 | `tests/rls.test.ts` 확장 그린, 로컬 마이그레이션 로그 | 프로덕션 DB로 검증 대체 금지 |
-| **G3 프로덕션 적용** | 마이그레이션 적용, (필요 시) Jobber scope 변경·재연결, 시드 실행, 배포 | 각 항목 개별 사용자 승인 | 승인 없는 프로덕션 변경 금지 |
+| **G3 프로덕션 적용** | 마이그레이션 적용, 시드 실행, 배포 (Jobber scope 변경·재연결은 G1 결과 불필요 확정) | 각 항목 개별 사용자 승인 | 승인 없는 프로덕션 변경 금지 |
 
 ---
 
@@ -128,11 +128,11 @@
 ### 2.1 Jobber job 모듈 (G1 통과 후)
 
 - [ ] `lib/jobber/job-client.ts` (invoice-client 패턴, 기존 OAuth/token/refresh 인프라 공유):
-  - `PbcTeamUsers` — 팀원 목록 (id, name, email, status) [G1에서 scope 확정]
-  - `PbcUserJobs` — 담당자 기준 job 목록 (id, jobNumber, title, jobStatus, total, jobberWebUri) [G1에서 필터 스키마 확정, 전체 페이지네이션]
+  - `PbcTeamUsers` — 팀원 목록 (id, name.full, status, isAccountAdmin/isAccountOwner) — G1 검증 완료, scope 추가 불필요
+  - `PbcUserJobs` — `jobs(filter: { visitsAssignedToUserId: $userId })` (id, jobNumber, title, jobStatus, total, jobberWebUri, totalCount) — G1 라이브 검증 완료. admin 전체 목록은 filter 없는 변형. 정확한 쿼리 셰이프: `docs/jobber/2026-07-30-role-job-expense-g1.md` "구현 계약" 섹션
   - `PbcJobExpenses` — 단일 job의 expense 전체 (`lib/jobber/pagination.ts` 재사용, 기존 first:25 캡 제거)
 - [ ] `lib/jobber/financial-summary.ts` — `mapper.ts`의 `calculateFinancialSummary`를 공용 추출, quote 경로와 job 경로가 같은 계산을 사용. job revenue = `job.total` (D4)
-- [ ] 마이그레이션 `add_jobber_job_snapshots.sql`: `jobber_job_snapshots(jobber_job_id text PK, payload jsonb, refreshed_at, refreshed_by uuid)` + (D2 fallback 시) `jobber_job_assignments(jobber_job_id, profile_id, assigned_by, UNIQUE)`. 두 테이블 모두 RLS enable + 클라이언트 정책 없음(service-role 전용) — `jobber_tokens` 패턴
+- [ ] 마이그레이션 `add_jobber_job_snapshots.sql`: `jobber_job_snapshots(jobber_job_id text PK, payload jsonb, refreshed_at, refreshed_by uuid)`. RLS enable + 클라이언트 정책 없음(service-role 전용) — `jobber_tokens` 패턴. (수동 배정 테이블은 G1 결과로 불필요 확정)
 - [ ] 서버 액션 `lib/actions/jobs.ts`:
   - `listMyJobs` — supervisor: 자기 `jobber_user_id` 기준, admin: 전체(+supervisor 필터 파라미터). 스냅샷 우선, 없으면 fetch
   - `getJobDetail` — expense 목록 + financial summary
@@ -154,7 +154,7 @@
 - [ ] `docs/DECISIONS.md` §1·§7 개정(부록 A) 반영 [사용자 승인 필수]
 - [ ] `docs/SECURITY.md`(역할 모델·allowlist 강등), `docs/DB-SCHEMA.md`(신규 테이블), `docs/UI-PAGES.md`(/jobs, /inventory, /settings/users), `PROGRESS.md` 갱신
 - [ ] 프로덕션 마이그레이션 적용 [사용자 승인]
-- [ ] (G1 결과 scope 추가 필요 시) Jobber 앱 scope 변경 + 재연결 [사용자 승인]
+- [x] ~~Jobber 앱 scope 변경 + 재연결~~ — G1 검증 결과 불필요 확정 (현재 토큰으로 users/jobs/expenses 조회 전부 동작)
 - [ ] 부트스트랩 시드 실행 → 기존 admin 2명 로그인 확인 → supervisor 계정 생성 → 실계정 QA (`/qa` 시나리오: 역할별 nav·직접 URL 접근·job expense·profit % 표시)
 - [ ] Vercel 배포 + 카나리 확인 [사용자 승인]
 
