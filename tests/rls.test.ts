@@ -20,6 +20,7 @@ const migrations = [
   '20260714230000_add_progress_invoice_core.sql',
   '20260731010000_add_user_profiles_and_roles.sql',
   '20260731011000_tighten_role_rls.sql',
+  '20260731012000_add_jobber_job_snapshots.sql',
 ].map((file) => {
   const path = join(migrationsDir, file)
 
@@ -188,5 +189,17 @@ describe('RLS migrations', () => {
       expectRlsEnabled(table)
       expectAdminSelectOnly(table)
     }
+  })
+
+  it('keeps Jobber job snapshots service-role only', () => {
+    const snapshotMigration = migrations.find(
+      ({ file }) => file === '20260731012000_add_jobber_job_snapshots.sql'
+    )
+    expect(snapshotMigration?.sql).toBeDefined()
+    expectRlsEnabled('jobber_job_snapshots')
+    expect(snapshotMigration?.sql).toMatch(
+      /REVOKE\s+ALL\s+ON\s+TABLE\s+public\.jobber_job_snapshots\s+FROM\s+anon\s*,\s*authenticated/i
+    )
+    expect(snapshotMigration?.sql).not.toMatch(/CREATE\s+POLICY/i)
   })
 })

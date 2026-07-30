@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: superpowers:subagent-driven-development 또는 superpowers:executing-plans로 태스크 단위 실행. 체크박스(`- [ ]`)로 진행 추적.
 >
-> **Status:** G0·G1 완료 (2026-07-30) — 구현 착수 가능. 남은 게이트: G2(로컬 데이터 검증), G3(프로덕션 적용)
+> **Status:** G0·G1 완료 (2026-07-30), G2 완료 (2026-07-31) — 남은 게이트: G3(프로덕션 적용)
 > **Branch:** `role`
 > **작성:** 2026-07-30 · G1 증거: `docs/jobber/2026-07-30-role-job-expense-g1.md`
 
@@ -77,7 +77,7 @@
 |---|---|---|---|
 | **G0 결정 승인** | ✅ 완료 (2026-07-30) — D1~D6 확정, role 도입 방향 승인. DECISIONS.md 파일 개정 자체는 Phase 3 태스크로 수행 | 이 문서 "확정된 결정" 섹션 | — |
 | **G1 Jobber 계약 검증** | ✅ 완료 (2026-07-30) — 증거: `docs/jobber/2026-07-30-role-job-expense-g1.md`. ① `users` 쿼리 현재 토큰으로 동작(scope 변경·재연결 **불필요**) ② 담당자 필터 = `jobs(filter: { visitsAssignedToUserId })` 라이브 검증 완료 ③ `job.expenses` pageInfo 페이지네이션 검증, 실데이터에서 labour/paint expense 확인(D4 전제 재확인) | 증거 문서 내 쿼리·응답 | — |
-| **G2 로컬 데이터 검증** | 신규 마이그레이션 로컬 적용 + RLS 역할 매트릭스 테스트 통과 | `tests/rls.test.ts` 확장 그린, 로컬 마이그레이션 로그 | 프로덕션 DB로 검증 대체 금지 |
+| **G2 로컬 데이터 검증** | ✅ 완료 (2026-07-31) — fresh local reset으로 전체 마이그레이션 적용, pgTAP 5 files/308 tests, 실제 local Supabase RLS 1 file/9 tests, 정적 역할·supervisor 차단 3 files/12 tests 통과 | `tests/rls.test.ts`, `tests/rls-local-integration.test.ts`, `tests/job-snapshot-migration.test.ts`, `tests/supervisor-route-security.test.ts`, 로컬 reset/test 로그 | 프로덕션 DB로 검증 대체 금지 |
 | **G3 프로덕션 적용** | 마이그레이션 적용, 시드 실행, 배포 (Jobber scope 변경·재연결은 G1 결과 불필요 확정) | 각 항목 개별 사용자 승인 | 승인 없는 프로덕션 변경 금지 |
 
 ---
@@ -127,32 +127,32 @@
 
 ### 2.1 Jobber job 모듈 (G1 통과 후)
 
-- [ ] `lib/jobber/job-client.ts` (invoice-client 패턴, 기존 OAuth/token/refresh 인프라 공유):
+- [x] `lib/jobber/job-client.ts` (invoice-client 패턴, 기존 OAuth/token/refresh 인프라 공유):
   - `PbcTeamUsers` — 팀원 목록 (id, name.full, status, isAccountAdmin/isAccountOwner) — G1 검증 완료, scope 추가 불필요
   - `PbcUserJobs` — `jobs(filter: { visitsAssignedToUserId: $userId })` (id, jobNumber, title, jobStatus, total, jobberWebUri, totalCount) — G1 라이브 검증 완료. admin 전체 목록은 filter 없는 변형. 정확한 쿼리 셰이프: `docs/jobber/2026-07-30-role-job-expense-g1.md` "구현 계약" 섹션
   - `PbcJobExpenses` — 단일 job의 expense 전체 (`lib/jobber/pagination.ts` 재사용, 기존 first:25 캡 제거)
-- [ ] `lib/jobber/financial-summary.ts` — `mapper.ts`의 `calculateFinancialSummary`를 공용 추출, quote 경로와 job 경로가 같은 계산을 사용. job revenue = `job.total` (D4)
-- [ ] 마이그레이션 `add_jobber_job_snapshots.sql`: `jobber_job_snapshots(jobber_job_id text PK, payload jsonb, refreshed_at, refreshed_by uuid)`. RLS enable + 클라이언트 정책 없음(service-role 전용) — `jobber_tokens` 패턴. (수동 배정 테이블은 G1 결과로 불필요 확정)
-- [ ] 서버 액션 `lib/actions/jobs.ts`:
+- [x] `lib/jobber/financial-summary.ts` — `mapper.ts`의 `calculateFinancialSummary`를 공용 추출, quote 경로와 job 경로가 같은 계산을 사용. job revenue = `job.total` (D4)
+- [x] 마이그레이션 `add_jobber_job_snapshots.sql`: `jobber_job_snapshots(jobber_job_id text PK, payload jsonb, refreshed_at, refreshed_by uuid)`. RLS enable + 클라이언트 정책 없음(service-role 전용) — `jobber_tokens` 패턴. (수동 배정 테이블은 G1 결과로 불필요 확정)
+- [x] 서버 액션 `lib/actions/jobs.ts`:
   - `listMyJobs` — supervisor: 자기 `jobber_user_id` 기준, admin: 전체(+supervisor 필터 파라미터). 스냅샷 우선, 없으면 fetch
   - `getJobDetail` — expense 목록 + financial summary
   - `refreshJobs` / `refreshJobDetail` — 수동 refresh, 0020 패턴의 rate limit·refresh 메타데이터 적용
   - supervisor가 자기 소유가 아닌 jobber_job_id를 요청하면 거부 (서버 판정)
-- [ ] 액션·클라이언트 매핑 테스트 (Jobber 응답 fixture 기반)
+- [x] 액션·클라이언트 매핑 테스트 (Jobber 응답 fixture 기반)
 
 ### 2.2 /jobs UI
 
-- [ ] `app/(app)/jobs/page.tsx` — job 목록: 번호·제목·상태·expense 합계·profit %(색상 톤은 기존 `getMarginBarTone` 재사용)·마지막 refresh 시각. admin에는 supervisor 필터. 빈 상태(연결 안 됨/배정 없음) 안내
-- [ ] `app/(app)/jobs/[jobberJobId]/page.tsx` — job 상세: financial summary 패널(D3 범위 적용, `final-summary.tsx`의 Jobber profit 패널 스타일 재사용), expense 라인 테이블(제목·설명·날짜·금액·입력자), Refresh 버튼, Jobber 원본 링크(`jobberWebUri`)
-- [ ] 로딩·에러 상태: 기존 `loading.tsx`·snapshot 오류 배너 패턴 준수. 모바일(PWA) 44px touch target·safe-area 준수
-- [ ] supervisor 계정으로 접근 가능한 유일 화면들이 실제로 Jobs/Inventory뿐인지 라우트 가드 통합 테스트
+- [x] `app/(app)/jobs/page.tsx` — job 목록: 번호·제목·상태·expense 합계·profit %(색상 톤은 기존 `getMarginBarTone` 재사용)·마지막 refresh 시각. admin에는 supervisor 필터. 빈 상태(연결 안 됨/배정 없음) 안내
+- [x] `app/(app)/jobs/[jobberJobId]/page.tsx` — job 상세: financial summary 패널(D3 범위 적용, `final-summary.tsx`의 Jobber profit 패널 스타일 재사용), expense 라인 테이블(제목·설명·날짜·금액·입력자), Refresh 버튼, Jobber 원본 링크(`jobberWebUri`)
+- [x] 로딩·에러 상태: 기존 `loading.tsx`·snapshot 오류 배너 패턴 준수. 모바일(PWA) 44px touch target·safe-area 준수
+- [x] supervisor 계정으로 접근 가능한 유일 화면들이 실제로 Jobs/Inventory뿐인지 라우트 가드 통합 테스트
 
 ## Phase 3 — 검증·문서·배포 (G3)
 
-- [ ] `npm.cmd run verify` 전체 그린 (typecheck/lint/test/coverage/build/audit)
-- [ ] 보안 점검: supervisor 세션으로 admin 데이터 접근 시도(직접 fetch·서버 액션·Supabase anon 쿼리) 전부 거부되는지 — RLS 매트릭스 + 정적 검색 테스트 통과
+- [x] `npm.cmd run verify` 전체 그린 (typecheck/lint/test/coverage/build/audit)
+- [x] 보안 점검: supervisor 세션으로 admin 데이터 접근 시도(직접 fetch·서버 액션·Supabase anon 쿼리) 전부 거부되는지 — RLS 매트릭스 + 정적 검색 테스트 통과
 - [ ] `docs/DECISIONS.md` §1·§7 개정(부록 A) 반영 [사용자 승인 필수]
-- [ ] `docs/SECURITY.md`(역할 모델·allowlist 강등), `docs/DB-SCHEMA.md`(신규 테이블), `docs/UI-PAGES.md`(/jobs, /inventory, /settings/users), `PROGRESS.md` 갱신
+- [x] `docs/SECURITY.md`(역할 모델·allowlist 강등), `docs/DB-SCHEMA.md`(신규 테이블), `docs/UI-PAGES.md`(/jobs, /inventory, /settings/users), `PROGRESS.md` 갱신
 - [ ] 프로덕션 마이그레이션 적용 [사용자 승인]
 - [x] ~~Jobber 앱 scope 변경 + 재연결~~ — G1 검증 결과 불필요 확정 (현재 토큰으로 users/jobs/expenses 조회 전부 동작)
 - [ ] 부트스트랩 시드 실행 → 기존 admin 2명 로그인 확인 → supervisor 계정 생성 → 실계정 QA (`/qa` 시나리오: 역할별 nav·직접 URL 접근·job expense·profit % 표시)

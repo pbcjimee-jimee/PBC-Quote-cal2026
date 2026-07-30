@@ -50,6 +50,7 @@ describe('Jobber read-only regression guard', () => {
       'lib/jobber/client.ts',
       'lib/jobber/config.ts',
       'lib/jobber/invoice-client.ts',
+      'lib/jobber/job-client.ts',
     ])
   })
 

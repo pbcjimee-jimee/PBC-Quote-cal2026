@@ -12,6 +12,27 @@ export type Json =
 export interface Database {
   public: {
     Tables: {
+      jobber_job_snapshots: {
+        Row: {
+          jobber_job_id: string
+          payload: Json
+          refreshed_at: string
+          refreshed_by: string
+        }
+        Insert: {
+          jobber_job_id: string
+          payload: Json
+          refreshed_at?: string
+          refreshed_by: string
+        }
+        Update: {
+          jobber_job_id?: string
+          payload?: Json
+          refreshed_at?: string
+          refreshed_by?: string
+        }
+        Relationships: []
+      }
       user_profiles: {
         Row: {
           id: string

@@ -213,6 +213,24 @@ describeLocal('Supabase local RLS CRUD integration', () => {
     expectNoError(await admin.from('jobber_tokens').delete().eq('user_id', userId))
   })
 
+  it('keeps Jobber job snapshots service-role only', async () => {
+    for (const client of [anon, authed, supervisor]) {
+      const selected = await client.from('jobber_job_snapshots').select('jobber_job_id').limit(1)
+      expect(selected.error?.code).toBe('42501')
+      expect(selected.error?.message).toMatch(/permission denied for table jobber_job_snapshots/i)
+    }
+
+    expectNoError(await admin.from('jobber_job_snapshots').upsert({
+      jobber_job_id: 'local-rls-job',
+      payload: {},
+      refreshed_by: userId,
+    }))
+    expectNoError(
+      await admin.from('jobber_job_snapshots').select('jobber_job_id').eq('jobber_job_id', 'local-rls-job').single()
+    )
+    expectNoError(await admin.from('jobber_job_snapshots').delete().eq('jobber_job_id', 'local-rls-job'))
+  })
+
   it('exposes only the current profile to supervisors and all profiles to admins', async () => {
     const supervisorProfiles = expectNoError(
       await supervisor.from('user_profiles').select('id, role')
