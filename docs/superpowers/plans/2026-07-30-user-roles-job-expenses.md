@@ -99,29 +99,29 @@
 
 ### 1.2 서버: 역할 가드 + 로그인 게이트 이관
 
-- [ ] `lib/security/require-app-user.ts` 신설: `requireAppUser()` — 세션 확인 + `user_profiles` 조회(React `cache()` 요청 단위 캐시) → `{ user, profile: { role, jobberUserId, displayName } }`. 프로필 없음/비활성 = 거부
-- [ ] `requireRole('admin' | 'supervisor' | 'any')` 헬퍼 — 서버 액션·페이지 공용
-- [ ] 기존 `requireAllowedUser()` 호출부(모든 actions)를 `requireAppUser()`로 교체하고, 견적·설정·progress invoice 액션에는 `requireRole('admin')` 적용. inventory 액션은 조회·재고 이동(수량·status·사용일·사용처)만 `requireRole('any')`, 품목 생성·식별 필드 수정·삭제·복구는 `requireRole('admin')` (D1)
-- [ ] 로그인 액션(`lib/actions/auth.ts`): 인증 성공 후 active 프로필 확인, 없으면 즉시 signout + 기존 `USER_NOT_ALLOWED_ERROR`. `ALLOWED_LOGIN_EMAILS`는 "설정돼 있으면 추가 AND 조건"인 백스톱으로 강등 (docs/SECURITY.md 반영)
-- [ ] `lib/user-profiles.ts`(기존 표시 이름 헬퍼)와 신규 프로필 모듈 통합 — 이름 충돌 정리, 표시 이름은 `user_profiles.display_name` 우선
+- [x] `lib/security/require-app-user.ts` 신설: `requireAppUser()` — 세션 확인 + `user_profiles` 조회(React `cache()` 요청 단위 캐시) → `{ user, profile: { role, jobberUserId, displayName } }`. 프로필 없음/비활성 = 거부
+- [x] `requireRole('admin' | 'supervisor' | 'any')` 헬퍼 — 서버 액션·페이지 공용
+- [x] 기존 `requireAllowedUser()` 호출부(모든 actions)를 `requireAppUser()`로 교체하고, 견적·설정·progress invoice 액션에는 `requireRole('admin')` 적용. inventory 액션은 조회·재고 이동(수량·status·사용일·사용처)만 `requireRole('any')`, 품목 생성·식별 필드 수정·삭제·복구는 `requireRole('admin')` (D1)
+- [x] 로그인 액션(`lib/actions/auth.ts`): 인증 성공 후 active 프로필 확인, 없으면 즉시 signout + 기존 `USER_NOT_ALLOWED_ERROR`. `ALLOWED_LOGIN_EMAILS`는 "설정돼 있으면 추가 AND 조건"인 백스톱으로 강등 (docs/SECURITY.md 반영)
+- [x] `lib/user-profiles.ts`(기존 표시 이름 헬퍼)와 신규 프로필 모듈 통합 — 이름 충돌 정리, 표시 이름은 `user_profiles.display_name` 우선
 
 ### 1.3 UI: 역할별 라우팅 + 내비게이션
 
-- [ ] `app/(app)/layout.tsx`: `requireAppUser()`로 role 확보 → `AppHeader`에 role 전달
-- [ ] `components/layout/app-header.tsx`: `navItems`에 `roles` 속성 추가, 역할별 필터. supervisor 표시 항목 = Jobs, Inventory. "Admin tools" 헤딩을 역할별 레이블로
-- [ ] Inventory 라우트를 `/settings/inventory` → `/inventory`로 이동 (settings 하위는 admin 전용 경계로 단순화). 구 URL은 redirect. nav·IntentLink·테스트 갱신
-- [ ] admin 전용 라우트 가드: `app/(app)/quotes/**`, `app/(app)/progress-invoices/**`, `app/(app)/settings/**` 각 layout/page에서 `requireRole('admin')`, 실패 시 역할 홈으로 redirect
-- [ ] 역할 홈 redirect: 루트·`/quotes` 진입 시 supervisor는 D6 답(기본 `/jobs`)으로. 미들웨어는 세션 유무만 계속 담당(役割 판정은 서버 컴포넌트에서)
+- [x] `app/(app)/layout.tsx`: `requireAppUser()`로 role 확보 → `AppHeader`에 role 전달
+- [x] `components/layout/app-header.tsx`: `navItems`에 `roles` 속성 추가, 역할별 필터. supervisor 표시 항목 = Jobs, Inventory. "Admin tools" 헤딩을 역할별 레이블로
+- [x] Inventory 라우트를 `/settings/inventory` → `/inventory`로 이동 (settings 하위는 admin 전용 경계로 단순화). 구 URL은 redirect. nav·IntentLink·테스트 갱신
+- [x] admin 전용 라우트 가드: `app/(app)/quotes/**`, `app/(app)/progress-invoices/**`, `app/(app)/settings/**` 각 layout/page에서 `requireRole('admin')`, 실패 시 역할 홈으로 redirect
+- [x] 역할 홈 redirect: 루트·`/quotes` 진입 시 supervisor는 D6 답(기본 `/jobs`)으로. 미들웨어는 세션 유무만 계속 담당(役割 판정은 서버 컴포넌트에서)
 
 ### 1.4 Admin 사용자 관리 UI
 
-- [ ] `/settings/users` 페이지 (admin 전용): 프로필 목록(이메일·이름·역할·활성·Jobber 연결 상태)
-- [ ] 서버 액션 `lib/actions/users.ts` (전부 `requireRole('admin')` + service-role):
+- [x] `/settings/users` 페이지 (admin 전용): 프로필 목록(이메일·이름·역할·활성·Jobber 연결 상태)
+- [x] 서버 액션 `lib/actions/users.ts` (전부 `requireRole('admin')` + service-role):
   - `createUser` — email/임시 비밀번호(D5)/role/표시 이름 → `auth.admin.createUser` + 프로필 INSERT (트랜잭션적 정리 포함)
   - `updateUserRole`, `setUserActive`(비활성 = 로그인 차단; auth ban 병행), `resetUserPassword`(임시 비밀번호 재발급)
   - `linkJobberUser` — G1 결과에 따라 Jobber `users` 쿼리 드롭다운 or 수동 ID 입력으로 `jobber_user_id` 연결
   - 마지막 active admin의 강등·비활성화 거부 가드
-- [ ] 액션 테스트 (happy + error + edge, 80%+)
+- [x] 액션 테스트 (happy + error + edge, 80%+)
 
 ## Phase 2 — Job expense / profit 뷰 (Jobber 연동)
 

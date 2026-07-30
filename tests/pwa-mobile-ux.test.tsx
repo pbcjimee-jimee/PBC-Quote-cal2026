@@ -50,6 +50,7 @@ describe('PWA mobile UX', () => {
     id: 'user-1',
     displayName: 'Mia Kang',
     email: 'mia@example.com',
+    role: 'admin',
   }
 
   beforeEach(() => {
@@ -84,7 +85,7 @@ describe('PWA mobile UX', () => {
     expect(mobileHeader).toContain('<span>Progress</span>')
     expect(mobileHeader).not.toMatch(/<a(?=[^>]*href="\/quotes")(?=[^>]*class="[^"]*is-active)[^>]*>/)
     expect(mobileHeader).not.toMatch(/<a(?=[^>]*href="\/settings")(?=[^>]*class="[^"]*is-active)[^>]*>/)
-    expect(mobileHeader).not.toMatch(/<a(?=[^>]*href="\/settings\/inventory")(?=[^>]*class="[^"]*is-active)[^>]*>/)
+    expect(mobileHeader).not.toMatch(/<a(?=[^>]*href="\/inventory")(?=[^>]*class="[^"]*is-active)[^>]*>/)
   })
 
   it('defines the binding mobile input, safe-area, touch target, and lg breakpoint rules', () => {

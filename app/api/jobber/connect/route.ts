@@ -6,11 +6,11 @@ import {
 } from '@/lib/jobber/config'
 import { isDevNoAuthMode } from '@/lib/actions/types'
 import { USER_NOT_ALLOWED_ERROR } from '@/lib/security/auth-policy'
-import { requireAllowedUser } from '@/lib/security/require-allowed-user'
+import { requireRole } from '@/lib/security/require-app-user'
 
 export async function GET(request: NextRequest) {
   if (!isDevNoAuthMode()) {
-    const allowedUser = await requireAllowedUser()
+    const allowedUser = await requireRole('admin')
     if (!allowedUser.ok) {
       if (allowedUser.error === USER_NOT_ALLOWED_ERROR) {
         return NextResponse.redirect(new URL('/api/auth/signout?reason=not_allowed', request.url))

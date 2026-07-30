@@ -18,7 +18,7 @@ import {
 } from '@/lib/calculator'
 import Decimal from 'decimal.js'
 import { calculateDisplayLabourTotals, calculateFormulaLabourDays, calculateLabourTotals } from '@/lib/quote-labour'
-import { requireAllowedUser } from '@/lib/security/require-allowed-user'
+import { requireRole } from '@/lib/security/require-app-user'
 import { createClient } from '@/lib/supabase/server'
 import type { Database, Json } from '@/lib/supabase/types'
 import { jobberQuoteSnapshotSchema, pricingSettingsSchema, quoteSchema, type QuoteInput } from '@/lib/validators'
@@ -1206,7 +1206,7 @@ export async function createQuote(input: unknown): Promise<ActionResult<{ id: st
     return { ok: true, data: { id: quote.id } }
   }
 
-  const allowedUser = await requireAllowedUser()
+  const allowedUser = await requireRole('admin')
   if (!allowedUser.ok) return allowedUser
 
   const supabase = await createClient()
@@ -1360,7 +1360,7 @@ export async function updateQuote(input: unknown): Promise<ActionResult<{ id: st
     return { ok: true, data: { id } }
   }
 
-  const allowedUser = await requireAllowedUser()
+  const allowedUser = await requireRole('admin')
   if (!allowedUser.ok) return allowedUser
 
   const supabase = await createClient()
@@ -1549,7 +1549,7 @@ export async function duplicateQuote(sourceQuoteId: string): Promise<ActionResul
     return { ok: true, data: { id: quote.id } }
   }
 
-  const allowedUser = await requireAllowedUser()
+  const allowedUser = await requireRole('admin')
   if (!allowedUser.ok) return allowedUser
 
   const supabase = await createClient()
@@ -1594,7 +1594,7 @@ export async function deleteQuote(id: string): Promise<ActionResult<{ id: string
     return { ok: true, data: { id } }
   }
 
-  const allowedUser = await requireAllowedUser()
+  const allowedUser = await requireRole('admin')
   if (!allowedUser.ok) return allowedUser
 
   const supabase = await createClient()
@@ -1612,7 +1612,7 @@ export async function searchQuotes(query = '', limit = 100): Promise<ActionResul
     return { ok: true, data: listDevQuotes(query) }
   }
 
-  const allowedUser = await requireAllowedUser()
+  const allowedUser = await requireRole('admin')
   if (!allowedUser.ok) return allowedUser
 
   const supabase = await createClient()
@@ -1873,7 +1873,7 @@ export async function retryJobberQuoteSync(quoteId: string): Promise<ActionResul
     return { ok: false, error: 'Jobber sync retry requires a saved Supabase quote' }
   }
 
-  const allowedUser = await requireAllowedUser()
+  const allowedUser = await requireRole('admin')
   if (!allowedUser.ok) return allowedUser
 
   const supabase = await createClient()
@@ -1932,7 +1932,7 @@ export async function refreshJobberQuoteSnapshot(
     return { ok: false, error: 'Jobber snapshot refresh requires a saved Supabase quote' }
   }
 
-  const allowedUser = await requireAllowedUser()
+  const allowedUser = await requireRole('admin')
   if (!allowedUser.ok) return allowedUser
 
   const supabase = await createClient()
@@ -1986,7 +1986,7 @@ export async function getQuote(id: string): Promise<ActionResult<QuoteRecord | n
     return { ok: true, data: getDevQuote(id) }
   }
 
-  const allowedUser = await requireAllowedUser()
+  const allowedUser = await requireRole('admin')
   if (!allowedUser.ok) return allowedUser
 
   const supabase = await createClient()

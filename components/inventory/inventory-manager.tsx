@@ -7,8 +7,10 @@ import {
   createInventoryItem,
   deleteInventoryItem,
   importInventoryCSV,
+  updateInventoryMovement,
   updateInventoryItem,
 } from '@/lib/actions/inventory'
+import type { AppRole } from '@/lib/security/require-app-user'
 import type { InventoryItemRecord, InventoryStatus } from '@/lib/inventory/types'
 import { resolveWorkbookInventoryCategory, WORKBOOK_CATEGORY_ORDER } from '@/lib/inventory/workbook-categories'
 import styles from './inventory-manager.module.css'
@@ -339,6 +341,7 @@ type InventoryTableProps = {
   onCancelEdit: () => void
   onDelete: (id: string) => void
   onToggleStatus: (item: InventoryItemRecord) => void
+  role: AppRole
 }
 
 function InventoryTable({
@@ -354,7 +357,9 @@ function InventoryTable({
   onCancelEdit,
   onDelete,
   onToggleStatus,
+  role,
 }: InventoryTableProps) {
+  const canAdminister = role === 'admin'
   const canSaveEdit = rowEditForm.name.trim() && Number.isFinite(Number(rowEditForm.quantity)) && Number(rowEditForm.quantity) >= 0
 
   return (
@@ -389,26 +394,26 @@ function InventoryTable({
             if (isEditing) {
               return (
                 <tr key={item.id} className={rowClass} data-inventory-row={item.id}>
-                  <td className="px-3 py-2"><input value={rowEditForm.name} onChange={(event) => onChangeEditField('name', event.target.value)} className="pbc-tableinput" aria-label={`Name for ${item.name}`} /></td>
+                  <td className="px-3 py-2"><input value={rowEditForm.name} onChange={(event) => onChangeEditField('name', event.target.value)} disabled={!canAdminister} className="pbc-tableinput" aria-label={`Name for ${item.name}`} /></td>
                   <td className="px-3 py-2">
                     <CategoryPicker
                       value={rowEditForm.category}
                       categories={categories}
-                      disabled={isPending}
+                      disabled={isPending || !canAdminister}
                       onChange={(value) => onChangeEditField('category', value)}
                       onAddCustomCategory={(category) => onAddCustomCategory(category, 'row')}
                     />
                   </td>
                   <td className="px-3 py-2">
                     <div className="inventory-editrow__stack">
-                      <input value={rowEditForm.brand} onChange={(event) => onChangeEditField('brand', event.target.value)} className="pbc-tableinput" aria-label={`Brand for ${item.name}`} placeholder="Brand" />
-                      <input value={rowEditForm.modelSpecification} onChange={(event) => onChangeEditField('modelSpecification', event.target.value)} className="pbc-tableinput" aria-label={`Spec for ${item.name}`} placeholder="Spec" />
+                      <input value={rowEditForm.brand} onChange={(event) => onChangeEditField('brand', event.target.value)} disabled={!canAdminister} className="pbc-tableinput" aria-label={`Brand for ${item.name}`} placeholder="Brand" />
+                      <input value={rowEditForm.modelSpecification} onChange={(event) => onChangeEditField('modelSpecification', event.target.value)} disabled={!canAdminister} className="pbc-tableinput" aria-label={`Spec for ${item.name}`} placeholder="Spec" />
                     </div>
                   </td>
-                  <td className="px-3 py-2"><input value={rowEditForm.colour} onChange={(event) => onChangeEditField('colour', event.target.value)} className="pbc-tableinput" aria-label={`Colour for ${item.name}`} /></td>
-                  <td className="px-3 py-2"><input value={rowEditForm.sizeOrSerial} onChange={(event) => onChangeEditField('sizeOrSerial', event.target.value)} className="pbc-tableinput" aria-label={`Size or serial for ${item.name}`} /></td>
+                  <td className="px-3 py-2"><input value={rowEditForm.colour} onChange={(event) => onChangeEditField('colour', event.target.value)} disabled={!canAdminister} className="pbc-tableinput" aria-label={`Colour for ${item.name}`} /></td>
+                  <td className="px-3 py-2"><input value={rowEditForm.sizeOrSerial} onChange={(event) => onChangeEditField('sizeOrSerial', event.target.value)} disabled={!canAdminister} className="pbc-tableinput" aria-label={`Size or serial for ${item.name}`} /></td>
                   <td className="px-3 py-2 text-right"><input value={rowEditForm.quantity} onChange={(event) => onChangeEditField('quantity', event.target.value)} inputMode="decimal" className="pbc-tableinput text-right" aria-label={`Quantity for ${item.name}`} /></td>
-                  <td className="px-3 py-2"><input value={rowEditForm.purchaseDate} onChange={(event) => onChangeEditField('purchaseDate', event.target.value)} type="date" className="pbc-tableinput" aria-label={`Purchase date for ${item.name}`} /></td>
+                  <td className="px-3 py-2"><input value={rowEditForm.purchaseDate} onChange={(event) => onChangeEditField('purchaseDate', event.target.value)} disabled={!canAdminister} type="date" className="pbc-tableinput" aria-label={`Purchase date for ${item.name}`} /></td>
                   <td className="px-3 py-2"><input value={rowEditForm.usedDate} onChange={(event) => onChangeEditField('usedDate', event.target.value)} type="date" className="pbc-tableinput" aria-label={`Used date for ${item.name}`} /></td>
                   <td className="px-3 py-2"><input value={rowEditForm.usedLocationText} onChange={(event) => onChangeEditField('usedLocationText', event.target.value)} className="pbc-tableinput" aria-label={`Used location for ${item.name}`} /></td>
                   <td className="px-3 py-2">
@@ -424,7 +429,7 @@ function InventoryTable({
                       <span>{rowEditForm.status === 'out' ? 'Out' : 'In stock'}</span>
                     </label>
                   </td>
-                  <td className="px-3 py-2"><input value={rowEditForm.notes} onChange={(event) => onChangeEditField('notes', event.target.value)} className="pbc-tableinput" aria-label={`Notes for ${item.name}`} /></td>
+                  <td className="px-3 py-2"><input value={rowEditForm.notes} onChange={(event) => onChangeEditField('notes', event.target.value)} disabled={!canAdminister} className="pbc-tableinput" aria-label={`Notes for ${item.name}`} /></td>
                   <td className="px-3 py-2">
                     <div className="pbc-tableactions">
                       <button type="button" onClick={onSaveEdit} disabled={isPending || !canSaveEdit} aria-label={`Save row ${item.name}`} title={`Save row ${item.name}`} className="pbc-btn pbc-btn--primary pbc-btn--sm">
@@ -470,14 +475,14 @@ function InventoryTable({
                       type="button"
                       onClick={() => onEdit(item)}
                       disabled={isPending}
-                      aria-label={`Edit ${item.name}`}
-                      title={`Edit ${item.name}`}
+                      aria-label={`${canAdminister ? 'Edit' : 'Move'} ${item.name}`}
+                      title={`${canAdminister ? 'Edit' : 'Move'} ${item.name}`}
                       data-inventory-edit={item.id}
                       className="pbc-btn pbc-btn--ghost pbc-btn--sm"
                     >
                       {Icons.edit({ size: 13 })}
                     </button>
-                    <button
+                    {canAdminister ? <button
                       type="button"
                       onClick={() => onDelete(item.id)}
                       disabled={isPending}
@@ -486,7 +491,7 @@ function InventoryTable({
                       className="pbc-btn pbc-btn--danger pbc-btn--sm"
                     >
                       {Icons.trash({ size: 13 })}
-                    </button>
+                    </button> : null}
                   </div>
                 </td>
               </tr>
@@ -498,7 +503,14 @@ function InventoryTable({
   )
 }
 
-export function InventoryManager({ initialItems }: { initialItems: InventoryItemRecord[] }) {
+export function InventoryManager({
+  initialItems,
+  role = 'admin',
+}: {
+  initialItems: InventoryItemRecord[]
+  role?: AppRole
+}) {
+  const canAdminister = role === 'admin'
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const [items, setItems] = useState(() => initialItems.map(displayInventoryItem))
   const [query, setQuery] = useState('')
@@ -608,7 +620,15 @@ export function InventoryManager({ initialItems }: { initialItems: InventoryItem
     const payload = formToPayload(rowEditForm)
 
     startTransition(async () => {
-      const result = await updateInventoryItem({ id: editingRowId, ...payload })
+      const result = canAdminister
+        ? await updateInventoryItem({ id: editingRowId, ...payload })
+        : await updateInventoryMovement({
+            id: editingRowId,
+            quantity: payload.quantity,
+            usedDate: payload.usedDate,
+            usedLocationText: payload.usedLocationText,
+            status: payload.status,
+          })
 
       if (result.ok) {
         const updatedItem = displayInventoryItem(result.data)
@@ -642,7 +662,7 @@ export function InventoryManager({ initialItems }: { initialItems: InventoryItem
     const nextStatus: InventoryStatus = item.status === 'out' ? 'in_stock' : 'out'
 
     startTransition(async () => {
-      const result = await updateInventoryItem({ id: item.id, status: nextStatus })
+      const result = await updateInventoryMovement({ id: item.id, status: nextStatus })
       if (result.ok) {
         const updatedItem = displayInventoryItem(result.data)
         setItems((current) => current.map((currentItem) => currentItem.id === updatedItem.id ? updatedItem : currentItem))
@@ -709,7 +729,7 @@ export function InventoryManager({ initialItems }: { initialItems: InventoryItem
         </div>
       </div>
 
-      <section className="pbc-formgroup">
+      {canAdminister ? <section className="pbc-formgroup">
         <h3 className="pbc-paneltitle">Add Item</h3>
         <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <label className="pbc-field">
@@ -781,10 +801,10 @@ export function InventoryManager({ initialItems }: { initialItems: InventoryItem
             Add Item
           </button>
         </div>
-      </section>
+      </section> : null}
 
       <div className="mt-4 flex flex-wrap gap-2">
-        <input
+        {canAdminister ? <><input
           ref={fileInputRef}
           type="file"
           accept=".csv,text/csv"
@@ -795,7 +815,7 @@ export function InventoryManager({ initialItems }: { initialItems: InventoryItem
         />
         <button type="button" onClick={() => fileInputRef.current?.click()} disabled={isPending} className="pbc-btn pbc-btn--ghost pbc-btn--sm">
           {Icons.plus({ size: 14 })} Import CSV
-        </button>
+        </button></> : null}
         <button type="button" onClick={exportCsv} disabled={filteredItems.length === 0} className="pbc-btn pbc-btn--ghost pbc-btn--sm">
           Export CSV
         </button>
@@ -833,6 +853,7 @@ export function InventoryManager({ initialItems }: { initialItems: InventoryItem
                 onCancelEdit={resetRowEdit}
                 onDelete={removeItem}
                 onToggleStatus={toggleStockStatus}
+                role={role}
               />
             </section>
           )

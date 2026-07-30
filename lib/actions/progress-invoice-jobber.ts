@@ -16,7 +16,7 @@ import {
   linkProgressJobberInvoiceSchema,
   refreshProgressJobberInvoiceSchema,
 } from '@/lib/progress-invoices/validators'
-import { requireAllowedUser } from '@/lib/security/require-allowed-user'
+import { requireRole } from '@/lib/security/require-app-user'
 
 function validationFailure(): ActionResult<never> {
   return { ok: false, error: 'PROGRESS_VALIDATION_FAILED', code: 'VALIDATION' }
@@ -33,7 +33,7 @@ export async function linkJobberInvoice(
 ): Promise<ActionResult<{ seriesId: string; version: number }>> {
   const parsed = linkProgressJobberInvoiceSchema.safeParse(input)
   if (!parsed.success) return validationFailure()
-  const allowed = await requireAllowedUser()
+  const allowed = await requireRole('admin')
   if (!allowed.ok) return allowed
   const result = await linkProgressJobberInvoiceObservation(parsed.data, allowed.user.id)
   if (!result.ok) return result
@@ -49,7 +49,7 @@ export async function refreshJobberInvoice(
 ): Promise<ActionResult<RefreshJobberInvoiceResult>> {
   const parsed = refreshProgressJobberInvoiceSchema.safeParse(input)
   if (!parsed.success) return validationFailure()
-  const allowed = await requireAllowedUser()
+  const allowed = await requireRole('admin')
   if (!allowed.ok) return allowed
   const result = await refreshProgressJobberInvoiceObservation(parsed.data, allowed.user.id)
   if (result.ok) revalidateSeries(result.data.seriesId)
@@ -61,7 +61,7 @@ export async function acceptObservedJobberInvoiceNumber(
 ): Promise<ActionResult<VersionedMutationRpcResult, ProgressInvoiceSeriesDetail>> {
   const parsed = acceptProgressJobberInvoiceNumberSchema.safeParse(input)
   if (!parsed.success) return validationFailure()
-  const allowed = await requireAllowedUser()
+  const allowed = await requireRole('admin')
   if (!allowed.ok) return allowed
   const result = await acceptProgressJobberInvoiceNumberObservation(parsed.data)
   if (result.ok) revalidateSeries(result.data.id)

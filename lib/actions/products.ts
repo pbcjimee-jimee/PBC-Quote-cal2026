@@ -1,7 +1,7 @@
 'use server'
 
 import { normalizeRrpProduct, type ProductRecord } from '@/lib/products/types'
-import { requireAllowedUser } from '@/lib/security/require-allowed-user'
+import { requireRole } from '@/lib/security/require-app-user'
 import { createClient } from '@/lib/supabase/server'
 import {
   productCreateSchema,
@@ -382,7 +382,7 @@ export async function createProduct(input: unknown): Promise<ActionResult<Produc
     return { ok: true, data: createDevProduct(payload.devRecord) }
   }
 
-  const allowedUser = await requireAllowedUser()
+  const allowedUser = await requireRole('admin')
   if (!allowedUser.ok) return allowedUser
 
   const supabase = await createClient()
@@ -415,7 +415,7 @@ export async function searchProducts(input: unknown): Promise<ActionResult<Produ
     return { ok: true, data: [] }
   }
 
-  const allowedUser = await requireAllowedUser()
+  const allowedUser = await requireRole('admin')
   if (!allowedUser.ok) return allowedUser
 
   const supabase = await createClient()
@@ -449,7 +449,7 @@ export async function listProducts(input: unknown = {}): Promise<ActionResult<Pr
     return { ok: true, data: listDevProducts(query, limit) }
   }
 
-  const allowedUser = await requireAllowedUser()
+  const allowedUser = await requireRole('admin')
   if (!allowedUser.ok) return allowedUser
 
   const supabase = await createClient()
@@ -507,7 +507,7 @@ export async function importProductsCSV(input: unknown): Promise<ActionResult<Pr
     return { ok: true, data: { imported: created.length, products: created } }
   }
 
-  const allowedUser = await requireAllowedUser()
+  const allowedUser = await requireRole('admin')
   if (!allowedUser.ok) return allowedUser
 
   const supabase = await createClient()
@@ -566,7 +566,7 @@ export async function updateProduct(input: unknown): Promise<ActionResult<Produc
     return { ok: true, data: updated }
   }
 
-  const allowedUser = await requireAllowedUser()
+  const allowedUser = await requireRole('admin')
   if (!allowedUser.ok) return allowedUser
 
   const supabase = await createClient()
@@ -594,7 +594,7 @@ export async function deleteProduct(input: unknown): Promise<ActionResult<Produc
     return { ok: true, data: deleted }
   }
 
-  const allowedUser = await requireAllowedUser()
+  const allowedUser = await requireRole('admin')
   if (!allowedUser.ok) return allowedUser
 
   const supabase = await createClient()

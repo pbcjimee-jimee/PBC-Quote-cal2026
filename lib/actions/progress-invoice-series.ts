@@ -3,7 +3,7 @@
 import { revalidatePath } from 'next/cache'
 
 import type { ActionResult } from './types'
-import { requireAllowedUser } from '@/lib/security/require-allowed-user'
+import { requireRole } from '@/lib/security/require-app-user'
 import {
   createProgressInvoiceSeries as createSeries,
   getBusinessInvoiceProfile as getProfile,
@@ -33,7 +33,7 @@ function validationFailure(): ActionResult<never> {
 }
 
 async function authorize(): Promise<ActionResult<true>> {
-  const allowed = await requireAllowedUser()
+  const allowed = await requireRole('admin')
   return allowed.ok ? { ok: true, data: true } : allowed
 }
 

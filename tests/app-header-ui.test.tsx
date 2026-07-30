@@ -35,6 +35,7 @@ describe('AppHeader sidebar UI', () => {
     id: 'user-1',
     displayName: 'Mia Kang',
     email: 'mia@example.com',
+    role: 'admin',
   }
 
   it('renders the desktop sidebar toggle and expanded state markup', () => {
@@ -54,6 +55,19 @@ describe('AppHeader sidebar UI', () => {
     expect(markup).toContain('pbc-usercard__identity')
   })
 
+  it('shows only Jobs and Inventory to supervisors', () => {
+    const markup = renderToStaticMarkup(createElement(AppHeader, {
+      userProfile: { ...userProfile, role: 'supervisor' },
+    }))
+
+    expect(markup).toContain('Supervisor tools')
+    expect(markup).toContain('href="/jobs"')
+    expect(markup).toContain('href="/inventory"')
+    expect(markup).not.toContain('href="/quotes"')
+    expect(markup).not.toContain('href="/settings"')
+    expect(markup).not.toContain('href="/progress-invoices"')
+  })
+
   it('renders the collapsed sidebar as an icon rail without text buttons', () => {
     headerState.collapsed = true
     headerState.pathname = '/quotes/new'
@@ -70,7 +84,7 @@ describe('AppHeader sidebar UI', () => {
 
   it('defers route active classes during server render to avoid hydration mismatch', () => {
     headerState.collapsed = false
-    headerState.pathname = '/settings/inventory'
+    headerState.pathname = '/inventory'
     const markup = renderToStaticMarkup(createElement(AppHeader, { userProfile }))
 
     expect(markup).toContain('Inventory')

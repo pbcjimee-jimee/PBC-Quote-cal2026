@@ -5,7 +5,7 @@ import {
   fetchJobberInvoiceObservation,
 } from '@/lib/jobber/invoice-gateway'
 import { progressJobberExternalIdSchema } from '@/lib/progress-invoices/validators'
-import { requireAllowedUser } from '@/lib/security/require-allowed-user'
+import { requireRole } from '@/lib/security/require-app-user'
 
 const NO_STORE_HEADERS = { 'Cache-Control': 'private, no-store, max-age=0' }
 const SELECTOR_KEYS = new Set(['selectedJobberJobId', 'selectedJobberPropertyId'])
@@ -47,7 +47,7 @@ export async function GET(
     return json({ ok: false, error: 'Invalid request' }, 400)
   }
 
-  const auth = await requireAllowedUser()
+  const auth = await requireRole('admin')
   if (!auth.ok) return json({ ok: false, error: auth.error }, authorizationStatus(auth.error))
 
   try {

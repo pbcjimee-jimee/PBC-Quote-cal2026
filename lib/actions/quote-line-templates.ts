@@ -3,7 +3,7 @@
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
 import type { Database } from '@/lib/supabase/types'
-import { requireAllowedUser } from '@/lib/security/require-allowed-user'
+import { requireRole } from '@/lib/security/require-app-user'
 import {
   normalizeQuoteLineTemplate,
   type QuoteLineTemplateItemRecord,
@@ -120,7 +120,7 @@ export async function createQuoteLineTemplate(input: unknown): Promise<ActionRes
     name: parsed.data.name.trim(),
     active: true,
   }
-  const allowedUser = await requireAllowedUser()
+  const allowedUser = await requireRole('admin')
   if (!allowedUser.ok) return allowedUser
 
   const supabase = await createClient()
@@ -162,7 +162,7 @@ export async function updateQuoteLineTemplate(input: unknown): Promise<ActionRes
     return { ok: true, data: updated }
   }
 
-  const allowedUser = await requireAllowedUser()
+  const allowedUser = await requireRole('admin')
   if (!allowedUser.ok) return allowedUser
 
   const supabase = await createClient()
@@ -201,7 +201,7 @@ export async function listQuoteLineTemplates(): Promise<ActionResult<QuoteLineTe
     return { ok: true, data: listDevQuoteLineTemplates() }
   }
 
-  const allowedUser = await requireAllowedUser()
+  const allowedUser = await requireRole('admin')
   if (!allowedUser.ok) return allowedUser
 
   const supabase = await createClient()
@@ -227,7 +227,7 @@ export async function deleteQuoteLineTemplate(input: unknown): Promise<ActionRes
     return { ok: true, data: deleted }
   }
 
-  const allowedUser = await requireAllowedUser()
+  const allowedUser = await requireRole('admin')
   if (!allowedUser.ok) return allowedUser
 
   const supabase = await createClient()

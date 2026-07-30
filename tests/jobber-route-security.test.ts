@@ -24,8 +24,8 @@ vi.mock('@/lib/supabase/server', () => ({
   createServiceClient: mocks.createServiceClient,
 }))
 
-vi.mock('@/lib/security/require-allowed-user', () => ({
-  requireAllowedUser: mocks.requireAllowedUser,
+vi.mock('@/lib/security/require-app-user', () => ({
+  requireRole: mocks.requireAllowedUser,
 }))
 
 import { GET as jobberCallback } from '@/app/api/jobber/callback/route'
@@ -35,6 +35,11 @@ import { AUTHENTICATION_REQUIRED_ERROR, USER_NOT_ALLOWED_ERROR } from '@/lib/sec
 describe('jobber callback security', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mocks.requireAllowedUser.mockResolvedValue({
+      ok: true,
+      user: { id: 'user-1', email: 'owner@example.com' },
+      profile: { role: 'admin' },
+    })
     mocks.createClient.mockResolvedValue({
       auth: {
         getUser: vi.fn(async () => ({ data: { user: { id: 'user-1' } }, error: null })),
@@ -122,8 +127,7 @@ describe('jobber callback security', () => {
     expect(mocks.createServiceClient).not.toHaveBeenCalled()
   })
 
-  it('does not save Jobber tokens for authenticated users outside the login allowlist', async () => {
-    process.env.ALLOWED_LOGIN_EMAILS = 'owner@example.com'
+  it('does not save Jobber tokens for authenticated users without the admin role', async () => {
     mocks.exchangeAuthorizationCode.mockResolvedValueOnce({
       accessToken: 'access-token',
       refreshToken: 'refresh-token',
@@ -132,13 +136,9 @@ describe('jobber callback security', () => {
       scope: 'quotes:read jobs:read',
     })
     mocks.getTokenExpiresAt.mockReturnValueOnce('2026-05-15T00:00:00.000Z')
-    mocks.createClient.mockResolvedValueOnce({
-      auth: {
-        getUser: vi.fn(async () => ({
-          data: { user: { id: 'user-2', email: 'intruder@example.com' } },
-          error: null,
-        })),
-      },
+    mocks.requireAllowedUser.mockResolvedValueOnce({
+      ok: false,
+      error: 'Admin access required',
     })
     const request = new NextRequest(
       'http://localhost:3000/api/jobber/callback?code=auth-code&state=state-from-url',

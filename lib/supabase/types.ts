@@ -12,6 +12,39 @@ export type Json =
 export interface Database {
   public: {
     Tables: {
+      user_profiles: {
+        Row: {
+          id: string
+          email: string
+          display_name: string | null
+          role: 'admin' | 'supervisor'
+          jobber_user_id: string | null
+          is_active: boolean
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id: string
+          email: string
+          display_name?: string | null
+          role?: 'admin' | 'supervisor'
+          jobber_user_id?: string | null
+          is_active?: boolean
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          email?: string
+          display_name?: string | null
+          role?: 'admin' | 'supervisor'
+          jobber_user_id?: string | null
+          is_active?: boolean
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       business_invoice_profiles: {
         Row: {
           abn: string

@@ -61,15 +61,26 @@ export async function signIn(
     return { error: 'Supabase login is not configured on this deployment' }
   }
 
-  const { error } = await supabase.auth.signInWithPassword(parsed.data)
+  const { data, error } = await supabase.auth.signInWithPassword(parsed.data)
 
-  if (error) {
+  if (error || !data.user) {
     const failedLogin = recordFailedLogin(rateLimitKey)
     return { error: failedLogin.allowed ? 'Invalid email or password' : LOGIN_LOCKED_ERROR }
   }
 
+  const { data: profile, error: profileError } = await supabase
+    .from('user_profiles')
+    .select('role, is_active')
+    .eq('id', data.user.id)
+    .maybeSingle()
+
+  if (profileError || !profile?.is_active) {
+    await supabase.auth.signOut()
+    return { error: 'User is not allowed to access this app' }
+  }
+
   clearLoginRateLimit(rateLimitKey)
-  redirect('/quotes')
+  redirect(profile.role === 'supervisor' ? '/jobs' : '/quotes')
 }
 
 export async function signOut(): Promise<void> {

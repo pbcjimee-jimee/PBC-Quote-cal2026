@@ -6,25 +6,29 @@ import { IntentLink } from '@/components/navigation/intent-link'
 import { signOut } from '@/lib/actions/auth'
 import { Icons } from '@/components/ui/icons'
 import type { UserProfile } from '@/lib/user-profiles'
+import type { AppRole } from '@/lib/security/require-app-user'
 
 type NavItem = {
   href: string
   label: string
   mobileLabel?: string
   icon: 'overview' | 'quote' | 'progressInvoice' | 'settings' | 'inventory'
+  roles: AppRole[]
 }
 
 const navItems: NavItem[] = [
-  { href: '/quotes', label: 'Overview', icon: 'overview' },
-  { href: '/quotes/new', label: 'New Quote', mobileLabel: 'New', icon: 'quote' },
+  { href: '/quotes', label: 'Overview', icon: 'overview', roles: ['admin'] },
+  { href: '/quotes/new', label: 'New Quote', mobileLabel: 'New', icon: 'quote', roles: ['admin'] },
   {
     href: '/progress-invoices',
     label: 'Progress Invoices',
     mobileLabel: 'Progress',
     icon: 'progressInvoice',
+    roles: ['admin'],
   },
-  { href: '/settings', label: 'Settings', icon: 'settings' },
-  { href: '/settings/inventory', label: 'Inventory', icon: 'inventory' },
+  { href: '/settings', label: 'Settings', icon: 'settings', roles: ['admin'] },
+  { href: '/jobs', label: 'Jobs', icon: 'overview', roles: ['admin', 'supervisor'] },
+  { href: '/inventory', label: 'Inventory', icon: 'inventory', roles: ['admin', 'supervisor'] },
 ]
 
 const SIDEBAR_STORAGE_KEY = 'pbc-sidebar-collapsed'
@@ -83,6 +87,8 @@ function isNavItemActive(href: string, pathname: string | null): boolean {
 
 export function AppHeader({ userProfile }: { userProfile: UserProfile }) {
   const pathname = usePathname()
+  const roleNavItems = navItems.filter((item) => item.roles.includes(userProfile.role))
+  const roleHome = userProfile.role === 'supervisor' ? '/jobs' : '/quotes'
   const showEmail = Boolean(userProfile.email && userProfile.email !== userProfile.displayName)
   const isSidebarCollapsed = useSyncExternalStore(
     subscribeSidebarPreference,
@@ -115,7 +121,7 @@ export function AppHeader({ userProfile }: { userProfile: UserProfile }) {
         ].join(' ')}
       >
         <div className={isSidebarCollapsed ? 'flex flex-col items-center gap-3' : 'flex items-center justify-between gap-2'}>
-          <IntentLink href="/quotes" className={`pbc-brand min-w-0 ${isSidebarCollapsed ? '!px-0' : ''}`}>
+          <IntentLink href={roleHome} className={`pbc-brand min-w-0 ${isSidebarCollapsed ? '!px-0' : ''}`}>
             <span className="pbc-brand__mark">P</span>
             <span className={isSidebarCollapsed ? 'sr-only' : 'pbc-brand__text min-w-0'}>
               <b>PBC Quote</b>
@@ -134,8 +140,10 @@ export function AppHeader({ userProfile }: { userProfile: UserProfile }) {
         </div>
 
         <nav className="pbc-nav">
-          <p className={isSidebarCollapsed ? 'sr-only' : 'pbc-nav__head'}>Admin tools</p>
-          {navItems.map((item) => {
+          <p className={isSidebarCollapsed ? 'sr-only' : 'pbc-nav__head'}>
+            {userProfile.role === 'admin' ? 'Admin tools' : 'Supervisor tools'}
+          </p>
+          {roleNavItems.map((item) => {
             const isActive = isNavItemActive(item.href, hasHydrated ? pathname : null)
 
             return (
@@ -182,13 +190,13 @@ export function AppHeader({ userProfile }: { userProfile: UserProfile }) {
 
       <header className="pbc-mobile-header sticky top-0 z-30 border-b border-[var(--border)] bg-[rgba(246,249,255,0.82)] backdrop-blur lg:hidden">
         <div className="pbc-mobile-header__inner">
-          <IntentLink href="/quotes" className="pbc-mobile-header__brand">
+          <IntentLink href={roleHome} className="pbc-mobile-header__brand">
             <span className="pbc-brand__mark !h-9 !w-9 !text-sm">P</span>
             <span className="text-sm font-extrabold text-[var(--foreground)]">PBC Quote</span>
           </IntentLink>
 
           <nav aria-label="Mobile navigation" className="pbc-mobile-nav">
-            {navItems.map((item) => {
+            {roleNavItems.map((item) => {
               const isActive = isNavItemActive(item.href, hasHydrated ? pathname : null)
 
               return (

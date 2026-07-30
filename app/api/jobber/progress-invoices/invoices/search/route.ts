@@ -3,7 +3,7 @@ import {
   classifyJobberInvoiceError,
   searchJobberInvoiceCandidates,
 } from '@/lib/jobber/invoice-gateway'
-import { requireAllowedUser } from '@/lib/security/require-allowed-user'
+import { requireRole } from '@/lib/security/require-app-user'
 
 const NO_STORE_HEADERS = { 'Cache-Control': 'no-store' }
 const MAX_TERM_LENGTH = 100
@@ -17,7 +17,7 @@ export async function GET(request: NextRequest) {
     )
   }
 
-  const allowed = await requireAllowedUser()
+  const allowed = await requireRole('admin')
   if (!allowed.ok) {
     const status = allowed.error === 'Authentication required' ? 401 : 403
     return NextResponse.json({ ok: false, error: allowed.error }, { status, headers: NO_STORE_HEADERS })

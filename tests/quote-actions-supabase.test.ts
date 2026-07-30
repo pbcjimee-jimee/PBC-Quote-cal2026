@@ -55,8 +55,8 @@ vi.mock('@/lib/actions/types', async () => {
   }
 })
 
-vi.mock('@/lib/security/require-allowed-user', () => ({
-  requireAllowedUser: mocks.requireAllowedUser,
+vi.mock('@/lib/security/require-app-user', () => ({
+  requireRole: mocks.requireAllowedUser,
 }))
 
 vi.mock('next/cache', () => ({

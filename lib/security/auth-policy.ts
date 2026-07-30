@@ -27,12 +27,13 @@ export function isLoginEmailAllowed(
   allowedEmails = process.env.ALLOWED_LOGIN_EMAILS,
   nodeEnv = process.env.NODE_ENV
 ): boolean {
+  void nodeEnv
   const configuredEmails = (allowedEmails ?? '')
     .split(/[,\s]+/)
     .map(normalizeLoginEmail)
     .filter(Boolean)
 
-  if (configuredEmails.length === 0) return nodeEnv !== 'production'
+  if (configuredEmails.length === 0) return true
 
   return configuredEmails.includes(normalizeLoginEmail(email))
 }
@@ -42,7 +43,7 @@ export function isAuthenticatedUserAllowed(
   allowedEmails = process.env.ALLOWED_LOGIN_EMAILS,
   nodeEnv = process.env.NODE_ENV
 ): boolean {
-  if (!(allowedEmails ?? '').trim()) return nodeEnv !== 'production'
+  if (!(allowedEmails ?? '').trim()) return true
   return typeof user.email === 'string' && isLoginEmailAllowed(user.email, allowedEmails, nodeEnv)
 }
 

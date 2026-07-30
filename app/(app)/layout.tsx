@@ -1,12 +1,12 @@
 import { AppHeader } from '@/components/layout/app-header'
 import { InstallGuidance } from '@/components/pwa/install-guidance'
 import { AUTHENTICATION_REQUIRED_ERROR } from '@/lib/security/auth-policy'
-import { requireAllowedUser } from '@/lib/security/require-allowed-user'
+import { requireAppUser } from '@/lib/security/require-app-user'
 import { getAuthUserProfile } from '@/lib/user-profiles'
 import { redirect } from 'next/navigation'
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
-  const allowedUser = await requireAllowedUser()
+  const allowedUser = await requireAppUser()
 
   if (!allowedUser.ok && allowedUser.error === AUTHENTICATION_REQUIRED_ERROR) {
     redirect('/login')
@@ -21,7 +21,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         email: allowedUser.user.email,
         user_metadata: allowedUser.user.userMetadata,
         app_metadata: allowedUser.user.appMetadata,
-      })} />
+      }, allowedUser.profile)} />
       <InstallGuidance />
       {children}
     </div>
