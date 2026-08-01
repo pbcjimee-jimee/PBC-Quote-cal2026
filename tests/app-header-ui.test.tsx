@@ -47,21 +47,31 @@ describe('AppHeader sidebar UI', () => {
     expect(markup).toContain('data-sidebar-state="expanded"')
     expect(markup).toContain('Overview')
     expect(markup).toContain('New Quote')
+    expect(markup).toContain('Job Expenses')
     expect(markup).toContain('Settings')
     expect(markup).toContain('Inventory')
     expect(markup).toContain('href="/progress-invoices"')
     expect(markup).toContain('Progress Invoices')
     expect(markup).toContain('data-intent-link="true"')
     expect(markup).toContain('pbc-usercard__identity')
+
+    const newQuoteIndex = markup.indexOf('title="New Quote"')
+    const jobExpensesIndex = markup.indexOf('title="Job Expenses"')
+    const progressInvoicesIndex = markup.indexOf('title="Progress Invoices"')
+    expect(newQuoteIndex).toBeGreaterThan(-1)
+    expect(jobExpensesIndex).toBeGreaterThan(newQuoteIndex)
+    expect(progressInvoicesIndex).toBeGreaterThan(jobExpensesIndex)
   })
 
-  it('shows only Jobs and Inventory to supervisors', () => {
+  it('shows only Job Expenses and Inventory to supervisors', () => {
     const markup = renderToStaticMarkup(createElement(AppHeader, {
       userProfile: { ...userProfile, role: 'supervisor' },
     }))
 
     expect(markup).toContain('Supervisor tools')
     expect(markup).toContain('href="/jobs"')
+    expect(markup).toContain('Job Expenses')
+    expect(markup).not.toContain('>Jobs<')
     expect(markup).toContain('href="/inventory"')
     expect(markup).not.toContain('href="/quotes"')
     expect(markup).not.toContain('href="/settings"')

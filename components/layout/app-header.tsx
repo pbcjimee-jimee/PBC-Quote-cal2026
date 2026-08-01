@@ -19,6 +19,7 @@ type NavItem = {
 const navItems: NavItem[] = [
   { href: '/quotes', label: 'Overview', icon: 'overview', roles: ['admin'] },
   { href: '/quotes/new', label: 'New Quote', mobileLabel: 'New', icon: 'quote', roles: ['admin'] },
+  { href: '/jobs', label: 'Job Expenses', mobileLabel: 'Expenses', icon: 'overview', roles: ['admin', 'supervisor'] },
   {
     href: '/progress-invoices',
     label: 'Progress Invoices',
@@ -27,7 +28,6 @@ const navItems: NavItem[] = [
     roles: ['admin'],
   },
   { href: '/settings', label: 'Settings', icon: 'settings', roles: ['admin'] },
-  { href: '/jobs', label: 'Jobs', icon: 'overview', roles: ['admin', 'supervisor'] },
   { href: '/inventory', label: 'Inventory', icon: 'inventory', roles: ['admin', 'supervisor'] },
 ]
 

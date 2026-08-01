@@ -146,6 +146,7 @@
 - [x] `app/(app)/jobs/[jobberJobId]/page.tsx` — job 상세: financial summary 패널(D3 범위 적용, `final-summary.tsx`의 Jobber profit 패널 스타일 재사용), expense 라인 테이블(제목·설명·날짜·금액·입력자), Refresh 버튼, Jobber 원본 링크(`jobberWebUri`)
 - [x] 로딩·에러 상태: 기존 `loading.tsx`·snapshot 오류 배너 패턴 준수. 모바일(PWA) 44px touch target·safe-area 준수
 - [x] supervisor 계정으로 접근 가능한 유일 화면들이 실제로 Jobs/Inventory뿐인지 라우트 가드 통합 테스트
+- [x] 2026-08-01 사용자 요청: `/jobs` 내비게이션 라벨을 `Job Expenses`로 변경하고 admin nav에서 `New Quote` 바로 다음에 배치. supervisor는 `Job Expenses`와 `Inventory`만 표시
 
 ## Phase 3 — 검증·문서·배포 (G3)
 
