@@ -1,12 +1,5 @@
-import { readFileSync } from 'node:fs'
-import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { isDevNoAuthMode, type ActionResult } from '@/lib/actions/types'
-
-const actionTypesSource = readFileSync(
-  join(process.cwd(), 'lib', 'actions', 'types.ts'),
-  'utf8'
-)
 
 const originalEnv = {
   NEXT_PUBLIC_DEV_NO_AUTH: process.env.NEXT_PUBLIC_DEV_NO_AUTH,
@@ -82,25 +75,17 @@ describe('ActionResult compatibility', () => {
     expect(error).toEqual({ ok: false, error: 'Could not save' })
   })
 
-  it('supports the approved stable error codes and typed conflict data', () => {
-    const conflict: ActionResult<{ id: string }, { id: string; version: number }> = {
-      ok: false,
-      error: 'PROGRESS_VERSION_CONFLICT',
-      code: 'VERSION_CONFLICT',
-      current: { id: 'profile-1', version: 2 },
-    }
+  it('supports retained role application error codes', () => {
+    const errors: readonly ActionResult<never>[] = [
+      { ok: false, error: 'Invalid input', code: 'VALIDATION' },
+      { ok: false, error: 'Insufficient role', code: 'FORBIDDEN' },
+      { ok: false, error: 'Jobber unavailable', code: 'JOBBER_ERROR' },
+    ]
 
-    expect(conflict).toEqual({
-      ok: false,
-      error: 'PROGRESS_VERSION_CONFLICT',
-      code: 'VERSION_CONFLICT',
-      current: { id: 'profile-1', version: 2 },
-    })
-    expect(actionTypesSource).toMatch(
-      /export type ActionErrorCode\s*=\s*[\s\S]*'VALIDATION'[\s\S]*'AUTH_REQUIRED'[\s\S]*'FORBIDDEN'[\s\S]*'NOT_FOUND'[\s\S]*'VERSION_CONFLICT'[\s\S]*'RECONCILIATION_REQUIRED'[\s\S]*'JOBBER_ERROR'[\s\S]*'DOCUMENT_ERROR'[\s\S]*'STORAGE_ERROR'/
-    )
-    expect(actionTypesSource).toMatch(
-      /export type ActionResult<T,\s*TCurrent\s*=\s*never>/
-    )
+    expect(errors).toEqual([
+      { ok: false, error: 'Invalid input', code: 'VALIDATION' },
+      { ok: false, error: 'Insufficient role', code: 'FORBIDDEN' },
+      { ok: false, error: 'Jobber unavailable', code: 'JOBBER_ERROR' },
+    ])
   })
 })

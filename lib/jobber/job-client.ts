@@ -2,7 +2,7 @@ import 'server-only'
 
 import Decimal from 'decimal.js'
 import { JOBBER_GRAPHQL_URL } from './config'
-import type { JobberConnectionPage, JobberPageRequest } from './invoice-types'
+import type { JobberConnectionPage, JobberPageRequest } from './pagination'
 import type {
   JobberExpense,
   JobberJobClientOptions,

@@ -1,4 +1,21 @@
-import type { JobberConnectionPage, JobberNodeIdentity } from './invoice-types'
+export interface JobberNodeIdentity {
+  readonly id: string
+}
+
+export interface JobberPageInfo {
+  readonly endCursor: string | null
+  readonly hasNextPage: boolean
+}
+
+export interface JobberConnectionPage<T extends JobberNodeIdentity> {
+  readonly nodes: readonly T[]
+  readonly pageInfo: JobberPageInfo
+}
+
+export interface JobberPageRequest {
+  readonly first: number
+  readonly after: string | null
+}
 
 const DEFAULT_MAX_PAGES = 100
 

@@ -74,23 +74,6 @@ export function assertJobberReadOnlyScopes(scope: string | null): void {
   }
 }
 
-export function assertJobberRequiredReadScopes(
-  scope: string | null | undefined,
-  requiredScopes: readonly string[],
-): void {
-  const grantedScopes = new Set((scope ?? '')
-    .split(/[\s,]+/)
-    .map((item) => item.trim().toLowerCase())
-    .filter(Boolean))
-  const missingScopes = requiredScopes.filter((requiredScope) => (
-    !grantedScopes.has(requiredScope.toLowerCase())
-  ))
-
-  if (missingScopes.length > 0) {
-    throw new Error(`Jobber connection is missing required read scopes: ${missingScopes.join(', ')}`)
-  }
-}
-
 export function buildJobberAuthorizationUrl(config: JobberConfig, state: string): URL {
   const url = new URL(JOBBER_AUTHORIZATION_URL)
   url.searchParams.set('response_type', 'code')

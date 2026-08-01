@@ -216,7 +216,7 @@ git push origin role
   - `JobberPageRequest`
   - `JobberJobClientOptions`
 
-- [ ] **Step 1: Extend the separation test and verify RED**
+- [x] **Step 1: Extend the separation test and verify RED**
 
 Add these paths to a `forbiddenRuntimePaths` table in `tests/role-progress-separation.test.ts`:
 
@@ -241,7 +241,7 @@ npm.cmd exec vitest run tests/role-progress-separation.test.ts
 
 Expected: FAIL for every existing Progress Invoice service/module path.
 
-- [ ] **Step 2: Move generic connection contracts out of `invoice-types.ts`**
+- [x] **Step 2: Move generic connection contracts out of `invoice-types.ts`**
 
 Export the pagination-owned contracts at the top of `lib/jobber/pagination.ts`:
 
@@ -310,13 +310,13 @@ export type ActionResult<T> =
 
 Update `tests/actions-types.test.ts` to cover ordinary success/error values plus `VALIDATION`, `FORBIDDEN`, and `JOBBER_ERROR`; delete the typed Progress conflict/current test.
 
-- [ ] **Step 3: Delete Progress Invoice runtime and tests**
+- [x] **Step 3: Delete Progress Invoice runtime and tests**
 
 Delete every file listed in this task. Remove the Progress Invoice-only coverage threshold from `vitest.config.ts`. In `tests/jobber-readonly-regression.test.ts`, retain quote and Job Expenses read-only checks and remove assertions that enumerate deleted invoice modules/routes.
 
 Do not delete or roll back `lib/jobber/config.ts`, `lib/jobber/pagination.ts`, `lib/jobber/tokens.ts`, or their non-Progress tests; Job Expenses uses them.
 
-- [ ] **Step 4: Run focused tests and verify GREEN**
+- [x] **Step 4: Run focused tests and verify GREEN**
 
 Run:
 
@@ -327,7 +327,7 @@ npm.cmd run typecheck
 
 Expected: all focused tests and strict TypeScript pass with no import of `invoice-types.ts`.
 
-- [ ] **Step 5: Run the full gate**
+- [x] **Step 5: Run the full gate**
 
 ```powershell
 npm.cmd run verify
@@ -335,7 +335,7 @@ npm.cmd run verify
 
 Expected: PASS with no Progress Invoice source in the coverage report.
 
-- [ ] **Step 6: Check the task box and commit**
+- [x] **Step 6: Check the task box and commit**
 
 ```powershell
 git add -- lib tests vitest.config.ts docs/superpowers/plans/2026-08-01-role-progress-invoice-separation.md

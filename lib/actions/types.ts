@@ -5,20 +5,11 @@ export type ActionErrorCode =
   | 'AUTH_REQUIRED'
   | 'FORBIDDEN'
   | 'NOT_FOUND'
-  | 'VERSION_CONFLICT'
-  | 'RECONCILIATION_REQUIRED'
   | 'JOBBER_ERROR'
-  | 'DOCUMENT_ERROR'
-  | 'STORAGE_ERROR'
 
-export type ActionResult<T, TCurrent = never> =
+export type ActionResult<T> =
   | { ok: true; data: T }
-  | {
-      ok: false
-      error: string
-      code?: ActionErrorCode
-      current?: TCurrent
-    }
+  | { ok: false; error: string; code?: ActionErrorCode }
 
 export function isDevNoAuthMode(): boolean {
   if (process.env.NODE_ENV === 'production') return false

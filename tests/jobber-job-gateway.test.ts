@@ -79,7 +79,7 @@ describe('Jobber job gateway', () => {
     await expect(listJobberJobs(null)).resolves.toEqual([])
 
     expect(mocks.refreshToken).toHaveBeenCalledWith(
-      'refresh-1', expect.any(Object), 'owner-1', expect.objectContaining({ storedScope: token.scope }),
+      'refresh-1', expect.any(Object), 'owner-1',
     )
     expect(mocks.jobsPage).toHaveBeenLastCalledWith(null, expect.any(Object), expect.objectContaining({ accessToken: 'access-2' }))
   })

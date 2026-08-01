@@ -62,7 +62,6 @@ async function withRestartableToken<T>(
     token.refreshToken,
     config,
     requireSharedJobberConnectionOwnerId(token),
-    { storedScope: token.scope ?? null },
   )
   return operation(clientOptions(token, config.graphqlVersion))
 }

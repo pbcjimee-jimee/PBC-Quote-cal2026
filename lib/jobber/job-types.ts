@@ -1,6 +1,11 @@
-import type { JobberConnectionPage, JobberInvoiceClientOptions } from './invoice-types'
+import type { JobberConnectionPage } from './pagination'
 
-export type JobberJobClientOptions = JobberInvoiceClientOptions
+export interface JobberJobClientOptions {
+  readonly accessToken: string
+  readonly graphqlVersion: string
+  readonly maxThrottleRetries?: number
+  readonly retryDelayMs?: number
+}
 
 export interface JobberTeamUser {
   readonly id: string
