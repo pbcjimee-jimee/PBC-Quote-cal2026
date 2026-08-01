@@ -1,7 +1,9 @@
 # Role / Progress Invoice Separation Design
 
-**Date:** 2026-08-01  
-**Branch:** `role`  
+**Date:** 2026-08-01
+
+**Branch:** `role`
+
 **Status:** Approved direction; written-spec review pending
 
 ## Goal
