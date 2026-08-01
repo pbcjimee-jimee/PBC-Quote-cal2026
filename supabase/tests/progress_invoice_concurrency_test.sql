@@ -3,6 +3,12 @@ CREATE EXTENSION IF NOT EXISTS dblink WITH SCHEMA extensions;
 
 SELECT plan(12);
 
+GRANT EXECUTE ON FUNCTION
+  public.reconcile_progress_payment(jsonb),
+  public.create_manual_progress_invoice_series(jsonb),
+  public.create_progress_claim_draft(jsonb)
+TO authenticated;
+
 DELETE FROM auth.users
 WHERE id = '00000000-0000-0000-0000-000000009001';
 
@@ -358,3 +364,9 @@ SELECT extensions.dblink_disconnect('claim_race_a');
 SELECT extensions.dblink_disconnect('claim_race_b');
 
 SELECT * FROM finish();
+
+REVOKE EXECUTE ON FUNCTION
+  public.reconcile_progress_payment(jsonb),
+  public.create_manual_progress_invoice_series(jsonb),
+  public.create_progress_claim_draft(jsonb)
+FROM authenticated;

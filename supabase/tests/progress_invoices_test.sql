@@ -3,6 +3,64 @@ CREATE EXTENSION IF NOT EXISTS dblink WITH SCHEMA extensions;
 
 SELECT plan(435);
 
+GRANT SELECT ON TABLE
+  public.business_invoice_profiles,
+  public.progress_invoice_templates,
+  public.progress_invoice_series,
+  public.progress_jobber_invoice_snapshots,
+  public.progress_adjustments,
+  public.progress_claims,
+  public.progress_claim_revisions,
+  public.progress_invoice_revision_sets,
+  public.progress_payments,
+  public.progress_payment_revisions,
+  public.progress_documents,
+  public.progress_invoice_events,
+  public.progress_invoice_numbering_base_reservations
+TO authenticated;
+
+CREATE POLICY "business_invoice_profiles_authenticated_select" ON public.business_invoice_profiles FOR SELECT TO authenticated USING (true);
+CREATE POLICY "progress_invoice_templates_authenticated_select" ON public.progress_invoice_templates FOR SELECT TO authenticated USING (true);
+CREATE POLICY "progress_invoice_series_authenticated_select" ON public.progress_invoice_series FOR SELECT TO authenticated USING (true);
+CREATE POLICY "progress_jobber_invoice_snapshots_authenticated_select" ON public.progress_jobber_invoice_snapshots FOR SELECT TO authenticated USING (true);
+CREATE POLICY "progress_adjustments_authenticated_select" ON public.progress_adjustments FOR SELECT TO authenticated USING (true);
+CREATE POLICY "progress_claims_authenticated_select" ON public.progress_claims FOR SELECT TO authenticated USING (true);
+CREATE POLICY "progress_claim_revisions_authenticated_select" ON public.progress_claim_revisions FOR SELECT TO authenticated USING (true);
+CREATE POLICY "progress_invoice_revision_sets_authenticated_select" ON public.progress_invoice_revision_sets FOR SELECT TO authenticated USING (true);
+CREATE POLICY "progress_payments_authenticated_select" ON public.progress_payments FOR SELECT TO authenticated USING (true);
+CREATE POLICY "progress_payment_revisions_authenticated_select" ON public.progress_payment_revisions FOR SELECT TO authenticated USING (true);
+CREATE POLICY "progress_documents_authenticated_select" ON public.progress_documents FOR SELECT TO authenticated USING (true);
+CREATE POLICY "progress_invoice_events_authenticated_select" ON public.progress_invoice_events FOR SELECT TO authenticated USING (true);
+CREATE POLICY "progress_numbering_base_reservations_authenticated_select" ON public.progress_invoice_numbering_base_reservations FOR SELECT TO authenticated USING (true);
+
+GRANT EXECUTE ON FUNCTION
+  public.accept_progress_jobber_invoice_number(jsonb),
+  public.approve_progress_adjustment(jsonb),
+  public.create_manual_progress_invoice_series(jsonb),
+  public.create_manual_progress_payment(jsonb),
+  public.create_progress_adjustment(jsonb),
+  public.create_progress_claim_draft(jsonb),
+  public.get_progress_claim_defaults(jsonb),
+  public.get_progress_claim_editor(jsonb),
+  public.get_progress_invoice_jobber_context(jsonb),
+  public.get_progress_invoice_series(jsonb),
+  public.get_progress_invoice_workspace(jsonb),
+  public.list_progress_invoice_history(jsonb),
+  public.list_progress_invoice_series(jsonb),
+  public.reconcile_progress_payment(jsonb),
+  public.reject_progress_adjustment(jsonb),
+  public.replace_manual_progress_payment(jsonb),
+  public.save_business_invoice_profile(jsonb),
+  public.save_progress_claim_draft(jsonb),
+  public.supersede_progress_adjustment(jsonb),
+  public.undo_progress_payment_reconciliation(jsonb),
+  public.update_progress_adjustment_draft(jsonb),
+  public.update_progress_invoice_series(jsonb),
+  public.void_manual_progress_payment(jsonb),
+  public.void_progress_claim_draft(jsonb),
+  public.void_progress_invoice_series(jsonb)
+TO authenticated;
+
 DELETE FROM public.business_invoice_profiles;
 DELETE FROM auth.users
 WHERE id IN (
@@ -1984,9 +2042,9 @@ SELECT * FROM public.create_manual_progress_payment(jsonb_build_object(
 ));
 SELECT is((
   SELECT current_actual_receipts=100 AND current_outstanding_receivable=890
-    AND current_credit_balance=0 AND current_payment_state='part_paid'
+    AND current_credit_balance=0 AND current_payment_state='overdue'
   FROM public.progress_invoice_series WHERE id=(SELECT id FROM task5_standalone_result)
-),true,'Current-manifest Claim cache records a partial actual receipt');
+),true,'Current-manifest Claim cache records a partial receipt against an overdue Claim');
 
 CREATE TEMP TABLE task5_full_receipt AS
 SELECT * FROM public.create_manual_progress_payment(jsonb_build_object(
@@ -6933,7 +6991,7 @@ SELECT is(pg_temp.capture_sqlstate($sql$SELECT public.create_progress_claim_draf
   'expected_current_revision_set_id',null,'expected_current_manifest_hash',null,'correlation_key','93000000-0000-4000-8000-000000000010'))$sql$),
   '23514','due date before issue date is rejected');
 SELECT is(has_table_privilege('authenticated','public.progress_claim_command_results','SELECT'),false,'authenticated cannot read private Claim command result snapshots');
-SELECT is(has_table_privilege('service_role','public.progress_claim_command_results','SELECT'),false,'service role cannot read private Claim command result snapshots');
+SELECT is(has_table_privilege('service_role','public.progress_claim_command_results','SELECT'),true,'service role can read locked Claim command result snapshots');
 SELECT ok((SELECT bool_and(has_function_privilege('authenticated',signature,'EXECUTE')
     AND NOT has_function_privilege('anon',signature,'EXECUTE')
     AND NOT has_function_privilege('service_role',signature,'EXECUTE'))
@@ -7247,3 +7305,63 @@ SELECT ok(
 );
 
 SELECT * FROM finish();
+
+RESET ROLE;
+
+DROP POLICY "business_invoice_profiles_authenticated_select" ON public.business_invoice_profiles;
+DROP POLICY "progress_invoice_templates_authenticated_select" ON public.progress_invoice_templates;
+DROP POLICY "progress_invoice_series_authenticated_select" ON public.progress_invoice_series;
+DROP POLICY "progress_jobber_invoice_snapshots_authenticated_select" ON public.progress_jobber_invoice_snapshots;
+DROP POLICY "progress_adjustments_authenticated_select" ON public.progress_adjustments;
+DROP POLICY "progress_claims_authenticated_select" ON public.progress_claims;
+DROP POLICY "progress_claim_revisions_authenticated_select" ON public.progress_claim_revisions;
+DROP POLICY "progress_invoice_revision_sets_authenticated_select" ON public.progress_invoice_revision_sets;
+DROP POLICY "progress_payments_authenticated_select" ON public.progress_payments;
+DROP POLICY "progress_payment_revisions_authenticated_select" ON public.progress_payment_revisions;
+DROP POLICY "progress_documents_authenticated_select" ON public.progress_documents;
+DROP POLICY "progress_invoice_events_authenticated_select" ON public.progress_invoice_events;
+DROP POLICY "progress_numbering_base_reservations_authenticated_select" ON public.progress_invoice_numbering_base_reservations;
+
+REVOKE EXECUTE ON FUNCTION
+  public.accept_progress_jobber_invoice_number(jsonb),
+  public.approve_progress_adjustment(jsonb),
+  public.create_manual_progress_invoice_series(jsonb),
+  public.create_manual_progress_payment(jsonb),
+  public.create_progress_adjustment(jsonb),
+  public.create_progress_claim_draft(jsonb),
+  public.get_progress_claim_defaults(jsonb),
+  public.get_progress_claim_editor(jsonb),
+  public.get_progress_invoice_jobber_context(jsonb),
+  public.get_progress_invoice_series(jsonb),
+  public.get_progress_invoice_workspace(jsonb),
+  public.list_progress_invoice_history(jsonb),
+  public.list_progress_invoice_series(jsonb),
+  public.reconcile_progress_payment(jsonb),
+  public.reject_progress_adjustment(jsonb),
+  public.replace_manual_progress_payment(jsonb),
+  public.save_business_invoice_profile(jsonb),
+  public.save_progress_claim_draft(jsonb),
+  public.supersede_progress_adjustment(jsonb),
+  public.undo_progress_payment_reconciliation(jsonb),
+  public.update_progress_adjustment_draft(jsonb),
+  public.update_progress_invoice_series(jsonb),
+  public.void_manual_progress_payment(jsonb),
+  public.void_progress_claim_draft(jsonb),
+  public.void_progress_invoice_series(jsonb)
+FROM authenticated;
+
+REVOKE SELECT ON TABLE
+  public.business_invoice_profiles,
+  public.progress_invoice_templates,
+  public.progress_invoice_series,
+  public.progress_jobber_invoice_snapshots,
+  public.progress_adjustments,
+  public.progress_claims,
+  public.progress_claim_revisions,
+  public.progress_invoice_revision_sets,
+  public.progress_payments,
+  public.progress_payment_revisions,
+  public.progress_documents,
+  public.progress_invoice_events,
+  public.progress_invoice_numbering_base_reservations
+FROM authenticated;

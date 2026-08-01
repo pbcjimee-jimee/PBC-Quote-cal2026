@@ -100,6 +100,8 @@ BEGIN
     'financial_snapshot_hash', repeat('a', 64),
     'tax_review_state', 'not_required',
     'adjustment_snapshot', '[]'::JSONB,
+    'previous_claim_snapshot', '[]'::JSONB,
+    'calculation_snapshot', '{}'::JSONB,
     'created_by', '00000000-0000-0000-0000-000000000001',
     'created_at', '2026-07-15T00:00:00Z'
   );

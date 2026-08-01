@@ -88,6 +88,14 @@
 
 ## 🔲 남은 작업
 
+### Progress Invoice service-role access lock (2026-08-01, local branch verified)
+
+- Added the CLI-generated `20260801111303_progress_invoice_service_role_access_lock.sql` migration for the approved 14-relation/25-actor-RPC lock and four retained service RPCs. No production Supabase apply, Vercel change, Jobber call, or application deployment was performed.
+- Added static migration-contract coverage and catalog-shaped pgTAP coverage. TDD RED observed the pre-lock schema retaining 13 policies, authenticated relation/RPC access, and no service-role SELECT grant; GREEN proves the locked catalog.
+- Clean local reset and the five PI pgTAP suites pass 531/531, followed by a separate post-suite lock rerun at 14/14. The lifecycle upgrade/duplicate-preflight/rollback script reports `UPGRADE_TEST_OK`.
+- Fixed the Windows CRLF-only local wrapper project-id check with its existing boundary regression (RED 30/31, GREEN 31/31). Legacy PI functional suites restore old actor access only inside test scope and explicitly roll it back/revoke it before the final catalog lock assertion.
+- Repository verification passes typecheck, ESLint, 106 Vitest files/1,138 tests (1 file/5 tests environment-skipped), coverage thresholds (81.53% statements, 69.77% branches, 89.19% functions, 86.42% lines), and the Next production build. The separate production-dependency audit retains the pre-existing high findings in `next`, `postcss`, and `sharp` (3 high packages); dependencies were not changed.
+
 - **Progress Invoice 후속**: Standalone import `20260717082000`과 Manual 생성 `20260717102000`의 Production DB 적용, Invoice 2875 preview·Jobber/Manual 모드 브라우저 QA, 임시 artifact 정리와 전체 verification을 완료했다. 시리즈 상세/실제 청구 작성·입금 ledger UI, XLSX/PDF Tax Invoice 생성·현재/전체 시리즈 다운로드는 후속 구현 범위다.
 - **감사 발견 이슈** (2026-07-06): 우선순위별로 `docs/BACKLOG.md`에 등록. 2026-07-04 hardening으로 마진 CHECK·서버 액션 allowlist 해결, 2026-07-07 quote save conflict hardening으로 견적 저장 트랜잭션·동시 편집 충돌·product 스냅샷 재고정·Jobber 부분 성공 line id 보존을 반영. 남은 항목은 `docs/BACKLOG.md`의 미체크 항목 기준으로 처리.
 - **Supabase 실제 데이터 백업**: 운영 결정 대기(`TODOS.md` #2). Pro/PITR 우선, cron export는 restore 검증 포함 시만.
@@ -108,6 +116,7 @@
 
 | 날짜 | 작업 | 담당 |
 |---|---|---|
+| 2026-08-01 | Progress Invoice 스키마를 service-role-only로 잠그는 CLI 생성 migration 추가: 14개 관계의 browser/session 권한과 13개 SELECT policy 제거, service_role SELECT-only, 25개 actor RPC 전 API 역할 실행 차단, 4개 Jobber service RPC만 유지. static/pgTAP TDD, clean reset, PI 531/531 + post-suite lock 14/14, lifecycle upgrade rollback 검증. Windows CRLF local wrapper 회귀 수정. Production/배포 미실행. | Codex 5.6-Sol high |
 | 2026-07-17 | Progress Invoice 신규 생성 경로를 Jobber Invoice 번호 1회 가져오기(기본)와 Manual 로컬 생성으로 한정하고 PBC Quote 신규 생성 경로를 제거. Jobber 날짜를 Sydney `YYYY-MM-DD`로 안전하게 정규화하고 실제 timestamp 회귀 테스트 추가. Manual 원자적·멱등 저장, 번호 base unique constraint, 이메일/ABN 검증과 mode-switch race hardening 반영. Production Supabase `20260717102000` 적용 및 권한·제약·index·중복 0건 검증. whole-branch review 0건, focused 138 tests, tracked full Vitest 878 passed/5 skipped, pgTAP 349/349, typecheck/lint/build와 Invoice 2875·Manual 브라우저 QA 통과. 임시 artifact 정리 완료. | Codex 5.6-Sol high |
 | 2026-07-16 | Progress Invoice 기반을 로컬 `main`에 통합. 독립 대시보드/navigation, 진행률·금액 계산/검증, 시리즈·Variation/Credit 데이터/RPC/RLS, 기존 Quote 연동과 분리된 Jobber Invoice/Payment read-only 조회·연결·refresh를 반영. 리뷰에서 Jobber 오류 분류, 잠긴 연결 오류 매핑, 범위 밖 페이지 재조회 문제를 수정. Vitest 84 files/799 tests, coverage, pgTAP 5 files/308 tests, RLS 5 tests, typecheck/lint/build/audit 0 vulnerabilities 통과. 원격 Supabase migration과 청구·입금·문서 생성 UI는 후속. | Codex 5.6-Sol high |
 | 2026-07-16 | New Quote `Add Text` 제목의 Product & Service 추천 누락 회귀 수정. 제목 검색을 이름 기준으로 제한하고 서버의 6개 선제 제한과 클라이언트 6개 제한을 제거해 관련 항목을 최대 300개까지 스크롤 목록에 표시. Supabase·dev 검색 회귀 테스트 추가. 전체 verify 67 files/561 tests, coverage/build/audit 0 vulnerabilities 통과. | Codex 5.6-Sol high |

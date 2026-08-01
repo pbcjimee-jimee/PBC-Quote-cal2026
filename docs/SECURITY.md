@@ -77,6 +77,18 @@
 
 ## 위험 작업 (사용자 명시 승인 필요)
 
+### Progress Invoice locked access posture (2026-08-01)
+
+The undeployed Progress Invoice surface is frozen to least-privilege server access by `20260801111303_progress_invoice_service_role_access_lock.sql`:
+
+- Browser/session roles (`PUBLIC`, `anon`, `authenticated`) cannot read any of the 14 Progress Invoice relations or execute any of the 25 actor/session RPCs.
+- `service_role` receives SELECT-only access to those 14 relations and no direct mutation grants.
+- `service_role` cannot execute the 25 actor/session RPCs. It retains only the four Jobber import/refresh/link RPCs required by server-side integration.
+- RLS remains enabled and permissive authenticated SELECT policies are removed.
+- This branch does not introduce `app_auth`, `current_role()`, `user_profiles`, the purge RPC, or later canonical migrations.
+
+Production apply remains a dangerous operation requiring separate explicit approval. No production apply or application deployment is part of this lock implementation.
+
 다음 작업은 **사용자가 명시적으로 승인하기 전까지 실행 금지**:
 
 | 작업 | 영향 |

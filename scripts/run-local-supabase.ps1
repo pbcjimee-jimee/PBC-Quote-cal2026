@@ -125,7 +125,7 @@ try {
   }
 
   $config = [IO.File]::ReadAllText($configPath)
-  if ($config -notmatch '(?m)^project_id = "progress-invoice-series"$') {
+  if ($config -notmatch '(?m)^project_id = "progress-invoice-series"\r?$') {
     Stop-LocalRefused
   }
 

@@ -136,6 +136,18 @@ CREATE POLICY "authenticated_all" ON <table>
 
 ## 스냅샷 컬럼 규칙 (`docs/DECISIONS.md` #6)
 
+### Progress Invoice service-role access lock (2026-08-01)
+
+`20260801111303_progress_invoice_service_role_access_lock.sql` freezes the undeployed Progress Invoice schema behind server-only access:
+
+- The 14 Progress Invoice relations keep RLS enabled, have no `PUBLIC`, `anon`, or `authenticated` table privileges, and expose `SELECT` only to `service_role`. Direct `INSERT`, `UPDATE`, and `DELETE` are not granted to `service_role`.
+- The 13 permissive authenticated SELECT policies are removed. `progress_claim_command_results` already had no authenticated policy and is included in the same relation privilege lock.
+- The 25 actor/session `SECURITY DEFINER` RPCs no longer grant `EXECUTE` to `PUBLIC`, `anon`, `authenticated`, or `service_role`.
+- Only `apply_progress_invoice_jobber_refresh(jsonb)`, `create_progress_invoice_series_from_jobber(jsonb)`, `link_progress_jobber_invoice(jsonb)`, and `record_progress_jobber_refresh_failure(jsonb)` retain `service_role` execution.
+- Internal/versioned postgres-only functions and non-`SECURITY DEFINER` helpers/triggers keep their existing ownership, `search_path`, and ACL posture.
+
+The lock is local/branch-only until a separately approved production migration is applied. The Progress Invoice application remains undeployed.
+
 - `quote_items.market_price_snapshot`, `actual_price_snapshot`: 저장 시 `products` 가격 복사.
 - `quotes.pricing_settings_snapshot`(JSONB): 저장 시 `pricing_settings` 전체 복사.
 - **목적:** 가격·설정 변경이 과거 견적 재조회 결과를 바꾸지 않게 함.
