@@ -8,7 +8,6 @@ function source(path: string): string {
 describe('supervisor route security', () => {
   it('guards every admin page family at the server component boundary', () => {
     expect(source('app/(app)/quotes/layout.tsx')).toContain('requireAdminPage()')
-    expect(source('app/(app)/progress-invoices/layout.tsx')).toContain('requireAdminPage()')
     expect(source('app/(app)/settings/page.tsx')).toContain('requireAdminPage()')
     expect(source('app/(app)/settings/users/page.tsx')).toContain('requireAdminPage()')
   })
@@ -21,14 +20,11 @@ describe('supervisor route security', () => {
     expect(source('components/layout/app-header.tsx')).toContain("{ href: '/inventory'")
   })
 
-  it('requires admin for Jobber quote and progress-invoice endpoints', () => {
+  it('requires admin for Jobber connect, callback, and quote endpoints', () => {
     for (const path of [
       'app/api/jobber/connect/route.ts',
       'app/api/jobber/callback/route.ts',
       'app/api/jobber/quote/[quoteId]/route.ts',
-      'app/api/jobber/progress-invoices/invoices/search/route.ts',
-      'app/api/jobber/progress-invoices/invoices/[invoiceId]/route.ts',
-      'app/api/jobber/progress-invoices/jobs/[jobId]/invoices/route.ts',
     ]) {
       expect(source(path), path).toContain("requireRole('admin')")
     }

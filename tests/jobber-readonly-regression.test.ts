@@ -78,7 +78,6 @@ describe('Jobber read-only regression guard', () => {
     const progressJobberFiles = [
       'lib/jobber/invoice-client.ts',
       'lib/jobber/invoice-gateway.ts',
-      'app/api/jobber/progress-invoices/invoices/search/route.ts',
     ]
 
     for (const file of progressJobberFiles) {

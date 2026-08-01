@@ -76,18 +76,6 @@ describe('PWA mobile UX', () => {
     expect(mobileHeader).not.toMatch(/<a(?=[^>]*href="\/quotes")(?=[^>]*class="[^"]*is-active)[^>]*>/)
   })
 
-  it('marks every nested Progress Invoice route active with the short mobile label', () => {
-    headerState.pathname = '/progress-invoices/series-1/claims/claim-1'
-    const markup = renderToStaticMarkup(createElement(AppHeader, { userProfile }))
-    const mobileHeader = markup.slice(markup.indexOf('<header'), markup.indexOf('</header>'))
-
-    expect(mobileHeader).toMatch(/<a(?=[^>]*href="\/progress-invoices")(?=[^>]*class="[^"]*is-active)[^>]*>/)
-    expect(mobileHeader).toContain('<span>Progress</span>')
-    expect(mobileHeader).not.toMatch(/<a(?=[^>]*href="\/quotes")(?=[^>]*class="[^"]*is-active)[^>]*>/)
-    expect(mobileHeader).not.toMatch(/<a(?=[^>]*href="\/settings")(?=[^>]*class="[^"]*is-active)[^>]*>/)
-    expect(mobileHeader).not.toMatch(/<a(?=[^>]*href="\/inventory")(?=[^>]*class="[^"]*is-active)[^>]*>/)
-  })
-
   it('defines the binding mobile input, safe-area, touch target, and lg breakpoint rules', () => {
     const css = readFileSync('app/styles/components.css', 'utf8')
     const lgResponsive = getMediaBlock(css, 'max-width: 1023.98px')

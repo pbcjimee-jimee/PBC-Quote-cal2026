@@ -81,7 +81,7 @@
 - Consumes: `AppHeader({ userProfile }: { userProfile: UserProfile })`, `requireAdminPage()`.
 - Produces: a Next.js application route tree with `/jobs` and `/inventory` for supervisors and no `/progress-invoices` or Progress Invoice Jobber API route.
 
-- [ ] **Step 1: Add a failing application-boundary test**
+- [x] **Step 1: Add a failing application-boundary test**
 
 Create `tests/role-progress-separation.test.ts` with the real deployment paths:
 
@@ -104,7 +104,7 @@ describe('role branch Progress Invoice separation', () => {
 
 Change the admin assertions in `tests/app-header-ui.test.tsx` to require `Job Expenses` after `New Quote` and to reject any `href="/progress-invoices"` or `Progress Invoices` label. Remove the Progress Invoice active-route case from `tests/pwa-mobile-ux.test.tsx`. Restrict `tests/role-route-guards.test.tsx` to the retained Quotes layout, and restrict the Jobber endpoint list in `tests/supervisor-route-security.test.ts` to connect, callback, and quote routes.
 
-- [ ] **Step 2: Run the focused tests and verify RED**
+- [x] **Step 2: Run the focused tests and verify RED**
 
 Run:
 
@@ -114,7 +114,7 @@ npm.cmd exec vitest run tests/role-progress-separation.test.ts tests/app-header-
 
 Expected: FAIL because the three forbidden application paths exist and the admin header still renders Progress Invoices.
 
-- [ ] **Step 3: Remove the routes and UI with the minimum retained navigation**
+- [x] **Step 3: Remove the routes and UI with the minimum retained navigation**
 
 Delete the route/component files listed above. Make `navItems` exactly:
 
@@ -130,13 +130,13 @@ const navItems: NavItem[] = [
 
 Remove `progressInvoice` from `NavItem['icon']`, `NavIcon`, and `Icons`. Delete the `/* Progress Invoices */` CSS block and only its responsive `.pbc-progress-*` rules. Keep the five-column mobile navigation because the retained admin navigation still has five items.
 
-- [ ] **Step 4: Run focused tests and verify GREEN**
+- [x] **Step 4: Run focused tests and verify GREEN**
 
 Run the Step 2 command.
 
 Expected: 5 test files pass; admin order is New Quote → Job Expenses → Settings, supervisor sees only Job Expenses and Inventory, and forbidden application paths are absent.
 
-- [ ] **Step 5: Run the full gate**
+- [x] **Step 5: Run the full gate**
 
 Run:
 
@@ -146,7 +146,7 @@ npm.cmd run verify
 
 Expected: PASS; the Next.js build route list contains no `/progress-invoices` and no `/api/jobber/progress-invoices/*` entry.
 
-- [ ] **Step 6: Check the task box and commit**
+- [x] **Step 6: Check the task box and commit**
 
 ```powershell
 git add -- app components tests docs/superpowers/plans/2026-08-01-role-progress-invoice-separation.md

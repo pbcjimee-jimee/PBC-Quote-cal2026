@@ -16,7 +16,6 @@ vi.mock('next/navigation', () => ({
 }))
 
 import QuotesLayout from '@/app/(app)/quotes/layout'
-import ProgressInvoicesLayout from '@/app/(app)/progress-invoices/layout'
 import { requireAdminPage } from '@/lib/security/page-role-guard'
 
 describe('admin page role guards', () => {
@@ -24,13 +23,10 @@ describe('admin page role guards', () => {
     vi.clearAllMocks()
   })
 
-  it.each([
-    ['quotes', QuotesLayout],
-    ['progress invoices', ProgressInvoicesLayout],
-  ])('redirects supervisors away from %s', async (_name, Layout) => {
+  it('redirects supervisors away from quotes', async () => {
     mocks.requireRole.mockResolvedValueOnce({ ok: false, error: 'Admin access required' })
 
-    await expect(Layout({ children: <main>Admin only</main> })).rejects.toThrow('redirect:/jobs')
+    await expect(QuotesLayout({ children: <main>Admin only</main> })).rejects.toThrow('redirect:/jobs')
   })
 
   it('redirects unauthenticated users to login', async () => {

@@ -12,7 +12,7 @@ type NavItem = {
   href: string
   label: string
   mobileLabel?: string
-  icon: 'overview' | 'quote' | 'progressInvoice' | 'settings' | 'inventory'
+  icon: 'overview' | 'quote' | 'settings' | 'inventory'
   roles: AppRole[]
 }
 
@@ -20,13 +20,6 @@ const navItems: NavItem[] = [
   { href: '/quotes', label: 'Overview', icon: 'overview', roles: ['admin'] },
   { href: '/quotes/new', label: 'New Quote', mobileLabel: 'New', icon: 'quote', roles: ['admin'] },
   { href: '/jobs', label: 'Job Expenses', mobileLabel: 'Expenses', icon: 'overview', roles: ['admin', 'supervisor'] },
-  {
-    href: '/progress-invoices',
-    label: 'Progress Invoices',
-    mobileLabel: 'Progress',
-    icon: 'progressInvoice',
-    roles: ['admin'],
-  },
   { href: '/settings', label: 'Settings', icon: 'settings', roles: ['admin'] },
   { href: '/inventory', label: 'Inventory', icon: 'inventory', roles: ['admin', 'supervisor'] },
 ]
@@ -69,7 +62,6 @@ function getServerHydratedSnapshot() {
 
 function NavIcon({ icon }: { icon: NavItem['icon'] }) {
   if (icon === 'quote') return Icons.quote({ size: 18 })
-  if (icon === 'progressInvoice') return Icons.progressInvoice({ size: 18 })
   if (icon === 'settings') return Icons.settings({ size: 18 })
   if (icon === 'inventory') return Icons.layers({ size: 18 })
   return Icons.overview({ size: 18 })

@@ -50,17 +50,17 @@ describe('AppHeader sidebar UI', () => {
     expect(markup).toContain('Job Expenses')
     expect(markup).toContain('Settings')
     expect(markup).toContain('Inventory')
-    expect(markup).toContain('href="/progress-invoices"')
-    expect(markup).toContain('Progress Invoices')
+    expect(markup).not.toContain('href="/progress-invoices"')
+    expect(markup).not.toContain('Progress Invoices')
     expect(markup).toContain('data-intent-link="true"')
     expect(markup).toContain('pbc-usercard__identity')
 
     const newQuoteIndex = markup.indexOf('title="New Quote"')
     const jobExpensesIndex = markup.indexOf('title="Job Expenses"')
-    const progressInvoicesIndex = markup.indexOf('title="Progress Invoices"')
+    const settingsIndex = markup.indexOf('title="Settings"')
     expect(newQuoteIndex).toBeGreaterThan(-1)
     expect(jobExpensesIndex).toBeGreaterThan(newQuoteIndex)
-    expect(progressInvoicesIndex).toBeGreaterThan(jobExpensesIndex)
+    expect(settingsIndex).toBeGreaterThan(jobExpensesIndex)
   })
 
   it('shows only Job Expenses and Inventory to supervisors', () => {
