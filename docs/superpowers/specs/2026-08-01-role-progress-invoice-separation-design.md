@@ -4,7 +4,7 @@
 
 **Branch:** `role`
 
-**Status:** Approved direction; written-spec review pending
+**Status:** Approved
 
 ## Goal
 
