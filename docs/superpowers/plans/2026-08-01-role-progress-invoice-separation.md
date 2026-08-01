@@ -720,11 +720,11 @@ git push origin role
 - Consumes: the final role-only route, migration, and test evidence from Tasks 1–4.
 - Produces: documentation whose source of truth says Progress Invoice is separate, absent from `role`, and not deployed.
 
-- [ ] **Step 1: Remove Progress Invoice-owned reports and source documents**
+- [x] **Step 1: Remove Progress Invoice-owned reports and source documents**
 
 Delete the four files listed above. Keep the approved separation spec and this plan. Keep `docs/jobber/2026-07-30-role-job-expense-g1.md`, which is the Job Expenses query contract.
 
-- [ ] **Step 2: Correct the role implementation plan**
+- [x] **Step 2: Correct the role implementation plan**
 
 Update `2026-07-30-user-roles-job-expenses.md` so:
 
@@ -738,7 +738,7 @@ G3: blocked until the separate Progress Invoice branch secures its existing remo
 
 Add completed separation/G2 checkboxes and remove `progress-invoices` from the expected file list and acceptance redirect list. Do not mark any production task complete.
 
-- [ ] **Step 3: Apply the already-approved role decisions without Progress Invoice coupling**
+- [x] **Step 3: Apply the already-approved role decisions without Progress Invoice coupling**
 
 Restore `docs/DECISIONS.md` section 13 to the `origin/main` state, then apply Appendix A's approved role changes with this exact RLS wording:
 
@@ -748,7 +748,7 @@ Restore `docs/DECISIONS.md` section 13 to the `origin/main` state, then apply Ap
 
 Keep the approved Jobber read/profit decision: Job Expenses uses `job.total - expenses`, read-only queries only, and no new mutation/scope.
 
-- [ ] **Step 4: Update schema, security, UI, and progress docs**
+- [x] **Step 4: Update schema, security, UI, and progress docs**
 
 Make these statements consistent across the four documents:
 
@@ -761,7 +761,7 @@ PROGRESS: role-only G2 evidence; remove Progress Invoice implementation/deployme
 
 Record the quote-price hotfix preservation and the final actual verification counts from Task 6 only after those commands run.
 
-- [ ] **Step 5: Check documentation consistency**
+- [x] **Step 5: Check documentation consistency**
 
 Run:
 
@@ -773,7 +773,7 @@ npm.cmd run verify
 
 Expected: remaining matches occur only in the approved separation spec/plan and explicit statements that the feature is separate and not deployed; full verification passes.
 
-- [ ] **Step 6: Check the task box and commit**
+- [x] **Step 6: Check the task box and commit**
 
 ```powershell
 git add -- .superpowers docs PROGRESS.md

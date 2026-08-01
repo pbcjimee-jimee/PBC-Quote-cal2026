@@ -70,8 +70,10 @@ warehouse_inventory(Settings Inventory page, app-only stock list)
 | `20260708000000_add_warehouse_inventory.sql` | `warehouse_inventory` app-only stock list + 2026 equipment workbook seed rows |
 | `20260708220900_recategorize_inventory_workbook_sections.sql` | Existing 2026 inventory seed rows recategorized by workbook section rows (`Tools`, `Sample`, `Weathershield`, etc.) |
 | `20260731010000_add_user_profiles_and_roles.sql` | `user_profiles`, `app_auth.current_role()` 역할 판정 함수, 기존 Auth 사용자 admin 부트스트랩 |
-| `20260731011000_tighten_role_rls.sql` | 기존 앱 테이블을 admin 전용과 admin+supervisor Inventory로 분리하고 progress invoice RPC에 admin 경계 추가 |
+| `20260731011000_tighten_role_rls.sql` | 기존 견적 앱 테이블을 admin 전용과 admin+supervisor Inventory로 분리 |
 | `20260731012000_add_jobber_job_snapshots.sql` | read-only Jobber job/expense 응답 캐시(`jobber_job_snapshots`, service-role only) |
+
+`20260731` role 마이그레이션은 위 세 개가 전부다. Progress Invoice 마이그레이션은 이 브랜치와 릴리스에 없으며 별도 소유된다.
 
 ---
 
@@ -128,7 +130,7 @@ quote/option totals의 price-change 스냅샷을 보관해 이후 편집이 sell
 ## 역할 기반 RLS 정책 (`20260731010000` + `20260731011000`)
 
 - 역할 판정은 JWT payload나 클라이언트 입력이 아니라 `auth.uid()`와 `user_profiles.is_active`를 조회하는 `app_auth.current_role()` SECURITY DEFINER 함수로 통일한다.
-- admin 전용: 견적·가격·제품·템플릿·메모·가격 이력·progress invoice 계열 테이블과 RPC. supervisor의 direct Supabase 조회·쓰기 및 SECURITY DEFINER RPC 우회는 모두 거부한다.
+- admin 전용: 견적·가격·제품·설정·템플릿·메모·가격 이력 테이블과 견적 저장 RPC. supervisor의 direct Supabase 조회·쓰기 및 SECURITY DEFINER RPC 우회는 모두 거부한다.
 - admin+supervisor: `warehouse_inventory` SELECT/UPDATE. supervisor UPDATE는 트리거가 재고 이동 필드 외 변경을 거부하며 INSERT/DELETE는 admin만 허용한다.
 - `user_profiles`: 본인 행 SELECT 또는 admin 전체 SELECT만 허용한다. authenticated 직접 write 정책은 없다.
 - `jobber_tokens`, `jobber_job_snapshots`: RLS enabled + 클라이언트 정책 없음(service-role only).

@@ -37,7 +37,7 @@
 
 **2026-06-26 업데이트 결과:**
 - Roof 계산은 이미 도입되었고, main quote의 Roof min/max 공식 선택값은 `quotes.roof_selected_min`, `quotes.roof_selected_max`에 저장한다.
-- 앱 사용자는 관리자 2명으로 고정한다. 별도 `ADMIN_EMAILS` 관리자 gate, role split, Settings/삭제/Jobber write-back 권한 분리는 도입하지 않는다.
+- 2026-07-30 사용자 요청으로 관리자 2명 고정 결정을 폐기하고 `admin`/`supervisor` 2역할을 도입한다. admin은 기존 견적·Settings 기능과 사용자 관리·Jobs·Inventory를 사용하고, supervisor는 Inventory와 자기 Jobber job의 expense/profit 조회만 가능하다.
 - material 가격은 일반 소비자가 기준으로 계산한다. 별도 실제 원가/RRP 분리, 추가 현장 난이도 정보 패널, quote-level 가격작성 보강 필드는 이번 업그레이드 범위에서 제외한다.
 - 2026-06-26 보완 범위였던 Roof 공식 선택값 저장, local draft 민감 fetch 결과 저장 방지/7일 만료, Jobber sync preview/retry, duplicate quote는 구현 완료했다. 코드/마이그레이션 변경 이력은 Git으로 보존한다.
 
@@ -56,6 +56,7 @@
 - Quote detail에서는 사용자가 명시적으로 Jobber snapshot을 refresh할 수 있고, 앱은 이전 snapshot과 새 snapshot의 compact diff를 보여준다. 이 refresh 시간은 write-back 성공 시간(`jobber_last_synced_at`)과 별도로 관리한다.
 - Jobber option line item은 자동 저장하지 않는다. 앱은 보수적으로 감지한 후보를 preview로 보여주고, 사용자가 확인한 경우에만 PBC 옵션(`quote_options`) state로 가져온다. 실제 DB 저장은 기존 quote save/update 경로를 따른다.
 - OAuth 2.0, GraphQL API 사용. write scope는 quote line item 업데이트에 필요한 최소 scope만 허용한다.
+- Job Expenses는 Job·팀원·expense를 전용 job 모듈에서 read-only로 조회한다. job profit은 `job.total - expenses 합계`로 계산하며, 기존 quote line write-back 외 새 mutation이나 OAuth scope는 추가하지 않는다.
 - 구현 상세: `docs/superpowers/specs/2026-05-19-jobber-write-back-design.md`
 - 구현 순서: `docs/superpowers/plans/2026-05-19-jobber-write-back.md`
 
@@ -107,9 +108,8 @@ formula_5 = (380 × D + material_market) / 0.70      (총액 30%)
 ## 7. RLS (Row-Level Security)
 
 - 모든 테이블 RLS 켜기
-- v1.0: 모든 인증 사용자 동일 권한
+- 역할 기반: admin 전용 테이블(견적·가격·제품·설정)과 admin+supervisor 테이블(Inventory)로 분리한다. 역할 판정은 user_profiles + app_auth.current_role()을 사용하고, Jobber token/job snapshot 캐시는 service-role 전용으로 둔다. Progress Invoice는 별도 브랜치·별도 배포 게이트에서 관리하며 role 릴리스에 포함하지 않는다.
 - 미인증 사용자: 모든 테이블 접근 거부
-- 2026-06-26 사용자 요청: 실제 사용자는 관리자 2명뿐이므로 별도 관리자 역할/이메일 gate를 만들지 않고 기존 인증 사용자 정책을 유지한다.
 
 ---
 
@@ -162,14 +162,6 @@ formula_5 = (380 × D + material_market) / 0.70      (총액 30%)
 - 서비스 워커는 새 런타임 의존성 없는 최소 구현을 사용한다.
 - 오프라인은 안내 페이지만 제공한다. 인증된 HTML, 견적·가격 데이터, API, Supabase, Server Actions, RSC payload는 캐시하지 않는다.
 - Android는 브라우저 설치 프롬프트를 연결하고, iOS Safari는 `공유 → 홈 화면에 추가` 수동 안내를 제공한다. 설치 안내 저장소에는 dismiss 선호만 저장한다.
-
----
-
-## 13. Progress Invoice 조정·출처 불변식
-
-- 이미 발행된 Current Claim 합계보다 조정 계약금액을 낮추는 Credit 승인은 원자적으로 거부하고 `RECONCILIATION_REQUIRED`를 반환한다. Credit은 Draft로 유지하며 Series status/version/read model, 조정 합계, audit/idempotency 결과를 부분 변경하지 않는다. 관련 Claim을 먼저 revise 또는 void한 뒤 다시 승인한다.
-- Series 생성 후 `source_type`은 변경할 수 없고 원래 `quote_id`를 update command로 relink 또는 clear할 수 없다. 연결된 Quote 삭제의 `ON DELETE SET NULL`만 예외이며, 이때도 `source_type = 'pbc_quote'`는 유지한다. 다른 출처가 필요하면 새 Series를 만든다.
-- 첫 Claim 번호 예약 후 Jobber account/invoice/accepted-numbering fields가 잠기는 기존 link-lock 규칙은 생성 출처 불변식과 별도로 유지한다.
 
 ---
 

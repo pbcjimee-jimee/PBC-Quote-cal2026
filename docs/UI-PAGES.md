@@ -202,8 +202,9 @@ Jobs is available to both roles and is the supervisor landing page. A supervisor
 
 ## 7. 역할별 내비게이션과 라우트 경계
 
-- admin: 기존 Overview/Quotes/Progress Invoices/Settings 기능과 Jobs/Inventory/Users를 사용한다.
-- supervisor: Jobs와 Inventory만 내비게이션에 표시되며 `/`, `/quotes`, admin Settings, progress invoice route에 직접 접근해도 서버 가드가 `/jobs`로 돌려보내거나 거부한다.
+- admin 내비게이션: Overview, New Quote, Job Expenses, Settings, Inventory 순서로 표시한다. Settings의 Users에서 사용자 관리를 수행한다.
+- supervisor 내비게이션: Job Expenses, Inventory만 표시한다. `/`, `/quotes`, admin Settings에 직접 접근하면 서버 가드가 `/jobs`로 돌려보내거나 거부한다.
+- Progress Invoice는 이 브랜치와 릴리스에 없으며 admin 라우트가 아니다.
 - 미들웨어는 세션 유무만 판정하고 실제 역할은 서버 컴포넌트·Server Action·RLS가 세션 `auth.uid()` 기준으로 재검증한다.
 
 ---

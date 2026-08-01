@@ -67,9 +67,11 @@
 
 - **모든 테이블 RLS 켜기** (`enable row level security`)
 - `user_profiles`의 활성 `admin`/`supervisor` 역할과 `app_auth.current_role()`을 정책의 진실의 원천으로 사용한다.
-- admin은 기존 견적·설정·progress invoice 데이터에 접근하고, supervisor는 `/jobs`와 `warehouse_inventory` 조회 및 재고 이동 필드 수정만 허용한다.
+- admin은 기존 견적·Settings 기능과 사용자 관리·Jobs·Inventory를 사용한다. supervisor는 Job Expenses(`/jobs`)와 Inventory만 사용하며 `warehouse_inventory`의 재고 이동 필드만 수정할 수 있다.
 - 미인증 사용자와 active 프로필이 없는 사용자는 모든 앱 테이블 접근을 거부한다.
 - RLS 자동 테스트 (`tests/rls.test.ts`)로 검증 필수
+
+Progress Invoice는 role 브랜치와 릴리스에 포함되지 않는다. 기존 원격 Progress Invoice 스키마는 별도 소유 상태로 남아 있으며, 별도 브랜치에서 해당 스키마의 access lock 선행 조건을 확보하기 전까지 role production 적용은 차단한다.
 
 ### 로그인 허용 판정
 
