@@ -841,7 +841,7 @@ $env:SUPABASE_RLS_TEST_SUPERVISOR_PASSWORD = 'local-supervisor-password'
 npm.cmd run test:rls:local
 ```
 
-Expected: all eight role-only integration cases pass, including supervisor denial on admin tables and field-level inventory restrictions.
+Expected: all nine role-only integration cases pass, including supervisor denial on admin tables, field-level inventory restrictions, last-active-admin enforcement, and atomic Jobber snapshot scope revocation.
 
 - [x] **Step 3: Run separation checks and the complete verification gate**
 
@@ -867,8 +867,8 @@ Recorded 2026-08-01 evidence:
 
 - Local Supabase `start` exit 0; clean `db reset --local --no-seed` applied 27 retained migrations.
 - pgTAP passed 2 files/90 assertions (`data_api_grants_test.sql`, `role_rls_test.sql`), including the absence of Progress Invoice relations/functions. Local advisors exited 0 with ERROR 0 and four pre-existing WARN findings.
-- Real local RLS passed 1 file/8 cases. Focused separation/security passed 3 files/25 cases.
-- First full `npm.cmd run verify` passed: Vitest 81 files/647 cases passed with the environment-gated local RLS 1 file/8 cases skipped; statements 83.18%, branches 69.77%, functions 93.40%, lines 88.91%; `lib/actions` 83.45%/68.31%/96.73%/91.05%; `lib/calculator.ts` 100% across statements/branches/functions/lines; strict TypeScript, ESLint, Next production build, and production audit with 0 vulnerabilities passed.
+- Final-fix real local RLS passed 1 file/9 cases. Final-fix focused action/snapshot/migration suites passed 5 files/39 cases; the earlier separation/security 3 files/25 cases evidence remains valid.
+- Final `npm.cmd run verify` passed: Vitest 81 files/656 cases passed with the environment-gated local RLS 1 file/9 cases skipped; statements 83.52%, branches 69.84%, functions 93.79%, lines 89.13%; `lib/actions` 84.08%/68.49%/97.54%/91.38%; `lib/calculator.ts` 100% across statements/branches/functions/lines; strict TypeScript, ESLint, Next production build, and production audit with 0 vulnerabilities passed.
 - Build output contains `/inventory`, `/jobs`, and `/jobs/[jobberJobId]`, and contains no Progress Invoice app or API route.
 - G3 remains blocked until the separately owned Progress Invoice access lock is complete: no production Supabase role migration/seed, real supervisor account creation or mapping, or Vercel production deployment is authorized.
 

@@ -4,7 +4,12 @@ vi.mock('server-only', () => ({}))
 const mocks = vi.hoisted(() => ({ createServiceClient: vi.fn() }))
 vi.mock('@/lib/supabase/server', () => ({ createServiceClient: mocks.createServiceClient }))
 
-import { getJobSnapshot, listJobSnapshots, saveJobSnapshots } from '@/lib/jobber/job-snapshots'
+import {
+  getJobSnapshot,
+  listJobSnapshots,
+  saveJobSnapshots,
+  synchronizeJobSnapshotScope,
+} from '@/lib/jobber/job-snapshots'
 
 const payload = {
   job: {
@@ -64,5 +69,22 @@ describe('Jobber job snapshot repository', () => {
       jobber_job_id: 'job-1', payload, refreshed_at: row.refreshed_at, refreshed_by: 'actor-1',
     }], { onConflict: 'jobber_job_id' })
     expect(result[0]?.job.id).toBe('job-1')
+  })
+
+  it('replaces one Jobber user scope atomically and returns the currently assigned snapshots', async () => {
+    const rpc = vi.fn(async () => ({ data: [row], error: null }))
+    mocks.createServiceClient.mockResolvedValue({ rpc })
+
+    const result = await synchronizeJobSnapshotScope('user-1', ['job-1'])
+
+    expect(rpc).toHaveBeenCalledWith('synchronize_jobber_job_snapshot_scope', {
+      p_jobber_user_id: 'user-1',
+      p_assigned_job_ids: ['job-1'],
+    })
+    expect(result).toEqual([{
+      ...payload,
+      refreshedAt: row.refreshed_at,
+      refreshedBy: row.refreshed_by,
+    }])
   })
 })

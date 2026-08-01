@@ -565,6 +565,14 @@ export type Database = {
     }
     Functions: {
       create_quote_with_children: { Args: { payload: Json }; Returns: string }
+      synchronize_jobber_job_snapshot_scope: {
+        Args: { p_assigned_job_ids: string[]; p_jobber_user_id: string }
+        Returns: {
+          payload: Json
+          refreshed_at: string
+          refreshed_by: string
+        }[]
+      }
       update_quote_with_children: {
         Args: { payload: Json }
         Returns: {

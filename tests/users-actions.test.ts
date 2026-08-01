@@ -161,6 +161,21 @@ describe('admin user actions', () => {
     expect(updateUserById).toHaveBeenCalledWith(profileRow.id, { password: 'Replacement!234' })
   })
 
+  it('surfaces the database last-admin error when an admin demotes themself', async () => {
+    const selfId = '00000000-0000-4000-8000-000000000001'
+    mocks.createServiceClient.mockResolvedValue({
+      from: vi.fn(() => mutationBuilder({
+        data: null,
+        error: new Error('LAST_ACTIVE_ADMIN_REQUIRED'),
+      })),
+    })
+
+    await expect(updateUserRole({ id: selfId, role: 'supervisor' })).resolves.toEqual({
+      ok: false,
+      error: 'LAST_ACTIVE_ADMIN_REQUIRED',
+    })
+  })
+
   it('blocks self-deactivation and synchronizes other users with Auth ban state', async () => {
     const selfResult = await setUserActive({
       id: '00000000-0000-4000-8000-000000000001',
@@ -193,6 +208,23 @@ describe('admin user actions', () => {
     const result = await setUserActive({ id: profileRow.id, active: false })
 
     expect(result).toEqual({ ok: false, error: 'profile update failed' })
+    expect(updateUserById).toHaveBeenNthCalledWith(1, profileRow.id, { ban_duration: '876000h' })
+    expect(updateUserById).toHaveBeenNthCalledWith(2, profileRow.id, { ban_duration: 'none' })
+  })
+
+  it('surfaces the database last-admin error and restores Auth when deactivation is rejected', async () => {
+    const updateUserById = vi.fn(async () => ({ data: {}, error: null }))
+    mocks.createServiceClient.mockResolvedValue({
+      auth: { admin: { updateUserById } },
+      from: vi.fn(() => mutationBuilder({
+        data: null,
+        error: new Error('LAST_ACTIVE_ADMIN_REQUIRED'),
+      })),
+    })
+
+    const result = await setUserActive({ id: profileRow.id, active: false })
+
+    expect(result).toEqual({ ok: false, error: 'LAST_ACTIVE_ADMIN_REQUIRED' })
     expect(updateUserById).toHaveBeenNthCalledWith(1, profileRow.id, { ban_duration: '876000h' })
     expect(updateUserById).toHaveBeenNthCalledWith(2, profileRow.id, { ban_duration: 'none' })
   })

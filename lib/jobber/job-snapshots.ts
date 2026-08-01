@@ -99,6 +99,19 @@ export async function saveJobSnapshots(
   return data.map((row) => parseStoredSnapshot(row.payload, row.refreshed_at, row.refreshed_by))
 }
 
+export async function synchronizeJobSnapshotScope(
+  jobberUserId: string,
+  assignedJobIds: readonly string[],
+): Promise<readonly StoredJobSnapshot[]> {
+  const service = await createServiceClient()
+  const { data, error } = await service.rpc('synchronize_jobber_job_snapshot_scope', {
+    p_jobber_user_id: jobberUserId,
+    p_assigned_job_ids: [...assignedJobIds],
+  })
+  if (error) throw new Error('Unable to synchronize Jobber job snapshot scope')
+  return data.map((row) => parseStoredSnapshot(row.payload, row.refreshed_at, row.refreshed_by))
+}
+
 function parseStoredSnapshot(payload: Json, refreshedAt: string, refreshedBy: string): StoredJobSnapshot {
   const parsed = payloadSchema.safeParse(payload)
   if (!parsed.success) throw new Error('Invalid Jobber job snapshot payload')

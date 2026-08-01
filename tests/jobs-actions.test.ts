@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
   listSnapshots: vi.fn(),
   getSnapshot: vi.fn(),
   saveSnapshots: vi.fn(),
+  synchronizeSnapshotScope: vi.fn(),
   listJobberJobs: vi.fn(),
   fetchJobberJobDetail: vi.fn(),
 }))
@@ -16,6 +17,7 @@ vi.mock('@/lib/jobber/job-snapshots', () => ({
   listJobSnapshots: mocks.listSnapshots,
   getJobSnapshot: mocks.getSnapshot,
   saveJobSnapshots: mocks.saveSnapshots,
+  synchronizeJobSnapshotScope: mocks.synchronizeSnapshotScope,
 }))
 vi.mock('@/lib/jobber/job-gateway', () => ({
   listJobberJobs: mocks.listJobberJobs,
@@ -57,7 +59,7 @@ function appUser(role: 'admin' | 'supervisor', jobberUserId: string | null) {
 
 describe('job actions', () => {
   beforeEach(() => {
-    vi.clearAllMocks()
+    vi.resetAllMocks()
     mocks.requireRole.mockResolvedValue(appUser('supervisor', 'jobber-user-1'))
     mocks.listSnapshots.mockResolvedValue([])
     mocks.getSnapshot.mockResolvedValue(null)
@@ -70,6 +72,7 @@ describe('job actions', () => {
         refreshedBy: actorId,
       }))
     ))
+    mocks.synchronizeSnapshotScope.mockResolvedValue([])
   })
 
   it('validates inputs before reading the session', async () => {
@@ -87,8 +90,9 @@ describe('job actions', () => {
     expect(mocks.listJobberJobs).not.toHaveBeenCalled()
   })
 
-  it('returns matching supervisor snapshots before using live Jobber', async () => {
+  it('revalidates matching supervisor snapshots against live Jobber assignments', async () => {
     mocks.listSnapshots.mockResolvedValueOnce([snapshot])
+    mocks.synchronizeSnapshotScope.mockResolvedValueOnce([snapshot])
 
     const result = await listMyJobs({})
 
@@ -96,7 +100,22 @@ describe('job actions', () => {
       ok: true,
       data: { jobs: [{ id: 'job-1', financialSummary: { expensesTotal: '603.89' } }] },
     })
-    expect(mocks.listJobberJobs).not.toHaveBeenCalled()
+    expect(mocks.listJobberJobs).toHaveBeenCalledWith('jobber-user-1')
+    expect(mocks.synchronizeSnapshotScope).toHaveBeenCalledWith('jobber-user-1', ['job-1'])
+  })
+
+  it('removes a reassigned job from the supervisor list instead of trusting cached scope', async () => {
+    mocks.listSnapshots.mockResolvedValueOnce([snapshot])
+    mocks.listJobberJobs.mockResolvedValueOnce([])
+    mocks.synchronizeSnapshotScope.mockResolvedValueOnce([])
+
+    await expect(listMyJobs({})).resolves.toMatchObject({
+      ok: true,
+      data: { jobs: [] },
+    })
+    expect(mocks.listJobberJobs).toHaveBeenCalledWith('jobber-user-1')
+    expect(mocks.synchronizeSnapshotScope).toHaveBeenCalledWith('jobber-user-1', [])
+    expect(mocks.fetchJobberJobDetail).not.toHaveBeenCalled()
   })
 
   it('fetches assigned jobs and every detail when the cache is empty', async () => {
@@ -165,12 +184,28 @@ describe('job actions', () => {
     expect(mocks.fetchJobberJobDetail).not.toHaveBeenCalled()
   })
 
-  it('returns an authorized cached detail without a live fetch', async () => {
+  it('returns a currently assigned cached detail without fetching financials', async () => {
     mocks.getSnapshot.mockResolvedValueOnce(snapshot)
+    mocks.synchronizeSnapshotScope.mockResolvedValueOnce([snapshot])
 
     const result = await getJobDetail({ jobberJobId: 'job-1' })
 
     expect(result).toMatchObject({ ok: true, data: { id: 'job-1', expenses: [{ id: 'expense-1' }] } })
+    expect(mocks.listJobberJobs).toHaveBeenCalledWith('jobber-user-1')
+    expect(mocks.fetchJobberJobDetail).not.toHaveBeenCalled()
+  })
+
+  it('denies cached detail after the supervisor assignment is revoked', async () => {
+    mocks.getSnapshot.mockResolvedValueOnce(snapshot)
+    mocks.listJobberJobs.mockResolvedValueOnce([])
+    mocks.synchronizeSnapshotScope.mockResolvedValueOnce([])
+
+    await expect(getJobDetail({ jobberJobId: 'job-1' })).resolves.toEqual({
+      ok: false,
+      error: 'This job is not assigned to the current supervisor',
+      code: 'FORBIDDEN',
+    })
+    expect(mocks.synchronizeSnapshotScope).toHaveBeenCalledWith('jobber-user-1', [])
     expect(mocks.fetchJobberJobDetail).not.toHaveBeenCalled()
   })
 
@@ -187,6 +222,9 @@ describe('job actions', () => {
 
   it('refreshes an authorized stale detail and preserves its scope', async () => {
     mocks.getSnapshot.mockResolvedValueOnce({ ...snapshot, refreshedAt: '2020-01-01T00:00:00.000Z' })
+    mocks.synchronizeSnapshotScope.mockResolvedValueOnce([
+      { ...snapshot, refreshedAt: '2020-01-01T00:00:00.000Z' },
+    ])
 
     const result = await refreshJobDetail({ jobberJobId: 'job-1' })
 
@@ -195,5 +233,54 @@ describe('job actions', () => {
     expect(mocks.saveSnapshots).toHaveBeenCalledWith([
       expect.objectContaining({ scopeJobberUserIds: ['jobber-user-1'] }),
     ], 'supervisor-1')
+  })
+
+  it('denies forced detail refresh after reassignment before fetching fresh financials', async () => {
+    mocks.getSnapshot.mockResolvedValueOnce({ ...snapshot, refreshedAt: '2020-01-01T00:00:00.000Z' })
+    mocks.listJobberJobs.mockResolvedValueOnce([])
+    mocks.synchronizeSnapshotScope.mockResolvedValueOnce([])
+
+    await expect(refreshJobDetail({ jobberJobId: 'job-1' })).resolves.toEqual({
+      ok: false,
+      error: 'This job is not assigned to the current supervisor',
+      code: 'FORBIDDEN',
+    })
+    expect(mocks.fetchJobberJobDetail).not.toHaveBeenCalled()
+  })
+
+  it('bounds admin detail concurrency and persists successful batches after one detail fails', async () => {
+    mocks.requireRole.mockResolvedValueOnce(appUser('admin', null))
+    const jobs = Array.from({ length: 12 }, (_, index) => ({
+      ...job,
+      id: `job-${index + 1}`,
+      jobNumber: `${3103 + index}`,
+    }))
+    let inFlight = 0
+    let maxInFlight = 0
+    mocks.listJobberJobs.mockResolvedValueOnce(jobs)
+    mocks.fetchJobberJobDetail.mockImplementation(async (jobId: string) => {
+      inFlight += 1
+      maxInFlight = Math.max(maxInFlight, inFlight)
+      await new Promise((resolve) => setTimeout(resolve, 1))
+      inFlight -= 1
+      if (jobId === 'job-7') throw new Error('expense detail unavailable')
+      const summary = jobs.find((candidate) => candidate.id === jobId)
+      if (!summary) throw new Error('missing fixture job')
+      return { ...summary, expenses: [expense] }
+    })
+
+    const result = await refreshJobs({})
+
+    expect(maxInFlight).toBeLessThanOrEqual(5)
+    expect(mocks.saveSnapshots).toHaveBeenCalledTimes(3)
+    expect(mocks.saveSnapshots.mock.calls.flatMap(([payloads]) => payloads)).toHaveLength(11)
+    expect(result).toMatchObject({
+      ok: true,
+      data: {
+        jobs: expect.any(Array),
+        refreshWarning: '1 of 12 Jobber job details could not be refreshed.',
+      },
+    })
+    if (result.ok) expect(result.data.jobs).toHaveLength(11)
   })
 })

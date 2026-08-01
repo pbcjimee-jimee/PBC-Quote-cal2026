@@ -7,6 +7,7 @@ import {
   getJobSnapshot,
   listJobSnapshots,
   saveJobSnapshots,
+  synchronizeJobSnapshotScope,
   type JobSnapshotPayload,
   type StoredJobSnapshot,
 } from '@/lib/jobber/job-snapshots'
@@ -16,6 +17,7 @@ import { createServiceClient } from '@/lib/supabase/server'
 import type { ActionResult } from './types'
 
 const REFRESH_COOLDOWN_MS = 30_000
+const DETAIL_FETCH_CONCURRENCY = 5
 const listJobsSchema = z.object({ supervisorProfileId: z.string().uuid().nullable().optional() }).strict()
 const jobIdSchema = z.object({ jobberJobId: z.string().trim().min(1).max(300) }).strict()
 
@@ -34,6 +36,7 @@ export interface JobListData {
   readonly jobs: readonly JobListItem[]
   readonly assignmentLinked: boolean
   readonly filteredJobberUserId: string | null
+  readonly refreshWarning?: string
 }
 
 export interface JobDetailData extends JobListItem {
@@ -43,6 +46,11 @@ export interface JobDetailData extends JobListItem {
 interface ResolvedJobberFilter {
   readonly jobberUserId: string | null
   readonly assignmentLinked: boolean
+}
+
+interface LoadedJobSnapshots {
+  readonly snapshots: readonly StoredJobSnapshot[]
+  readonly refreshWarning?: string
 }
 
 export async function listMyJobs(input: unknown = {}): Promise<ActionResult<JobListData>> {
@@ -60,17 +68,17 @@ export async function listMyJobs(input: unknown = {}): Promise<ActionResult<JobL
     const { jobberUserId } = resolvedFilter
 
     const snapshots = await listJobSnapshots()
-    const cached = filterSnapshots(snapshots, jobberUserId)
-    const visible = cached.length > 0
-      ? cached
-      : await refreshJobList(appUser.user.id, jobberUserId, snapshots)
+    const loaded = jobberUserId === null
+      ? await loadAdminJobList(appUser.user.id, snapshots)
+      : await loadAssignedJobList(appUser.user.id, jobberUserId, snapshots, false)
 
     return {
       ok: true,
       data: {
-        jobs: sortJobItems(visible.map(toListItem)),
+        jobs: sortJobItems(loaded.snapshots.map(toListItem)),
         assignmentLinked: true,
         filteredJobberUserId: jobberUserId,
+        ...(loaded.refreshWarning ? { refreshWarning: loaded.refreshWarning } : {}),
       },
     }
   } catch (error) {
@@ -93,13 +101,16 @@ export async function refreshJobs(input: unknown = {}): Promise<ActionResult<Job
     const { jobberUserId } = resolvedFilter
     const snapshots = await listJobSnapshots()
     assertRefreshAllowed(filterSnapshots(snapshots, jobberUserId))
-    const refreshed = await refreshJobList(appUser.user.id, jobberUserId, snapshots)
+    const refreshed = jobberUserId === null
+      ? await refreshJobList(appUser.user.id, null, snapshots)
+      : await loadAssignedJobList(appUser.user.id, jobberUserId, snapshots, true)
     return {
       ok: true,
       data: {
-        jobs: sortJobItems(refreshed.map(toListItem)),
+        jobs: sortJobItems(refreshed.snapshots.map(toListItem)),
         assignmentLinked: true,
         filteredJobberUserId: jobberUserId,
+        ...(refreshed.refreshWarning ? { refreshWarning: refreshed.refreshWarning } : {}),
       },
     }
   } catch (error) {
@@ -116,7 +127,7 @@ export async function getJobDetail(input: unknown): Promise<ActionResult<JobDeta
 
   try {
     let snapshot = await getJobSnapshot(parsed.data.jobberJobId)
-    if (snapshot && canAccessSnapshot(appUser.profile, snapshot)) {
+    if (snapshot && appUser.profile.role === 'admin') {
       return { ok: true, data: toDetail(snapshot) }
     }
     snapshot = await fetchAuthorizedDetail(appUser.profile, appUser.user.id, parsed.data.jobberJobId, snapshot)
@@ -173,16 +184,87 @@ async function resolveJobberFilter(
   return { jobberUserId, assignmentLinked: jobberUserId !== null }
 }
 
+async function loadAdminJobList(
+  actorId: string,
+  existingSnapshots: readonly StoredJobSnapshot[],
+): Promise<LoadedJobSnapshots> {
+  const cached = filterSnapshots(existingSnapshots, null)
+  return cached.length > 0
+    ? { snapshots: cached }
+    : refreshJobList(actorId, null, existingSnapshots)
+}
+
+async function loadAssignedJobList(
+  actorId: string,
+  jobberUserId: string,
+  existingSnapshots: readonly StoredJobSnapshot[],
+  forceRefresh: boolean,
+): Promise<LoadedJobSnapshots> {
+  const assignedJobs = await listJobberJobs(jobberUserId)
+  const synchronized = await synchronizeJobSnapshotScope(
+    jobberUserId,
+    assignedJobs.map((job) => job.id),
+  )
+  const existingById = new Map(synchronized.map((snapshot) => [snapshot.job.id, snapshot]))
+  const jobsToRefresh = forceRefresh
+    ? assignedJobs
+    : assignedJobs.filter((job) => !existingById.has(job.id))
+  const refreshed = await fetchAndSaveJobDetails(jobsToRefresh, actorId, jobberUserId, existingById)
+  const refreshedById = new Map(refreshed.snapshots.map((snapshot) => [snapshot.job.id, snapshot]))
+  const visible = assignedJobs.flatMap((job) => {
+    const snapshot = refreshedById.get(job.id) ?? existingById.get(job.id)
+    return snapshot ? [snapshot] : []
+  })
+  return {
+    snapshots: visible,
+    ...(refreshed.refreshWarning ? { refreshWarning: refreshed.refreshWarning } : {}),
+  }
+}
+
 async function refreshJobList(
   actorId: string,
   jobberUserId: string | null,
   existingSnapshots: readonly StoredJobSnapshot[],
-): Promise<readonly StoredJobSnapshot[]> {
+): Promise<LoadedJobSnapshots> {
   const jobs = await listJobberJobs(jobberUserId)
   const existingById = new Map(existingSnapshots.map((snapshot) => [snapshot.job.id, snapshot]))
-  const details = await Promise.all(jobs.map((job) => fetchJobberJobDetail(job.id)))
-  const payloads = details.map((detail) => buildPayload(detail, jobberUserId, existingById.get(detail.id)))
-  return saveJobSnapshots(payloads, actorId)
+  return fetchAndSaveJobDetails(jobs, actorId, jobberUserId, existingById)
+}
+
+async function fetchAndSaveJobDetails(
+  jobs: readonly { readonly id: string }[],
+  actorId: string,
+  jobberUserId: string | null,
+  existingById: ReadonlyMap<string, StoredJobSnapshot>,
+): Promise<LoadedJobSnapshots> {
+  const snapshots: StoredJobSnapshot[] = []
+  let failedCount = 0
+
+  for (let offset = 0; offset < jobs.length; offset += DETAIL_FETCH_CONCURRENCY) {
+    const batch = jobs.slice(offset, offset + DETAIL_FETCH_CONCURRENCY)
+    const outcomes = await Promise.all(batch.map(async (job) => {
+      try {
+        return { detail: await fetchJobberJobDetail(job.id) }
+      } catch {
+        return { detail: null }
+      }
+    }))
+    const payloads = outcomes.flatMap(({ detail }) => {
+      if (detail === null) {
+        failedCount += 1
+        return []
+      }
+      return [buildPayload(detail, jobberUserId, existingById.get(detail.id))]
+    })
+    snapshots.push(...await saveJobSnapshots(payloads, actorId))
+  }
+
+  return {
+    snapshots,
+    ...(failedCount > 0
+      ? { refreshWarning: `${failedCount} of ${jobs.length} Jobber job details could not be refreshed.` }
+      : {}),
+  }
 }
 
 async function fetchAuthorizedDetail(
@@ -196,13 +278,17 @@ async function fetchAuthorizedDetail(
   if (profile.role === 'supervisor') {
     jobberUserId = profile.jobberUserId
     if (!jobberUserId) throw new JobAccessError('Link a Jobber user before viewing jobs')
-    if (!existing || !existing.scopeJobberUserIds.includes(jobberUserId)) {
-      const assignedJobs = await listJobberJobs(jobberUserId)
-      if (!assignedJobs.some((job) => job.id === jobberJobId)) {
-        throw new JobAccessError('This job is not assigned to the current supervisor')
-      }
+    const assignedJobs = await listJobberJobs(jobberUserId)
+    const synchronized = await synchronizeJobSnapshotScope(
+      jobberUserId,
+      assignedJobs.map((job) => job.id),
+    )
+    if (!assignedJobs.some((job) => job.id === jobberJobId)) {
+      throw new JobAccessError('This job is not assigned to the current supervisor')
     }
-  } else if (existing && !forceFetch) {
+    existing = synchronized.find((snapshot) => snapshot.job.id === jobberJobId) ?? null
+  }
+  if (existing && !forceFetch) {
     return existing
   }
 
@@ -236,12 +322,6 @@ function filterSnapshots(
   return snapshots.filter((snapshot) => jobberUserId === null
     ? snapshot.refreshedForAll
     : snapshot.scopeJobberUserIds.includes(jobberUserId))
-}
-
-function canAccessSnapshot(profile: AppUserProfile, snapshot: StoredJobSnapshot): boolean {
-  return profile.role === 'admin' || (
-    profile.jobberUserId !== null && snapshot.scopeJobberUserIds.includes(profile.jobberUserId)
-  )
 }
 
 function toListItem(snapshot: StoredJobSnapshot): JobListItem {

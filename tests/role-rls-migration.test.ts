@@ -87,4 +87,15 @@ describe('role RLS migrations', () => {
     expect(sql).toMatch(/RAISE EXCEPTION 'INVENTORY_ADMIN_FIELDS_REQUIRED'/i)
   })
 
+  it('serializes and rejects removal of the last active administrator at the database boundary', () => {
+    const sql = readMigration('20260731011000_tighten_role_rls.sql')
+
+    expect(sql).toMatch(/CREATE FUNCTION app_auth\.protect_last_active_admin\(\)/i)
+    expect(sql).toMatch(/pg_advisory_xact_lock/i)
+    expect(sql).toMatch(/OLD\.role = 'admin'[\s\S]*OLD\.is_active/i)
+    expect(sql).toMatch(/NEW\.role <> 'admin'[\s\S]*NOT NEW\.is_active/i)
+    expect(sql).toMatch(/RAISE EXCEPTION 'LAST_ACTIVE_ADMIN_REQUIRED'/i)
+    expect(sql).toMatch(/BEFORE UPDATE OR DELETE ON public\.user_profiles/i)
+  })
+
 })

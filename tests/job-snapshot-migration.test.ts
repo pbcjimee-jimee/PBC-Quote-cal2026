@@ -21,4 +21,12 @@ describe('Jobber job snapshot migration', () => {
     )
     expect(migration).not.toMatch(/create\s+policy/i)
   })
+
+  it('atomically replaces one supervisor scope without granting client execution', () => {
+    expect(migration).toMatch(/create function public\.synchronize_jobber_job_snapshot_scope/i)
+    expect(migration).toMatch(/p_assigned_job_ids text\[\]/i)
+    expect(migration).toMatch(/jsonb_array_elements_text/i)
+    expect(migration).toMatch(/revoke all on function public\.synchronize_jobber_job_snapshot_scope/i)
+    expect(migration).toMatch(/grant execute on function public\.synchronize_jobber_job_snapshot_scope[\s\S]*to service_role/i)
+  })
 })

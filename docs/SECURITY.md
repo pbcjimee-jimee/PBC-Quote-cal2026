@@ -68,6 +68,8 @@
 - **모든 테이블 RLS 켜기** (`enable row level security`)
 - `user_profiles`의 활성 `admin`/`supervisor` 역할과 `app_auth.current_role()`을 정책의 진실의 원천으로 사용한다.
 - admin은 기존 견적·Settings 기능과 사용자 관리·Jobs·Inventory를 사용한다. supervisor는 Job Expenses(`/jobs`)와 Inventory만 사용하며 `warehouse_inventory`의 재고 이동 필드만 수정할 수 있다.
+- active admin이 0명이 되는 강등·비활성화·삭제는 transaction 직렬화 trigger가 DB 경계에서 거부한다.
+- supervisor의 Jobber job 권한은 cached snapshot scope를 지속 권한으로 신뢰하지 않고, 목록·상세·강제 refresh 전에 현재 live 배정을 재확인한다.
 - 미인증 사용자와 active 프로필이 없는 사용자는 모든 앱 테이블 접근을 거부한다.
 - RLS 자동 테스트 (`tests/rls.test.ts`)로 검증 필수
 

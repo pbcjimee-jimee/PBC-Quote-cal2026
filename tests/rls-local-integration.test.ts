@@ -165,17 +165,13 @@ describeLocal('Supabase local RLS CRUD integration', () => {
       if (restored.error) throw restored.error
     }
 
-    if (userId) {
-      const deleted = await admin.auth.admin.deleteUser(userId)
-      if (deleted.error) throw deleted.error
-    }
     if (supervisorUserId) {
       const deleted = await admin.auth.admin.deleteUser(supervisorUserId)
       if (deleted.error) throw deleted.error
     }
   })
 
-  it('denies anonymous Data API access through RLS', async () => {
+  it('denies anonymous Data API access through table privileges', async () => {
     const selected = await anon.from('products').select('id').limit(1)
     expect(selected.error?.code).toBe('42501')
     expect(selected.error?.message).toMatch(/permission denied for table products/i)
@@ -220,15 +216,49 @@ describeLocal('Supabase local RLS CRUD integration', () => {
       expect(selected.error?.message).toMatch(/permission denied for table jobber_job_snapshots/i)
     }
 
-    expectNoError(await admin.from('jobber_job_snapshots').upsert({
-      jobber_job_id: 'local-rls-job',
-      payload: {},
-      refreshed_by: userId,
+    expectNoError(await admin.from('jobber_job_snapshots').upsert([
+      {
+        jobber_job_id: 'local-rls-job',
+        payload: { scopeJobberUserIds: ['local-jobber-user'] },
+        refreshed_by: userId,
+      },
+      {
+        jobber_job_id: 'local-rls-revoked-job',
+        payload: { scopeJobberUserIds: ['local-jobber-user'] },
+        refreshed_by: userId,
+      },
+    ]))
+    const synchronized = expectNoError(await admin.rpc('synchronize_jobber_job_snapshot_scope', {
+      p_jobber_user_id: 'local-jobber-user',
+      p_assigned_job_ids: ['local-rls-job'],
     }))
+    expect(synchronized.data).toHaveLength(1)
     expectNoError(
       await admin.from('jobber_job_snapshots').select('jobber_job_id').eq('jobber_job_id', 'local-rls-job').single()
     )
-    expectNoError(await admin.from('jobber_job_snapshots').delete().eq('jobber_job_id', 'local-rls-job'))
+    const scopedRows = expectNoError(
+      await admin
+        .from('jobber_job_snapshots')
+        .select('jobber_job_id, payload')
+        .in('jobber_job_id', ['local-rls-job', 'local-rls-revoked-job'])
+        .order('jobber_job_id')
+    )
+    expect(scopedRows.data).toEqual([
+      {
+        jobber_job_id: 'local-rls-job',
+        payload: { scopeJobberUserIds: ['local-jobber-user'] },
+      },
+      {
+        jobber_job_id: 'local-rls-revoked-job',
+        payload: { scopeJobberUserIds: [] },
+      },
+    ])
+    expectNoError(
+      await admin
+        .from('jobber_job_snapshots')
+        .delete()
+        .in('jobber_job_id', ['local-rls-job', 'local-rls-revoked-job'])
+    )
   })
 
   it('exposes only the current profile to supervisors and all profiles to admins', async () => {
@@ -246,6 +276,56 @@ describeLocal('Supabase local RLS CRUD integration', () => {
       { id: userId, role: 'admin' },
       { id: supervisorUserId, role: 'supervisor' },
     ]))
+  })
+
+  it('preserves one active admin while allowing changes when another active admin exists', async () => {
+    const lastAdminDemotion = await admin
+      .from('user_profiles')
+      .update({ role: 'supervisor' })
+      .eq('id', userId)
+    if (!lastAdminDemotion.error) {
+      expectNoError(
+        await admin.from('user_profiles').update({ role: 'admin' }).eq('id', userId)
+      )
+    }
+
+    const lastAdminDeactivation = await admin
+      .from('user_profiles')
+      .update({ is_active: false })
+      .eq('id', userId)
+    if (!lastAdminDeactivation.error) {
+      expectNoError(
+        await admin.from('user_profiles').update({ is_active: true }).eq('id', userId)
+      )
+    }
+
+    expectNoError(
+      await admin
+        .from('user_profiles')
+        .update({ role: 'admin' })
+        .eq('id', supervisorUserId)
+    )
+    expectNoError(
+      await admin
+        .from('user_profiles')
+        .update({ role: 'supervisor' })
+        .eq('id', userId)
+    )
+    expectNoError(
+      await admin
+        .from('user_profiles')
+        .update({ role: 'admin', is_active: true })
+        .eq('id', userId)
+    )
+    expectNoError(
+      await admin
+        .from('user_profiles')
+        .update({ role: 'supervisor' })
+        .eq('id', supervisorUserId)
+    )
+
+    expect(lastAdminDemotion.error?.message).toContain('LAST_ACTIVE_ADMIN_REQUIRED')
+    expect(lastAdminDeactivation.error?.message).toContain('LAST_ACTIVE_ADMIN_REQUIRED')
   })
 
   it('denies supervisors admin tables', async () => {

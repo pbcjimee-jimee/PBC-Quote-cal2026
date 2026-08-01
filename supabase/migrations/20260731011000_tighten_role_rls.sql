@@ -24,6 +24,46 @@ $$;
 REVOKE ALL ON TABLE public.jobber_tokens FROM PUBLIC, anon, authenticated, service_role;
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.jobber_tokens TO service_role;
 
+CREATE FUNCTION app_auth.protect_last_active_admin()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+BEGIN
+  IF OLD.role = 'admin'
+    AND OLD.is_active
+    AND (
+      TG_OP = 'DELETE'
+      OR NEW.role <> 'admin'
+      OR NOT NEW.is_active
+    ) THEN
+    PERFORM pg_advisory_xact_lock(hashtextextended('app_auth.active_admin', 0));
+
+    IF NOT EXISTS (
+      SELECT 1
+      FROM public.user_profiles AS profile
+      WHERE profile.id <> OLD.id
+        AND profile.role = 'admin'
+        AND profile.is_active
+    ) THEN
+      RAISE EXCEPTION 'LAST_ACTIVE_ADMIN_REQUIRED' USING ERRCODE = '23514';
+    END IF;
+  END IF;
+
+  IF TG_OP = 'DELETE' THEN
+    RETURN OLD;
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER trg_user_profiles_protect_last_active_admin
+BEFORE UPDATE OR DELETE ON public.user_profiles
+FOR EACH ROW EXECUTE FUNCTION app_auth.protect_last_active_admin();
+
+REVOKE ALL ON FUNCTION app_auth.protect_last_active_admin() FROM PUBLIC, anon, authenticated, service_role;
+
 DROP POLICY IF EXISTS "authenticated_all" ON public.products;
 DROP POLICY IF EXISTS "authenticated_all" ON public.pricing_settings;
 DROP POLICY IF EXISTS "authenticated_all" ON public.quotes;

@@ -79,7 +79,7 @@
 |---|---|---|---|
 | **G0 결정 승인** | ✅ 완료 (2026-07-30) — D1~D6 확정, role 도입 방향 승인. DECISIONS.md 파일 개정 자체는 Phase 3 태스크로 수행 | 이 문서 "확정된 결정" 섹션 | — |
 | **G1 Jobber 계약 검증** | ✅ 완료 (2026-07-30) — 증거: `docs/jobber/2026-07-30-role-job-expense-g1.md`. ① `users` 쿼리 현재 토큰으로 동작(scope 변경·재연결 **불필요**) ② 담당자 필터 = `jobs(filter: { visitsAssignedToUserId })` 라이브 검증 완료 ③ `job.expenses` pageInfo 페이지네이션 검증, 실데이터에서 labour/paint expense 확인(D4 전제 재확인) | 증거 문서 내 쿼리·응답 | — |
-| **G2 로컬 데이터 검증** | ✅ 완료 (2026-08-01 재검증) — clean no-seed reset으로 retained migration 27개 적용, pgTAP 2 files/90 assertions, 실제 local Supabase RLS 1 file/8 cases, separation/security focused 3 files/25 cases, full verify 통과 | 아래 `최종 role-only G2 증거`와 Task 6 로컬 로그 | 프로덕션 DB로 검증 대체 금지 |
+| **G2 로컬 데이터 검증** | ✅ 완료 (2026-08-01 final-fix 재검증) — clean no-seed reset으로 retained migration 27개 적용, pgTAP 2 files/90 assertions, 실제 local Supabase RLS 1 file/9 cases, final-fix focused 5 files/39 cases, full verify 통과 | 아래 `최종 role-only G2 증거`와 final-fix report | 프로덕션 DB로 검증 대체 금지 |
 | **분리 검증** | ✅ 완료 (2026-08-01) — Progress Invoice 라우트·런타임·마이그레이션이 role 트리에서 제거되고 quote edited-price hotfix가 보존됨 | strict separation 계약 테스트와 Tasks 1–4 full gate | Progress Invoice 코드를 role 릴리스에 재도입 금지 |
 | **G3 프로덕션 적용** | 역할 마이그레이션 적용, 시드 실행, 배포 (Jobber scope 변경·재연결은 G1 결과 불필요 확정) | 각 항목 개별 사용자 승인 + 별도 Progress Invoice 브랜치의 기존 원격 스키마 access lock 확보 | access lock 또는 사용자 승인 없이는 production 변경 금지 |
 
@@ -87,9 +87,9 @@
 
 - Local Supabase: `start` exit 0; `db reset --local --no-seed`가 retained migration 27개를 clean DB에 적용했다. `data_api_grants_test.sql`과 `role_rls_test.sql`은 2 files/90 assertions로 통과했고 role schema에 Progress Invoice relation/function이 없음을 포함해 검증했다.
 - Local advisors: `db advisors --local --type all --level warn --fail-on error` exit 0, ERROR 0건, 기존 WARN 4건(`auth_rls_initplan` 1, `multiple_permissive_policies` 1, `function_search_path_mutable` 2).
-- Real local RLS: `tests/rls-local-integration.test.ts` 1 file/8 cases 통과. admin/supervisor 분리, supervisor의 admin table 거부와 Inventory field-level 제한을 실제 local Supabase에서 확인했다.
-- Focused separation/security: `role-progress-separation`, `role-rls-migration`, `supervisor-route-security` 3 files/25 cases 통과.
-- Full `npm.cmd run verify`: Vitest 81 files/647 cases 통과, 환경 조건 local RLS 1 file/8 cases skip; statements 83.18%, branches 69.77%, functions 93.40%, lines 88.91%. `lib/actions`는 83.45%/68.31%/96.73%/91.05%, `lib/calculator.ts`는 네 지표 모두 100%. strict TypeScript, ESLint, Next production build, production audit(0 vulnerabilities) 통과.
+- Real local RLS: `tests/rls-local-integration.test.ts` 1 file/9 cases 통과. admin/supervisor 분리와 Inventory field-level 제한에 더해 last-active-admin 불변식과 Jobber snapshot scope 철회를 실제 local Supabase에서 확인했다.
+- Final-fix focused: Job action/snapshot/migration/user action 5 files/39 cases 통과. 기존 separation/security 3 files/25 cases 증거도 유지된다.
+- Full `npm.cmd run verify`: Vitest 81 files/656 cases 통과, 환경 조건 local RLS 1 file/9 cases skip; statements 83.52%, branches 69.84%, functions 93.79%, lines 89.13%. `lib/actions`는 84.08%/68.49%/97.54%/91.38%, `lib/calculator.ts`는 네 지표 모두 100%. strict TypeScript, ESLint, Next production build, production audit(0 vulnerabilities) 통과.
 - Build route evidence: `/inventory`, `/jobs`, `/jobs/[jobberJobId]`가 있고 Progress Invoice app/API route는 없다.
 - G3는 별도 Progress Invoice 브랜치가 기존 원격 schema access lock을 확보하기 전까지 명시적으로 차단한다. 그 전에는 production Supabase role migration/seed, 실제 supervisor 계정 생성·매핑, Vercel production 배포를 수행하지 않는다.
 
