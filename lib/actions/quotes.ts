@@ -749,13 +749,20 @@ function applySnapshotToItem<T extends QuoteInput['items'][number]>(
 ): T {
   if (!item.productId || item.isCustom || !snapshot) return item
 
-  const productNameSnapshot = 'price' in snapshot ? snapshot.name : snapshot.product_name_snapshot
-  const price = 'price' in snapshot ? snapshot.price : snapshot.market_price_snapshot
+  if (!('price' in snapshot)) {
+    return {
+      ...item,
+      productNameSnapshot: snapshot.product_name_snapshot,
+      actualPriceSnapshot: decimalNumber(snapshot.actual_price_snapshot),
+      isCustom: false,
+    }
+  }
+
   return {
     ...item,
-    productNameSnapshot,
-    marketPriceSnapshot: decimalNumber(price),
-    actualPriceSnapshot: decimalNumber(price),
+    productNameSnapshot: snapshot.name,
+    marketPriceSnapshot: decimalNumber(snapshot.price),
+    actualPriceSnapshot: decimalNumber(snapshot.price),
     isCustom: false,
   }
 }

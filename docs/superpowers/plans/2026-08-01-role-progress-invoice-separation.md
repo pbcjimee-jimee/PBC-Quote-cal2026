@@ -627,7 +627,7 @@ git push origin role
 - Consumes: `updateQuote(input: unknown): Promise<ActionResult<{ id: string }>>` and existing quote item snapshots.
 - Produces: edited market/RRP values remain user-edited while existing actual-price snapshots remain immutable.
 
-- [ ] **Step 1: Add the production regression test from `d560b53`**
+- [x] **Step 1: Add the production regression test from `d560b53`**
 
 Port the `persists an edited RRP for an existing catalog item and recalculates formulas from it` case from commit `d560b53` into the current role-aware `tests/quote-actions-supabase.test.ts`. Its hand-derived expectations remain:
 
@@ -646,7 +646,7 @@ expect(rpc).toHaveBeenCalledWith('update_quote_with_children', {
 })
 ```
 
-- [ ] **Step 2: Run the regression test and verify RED**
+- [x] **Step 2: Run the regression test and verify RED**
 
 ```powershell
 npm.cmd exec vitest run tests/quote-actions-supabase.test.ts -t "persists an edited RRP"
@@ -654,7 +654,7 @@ npm.cmd exec vitest run tests/quote-actions-supabase.test.ts -t "persists an edi
 
 Expected: FAIL because the current role branch replaces both saved prices with the catalog price.
 
-- [ ] **Step 3: Apply the minimal snapshot fix without replacing role guards**
+- [x] **Step 3: Apply the minimal snapshot fix without replacing role guards**
 
 Update `applySnapshotToItem` in `lib/actions/quotes.ts`:
 
@@ -679,7 +679,7 @@ return {
 
 Do not cherry-pick or merge `main`; apply only this reviewed regression behavior to the existing role-aware file.
 
-- [ ] **Step 4: Verify GREEN and run the full gate**
+- [x] **Step 4: Verify GREEN and run the full gate**
 
 ```powershell
 npm.cmd exec vitest run tests/quote-actions-supabase.test.ts
@@ -688,7 +688,7 @@ npm.cmd run verify
 
 Expected: quote action suite and full verification pass.
 
-- [ ] **Step 5: Check the task box and commit**
+- [x] **Step 5: Check the task box and commit**
 
 ```powershell
 git add -- lib/actions/quotes.ts tests/quote-actions-supabase.test.ts docs/superpowers/plans/2026-08-01-role-progress-invoice-separation.md
