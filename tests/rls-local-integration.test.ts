@@ -177,8 +177,8 @@ describeLocal('Supabase local RLS CRUD integration', () => {
 
   it('denies anonymous Data API access through RLS', async () => {
     const selected = await anon.from('products').select('id').limit(1)
-    expect(selected.error).toBeNull()
-    expect(selected.data).toEqual([])
+    expect(selected.error?.code).toBe('42501')
+    expect(selected.error?.message).toMatch(/permission denied for table products/i)
 
     const inserted = await anon.from('products').insert({
       name: 'anon-rls-denied',
@@ -187,7 +187,7 @@ describeLocal('Supabase local RLS CRUD integration', () => {
       actual_price: '1.00',
     })
     expect(inserted.error?.code).toBe('42501')
-    expect(inserted.error?.message).toMatch(/row-level security/i)
+    expect(inserted.error?.message).toMatch(/permission denied for table products/i)
   })
 
   it('keeps Jobber tokens behind table privileges and RLS', async () => {
@@ -248,7 +248,7 @@ describeLocal('Supabase local RLS CRUD integration', () => {
     ]))
   })
 
-  it('denies supervisors admin tables and Progress Invoice RPCs', async () => {
+  it('denies supervisors admin tables', async () => {
     const products = expectNoError(await supervisor.from('products').select('id').limit(1))
     expect(products.data).toEqual([])
 
@@ -259,23 +259,6 @@ describeLocal('Supabase local RLS CRUD integration', () => {
       actual_price: '1.00',
     })
     expect(productInsert.error?.code).toBe('42501')
-
-    const progressRows = expectNoError(
-      await supervisor.from('progress_invoice_series').select('id').limit(1)
-    )
-    expect(progressRows.data).toEqual([])
-
-    const progressRpc = await supervisor.rpc('list_progress_invoice_series', {
-      payload: {
-        query: '',
-        statuses: [],
-        page: 1,
-        page_size: 10,
-        quote_id: null,
-      },
-    })
-    expect(progressRpc.error?.code).toBe('42501')
-    expect(progressRpc.error?.message).toContain('APP_ADMIN_REQUIRED')
   })
 
   it('allows supervisor inventory movement but rejects identity edits', async () => {
@@ -319,39 +302,6 @@ describeLocal('Supabase local RLS CRUD integration', () => {
       .eq('id', inventoryItemId)
     expect(renamed.error?.code).toBe('42501')
     expect(renamed.error?.message).toContain('INVENTORY_ADMIN_FIELDS_REQUIRED')
-  })
-
-  it('keeps Progress Invoice tables authenticated read-only', async () => {
-    const anonSelected = await anon.from('progress_invoice_series').select('id').limit(1)
-    expect(anonSelected.error?.code).toBe('42501')
-    expect(anonSelected.error?.message).toMatch(/permission denied for table progress_invoice_series/i)
-
-    const authenticatedSelected = await authed
-      .from('progress_invoice_series')
-      .select('id')
-      .limit(1)
-    expectNoError(authenticatedSelected)
-
-    const authenticatedInserted = await authed.from('business_invoice_profiles').insert({
-      legal_name: 'Direct write must fail',
-      trading_name: 'Direct write must fail',
-      abn: '00000000000',
-      contractor_licence: 'DENIED',
-      business_address: 'Denied',
-      phone: 'Denied',
-      email: 'denied@example.test',
-      bank_name: 'Denied',
-      bsb: '000-000',
-      bank_account_name: 'Denied',
-      bank_account_number: '0',
-      created_by: userId,
-    })
-    expect(authenticatedInserted.error?.code).toBe('42501')
-    expect(authenticatedInserted.error?.message).toMatch(/permission denied for table business_invoice_profiles/i)
-
-    const serviceSelected = await admin.from('progress_invoice_series').select('id').limit(1)
-    expect(serviceSelected.error?.code).toBe('42501')
-    expect(serviceSelected.error?.message).toMatch(/permission denied for table progress_invoice_series/i)
   })
 
   it('allows service-role cleanup on non-secret application tables', async () => {

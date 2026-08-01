@@ -375,7 +375,7 @@ git push origin role
 - Consumes: `app_auth.current_role()` from `20260731010000_add_user_profiles_and_roles.sql`.
 - Produces: a role-only migration chain whose only post-inventory migrations are `20260731010000`, `20260731011000`, and `20260731012000`.
 
-- [ ] **Step 1: Add failing migration-boundary and RLS assertions**
+- [x] **Step 1: Add failing migration-boundary and RLS assertions**
 
 Extend `tests/role-progress-separation.test.ts`:
 
@@ -415,7 +415,7 @@ npm.cmd exec vitest run tests/role-progress-separation.test.ts tests/role-rls-mi
 
 Expected: FAIL because the five forbidden migrations exist and `tighten_role_rls.sql` references Progress Invoice objects.
 
-- [ ] **Step 2: Move required Data API grants into the role RLS migration**
+- [x] **Step 2: Move required Data API grants into the role RLS migration**
 
 Change the local-only `project_id` in `supabase/config.toml` to `pbc-quote-cal-role` so the role and Progress Invoice branches cannot reuse the same Docker project identity.
 
@@ -453,7 +453,7 @@ Keep the existing role policies and inventory trigger. Delete everything from th
 
 The quote save RPCs remain unchanged: they are `SECURITY INVOKER` and therefore obey these table RLS policies.
 
-- [ ] **Step 3: Delete Progress Invoice migrations and rewrite database tests**
+- [x] **Step 3: Delete Progress Invoice migrations and rewrite database tests**
 
 Delete all migration and pgTAP files listed in this task. Rewrite `supabase/tests/data_api_grants_test.sql` to query actual privileges for this matrix:
 
@@ -537,7 +537,7 @@ ROLLBACK;
 
 In `tests/rls-local-integration.test.ts`, rename `denies supervisors admin tables and Progress Invoice RPCs` to `denies supervisors admin tables`, keep the products select/insert checks, remove Progress Invoice queries, and delete the separate `keeps Progress Invoice tables authenticated read-only` test. The resulting local suite has eight role-only cases.
 
-- [ ] **Step 4: Replace stale generated Supabase types**
+- [x] **Step 4: Replace stale generated Supabase types**
 
 Create a clean role-only local database, then capture its generated types:
 
@@ -549,7 +549,7 @@ npx.cmd supabase gen types typescript --local
 
 Replace `lib/supabase/types.ts` with that generated output through the editing tool, then verify it contains `user_profiles` and `jobber_job_snapshots` and contains no `progress_invoice_*` table or Progress Invoice RPC type.
 
-- [ ] **Step 5: Verify the clean role-only database**
+- [x] **Step 5: Verify the clean role-only database**
 
 Run:
 
@@ -561,7 +561,7 @@ npm.cmd run typecheck
 
 Expected: local reset succeeds without a Progress Invoice object; the retained Data API and role RLS pgTAP suites pass; focused Vitest and typecheck pass.
 
-- [ ] **Step 6: Run the full gate**
+- [x] **Step 6: Run the full gate**
 
 ```powershell
 npm.cmd run verify
@@ -569,7 +569,7 @@ npm.cmd run verify
 
 Expected: PASS.
 
-- [ ] **Step 7: Check the task box and commit**
+- [x] **Step 7: Check the task box and commit**
 
 ```powershell
 git add -- supabase lib/supabase/types.ts tests docs/superpowers/plans/2026-08-01-role-progress-invoice-separation.md

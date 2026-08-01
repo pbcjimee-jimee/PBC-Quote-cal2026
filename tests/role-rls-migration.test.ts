@@ -45,7 +45,7 @@ describe('role RLS migrations', () => {
     expect(sql).not.toMatch(/FOR (?:INSERT|UPDATE|DELETE|ALL) TO authenticated/i)
   })
 
-  it('restricts quote, pricing, product, and progress data to admins', () => {
+  it('restricts quote, pricing, and product data to admins', () => {
     const sql = readMigration('20260731011000_tighten_role_rls.sql')
     const adminTables = [
       'products',
@@ -61,9 +61,6 @@ describe('role RLS migrations', () => {
       'product_services',
       'quote_line_templates',
       'quote_line_template_items',
-      'business_invoice_profiles',
-      'progress_invoice_series',
-      'progress_invoice_events',
     ]
 
     for (const table of adminTables) {
@@ -74,6 +71,8 @@ describe('role RLS migrations', () => {
         )
       )
     }
+
+    expect(sql).not.toMatch(/progress_invoice|business_invoice_profiles|save_business_invoice_profile/i)
   })
 
   it('allows supervisors to select and move inventory but rejects identity edits', () => {
@@ -88,28 +87,4 @@ describe('role RLS migrations', () => {
     expect(sql).toMatch(/RAISE EXCEPTION 'INVENTORY_ADMIN_FIELDS_REQUIRED'/i)
   })
 
-  it('guards authenticated Progress Invoice RPCs against supervisor calls', () => {
-    const sql = readMigration('20260731011000_tighten_role_rls.sql')
-    const rpcNames = [
-      'save_business_invoice_profile',
-      'list_progress_invoice_series',
-      'get_progress_invoice_series',
-      'get_progress_invoice_quote_prefill',
-      'create_progress_invoice_series',
-      'update_progress_invoice_series',
-      'create_progress_adjustment',
-      'update_progress_adjustment_draft',
-      'approve_progress_adjustment',
-      'supersede_progress_adjustment',
-      'get_progress_invoice_jobber_context',
-      'accept_progress_jobber_invoice_number',
-    ]
-
-    for (const rpc of rpcNames) {
-      expect(sql).toMatch(new RegExp(`ALTER FUNCTION public\\.${rpc}\\(JSONB\\) RENAME TO ${rpc}_admin_impl`, 'i'))
-      expect(sql).toMatch(new RegExp(`CREATE FUNCTION public\\.${rpc}\\(payload JSONB\\)`, 'i'))
-    }
-
-    expect(sql).toMatch(/app_auth\.require_admin\(\)/i)
-  })
 })

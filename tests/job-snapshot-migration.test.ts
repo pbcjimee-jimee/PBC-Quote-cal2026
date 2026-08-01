@@ -13,7 +13,12 @@ describe('Jobber job snapshot migration', () => {
     expect(migration).toContain('payload jsonb not null')
     expect(migration).toContain('refreshed_by uuid not null references auth.users(id)')
     expect(migration).toContain('enable row level security')
-    expect(migration).toContain('revoke all on table public.jobber_job_snapshots from anon, authenticated')
+    expect(migration).toContain(
+      'revoke all on table public.jobber_job_snapshots from public, anon, authenticated, service_role'
+    )
+    expect(migration).toContain(
+      'grant select, insert, update, delete on table public.jobber_job_snapshots to service_role'
+    )
     expect(migration).not.toMatch(/create\s+policy/i)
   })
 })
