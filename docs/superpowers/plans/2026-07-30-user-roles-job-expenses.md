@@ -111,7 +111,7 @@
 ### 1.3 UI: 역할별 라우팅 + 내비게이션
 
 - [x] `app/(app)/layout.tsx`: `requireAppUser()`로 role 확보 → `AppHeader`에 role 전달
-- [x] `components/layout/app-header.tsx`: `navItems`에 `roles` 속성 추가, 역할별 필터. supervisor 표시 항목 = Jobs, Inventory. "Admin tools" 헤딩을 역할별 레이블로
+- [x] `components/layout/app-header.tsx`: `navItems`에 `roles` 속성 추가, 역할별 필터. supervisor 표시 항목 = Job Expenses, Inventory. "Admin tools" 헤딩을 역할별 레이블로
 - [x] Inventory 라우트를 `/settings/inventory` → `/inventory`로 이동 (settings 하위는 admin 전용 경계로 단순화). 구 URL은 redirect. nav·IntentLink·테스트 갱신
 - [x] admin 전용 라우트 가드: `app/(app)/quotes/**`, `app/(app)/settings/**` 각 layout/page에서 `requireRole('admin')`, 실패 시 역할 홈으로 redirect. `/progress-invoices`는 이 브랜치와 릴리스에 존재하지 않음
 - [x] 역할 홈 redirect: 루트·`/quotes` 진입 시 supervisor는 D6 답(기본 `/jobs`)으로. 미들웨어는 세션 유무만 계속 담당(役割 판정은 서버 컴포넌트에서)
@@ -190,9 +190,9 @@
 ## 부록 B — 신규/변경 파일 목록 (예상)
 
 ```
-supabase/migrations/2026073XXXXXXX_add_user_profiles_and_roles.sql   (신규)
-supabase/migrations/2026073XXXXXXX_tighten_role_rls.sql              (신규)
-supabase/migrations/2026073XXXXXXX_add_jobber_job_snapshots.sql      (신규)
+supabase/migrations/20260731010000_add_user_profiles_and_roles.sql   (신규)
+supabase/migrations/20260731011000_tighten_role_rls.sql              (신규)
+supabase/migrations/20260731012000_add_jobber_job_snapshots.sql      (신규)
 lib/security/require-app-user.ts                                      (신규, requireAllowedUser 대체)
 lib/security/auth-policy.ts                                           (allowlist 백스톱 강등)
 lib/actions/users.ts                                                  (신규)
