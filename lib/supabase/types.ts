@@ -79,7 +79,15 @@ export type Database = {
           updated_at?: string
         }
         Update: Partial<Database['public']['Tables']['jobber_quote_lines']['Insert']>
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "jobber_quote_lines_quote_id_fkey"
+            columns: ["quote_id"]
+            isOneToOne: false
+            referencedRelation: "quotes"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       jobber_tokens: {
         Row: {
@@ -215,7 +223,29 @@ export type Database = {
           id?: string
         }
         Update: Partial<Database['public']['Tables']['quote_items']['Insert']>
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "quote_items_area_id_fkey"
+            columns: ["area_id"]
+            isOneToOne: false
+            referencedRelation: "quote_areas"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "quote_items_product_id_fkey"
+            columns: ["product_id"]
+            isOneToOne: false
+            referencedRelation: "products"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "quote_items_quote_id_fkey"
+            columns: ["quote_id"]
+            isOneToOne: false
+            referencedRelation: "quotes"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       quote_line_template_items: {
         Row: {
@@ -239,7 +269,15 @@ export type Database = {
           updated_at?: string
         }
         Update: Partial<Database['public']['Tables']['quote_line_template_items']['Insert']>
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "quote_line_template_items_template_id_fkey"
+            columns: ["template_id"]
+            isOneToOne: false
+            referencedRelation: "quote_line_templates"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       quote_line_templates: {
         Row: {
@@ -273,7 +311,15 @@ export type Database = {
           updated_at?: string
         }
         Update: Partial<Database['public']['Tables']['quote_memos']['Insert']>
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "quote_memos_quote_id_fkey"
+            columns: ["quote_id"]
+            isOneToOne: false
+            referencedRelation: "quotes"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       quote_option_items: {
         Row: {
@@ -296,7 +342,29 @@ export type Database = {
           id?: string
         }
         Update: Partial<Database['public']['Tables']['quote_option_items']['Insert']>
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "quote_option_items_area_id_fkey"
+            columns: ["area_id"]
+            isOneToOne: false
+            referencedRelation: "quote_areas"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "quote_option_items_option_id_fkey"
+            columns: ["option_id"]
+            isOneToOne: false
+            referencedRelation: "quote_options"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "quote_option_items_product_id_fkey"
+            columns: ["product_id"]
+            isOneToOne: false
+            referencedRelation: "products"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       quote_options: {
         Row: {
@@ -322,7 +390,15 @@ export type Database = {
           id?: string
         }
         Update: Partial<Database['public']['Tables']['quote_options']['Insert']>
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "quote_options_quote_id_fkey"
+            columns: ["quote_id"]
+            isOneToOne: false
+            referencedRelation: "quotes"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       quote_price_revisions: {
         Row: {
@@ -348,7 +424,15 @@ export type Database = {
           changed_at?: string
         }
         Update: Partial<Database['public']['Tables']['quote_price_revisions']['Insert']>
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "quote_price_revisions_quote_id_fkey"
+            columns: ["quote_id"]
+            isOneToOne: false
+            referencedRelation: "quotes"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       quotes: {
         Row: {
@@ -480,13 +564,13 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      create_quote_with_children: {
-        Args: { payload: Json }
-        Returns: string
-      }
+      create_quote_with_children: { Args: { payload: Json }; Returns: string }
       update_quote_with_children: {
         Args: { payload: Json }
-        Returns: Array<{ id: string; version: number }>
+        Returns: {
+          id: string
+          version: number
+        }[]
       }
     }
     Enums: {

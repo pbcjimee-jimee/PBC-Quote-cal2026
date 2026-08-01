@@ -16,10 +16,14 @@ SELECT ok(
     WHERE schemaname = 'public'
       AND tablename = admin_tables.table_name
       AND policyname = admin_tables.table_name || '_admin'
+      AND roles = ARRAY['authenticated'::name]
       AND cmd = 'ALL'
-      AND qual ~ 'app_auth\."?current_role"?\(\).*admin'
+      AND replace(qual, '"current_role"', 'current_role') =
+        '(app_auth.current_role() = ''admin''::text)'
+      AND replace(with_check, '"current_role"', 'current_role') =
+        '(app_auth.current_role() = ''admin''::text)'
   ),
-  format('public.%I has an admin-only policy', table_name)
+  format('public.%I has the exact authenticated admin-only ALL policy', table_name)
 )
 FROM admin_tables;
 
@@ -34,18 +38,48 @@ SELECT is(
   'user_profiles has self and admin select policies'
 );
 
-WITH expected(policy_name) AS (
-  SELECT unnest(ARRAY[
-    'warehouse_inventory_app_select',
-    'warehouse_inventory_app_update',
-    'warehouse_inventory_admin_insert',
-    'warehouse_inventory_admin_delete'
-  ])
+WITH expected(policy_name, cmd, qual, with_check) AS (
+  VALUES
+    (
+      'warehouse_inventory_app_select',
+      'SELECT',
+      '(app_auth.current_role() = ANY (ARRAY[''admin''::text, ''supervisor''::text]))',
+      NULL
+    ),
+    (
+      'warehouse_inventory_app_update',
+      'UPDATE',
+      '(app_auth.current_role() = ANY (ARRAY[''admin''::text, ''supervisor''::text]))',
+      '(app_auth.current_role() = ANY (ARRAY[''admin''::text, ''supervisor''::text]))'
+    ),
+    (
+      'warehouse_inventory_admin_insert',
+      'INSERT',
+      NULL,
+      '(app_auth.current_role() = ''admin''::text)'
+    ),
+    (
+      'warehouse_inventory_admin_delete',
+      'DELETE',
+      '(app_auth.current_role() = ''admin''::text)',
+      NULL
+    )
 )
 SELECT ok(
-  EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public'
-    AND tablename = 'warehouse_inventory' AND policyname = expected.policy_name),
-  format('%s exists', policy_name)
+  EXISTS (
+    SELECT 1
+    FROM pg_policies
+    WHERE schemaname = 'public'
+      AND tablename = 'warehouse_inventory'
+      AND policyname = expected.policy_name
+      AND roles = ARRAY['authenticated'::name]
+      AND pg_policies.cmd = expected.cmd
+      AND replace(pg_policies.qual, '"current_role"', 'current_role')
+        IS NOT DISTINCT FROM expected.qual
+      AND replace(pg_policies.with_check, '"current_role"', 'current_role')
+        IS NOT DISTINCT FROM expected.with_check
+  ),
+  format('%s has exact roles, command, USING, and WITH CHECK', policy_name)
 )
 FROM expected;
 
