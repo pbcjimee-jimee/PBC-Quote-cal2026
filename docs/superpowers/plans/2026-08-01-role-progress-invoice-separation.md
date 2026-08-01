@@ -466,7 +466,7 @@ jobber_job_snapshots:PUBLIC none, anon none, authenticated none, service_role DM
 
 The privilege matrix has 17 tables × 4 grantees, so set `SELECT plan(68);`.
 
-Create `supabase/tests/role_rls_test.sql` with `SELECT plan(22);`. Each admin and inventory assertion must match the exact catalog `roles`, `cmd`, PostgreSQL-17-normalized `qual`, and `with_check` values; policy-name existence or permissive substring matching is insufficient:
+Create `supabase/tests/role_rls_test.sql` with `SELECT plan(22);`. Each admin and inventory assertion must match the exact catalog `roles`, `cmd`, PostgreSQL-17-normalized `qual`, and `with_check` values; policy-name existence or permissive substring matching is insufficient. The final single assertion combines forbidden Progress Invoice/business invoice relations with forbidden public Progress Invoice functions and `app_auth.require_admin()` so the plan remains 22:
 
 ```sql
 BEGIN;
@@ -558,11 +558,24 @@ SELECT is((SELECT count(*)::INT FROM pg_policies WHERE schemaname = 'public' AND
 SELECT is((SELECT count(*)::INT FROM pg_policies WHERE schemaname = 'public' AND tablename = 'jobber_job_snapshots'), 0, 'jobber_job_snapshots has no client policy');
 SELECT is(
   (SELECT count(*)::INT
-   FROM pg_class
-   WHERE relnamespace = 'public'::regnamespace
-     AND (relname LIKE 'progress_invoice%' OR relname = 'business_invoice_profiles')),
+   FROM (
+     SELECT 1
+     FROM pg_class
+     WHERE relnamespace = 'public'::regnamespace
+       AND (relname LIKE 'progress_invoice%' OR relname LIKE 'business_invoice%')
+     UNION ALL
+     SELECT 1
+     FROM pg_proc
+     WHERE (
+       pronamespace = 'public'::regnamespace
+       AND proname ~* '(progress|invoice)'
+     ) OR (
+       pronamespace = 'app_auth'::regnamespace
+       AND proname = 'require_admin'
+     )
+   ) AS forbidden_progress_invoice_objects),
   0,
-  'role schema has no Progress Invoice tables'
+  'role schema has no Progress Invoice relations or functions'
 );
 
 SELECT * FROM finish();

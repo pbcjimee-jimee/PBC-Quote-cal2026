@@ -87,11 +87,24 @@ SELECT is((SELECT count(*)::INT FROM pg_policies WHERE schemaname = 'public' AND
 SELECT is((SELECT count(*)::INT FROM pg_policies WHERE schemaname = 'public' AND tablename = 'jobber_job_snapshots'), 0, 'jobber_job_snapshots has no client policy');
 SELECT is(
   (SELECT count(*)::INT
-   FROM pg_class
-   WHERE relnamespace = 'public'::regnamespace
-     AND (relname LIKE 'progress_invoice%' OR relname = 'business_invoice_profiles')),
+   FROM (
+     SELECT 1
+     FROM pg_class
+     WHERE relnamespace = 'public'::regnamespace
+       AND (relname LIKE 'progress_invoice%' OR relname LIKE 'business_invoice%')
+     UNION ALL
+     SELECT 1
+     FROM pg_proc
+     WHERE (
+       pronamespace = 'public'::regnamespace
+       AND proname ~* '(progress|invoice)'
+     ) OR (
+       pronamespace = 'app_auth'::regnamespace
+       AND proname = 'require_admin'
+     )
+   ) AS forbidden_progress_invoice_objects),
   0,
-  'role schema has no Progress Invoice tables'
+  'role schema has no Progress Invoice relations or functions'
 );
 
 SELECT * FROM finish();
