@@ -77,8 +77,9 @@
 - `user_profiles`와 `app_auth.current_role()`을 도입하고 기존 Auth 사용자를 admin으로 부트스트랩한다. 견적·가격·제품·설정은 admin 전용, Inventory는 admin+supervisor로 분리했으며 supervisor는 재고 이동 필드만 수정한다.
 - 역할 기반 로그인/Server Action/route/nav 경계를 적용했다. supervisor의 기본·허용 화면은 `/jobs`와 `/inventory`뿐이며 `/settings/inventory`는 `/inventory`로 redirect한다. admin은 `/settings/users`에서 사용자 생성·역할/활성 상태 변경·Jobber 팀원 연결을 관리한다.
 - G1에서 검증한 `PbcTeamUsers`/`PbcUserJobs`/`PbcJobExpenses` 셰이프를 fixture 기반 client/gateway에 구현했다. supervisor는 Jobber visit 담당자 기준 자기 job만, admin은 전체 또는 supervisor 필터로 보고 expense·profit 금액/비율을 확인한다.
-- G2 로컬 마이그레이션 reset과 pgTAP·실제 로컬 Supabase 역할 RLS·전체 verify가 통과했다. 2026-08-01 Tasks 1–4에서 role 트리의 라우트·런타임·마이그레이션 분리와 quote edited-price hotfix 보존을 검증했으며, strict role-only 최종 수치 기록은 Task 6 재실행 후 갱신한다.
-- Progress Invoice는 이 브랜치와 릴리스에 포함되지 않는다. 기존 원격 스키마는 별도 소유 상태로 남아 있고 role production 적용은 별도 브랜치의 access lock 선행 조건이 확보될 때까지 차단된다.
+- 2026-08-01 strict role-only G2 재검증에서 local Supabase clean no-seed reset이 retained migration 27개를 적용했고 pgTAP 2 files/90 assertions, 실제 local RLS 1 file/8 cases, separation/security focused 3 files/25 cases가 통과했다. Local advisors는 ERROR 0건, 기존 WARN 4건이었다.
+- 전체 `npm.cmd run verify`는 Vitest 81 files/647 cases 통과와 환경 조건 local RLS 1 file/8 cases skip, statements 83.18%·branches 69.77%·functions 93.40%·lines 88.91%를 기록했다. `lib/actions`는 83.45%/68.31%/96.73%/91.05%, `lib/calculator.ts`는 전 지표 100%였고 strict TypeScript·ESLint·Next production build·production audit(0 vulnerabilities)가 통과했다. Build route에는 `/inventory`, `/jobs`, `/jobs/[jobberJobId]`가 있고 Progress Invoice app/API route는 없다.
+- Progress Invoice는 이 브랜치와 릴리스에 포함되지 않는다. 기존 원격 스키마는 별도 소유 상태로 남아 있고, 별도 브랜치의 access lock 선행 조건이 확보되기 전까지 production Supabase role migration/seed, 실제 supervisor 계정 생성·매핑, Vercel production 배포를 명시적으로 차단한다.
 
 ---
 
@@ -104,8 +105,8 @@
 
 | 날짜 | 작업 | 담당 |
 |---|---|---|
-| 2026-08-01 | `role` 브랜치에서 Progress Invoice 소유 라우트·런타임·마이그레이션을 분리하고 역할 릴리스의 admin/supervisor 경계를 유지했다. 현재 quote edited-price hotfix를 보존했으며 Tasks 1–4 full gate를 통과했다. strict role-only 최종 G2 수치는 Task 6 재실행 후 기록한다. Production 역할 적용은 별도 원격 스키마 access lock 선행 조건과 사용자 승인 대기. | Codex 5.6-Sol high |
-| 2026-07-31 | `role` 브랜치에서 admin/supervisor 역할 분리와 Jobber job expense/profit 화면을 구현하고 로컬 G2 검증 완료. `user_profiles`/역할 RLS, 역할 서버 가드·nav, `/inventory`, `/settings/users`, read-only Jobber job client/cache/actions, `/jobs` 목록·상세를 반영. 최종 role-only 수치는 Task 6 재실행 후 기록한다. Production migration·seed·배포는 access lock 선행 조건과 사용자 승인 대기. | Codex 5.6-Sol high |
+| 2026-08-01 | `role` 브랜치 strict role-only G2 재검증 완료. clean no-seed reset 27 migrations, pgTAP 2 files/90 assertions, local RLS 1 file/8 cases, focused 3 files/25 cases, full verify 81 files/647 cases(1 file/8 cases skip), coverage 83.18/69.77/93.40/88.91%, build route `/inventory`·`/jobs`·`/jobs/[jobberJobId]`, Progress Invoice app/API route 없음, audit 0 vulnerabilities를 확인했다. Production Supabase·supervisor 실계정·Vercel production은 별도 access lock과 사용자 승인 대기. | Codex 5.6-Sol high |
+| 2026-07-31 | `role` 브랜치에서 admin/supervisor 역할 분리와 Jobber job expense/profit 화면을 구현하고 로컬 G2 검증 완료. `user_profiles`/역할 RLS, 역할 서버 가드·nav, `/inventory`, `/settings/users`, read-only Jobber job client/cache/actions, `/jobs` 목록·상세를 반영. 최종 role-only 수치는 2026-08-01 Task 6에서 재검증했다. Production migration·seed·배포는 access lock 선행 조건과 사용자 승인 대기. | Codex 5.6-Sol high |
 | 2026-07-16 | New Quote `Add Text` 제목의 Product & Service 추천 누락 회귀 수정. 제목 검색을 이름 기준으로 제한하고 서버의 6개 선제 제한과 클라이언트 6개 제한을 제거해 관련 항목을 최대 300개까지 스크롤 목록에 표시. Supabase·dev 검색 회귀 테스트 추가. 전체 verify 67 files/561 tests, coverage/build/audit 0 vulnerabilities 통과. | Codex 5.6-Sol high |
 | 2026-07-15 | Jobber 견적 fetch scope 회귀 수정. Jobber가 반환하는 `read_clients`·`read_quotes` 등 prefix형 read scope와 기존 승인된 `write_quotes` 최소 scope를 검증기가 정상 인식하도록 보완하고 실제 연결 scope 회귀 테스트를 추가. Jobber focused 14 files/122 tests, typecheck, 변경 파일 lint 통과. | Codex 5.6-Sol high |
 | 2026-07-14 | 핵심 navigation performance 구현·production 배포·카나리 완료. viewport prefetch fan-out을 intent prefetch로 교체하고 pending progress 추가, Settings 비활성 탭 데이터 lazy load·중복 방지·Retry, quote detail 현재 사용자 profile 재사용을 반영. Jobber production 경로 비변경 및 focused 165 tests 확인. 전체 verify 67 files/557 tests, coverage/build/audit 0 vulnerabilities 통과. Production에서 Settings→Overview 0.45초, New Quote→Overview 0.51초, Overview→detail URL 2.69초, 느린 전환 progress/status, Settings lazy load, Jobber Fetch/Refresh UI, console error 0건 확인. | Codex 5.6-Sol high |

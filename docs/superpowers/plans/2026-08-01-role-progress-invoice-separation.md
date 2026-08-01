@@ -797,7 +797,7 @@ git push origin role
 - Consumes: the completed role-only source and migrations.
 - Produces: final G2 evidence and a clean pushed `role` branch; no G3 mutation.
 
-- [ ] **Step 1: Start/reset the local Supabase stack and run pgTAP**
+- [x] **Step 1: Start/reset the local Supabase stack and run pgTAP**
 
 ```powershell
 npx.cmd supabase start
@@ -807,7 +807,7 @@ npx.cmd supabase test db --local supabase/tests
 
 Expected: every retained migration applies from a clean database; 2 pgTAP files and 90 assertions pass; no Progress Invoice relation/function is created.
 
-- [ ] **Step 2: Run the real local admin/supervisor RLS integration suite**
+- [x] **Step 2: Run the real local admin/supervisor RLS integration suite**
 
 Read the local values without printing them into docs or commits:
 
@@ -830,7 +830,7 @@ npm.cmd run test:rls:local
 
 Expected: all eight role-only integration cases pass, including supervisor denial on admin tables and field-level inventory restrictions.
 
-- [ ] **Step 3: Run separation checks and the complete verification gate**
+- [x] **Step 3: Run separation checks and the complete verification gate**
 
 ```powershell
 npm.cmd exec vitest run tests/role-progress-separation.test.ts tests/role-rls-migration.test.ts tests/supervisor-route-security.test.ts
@@ -839,7 +839,7 @@ npm.cmd run verify
 
 Expected: all tests, coverage thresholds, strict TypeScript, ESLint, Next production build, and production dependency audit pass. Build output contains `/jobs`, `/jobs/[jobberJobId]`, and `/inventory`, and contains no Progress Invoice route or API.
 
-- [ ] **Step 4: Record exact G2 evidence**
+- [x] **Step 4: Record exact G2 evidence**
 
 Update both plans and `PROGRESS.md` with:
 
@@ -850,7 +850,16 @@ Update both plans and `PROGRESS.md` with:
 - explicit build evidence that Progress Invoice routes are absent;
 - explicit statement that production Supabase, supervisor account creation, and Vercel production deployment remain blocked by the separate Progress Invoice access-lock prerequisite.
 
-- [ ] **Step 5: Verify documentation-only changes and commit**
+Recorded 2026-08-01 evidence:
+
+- Local Supabase `start` exit 0; clean `db reset --local --no-seed` applied 27 retained migrations.
+- pgTAP passed 2 files/90 assertions (`data_api_grants_test.sql`, `role_rls_test.sql`), including the absence of Progress Invoice relations/functions. Local advisors exited 0 with ERROR 0 and four pre-existing WARN findings.
+- Real local RLS passed 1 file/8 cases. Focused separation/security passed 3 files/25 cases.
+- First full `npm.cmd run verify` passed: Vitest 81 files/647 cases passed with the environment-gated local RLS 1 file/8 cases skipped; statements 83.18%, branches 69.77%, functions 93.40%, lines 88.91%; `lib/actions` 83.45%/68.31%/96.73%/91.05%; `lib/calculator.ts` 100% across statements/branches/functions/lines; strict TypeScript, ESLint, Next production build, and production audit with 0 vulnerabilities passed.
+- Build output contains `/inventory`, `/jobs`, and `/jobs/[jobberJobId]`, and contains no Progress Invoice app or API route.
+- G3 remains blocked until the separately owned Progress Invoice access lock is complete: no production Supabase role migration/seed, real supervisor account creation or mapping, or Vercel production deployment is authorized.
+
+- [x] **Step 5: Verify documentation-only changes and commit**
 
 ```powershell
 npm.cmd run verify
