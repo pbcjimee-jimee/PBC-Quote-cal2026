@@ -44,7 +44,14 @@ export default async function JobsPage({
           <p className="pbc-alert pbc-alert--warning">{appUser.profile.role === 'admin'
             ? 'The selected supervisor is not linked to a Jobber user.'
             : 'Your app profile is not linked to a Jobber user. Ask an admin to complete the link in Settings → Users.'}</p>
-        ) : <JobsList jobs={jobs.data.jobs} />}
+        ) : (
+          <>
+            {jobs.data.refreshWarning ? (
+              <p className="pbc-alert pbc-alert--warning mb-4" role="status">{jobs.data.refreshWarning}</p>
+            ) : null}
+            <JobsList jobs={jobs.data.jobs} />
+          </>
+        )}
       </div>
     </main>
   )

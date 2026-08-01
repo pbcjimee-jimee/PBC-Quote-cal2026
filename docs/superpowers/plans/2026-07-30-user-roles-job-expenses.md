@@ -88,8 +88,8 @@
 - Local Supabase: `start` exit 0; `db reset --local --no-seed`가 retained migration 27개를 clean DB에 적용했다. `data_api_grants_test.sql`과 `role_rls_test.sql`은 2 files/90 assertions로 통과했고 role schema에 Progress Invoice relation/function이 없음을 포함해 검증했다.
 - Local advisors: `db advisors --local --type all --level warn --fail-on error` exit 0, ERROR 0건, 기존 WARN 4건(`auth_rls_initplan` 1, `multiple_permissive_policies` 1, `function_search_path_mutable` 2).
 - Real local RLS: `tests/rls-local-integration.test.ts` 1 file/9 cases 통과. admin/supervisor 분리와 Inventory field-level 제한에 더해 last-active-admin 불변식과 Jobber snapshot scope 철회를 실제 local Supabase에서 확인했다.
-- Final-fix focused: Job action/snapshot/migration/user action 5 files/39 cases 통과. 기존 separation/security 3 files/25 cases 증거도 유지된다.
-- Full `npm.cmd run verify`: Vitest 81 files/656 cases 통과, 환경 조건 local RLS 1 file/9 cases skip; statements 83.52%, branches 69.84%, functions 93.79%, lines 89.13%. `lib/actions`는 84.08%/68.49%/97.54%/91.38%, `lib/calculator.ts`는 네 지표 모두 100%. strict TypeScript, ESLint, Next production build, production audit(0 vulnerabilities) 통과.
+- Final-fix focused: Job action/snapshot/migration/user action 5 files/39 cases와 partial-refresh warning UI 2 files/2 cases 통과. 기존 separation/security 3 files/25 cases 증거도 유지된다.
+- Full `npm.cmd run verify`: Vitest 83 files/658 cases 통과, 환경 조건 local RLS 1 file/9 cases skip; statements 83.52%, branches 69.84%, functions 93.79%, lines 89.13%. `lib/actions`는 84.08%/68.49%/97.54%/91.38%, `lib/calculator.ts`는 네 지표 모두 100%. strict TypeScript, ESLint, Next production build, production audit(0 vulnerabilities) 통과.
 - Build route evidence: `/inventory`, `/jobs`, `/jobs/[jobberJobId]`가 있고 Progress Invoice app/API route는 없다.
 - G3는 별도 Progress Invoice 브랜치가 기존 원격 schema access lock을 확보하기 전까지 명시적으로 차단한다. 그 전에는 production Supabase role migration/seed, 실제 supervisor 계정 생성·매핑, Vercel production 배포를 수행하지 않는다.
 
