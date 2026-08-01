@@ -81,11 +81,19 @@
 - 전체 `npm.cmd run verify`는 Vitest 83 files/658 cases 통과와 환경 조건 local RLS 1 file/9 cases skip, statements 83.52%·branches 69.84%·functions 93.79%·lines 89.13%를 기록했다. `lib/actions`는 84.08%/68.49%/97.54%/91.38%, `lib/calculator.ts`는 전 지표 100%였고 strict TypeScript·ESLint·Next production build·production audit(0 vulnerabilities)가 통과했다. Build route에는 `/inventory`, `/jobs`, `/jobs/[jobberJobId]`가 있고 Progress Invoice app/API route는 없다.
 - Progress Invoice는 이 브랜치와 릴리스에 포함되지 않는다. 기존 원격 스키마는 별도 소유 상태로 남아 있고, 별도 브랜치의 access lock 선행 조건이 확보되기 전까지 production Supabase role migration/seed, 실제 supervisor 계정 생성·매핑, Vercel production 배포를 명시적으로 차단한다.
 
+### 역할/Jobs G3 운영 적용 (2026-08-01)
+
+- 별도 PI 브랜치 `codex/progress-invoice-access-lock` 커밋 `dc0c2c3`에서 기존 원격 PI 스키마를 service-role-only로 잠그는 마이그레이션을 구현했다. 정적 계약 58/58, PI pgTAP 531/531, 최종 lock 14/14, lifecycle 13/13, Vitest 1,138 pass/5 skip, 독립 보안 리뷰 CLEAN을 통과한 뒤 프로덕션 마이그레이션 `progress_invoice_service_role_access_lock`으로 적용했다. Progress Invoice 앱은 배포하지 않았다.
+- 프로덕션 Supabase에 role 마이그레이션 `add_user_profiles_and_roles`, `tighten_role_rls`, `add_jobber_job_snapshots`를 개별 적용하고 멱등 admin bootstrap을 실행했다. 카탈로그는 Auth 2/profile 2/active admin 2, `authenticated_all` 0, admin 정책 13, Inventory 정책 4, Jobber snapshot browser 접근 0/service CRUD만 허용, PI policy/authenticated leak 0/service SELECT 14를 확인했다.
+- Supabase 사후 Advisor는 Security ERROR/HIGH 0, WARN 3(기존 mutable search_path 2 + Auth leaked-password protection 설정 1), Performance WARN 2(기존 `auth_rls_initplan`, `multiple_permissive_policies`)를 기록했다.
+- Vercel production deployment `dpl_E6dit7ck1wt8drHXnQUG1xHk7BPA`는 `role` 커밋 `925bc933741628653b87287743a663f182d8e54b`를 빌드한다. 고유 URL 카나리 후 동일 artifact를 운영 도메인으로 승격했고, `/login`·manifest 200, 비로그인 `/jobs`·`/inventory`·`/settings/users` 로그인 귀결, 최근 runtime error 0을 확인했다. Build route에 Progress Invoice는 없다.
+- 배포 연결이 생성한 임시 로컬 OIDC `.env.local`은 커밋되지 않았고 카나리 후 삭제했다. 배포 직전 `role` worktree와 `origin/role`은 배포 소스 커밋 `925bc93`에서 일치했다.
+
 ---
 
 ## 🔲 남은 작업
 
-- **역할/Jobs G3 운영 적용**: 별도 Progress Invoice 브랜치가 기존 원격 스키마의 access lock 선행 조건을 확보하고 사용자가 승인한 뒤에만 production Supabase 역할·snapshot 마이그레이션과 기존 admin 부트스트랩 시드를 적용한다. 그 뒤 기존 admin 2명 로그인, supervisor 실계정 역할/Jobber expense·profit QA, Vercel 배포·카나리를 수행한다.
+- **역할/Jobs G3 실계정 QA**: 기존 admin 2명이 운영 로그인을 직접 확인한다. admin이 `/settings/users`에서 supervisor 실제 이메일·표시 이름·임시 비밀번호를 입력하고 Jobber 팀원을 매핑한 뒤, 역할별 nav·직접 URL 차단·배정 job·expense·profit %를 실데이터로 QA한다. 비밀번호와 기존 admin 자격 증명은 채팅에서 취급하지 않는다.
 - **감사 발견 이슈** (2026-07-06): 우선순위별로 `docs/BACKLOG.md`에 등록. 2026-07-04 hardening으로 마진 CHECK·서버 액션 allowlist 해결, 2026-07-07 quote save conflict hardening으로 견적 저장 트랜잭션·동시 편집 충돌·product 스냅샷 재고정·Jobber 부분 성공 line id 보존을 반영. 남은 항목은 `docs/BACKLOG.md`의 미체크 항목 기준으로 처리.
 - **Supabase 실제 데이터 백업**: 운영 결정 대기(`TODOS.md` #2). Pro/PITR 우선, cron export는 restore 검증 포함 시만.
 - **UX 잔여**: `docs/UI-UX-REVIEW.md` P1 항목(폰트 시스템, 브랜드 색, sticky 결과 카드 등). P0 일부(focus-visible, 대비, draft dialog a11y)는 반영됨.

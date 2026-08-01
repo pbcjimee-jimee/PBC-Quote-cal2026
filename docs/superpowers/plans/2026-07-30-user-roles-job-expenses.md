@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: superpowers:subagent-driven-development 또는 superpowers:executing-plans로 태스크 단위 실행. 체크박스(`- [ ]`)로 진행 추적.
 >
-> **Status:** G0·G1 완료 (2026-07-30), G2 완료 (2026-07-31), role/Progress Invoice 분리 완료 (2026-08-01) — G3는 별도 Progress Invoice 브랜치의 기존 원격 스키마 access lock 확보 전까지 차단
+> **Status:** G0·G1·G2 완료, G3 운영 적용 부분 완료 (2026-08-01) — PI access lock, role 마이그레이션/시드, Vercel 배포·카나리 완료; 기존 admin 로그인 확인과 supervisor 실계정/Jobber QA 대기
 > **Branch:** `role`
 > **작성:** 2026-07-30 · G1 증거: `docs/jobber/2026-07-30-role-job-expense-g1.md`
 
@@ -81,7 +81,7 @@
 | **G1 Jobber 계약 검증** | ✅ 완료 (2026-07-30) — 증거: `docs/jobber/2026-07-30-role-job-expense-g1.md`. ① `users` 쿼리 현재 토큰으로 동작(scope 변경·재연결 **불필요**) ② 담당자 필터 = `jobs(filter: { visitsAssignedToUserId })` 라이브 검증 완료 ③ `job.expenses` pageInfo 페이지네이션 검증, 실데이터에서 labour/paint expense 확인(D4 전제 재확인) | 증거 문서 내 쿼리·응답 | — |
 | **G2 로컬 데이터 검증** | ✅ 완료 (2026-08-01 final-fix 재검증) — clean no-seed reset으로 retained migration 27개 적용, pgTAP 2 files/90 assertions, 실제 local Supabase RLS 1 file/9 cases, final-fix focused 5 files/39 cases, full verify 통과 | 아래 `최종 role-only G2 증거`와 final-fix report | 프로덕션 DB로 검증 대체 금지 |
 | **분리 검증** | ✅ 완료 (2026-08-01) — Progress Invoice 라우트·런타임·마이그레이션이 role 트리에서 제거되고 quote edited-price hotfix가 보존됨 | strict separation 계약 테스트와 Tasks 1–4 full gate | Progress Invoice 코드를 role 릴리스에 재도입 금지 |
-| **G3 프로덕션 적용** | 역할 마이그레이션 적용, 시드 실행, 배포 (Jobber scope 변경·재연결은 G1 결과 불필요 확정) | 각 항목 개별 사용자 승인 + 별도 Progress Invoice 브랜치의 기존 원격 스키마 access lock 확보 | access lock 또는 사용자 승인 없이는 production 변경 금지 |
+| **G3 프로덕션 적용** | 🟡 부분 완료 (2026-08-01) — PI access lock, role 마이그레이션, 멱등 admin 시드, role-only Vercel 승격·카나리 완료 | 프로덕션 카탈로그 검증 + Vercel deployment `dpl_E6dit7ck1wt8drHXnQUG1xHk7BPA` | 기존 admin 2명 로그인 확인·supervisor 실계정 생성/매핑·Jobber 실데이터 QA만 남음 |
 
 ### 최종 role-only G2 증거 (2026-08-01)
 
@@ -91,7 +91,7 @@
 - Final-fix focused: Job action/snapshot/migration/user action 5 files/39 cases와 partial-refresh warning UI 2 files/2 cases 통과. 기존 separation/security 3 files/25 cases 증거도 유지된다.
 - Full `npm.cmd run verify`: Vitest 83 files/658 cases 통과, 환경 조건 local RLS 1 file/9 cases skip; statements 83.52%, branches 69.84%, functions 93.79%, lines 89.13%. `lib/actions`는 84.08%/68.49%/97.54%/91.38%, `lib/calculator.ts`는 네 지표 모두 100%. strict TypeScript, ESLint, Next production build, production audit(0 vulnerabilities) 통과.
 - Build route evidence: `/inventory`, `/jobs`, `/jobs/[jobberJobId]`가 있고 Progress Invoice app/API route는 없다.
-- G3는 별도 Progress Invoice 브랜치가 기존 원격 schema access lock을 확보하기 전까지 명시적으로 차단한다. 그 전에는 production Supabase role migration/seed, 실제 supervisor 계정 생성·매핑, Vercel production 배포를 수행하지 않는다.
+- 2026-08-01 G3 승인 후 별도 PI 브랜치 `dc0c2c3` access lock을 로컬 pgTAP 531/531·독립 보안 리뷰 CLEAN으로 검증한 뒤 프로덕션에 먼저 적용했다. 이후 role 마이그레이션 3개와 멱등 admin 시드를 개별 적용하고, `role` 커밋 `925bc93` 배포를 프로덕션으로 승격했다. Progress Invoice 앱 라우트·런타임은 배포에 포함되지 않았다.
 
 ---
 
@@ -167,10 +167,11 @@
 - [x] 보안 점검: supervisor 세션으로 admin 데이터 접근 시도(직접 fetch·서버 액션·Supabase anon 쿼리) 전부 거부되는지 — RLS 매트릭스 + 정적 검색 테스트 통과
 - [x] `docs/DECISIONS.md` §1·§7 개정(부록 A) 반영 [2026-08-01 사용자 승인]
 - [x] `docs/SECURITY.md`(역할 모델·allowlist 강등), `docs/DB-SCHEMA.md`(신규 테이블), `docs/UI-PAGES.md`(/jobs, /inventory, /settings/users), `PROGRESS.md` 갱신
-- [ ] 프로덕션 마이그레이션 적용 [사용자 승인 + 별도 Progress Invoice 브랜치의 기존 원격 스키마 access lock 선행]
+- [x] 프로덕션 PI access lock + role 마이그레이션 3개 개별 적용 (2026-08-01, 사용자 G3 승인)
 - [x] ~~Jobber 앱 scope 변경 + 재연결~~ — G1 검증 결과 불필요 확정 (현재 토큰으로 users/jobs/expenses 조회 전부 동작)
-- [ ] 부트스트랩 시드 실행 → 기존 admin 2명 로그인 확인 → supervisor 계정 생성 → 실계정 QA (`/qa` 시나리오: 역할별 nav·직접 URL 접근·job expense·profit % 표시)
-- [ ] Vercel 배포 + 카나리 확인 [사용자 승인]
+- [x] 멱등 부트스트랩 시드 실행 → production Auth 2명/profile 2명/active admin 2명 카탈로그 확인
+- [ ] 기존 admin 2명 로그인 확인 → supervisor 실계정 생성·Jobber 팀원 매핑 → 실계정 QA (`/qa` 시나리오: 역할별 nav·직접 URL 접근·job expense·profit % 표시)
+- [x] Vercel role-only 배포 + 카나리 확인 (2026-08-01, `dpl_E6dit7ck1wt8drHXnQUG1xHk7BPA`, runtime error 0)
 
 ## Out of Scope (이번 릴리스에서 안 함)
 

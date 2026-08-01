@@ -746,7 +746,7 @@ admin: existing quote/settings features + users + Jobs + Inventory
 supervisor: Job Expenses + Inventory only
 /progress-invoices: absent from this branch and release, not an admin route
 role RLS: quote application + inventory only; no Progress Invoice tables or RPCs
-G3: blocked until the separate Progress Invoice branch secures its existing remote schema
+G3: approved and applied on 2026-08-01 after the separate Progress Invoice branch secured its existing remote schema; live supervisor QA remains pending
 ```
 
 Add completed separation/G2 checkboxes and remove `progress-invoices` from the expected file list and acceptance redirect list. Do not mark any production task complete.
@@ -870,7 +870,7 @@ Recorded 2026-08-01 evidence:
 - Final-fix real local RLS passed 1 file/9 cases. Final-fix focused action/snapshot/migration suites passed 5 files/39 cases and partial-refresh warning UI tests passed 2 files/2 cases; the earlier separation/security 3 files/25 cases evidence remains valid.
 - Final `npm.cmd run verify` passed: Vitest 83 files/658 cases passed with the environment-gated local RLS 1 file/9 cases skipped; statements 83.52%, branches 69.84%, functions 93.79%, lines 89.13%; `lib/actions` 84.08%/68.49%/97.54%/91.38%; `lib/calculator.ts` 100% across statements/branches/functions/lines; strict TypeScript, ESLint, Next production build, and production audit with 0 vulnerabilities passed.
 - Build output contains `/inventory`, `/jobs`, and `/jobs/[jobberJobId]`, and contains no Progress Invoice app or API route.
-- G3 remains blocked until the separately owned Progress Invoice access lock is complete: no production Supabase role migration/seed, real supervisor account creation or mapping, or Vercel production deployment is authorized.
+- G3 was subsequently approved on 2026-08-01. The separately owned PI access lock was implemented and applied before the three role migrations/bootstrap and the role-only Vercel deployment. Real supervisor creation/mapping and authenticated Jobber QA remain pending user-entered account details.
 
 - [x] **Step 5: Verify documentation-only changes and commit**
 
@@ -887,15 +887,14 @@ Expected: `role...origin/role` with an empty working tree.
 
 ---
 
-## G3 waiting list after this plan
+## G3 execution status after this plan
 
-The following work is not authorized by this implementation plan and remains pending:
+The user explicitly approved G3 execution on 2026-08-01. Current status:
 
-1. Progress Invoice branch: design, test, approve, and apply an access-lock migration for the already-existing remote Progress Invoice schema without deploying the application.
-2. Role branch: individually apply the three role migrations after remote-history comparison; do not use blanket `supabase db push` while remote-only migration versions exist.
-3. Run the idempotent existing-admin bootstrap and verify both existing admin logins.
-4. Create and map the real supervisor account only after item 1 is complete.
-5. Perform live Jobber assignment/expense/profit QA with the user's account details.
-6. Promote the role-only Vercel build to production and run role canary checks.
-
-Each item requires its own current-state verification and explicit user approval at execution time.
+1. [x] Progress Invoice branch: implemented, tested, independently reviewed, and applied the service-role-only access lock without deploying the application (`dc0c2c3`).
+2. [x] Role branch: compared remote history and individually applied the three role migrations without blanket `supabase db push`.
+3. [x] Ran the idempotent existing-admin bootstrap; production catalog confirms Auth 2/profile 2/active admin 2.
+4. [ ] The two existing admins must confirm login themselves; credentials were not requested or handled.
+5. [ ] Create and map the real supervisor account through `/settings/users`, with the temporary password entered by the admin outside chat.
+6. [ ] Perform live Jobber assignment/expense/profit QA with the real supervisor account.
+7. [x] Promoted the role-only Vercel build `dpl_E6dit7ck1wt8drHXnQUG1xHk7BPA` (role `925bc93`) and completed unauthenticated canary checks with runtime error count 0.
