@@ -77,4 +77,10 @@ describe('jobs UI', () => {
     expect(markup).toContain('pbc-jobfinancial__row--expenses')
     expect(markup).toContain('pbc-jobfinancial__row--profit')
   })
+
+  it('uses the dedicated detail progress bar color treatment', () => {
+    const markup = renderToStaticMarkup(createElement(JobFinancials, { summary: job.financialSummary }))
+
+    expect(markup).toContain('pbc-jobfinancial__bar')
+  })
 })

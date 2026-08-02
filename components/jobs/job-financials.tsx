@@ -38,7 +38,7 @@ export function JobFinancials({ summary, compact = false }: {
         <div className="pbc-jobfinancial__row pbc-jobfinancial__row--expenses"><span>Expenses total</span><b className="pbc-moneytext">{formatAud(summary.expensesTotal)}</b></div>
         <div className="pbc-jobfinancial__row pbc-jobfinancial__row--profit"><span>Profit</span><b className="pbc-moneytext">{formatAud(summary.profit)}</b></div>
       </div>
-      <div className="mt-4 h-3 overflow-hidden rounded-full bg-[var(--surface-soft)]"><div className={`h-full rounded-full ${getMarginBarTone(marginNumber)}`} style={{ width }} /></div>
+      <div className="mt-4 h-3 overflow-hidden rounded-full bg-[var(--surface-soft)]"><div className="pbc-jobfinancial__bar h-full rounded-full" style={{ width }} /></div>
     </section>
   )
 }
