@@ -118,6 +118,29 @@ describe('Jobber job query client', () => {
     expect(page?.pageInfo).toEqual({ hasNextPage: true, endCursor: 'cursor-1' })
   })
 
+  it('accepts a successful Jobber expense response when optional versioning metadata is absent', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({
+      data: {
+        job: {
+          id: 'job-1', jobNumber: 3103, title: 'Belrose', jobStatus: 'today', total: '12437.02',
+          jobberWebUri: 'https://secure.getjobber.com/jobs/job-1',
+          expenses: {
+            nodes: [{
+              id: 'expense-1', title: 'paint', description: 'Dulux', date: '2026-07-30', total: '603.89',
+              enteredBy: { name: { full: 'Sanggi' } }, paidBy: null, reimbursableTo: null,
+            }],
+            pageInfo: { hasNextPage: false, endCursor: null },
+          },
+        },
+      },
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } })))
+
+    const page = await fetchJobberJobExpensesPage('job-1', { first: 50, after: null }, options)
+
+    expect(page?.job.id).toBe('job-1')
+    expect(page?.nodes[0]?.total).toBe('603.89')
+  })
+
   it('rejects malformed money instead of coercing it to native number', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => response({
       jobs: {

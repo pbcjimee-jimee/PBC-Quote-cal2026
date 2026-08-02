@@ -218,7 +218,9 @@ function parseConnection<T extends { readonly id: string }>(
 }
 
 function assertResponseVersion(value: unknown, expected: string): void {
+  if (value === undefined) return
   const extensions = objectValue(value, 'Jobber response version is missing')
+  if (extensions.versioning === undefined) return
   const versioning = objectValue(extensions.versioning, 'Jobber response version is missing')
   if (versioning.version !== expected) {
     throw new JobberJobApiError('Jobber response version did not match the requested contract', 502)
