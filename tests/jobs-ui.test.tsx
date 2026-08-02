@@ -2,6 +2,7 @@ import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it, vi } from 'vitest'
 import { JobDetail } from '@/components/jobs/job-detail'
+import { JobFinancials } from '@/components/jobs/job-financials'
 import { JobsList } from '@/components/jobs/jobs-list'
 
 vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh: vi.fn() }) }))
@@ -52,5 +53,28 @@ describe('jobs UI', () => {
     expect(markup).toContain('$603.89')
     expect(markup).toContain('>Refresh</button>')
     expect(markup).toContain('target="_blank"')
+  })
+
+  it('renders expense dates as year, month, and day without a time', () => {
+    const markup = renderToStaticMarkup(createElement(JobDetail, {
+      job: {
+        ...job,
+        expenses: [{
+          id: 'expense-1', title: 'paint', description: 'Dulux', date: '2026-07-30T23:45:13Z', total: '603.89',
+          enteredByName: 'Sanggi', paidByName: null, reimbursableToName: null,
+        }],
+      },
+    }))
+
+    expect(markup).toContain('2026/07/30')
+    expect(markup).not.toContain('23:45:13')
+  })
+
+  it('uses distinct revenue, expense, and profit color treatments', () => {
+    const markup = renderToStaticMarkup(createElement(JobFinancials, { summary: job.financialSummary }))
+
+    expect(markup).toContain('pbc-jobfinancial__row--revenue')
+    expect(markup).toContain('pbc-jobfinancial__row--expenses')
+    expect(markup).toContain('pbc-jobfinancial__row--profit')
   })
 })

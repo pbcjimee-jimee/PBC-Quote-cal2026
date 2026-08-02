@@ -34,9 +34,9 @@ export function JobFinancials({ summary, compact = false }: {
     <section className="pbc-card pbc-card--pad" aria-label="Jobber profit">
       <div className="flex items-center justify-between gap-3"><h2 className="pbc-paneltitle">Jobber profit</h2><b>{formatProfitMargin(summary.profitMarginPercent)}</b></div>
       <div className="mt-4 space-y-2 text-sm">
-        <div className="flex justify-between"><span className="text-[var(--muted)]">Job revenue</span><b className="pbc-moneytext">{formatAud(summary.revenue)}</b></div>
-        <div className="flex justify-between"><span className="text-[var(--muted)]">Expenses total</span><b className="pbc-moneytext">{formatAud(summary.expensesTotal)}</b></div>
-        <div className="flex justify-between"><span className="text-[var(--muted)]">Profit</span><b className="pbc-moneytext">{formatAud(summary.profit)}</b></div>
+        <div className="pbc-jobfinancial__row pbc-jobfinancial__row--revenue"><span>Job revenue</span><b className="pbc-moneytext">{formatAud(summary.revenue)}</b></div>
+        <div className="pbc-jobfinancial__row pbc-jobfinancial__row--expenses"><span>Expenses total</span><b className="pbc-moneytext">{formatAud(summary.expensesTotal)}</b></div>
+        <div className="pbc-jobfinancial__row pbc-jobfinancial__row--profit"><span>Profit</span><b className="pbc-moneytext">{formatAud(summary.profit)}</b></div>
       </div>
       <div className="mt-4 h-3 overflow-hidden rounded-full bg-[var(--surface-soft)]"><div className={`h-full rounded-full ${getMarginBarTone(marginNumber)}`} style={{ width }} /></div>
     </section>

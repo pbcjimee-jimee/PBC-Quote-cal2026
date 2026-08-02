@@ -241,6 +241,11 @@
 .pbc-titletext { font-size: 13.5px; font-weight: 700; color: var(--foreground); }
 .pbc-bodytext { font-size: 12px; line-height: 1.6; color: var(--muted); }
 .pbc-moneytext { font-family: var(--mono); font-weight: 700; color: var(--foreground); tabular-nums: lining-nums; }
+.pbc-jobfinancial__row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 12px; border-radius: var(--r-sm); font-weight: 700; }
+.pbc-jobfinancial__row .pbc-moneytext { color: inherit; }
+.pbc-jobfinancial__row--revenue { background: var(--primary-soft); color: var(--primary); }
+.pbc-jobfinancial__row--expenses { background: var(--warning-soft); color: var(--warning); }
+.pbc-jobfinancial__row--profit { background: var(--success-soft); color: var(--success); }
 .pbc-metric { border: 1px solid var(--border); border-radius: 10px; background: #fff; padding: 10px 12px; }
 .pbc-metric span { display: block; font-size: 11.5px; font-weight: 700; color: var(--muted); }
 .pbc-metric b { display: block; margin-top: 3px; font-family: var(--mono); color: var(--foreground); }
