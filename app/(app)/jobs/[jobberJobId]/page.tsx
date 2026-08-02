@@ -7,7 +7,7 @@ export default async function JobDetailPage({ params }: {
   params: Promise<{ jobberJobId: string }>
 }) {
   const { jobberJobId } = await params
-  const job = await getJobDetail({ jobberJobId })
+  const job = await getJobDetail({ jobberJobId: decodeJobberJobId(jobberJobId) })
 
   return (
     <main>
@@ -17,4 +17,12 @@ export default async function JobDetailPage({ params }: {
       </div>
     </main>
   )
+}
+
+function decodeJobberJobId(value: string): string {
+  try {
+    return decodeURIComponent(value)
+  } catch {
+    return value
+  }
 }
