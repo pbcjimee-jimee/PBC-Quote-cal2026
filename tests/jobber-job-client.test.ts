@@ -57,7 +57,7 @@ describe('Jobber job query client', () => {
     })
   })
 
-  it('uses assigned-visit filtering for supervisors and no filter for admins', async () => {
+  it('loads enough visits and filters nested schedule rows to the matched supervisor', async () => {
     const fetchMock = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
       void input
       void init
@@ -92,7 +92,9 @@ describe('Jobber job query client', () => {
     expect(assigned.nodes[0]?.visits).toEqual([{
       id: 'visit-1', startAt: '2026-08-03T08:00:00+10:00', endAt: '2026-08-03T17:00:00+10:00',
     }])
-    expect(compact(assignedBody.query)).toContain('visits(first: 10)')
+    expect(compact(assignedBody.query)).toContain('visits(first: 100, filter: { assignedTo: $userId })')
+    expect(compact(allBody.query)).toContain('visits(first: 100)')
+    expect(compact(allBody.query)).not.toContain('assignedTo')
     expect(compact(assignedBody.query)).not.toContain('assignedUsers')
     expect(assigned.totalCount).toBe(1)
   })

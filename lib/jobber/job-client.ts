@@ -24,7 +24,7 @@ const USER_JOBS_QUERY = `query PbcUserJobs($userId: EncodedId!, $first: Int!, $a
     pageInfo { hasNextPage endCursor }
     totalCount
     nodes { id jobNumber title jobStatus total jobberWebUri startAt endAt
-      visits(first: 10) { nodes { id startAt endAt } }
+      visits(first: 100, filter: { assignedTo: $userId }) { nodes { id startAt endAt } }
     }
   }
 }`
@@ -33,7 +33,7 @@ const ALL_JOBS_QUERY = `query PbcAllJobs($first: Int!, $after: String) {
     pageInfo { hasNextPage endCursor }
     totalCount
     nodes { id jobNumber title jobStatus total jobberWebUri startAt endAt
-      visits(first: 10) { nodes { id startAt endAt } }
+      visits(first: 100) { nodes { id startAt endAt } }
     }
   }
 }`
