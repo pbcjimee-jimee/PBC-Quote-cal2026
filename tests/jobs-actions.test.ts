@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   saveSnapshots: vi.fn(),
   synchronizeSnapshotScope: vi.fn(),
   listJobberJobs: vi.fn(),
+  listJobberTeamUsers: vi.fn(),
   fetchJobberJobDetail: vi.fn(),
 }))
 
@@ -21,6 +22,7 @@ vi.mock('@/lib/jobber/job-snapshots', () => ({
 }))
 vi.mock('@/lib/jobber/job-gateway', () => ({
   listJobberJobs: mocks.listJobberJobs,
+  listJobberTeamUsers: mocks.listJobberTeamUsers,
   fetchJobberJobDetail: mocks.fetchJobberJobDetail,
 }))
 
@@ -48,12 +50,16 @@ const snapshot = {
   refreshedBy: 'admin-1',
 }
 
-function appUser(role: 'admin' | 'supervisor', jobberUserId: string | null) {
+function appUser(
+  role: 'admin' | 'supervisor',
+  jobberUserId: string | null,
+  displayName = role === 'supervisor' ? 'Eric' : 'Admin',
+) {
   return {
     ok: true,
     user: { id: role === 'admin' ? 'admin-1' : 'supervisor-1', email: `${role}@example.com` },
     profile: {
-      id: `${role}-1`, email: `${role}@example.com`, displayName: role,
+      id: `${role}-1`, email: `${role}@example.com`, displayName,
       role, jobberUserId, isActive: true,
     },
   }
@@ -65,6 +71,10 @@ describe('job actions', () => {
     mocks.requireRole.mockResolvedValue(appUser('supervisor', 'jobber-user-1'))
     mocks.listSnapshots.mockResolvedValue([])
     mocks.getSnapshot.mockResolvedValue(null)
+    mocks.listJobberTeamUsers.mockResolvedValue([{
+      id: 'jobber-user-1', fullName: 'Eric', status: 'ACTIVE',
+      isAccountAdmin: false, isAccountOwner: false,
+    }])
     mocks.listJobberJobs.mockResolvedValue([job])
     mocks.fetchJobberJobDetail.mockResolvedValue({ ...job, expenses: [expense] })
     mocks.saveSnapshots.mockImplementation(async (payloads: typeof snapshot[], actorId: string) => (
@@ -82,14 +92,40 @@ describe('job actions', () => {
     expect(mocks.requireRole).not.toHaveBeenCalled()
   })
 
-  it('returns an unlinked empty state without calling Jobber', async () => {
+  it('resolves an official supervisor by unique Jobber team name when the saved link is empty', async () => {
     mocks.requireRole.mockResolvedValueOnce(appUser('supervisor', null))
 
-    await expect(listMyJobs({})).resolves.toEqual({
+    await expect(listMyJobs({})).resolves.toMatchObject({
       ok: true,
-      data: { jobs: [], assignmentLinked: false, filteredJobberUserId: null },
+      data: {
+        jobs: [{ id: 'job-1' }],
+        assignmentLinked: true,
+        filteredJobberUserId: 'jobber-user-1',
+      },
     })
-    expect(mocks.listJobberJobs).not.toHaveBeenCalled()
+    expect(mocks.listJobberJobs).toHaveBeenCalledWith('jobber-user-1')
+  })
+
+  it('replaces a stale saved Jobber id with the unique team user matched by login name', async () => {
+    mocks.requireRole.mockResolvedValueOnce(appUser('supervisor', 'stale-jobber-user'))
+
+    await expect(listMyJobs({})).resolves.toMatchObject({
+      ok: true,
+      data: { assignmentLinked: true, filteredJobberUserId: 'jobber-user-1' },
+    })
+    expect(mocks.listJobberJobs).toHaveBeenCalledWith('jobber-user-1')
+  })
+
+  it('matches an official supervisor without depending on the Jobber status enum spelling', async () => {
+    mocks.listJobberTeamUsers.mockResolvedValueOnce([{
+      id: 'jobber-user-1', fullName: 'Eric', status: 'ACTIVATED',
+      isAccountAdmin: false, isAccountOwner: false,
+    }])
+
+    await expect(listMyJobs({})).resolves.toMatchObject({
+      ok: true,
+      data: { assignmentLinked: true, filteredJobberUserId: 'jobber-user-1' },
+    })
   })
 
   it('revalidates matching supervisor snapshots against live Jobber assignments', async () => {
@@ -104,6 +140,50 @@ describe('job actions', () => {
     })
     expect(mocks.listJobberJobs).toHaveBeenCalledWith('jobber-user-1')
     expect(mocks.synchronizeSnapshotScope).toHaveBeenCalledWith('jobber-user-1', ['job-1'])
+  })
+
+  it('does not query jobs when the linked Jobber team name differs from the login name', async () => {
+    mocks.listJobberTeamUsers.mockResolvedValueOnce([{
+      id: 'jobber-user-1', fullName: 'Edgar', status: 'ACTIVE',
+      isAccountAdmin: false, isAccountOwner: false,
+    }])
+
+    await expect(listMyJobs({})).resolves.toEqual({
+      ok: true,
+      data: { jobs: [], assignmentLinked: false, filteredJobberUserId: null },
+    })
+    expect(mocks.listJobberJobs).not.toHaveBeenCalled()
+  })
+
+  it('shows no jobs for supervisor names outside Eric, Edgar, and Steve', async () => {
+    const unofficialJob = {
+      ...job,
+      visits: [{
+        ...job.visits[0],
+        assignedUsers: [{ id: 'jobber-user-1', fullName: 'Fred' }],
+      }],
+    }
+    mocks.requireRole.mockResolvedValueOnce(appUser('supervisor', 'jobber-user-1', 'Fred'))
+    mocks.listJobberJobs.mockResolvedValueOnce([unofficialJob])
+
+    await expect(listMyJobs({})).resolves.toEqual({
+      ok: true,
+      data: { jobs: [], assignmentLinked: false, filteredJobberUserId: null },
+    })
+    expect(mocks.listJobberJobs).not.toHaveBeenCalled()
+  })
+
+  it.each(['Eric', 'Edgar', 'Steve'])('recognizes official supervisor %s by matching team name', async (name) => {
+    mocks.requireRole.mockResolvedValueOnce(appUser('supervisor', 'jobber-user-1', name))
+    mocks.listJobberTeamUsers.mockResolvedValueOnce([{
+      id: 'jobber-user-1', fullName: name, status: 'ACTIVE',
+      isAccountAdmin: false, isAccountOwner: false,
+    }])
+
+    await expect(listMyJobs({})).resolves.toMatchObject({
+      ok: true,
+      data: { jobs: [{ id: 'job-1' }], assignmentLinked: true },
+    })
   })
 
   it('uses live Jobber schedule dates with cached expense totals', async () => {
@@ -186,7 +266,14 @@ describe('job actions', () => {
 
   it('resolves an admin supervisor filter through the service client', async () => {
     mocks.requireRole.mockResolvedValueOnce(appUser('admin', null))
-    const maybeSingle = vi.fn(async () => ({ data: { jobber_user_id: 'jobber-user-2' }, error: null }))
+    const maybeSingle = vi.fn(async () => ({
+      data: { display_name: 'Edgar', jobber_user_id: 'jobber-user-2' },
+      error: null,
+    }))
+    mocks.listJobberTeamUsers.mockResolvedValueOnce([{
+      id: 'jobber-user-2', fullName: 'Edgar', status: 'ACTIVE',
+      isAccountAdmin: false, isAccountOwner: false,
+    }])
     const builder = { eq: vi.fn(() => builder), maybeSingle }
     mocks.createServiceClient.mockResolvedValue({
       from: vi.fn(() => ({ select: vi.fn(() => builder) })),
@@ -199,7 +286,10 @@ describe('job actions', () => {
 
   it('does not turn an unlinked admin supervisor filter into all jobs', async () => {
     mocks.requireRole.mockResolvedValueOnce(appUser('admin', null))
-    const maybeSingle = vi.fn(async () => ({ data: { jobber_user_id: null }, error: null }))
+    const maybeSingle = vi.fn(async () => ({
+      data: { display_name: 'Edgar', jobber_user_id: null },
+      error: null,
+    }))
     const builder = { eq: vi.fn(() => builder), maybeSingle }
     mocks.createServiceClient.mockResolvedValue({
       from: vi.fn(() => ({ select: vi.fn(() => builder) })),
@@ -221,6 +311,21 @@ describe('job actions', () => {
       error: 'This job is not assigned to the current supervisor',
       code: 'FORBIDDEN',
     })
+    expect(mocks.fetchJobberJobDetail).not.toHaveBeenCalled()
+  })
+
+  it('blocks supervisor detail access when the assigned Jobber name does not match the login name', async () => {
+    mocks.listJobberTeamUsers.mockResolvedValueOnce([{
+      id: 'jobber-user-1', fullName: 'Edgar', status: 'ACTIVE',
+      isAccountAdmin: false, isAccountOwner: false,
+    }])
+
+    await expect(getJobDetail({ jobberJobId: 'job-1' })).resolves.toEqual({
+      ok: false,
+      error: 'This job is not assigned to the current supervisor',
+      code: 'FORBIDDEN',
+    })
+    expect(mocks.listJobberJobs).not.toHaveBeenCalled()
     expect(mocks.fetchJobberJobDetail).not.toHaveBeenCalled()
   })
 

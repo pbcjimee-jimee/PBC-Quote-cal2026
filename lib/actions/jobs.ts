@@ -2,7 +2,7 @@
 
 import { z } from 'zod'
 import { calculateFinancialSummaryFromAmounts, type DecimalFinancialSummary } from '@/lib/jobber/financial-summary'
-import { fetchJobberJobDetail, listJobberJobs } from '@/lib/jobber/job-gateway'
+import { fetchJobberJobDetail, listJobberJobs, listJobberTeamUsers } from '@/lib/jobber/job-gateway'
 import {
   getJobSnapshot,
   listJobSnapshots,
@@ -18,6 +18,7 @@ import type { ActionResult } from './types'
 
 const REFRESH_COOLDOWN_MS = 30_000
 const DETAIL_FETCH_CONCURRENCY = 5
+const OFFICIAL_SUPERVISOR_NAMES = new Set(['eric', 'edgar', 'steve'])
 const listJobsSchema = z.object({ supervisorProfileId: z.string().uuid().nullable().optional() }).strict()
 const jobIdSchema = z.object({ jobberJobId: z.string().trim().min(1).max(300) }).strict()
 
@@ -47,8 +48,13 @@ export interface JobDetailData extends JobListItem {
 }
 
 interface ResolvedJobberFilter {
-  readonly jobberUserId: string | null
+  readonly supervisorIdentity: SupervisorIdentity | null
   readonly assignmentLinked: boolean
+}
+
+interface SupervisorIdentity {
+  readonly jobberUserId: string
+  readonly normalizedName: string
 }
 
 interface LoadedJobSnapshots {
@@ -74,12 +80,12 @@ export async function listMyJobs(input: unknown = {}): Promise<ActionResult<JobL
     if (!resolvedFilter.assignmentLinked) {
       return { ok: true, data: { jobs: [], assignmentLinked: false, filteredJobberUserId: null } }
     }
-    const { jobberUserId } = resolvedFilter
+    const jobberUserId = resolvedFilter.supervisorIdentity?.jobberUserId ?? null
 
     const snapshots = await listJobSnapshots()
-    const loaded = jobberUserId === null
+    const loaded = resolvedFilter.supervisorIdentity === null
       ? await loadAdminJobList(appUser.user.id, snapshots)
-      : await loadAssignedJobList(appUser.user.id, jobberUserId, snapshots, false)
+      : await loadAssignedJobList(appUser.user.id, resolvedFilter.supervisorIdentity, snapshots, false)
 
     return {
       ok: true,
@@ -107,12 +113,12 @@ export async function refreshJobs(input: unknown = {}): Promise<ActionResult<Job
     if (!resolvedFilter.assignmentLinked) {
       return { ok: true, data: { jobs: [], assignmentLinked: false, filteredJobberUserId: null } }
     }
-    const { jobberUserId } = resolvedFilter
+    const jobberUserId = resolvedFilter.supervisorIdentity?.jobberUserId ?? null
     const snapshots = await listJobSnapshots()
     assertRefreshAllowed(filterSnapshots(snapshots, jobberUserId))
-    const refreshed = jobberUserId === null
+    const refreshed = resolvedFilter.supervisorIdentity === null
       ? await refreshJobList(appUser.user.id, null, snapshots)
-      : await loadAssignedJobList(appUser.user.id, jobberUserId, snapshots, true)
+      : await loadAssignedJobList(appUser.user.id, resolvedFilter.supervisorIdentity, snapshots, true)
     return {
       ok: true,
       data: {
@@ -176,21 +182,25 @@ async function resolveJobberFilter(
   supervisorProfileId?: string | null,
 ): Promise<ResolvedJobberFilter> {
   if (profile.role === 'supervisor') {
-    return { jobberUserId: profile.jobberUserId, assignmentLinked: profile.jobberUserId !== null }
+    const supervisorIdentity = await resolveSupervisorIdentity(profile.jobberUserId, profile.displayName)
+    return { supervisorIdentity, assignmentLinked: supervisorIdentity !== null }
   }
-  if (!supervisorProfileId) return { jobberUserId: null, assignmentLinked: true }
+  if (!supervisorProfileId) return { supervisorIdentity: null, assignmentLinked: true }
 
   const service = await createServiceClient()
   const { data, error } = await service
     .from('user_profiles')
-    .select('jobber_user_id')
+    .select('display_name, jobber_user_id')
     .eq('id', supervisorProfileId)
     .eq('role', 'supervisor')
     .eq('is_active', true)
     .maybeSingle()
   if (error) throw new Error('Unable to read supervisor profile')
-  const jobberUserId = data?.jobber_user_id ?? null
-  return { jobberUserId, assignmentLinked: jobberUserId !== null }
+  const supervisorIdentity = await resolveSupervisorIdentity(
+    data?.jobber_user_id ?? null,
+    data?.display_name ?? null,
+  )
+  return { supervisorIdentity, assignmentLinked: supervisorIdentity !== null }
 }
 
 async function loadAdminJobList(
@@ -215,10 +225,11 @@ async function loadAdminJobList(
 
 async function loadAssignedJobList(
   actorId: string,
-  jobberUserId: string,
+  supervisorIdentity: SupervisorIdentity,
   existingSnapshots: readonly StoredJobSnapshot[],
   forceRefresh: boolean,
 ): Promise<LoadedJobSnapshots> {
+  const { jobberUserId } = supervisorIdentity
   const assignedJobs = await listJobberJobs(jobberUserId)
   const synchronized = await synchronizeJobSnapshotScope(
     jobberUserId,
@@ -297,8 +308,9 @@ async function fetchAuthorizedDetail(
 ): Promise<StoredJobSnapshot> {
   let jobberUserId: string | null = null
   if (profile.role === 'supervisor') {
-    jobberUserId = profile.jobberUserId
-    if (!jobberUserId) throw new JobAccessError('Link a Jobber user before viewing jobs')
+    const supervisorIdentity = await resolveSupervisorIdentity(profile.jobberUserId, profile.displayName)
+    if (!supervisorIdentity) throw new JobAccessError('This job is not assigned to the current supervisor')
+    jobberUserId = supervisorIdentity.jobberUserId
     const assignedJobs = await listJobberJobs(jobberUserId)
     const synchronized = await synchronizeJobSnapshotScope(
       jobberUserId,
@@ -367,6 +379,26 @@ function toDetail(snapshot: StoredJobSnapshot): JobDetailData {
 
 function sortJobItems(items: readonly JobListItem[]): readonly JobListItem[] {
   return [...items].sort((left, right) => right.jobNumber.localeCompare(left.jobNumber, undefined, { numeric: true }))
+}
+
+async function resolveSupervisorIdentity(
+  jobberUserId: string | null,
+  displayName: string | null,
+): Promise<SupervisorIdentity | null> {
+  if (!displayName) return null
+  const normalizedName = normalizePersonName(displayName)
+  if (!OFFICIAL_SUPERVISOR_NAMES.has(normalizedName)) return null
+  const teamUsers = await listJobberTeamUsers()
+  const nameMatches = teamUsers.filter((teamUser) => (
+    normalizePersonName(teamUser.fullName) === normalizedName
+  ))
+  const linkedUser = nameMatches.find((teamUser) => teamUser.id === jobberUserId)
+  const matchedUser = linkedUser ?? (nameMatches.length === 1 ? nameMatches[0] : null)
+  return matchedUser ? { jobberUserId: matchedUser.id, normalizedName } : null
+}
+
+function normalizePersonName(name: string): string {
+  return name.trim().replace(/\s+/g, ' ').toLocaleLowerCase('en-AU')
 }
 
 function assertRefreshAllowed(snapshots: readonly StoredJobSnapshot[], now = Date.now()): void {

@@ -93,6 +93,7 @@ describe('Jobber job query client', () => {
       id: 'visit-1', startAt: '2026-08-03T08:00:00+10:00', endAt: '2026-08-03T17:00:00+10:00',
     }])
     expect(compact(assignedBody.query)).toContain('visits(first: 10)')
+    expect(compact(assignedBody.query)).not.toContain('assignedUsers')
     expect(assigned.totalCount).toBe(1)
   })
 

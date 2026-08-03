@@ -17,7 +17,7 @@ import {
 } from './tokens'
 
 const PAGE_SIZE = 50
-const JOB_LIST_PAGE_SIZE = 20
+const JOB_LIST_PAGE_SIZE = 10
 
 export async function listJobberTeamUsers(): Promise<readonly JobberTeamUser[]> {
   return withRestartableToken((options) => fetchAllJobberPages((after) => (

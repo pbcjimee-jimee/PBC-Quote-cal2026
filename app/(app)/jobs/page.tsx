@@ -37,14 +37,14 @@ export default async function JobsPage({
         {appUser.profile.role === 'admin' ? (
           <form className="pbc-card pbc-card--pad mb-4 flex flex-wrap items-end gap-3" method="get">
             {query.month ? <input type="hidden" name="month" value={query.month} /> : null}
-            <label className="pbc-field min-w-64"><span className="pbc-field__label">Supervisor filter</span><select className="pbc-input" name="supervisor" defaultValue={supervisorProfileId ?? ''}><option value="">All jobs</option>{supervisors.map((user) => <option key={user.id} value={user.id}>{user.displayName || user.email}{user.jobberUserId ? '' : ' (not linked)'}</option>)}</select></label>
+            <label className="pbc-field min-w-64"><span className="pbc-field__label">Supervisor filter</span><select className="pbc-input" name="supervisor" defaultValue={supervisorProfileId ?? ''}><option value="">All jobs</option>{supervisors.map((user) => <option key={user.id} value={user.id}>{user.displayName || user.email}</option>)}</select></label>
             <button type="submit" className="pbc-btn pbc-btn--ghost">Apply filter</button>
           </form>
         ) : null}
         {!jobs.ok ? <p className="pbc-alert pbc-alert--danger">{jobs.error}</p> : !jobs.data.assignmentLinked ? (
           <p className="pbc-alert pbc-alert--warning">{appUser.profile.role === 'admin'
-            ? 'The selected supervisor is not linked to a Jobber user.'
-            : 'Your app profile is not linked to a Jobber user. Ask an admin to complete the link in Settings → Users.'}</p>
+            ? "The selected supervisor's name could not be matched to an official Jobber supervisor."
+            : 'Your app profile name could not be matched to an official Jobber supervisor. Ask an admin to use Eric, Edgar, or Steve.'}</p>
         ) : (
           <>
             {jobs.data.refreshWarning ? (

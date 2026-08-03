@@ -69,6 +69,30 @@ describe('Jobs page', () => {
     expect(markup).toContain('role="status"')
   })
 
+  it('explains that supervisor access depends on an official Jobber name match', async () => {
+    mocks.requireRole.mockResolvedValueOnce({
+      ok: true,
+      user: { id: 'supervisor-1', email: 'eric@example.com' },
+      profile: {
+        id: 'supervisor-1',
+        email: 'eric@example.com',
+        displayName: 'Eric',
+        role: 'supervisor',
+        jobberUserId: null,
+        isActive: true,
+      },
+    })
+    mocks.listMyJobs.mockResolvedValueOnce({
+      ok: true,
+      data: { jobs: [], assignmentLinked: false, filteredJobberUserId: null },
+    })
+
+    const markup = renderToStaticMarkup(await JobsPage({ searchParams: Promise.resolve({}) }))
+
+    expect(markup).toContain('could not be matched to an official Jobber supervisor')
+    expect(markup).not.toContain('not linked to a Jobber user')
+  })
+
   it('decodes the URL-safe Jobber ID before loading a job detail', async () => {
     const jobberJobId = 'Z2lkOi8vSm9iYmVyL0pvYi8xNTAzNjYxODU='
     mocks.getJobDetail.mockImplementation(async (input: unknown) => {
