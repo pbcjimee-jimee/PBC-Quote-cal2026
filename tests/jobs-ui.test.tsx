@@ -23,7 +23,7 @@ const job = {
 }
 
 describe('jobs UI', () => {
-  it('lays a multi-day job across the month and keeps unscheduled jobs clickable', () => {
+  it('lays a multi-day job across the month without rendering unscheduled jobs', () => {
     const unscheduled = {
       ...job,
       id: 'job-2',
@@ -42,9 +42,27 @@ describe('jobs UI', () => {
     expect(markup).toContain('aria-label="August 2026 job calendar"')
     expect(markup).toContain('pbc-jobcalendar__day--today')
     expect(markup.match(/href="\/jobs\/job-1"/g)).toHaveLength(3)
-    expect(markup).toContain('Unscheduled')
-    expect(markup).toContain('<h2>Unscheduled</h2><span>1</span>')
-    expect(markup).toContain('href="/jobs/job-2"')
+    expect(markup).not.toContain('Unscheduled')
+    expect(markup).not.toContain('href="/jobs/job-2"')
+  })
+
+  it('marks dates before today as past without marking today', () => {
+    const pastJob = {
+      ...job,
+      id: 'job-past',
+      jobNumber: '3102',
+      title: 'Past schedule',
+      visits: [{ id: 'visit-past', startAt: '2026-08-02T08:00:00+10:00', endAt: '2026-08-02T17:00:00+10:00' }],
+    }
+    const markup = renderToStaticMarkup(createElement(JobsList, {
+      jobs: [pastJob, job],
+      month: '2026-08',
+      today: '2026-08-03',
+    }))
+
+    expect(markup).toContain('pbc-jobcalendar__job--past')
+    expect(markup).toContain('#3102 · Past')
+    expect(markup).toContain('#3103 · requires invoicing')
   })
 
   it('renders the shared profit panel, expense lines, refresh, and Jobber source link', () => {

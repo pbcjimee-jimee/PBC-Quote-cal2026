@@ -30,9 +30,9 @@ export function JobsList({
 }) {
   const calendarMonth = resolveCalendarMonth(month)
   const calendarDays = buildCalendarDays(calendarMonth)
-  const todayKey = today ?? toSydneyDateKey(new Date().toISOString())
+  const now = new Date().toISOString()
+  const todayKey = today ?? toSydneyDateKey(now) ?? now.slice(0, 10)
   const jobsByDate = mapJobsToCalendar(jobs, calendarDays)
-  const unscheduled = jobs.filter((job) => job.visits.every((visit) => toSydneyDateKey(visit.startAt) === null))
 
   return (
     <section className="pbc-jobcalendar-shell">
@@ -60,39 +60,35 @@ export function JobsList({
               >
                 <span className="pbc-jobcalendar__date">{day.dayNumber}</span>
                 <div className="pbc-jobcalendar__jobs">
-                  {(jobsByDate.get(day.key) ?? []).map((job) => <JobCalendarLink job={job} key={job.id} />)}
+                  {(jobsByDate.get(day.key) ?? []).map((job) => (
+                    <JobCalendarLink job={job} isPast={day.key < todayKey} key={job.id} />
+                  ))}
                 </div>
               </div>
             ))}
           </div>
         </div>
 
-        <aside className="pbc-jobcalendar__unscheduled" aria-label="Unscheduled jobs">
-          <div className="pbc-jobcalendar__unscheduled-head">
-            <h2>Unscheduled</h2>
-            <span>{unscheduled.length}</span>
-          </div>
-          <div className="pbc-jobcalendar__unscheduled-list">
-            {unscheduled.length === 0
-              ? <p className="pbc-empty">No unscheduled jobs.</p>
-              : unscheduled.map((job) => <JobCalendarLink job={job} key={job.id} />)}
-          </div>
-        </aside>
       </div>
     </section>
   )
 }
 
-function JobCalendarLink({ job }: { job: JobListItem }) {
+function JobCalendarLink({ job, isPast = false }: { job: JobListItem; isPast?: boolean }) {
   const title = job.title || `Job #${job.jobNumber}`
+  const status = isPast ? 'Past' : job.jobStatus.replaceAll('_', ' ')
   return (
     <Link
-      className={`pbc-jobcalendar__job pbc-jobcalendar__job--${statusTone(job.jobStatus)}`}
+      className={[
+        'pbc-jobcalendar__job',
+        `pbc-jobcalendar__job--${statusTone(job.jobStatus)}`,
+        isPast ? 'pbc-jobcalendar__job--past' : '',
+      ].filter(Boolean).join(' ')}
       href={`/jobs/${encodeURIComponent(job.id)}`}
-      aria-label={`Job #${job.jobNumber} ${title}. View expenses`}
+      aria-label={`Job #${job.jobNumber} ${title}.${isPast ? ' Past schedule.' : ''} View expenses`}
     >
       <b>{title}</b>
-      <span>#{job.jobNumber} · {job.jobStatus.replaceAll('_', ' ')}</span>
+      <span>#{job.jobNumber} · {status}</span>
     </Link>
   )
 }
