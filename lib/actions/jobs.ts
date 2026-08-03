@@ -11,7 +11,13 @@ import {
   type JobSnapshotPayload,
   type StoredJobSnapshot,
 } from '@/lib/jobber/job-snapshots'
-import type { JobberExpense, JobberJobDetail, JobberJobSummary, JobberJobVisit } from '@/lib/jobber/job-types'
+import type {
+  JobberExpense,
+  JobberJobDetail,
+  JobberJobSummary,
+  JobberJobVisit,
+  JobberVisitRange,
+} from '@/lib/jobber/job-types'
 import { requireRole, type AppUserProfile } from '@/lib/security/require-app-user'
 import { createServiceClient } from '@/lib/supabase/server'
 import type { ActionResult } from './types'
@@ -19,7 +25,11 @@ import type { ActionResult } from './types'
 const REFRESH_COOLDOWN_MS = 30_000
 const DETAIL_FETCH_CONCURRENCY = 5
 const OFFICIAL_SUPERVISOR_NAMES = new Set(['eric', 'edgar', 'steve'])
-const listJobsSchema = z.object({ supervisorProfileId: z.string().uuid().nullable().optional() }).strict()
+const calendarMonthSchema = z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/)
+const listJobsSchema = z.object({
+  supervisorProfileId: z.string().uuid().nullable().optional(),
+  month: calendarMonthSchema.optional(),
+}).strict()
 const jobIdSchema = z.object({ jobberJobId: z.string().trim().min(1).max(300) }).strict()
 
 export interface JobListItem {
@@ -82,10 +92,14 @@ export async function listMyJobs(input: unknown = {}): Promise<ActionResult<JobL
     }
     const jobberUserId = resolvedFilter.supervisorIdentity?.jobberUserId ?? null
 
-    const snapshots = await listJobSnapshots()
     const loaded = resolvedFilter.supervisorIdentity === null
-      ? await loadAdminJobList(appUser.user.id, snapshots)
-      : await loadAssignedJobList(appUser.user.id, resolvedFilter.supervisorIdentity, snapshots, false)
+      ? await loadAdminJobList(appUser.user.id, resolveJobCalendarRange(parsed.data.month))
+      : await loadAssignedJobList(
+          appUser.user.id,
+          resolvedFilter.supervisorIdentity,
+          await listJobSnapshots(),
+          false,
+        )
 
     return {
       ok: true,
@@ -117,7 +131,12 @@ export async function refreshJobs(input: unknown = {}): Promise<ActionResult<Job
     const snapshots = await listJobSnapshots()
     assertRefreshAllowed(filterSnapshots(snapshots, jobberUserId))
     const refreshed = resolvedFilter.supervisorIdentity === null
-      ? await refreshJobList(appUser.user.id, null, snapshots)
+      ? await refreshJobList(
+          appUser.user.id,
+          null,
+          snapshots,
+          resolveJobCalendarRange(parsed.data.month),
+        )
       : await loadAssignedJobList(appUser.user.id, resolvedFilter.supervisorIdentity, snapshots, true)
     return {
       ok: true,
@@ -205,9 +224,12 @@ async function resolveJobberFilter(
 
 async function loadAdminJobList(
   actorId: string,
-  existingSnapshots: readonly StoredJobSnapshot[],
+  visitRange: JobberVisitRange,
 ): Promise<LoadedJobSnapshots> {
-  const summaries = await listJobberJobs(null)
+  const [summaries, existingSnapshots] = await Promise.all([
+    listJobberJobs(null, visitRange),
+    listJobSnapshots(),
+  ])
   const cached = filterSnapshots(existingSnapshots, null)
   const cachedById = new Map(cached.map((snapshot) => [snapshot.job.id, snapshot]))
   const missing = summaries.filter((job) => !cachedById.has(job.id))
@@ -256,8 +278,9 @@ async function refreshJobList(
   actorId: string,
   jobberUserId: string | null,
   existingSnapshots: readonly StoredJobSnapshot[],
+  visitRange: JobberVisitRange | null = null,
 ): Promise<LoadedJobSnapshots> {
-  const jobs = await listJobberJobs(jobberUserId)
+  const jobs = await listJobberJobs(jobberUserId, visitRange)
   const existingById = new Map(existingSnapshots.map((snapshot) => [snapshot.job.id, snapshot]))
   const refreshed = await fetchAndSaveJobDetails(jobs, actorId, jobberUserId, existingById)
   return { ...refreshed, summaries: jobs }
@@ -399,6 +422,35 @@ async function resolveSupervisorIdentity(
 
 function normalizePersonName(name: string): string {
   return name.trim().replace(/\s+/g, ' ').toLocaleLowerCase('en-AU')
+}
+
+function resolveJobCalendarRange(month?: string): JobberVisitRange {
+  const key = month ?? currentSydneyMonth()
+  const [yearText, monthText] = key.split('-')
+  const year = Number(yearText)
+  const monthIndex = Number(monthText) - 1
+  const firstOfMonth = new Date(Date.UTC(year, monthIndex, 1))
+  const mondayOffset = (firstOfMonth.getUTCDay() + 6) % 7
+  const daysInMonth = new Date(Date.UTC(year, monthIndex + 1, 0)).getUTCDate()
+  const calendarDays = Math.ceil((mondayOffset + daysInMonth) / 7) * 7
+  const gridStart = new Date(firstOfMonth)
+  gridStart.setUTCDate(firstOfMonth.getUTCDate() - mondayOffset)
+  const after = new Date(gridStart)
+  after.setUTCDate(gridStart.getUTCDate() - 1)
+  const before = new Date(gridStart)
+  before.setUTCDate(gridStart.getUTCDate() + calendarDays)
+  return { after: after.toISOString(), before: before.toISOString() }
+}
+
+function currentSydneyMonth(now = new Date()): string {
+  const parts = new Intl.DateTimeFormat('en-AU', {
+    timeZone: 'Australia/Sydney',
+    year: 'numeric',
+    month: '2-digit',
+  }).formatToParts(now)
+  const year = parts.find((part) => part.type === 'year')?.value ?? now.getUTCFullYear().toString()
+  const month = parts.find((part) => part.type === 'month')?.value ?? String(now.getUTCMonth() + 1).padStart(2, '0')
+  return `${year}-${month}`
 }
 
 function assertRefreshAllowed(snapshots: readonly StoredJobSnapshot[], now = Date.now()): void {

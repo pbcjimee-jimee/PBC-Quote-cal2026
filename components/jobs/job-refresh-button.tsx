@@ -5,8 +5,8 @@ import { useState, useTransition } from 'react'
 import { refreshJobDetail, refreshJobs } from '@/lib/actions/jobs'
 
 type RefreshButtonProps =
-  | { jobberJobId: string; supervisorProfileId?: never }
-  | { jobberJobId?: never; supervisorProfileId?: string | null }
+  | { jobberJobId: string; supervisorProfileId?: never; month?: never }
+  | { jobberJobId?: never; supervisorProfileId?: string | null; month?: string }
 
 export function JobRefreshButton(props: RefreshButtonProps) {
   const router = useRouter()
@@ -20,7 +20,7 @@ export function JobRefreshButton(props: RefreshButtonProps) {
     startTransition(async () => {
       const result = props.jobberJobId
         ? await refreshJobDetail({ jobberJobId: props.jobberJobId })
-        : await refreshJobs({ supervisorProfileId: props.supervisorProfileId ?? null })
+        : await refreshJobs({ supervisorProfileId: props.supervisorProfileId ?? null, month: props.month })
       if (!result.ok) {
         setError(result.error)
         return

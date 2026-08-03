@@ -11,6 +11,7 @@ import type {
   JobberJobsPage,
   JobberJobSummary,
   JobberTeamUser,
+  JobberVisitRange,
 } from './job-types'
 
 const TEAM_USERS_QUERY = `query PbcTeamUsers($first: Int!, $after: String) {
@@ -34,6 +35,44 @@ const ALL_JOBS_QUERY = `query PbcAllJobs($first: Int!, $after: String) {
     totalCount
     nodes { id jobNumber title jobStatus total jobberWebUri startAt endAt
       visits(first: 100) { nodes { id startAt endAt } }
+    }
+  }
+}`
+const USER_JOBS_RANGE_QUERY = `query PbcUserJobsRange(
+  $userId: EncodedId!, $first: Int!, $after: String,
+  $visitStart: ISO8601DateTime!, $visitEnd: ISO8601DateTime!
+) {
+  jobs(first: $first, after: $after, filter: {
+    visitsAssignedToUserId: $userId,
+    visitsScheduledBetween: { after: $visitStart, before: $visitEnd },
+    includeUnscheduled: false
+  }) {
+    pageInfo { hasNextPage endCursor }
+    totalCount
+    nodes { id jobNumber title jobStatus total jobberWebUri startAt endAt
+      visits(first: 100, filter: {
+        assignedTo: $userId,
+        startAt: { before: $visitEnd },
+        endAt: { after: $visitStart }
+      }) { nodes { id startAt endAt } }
+    }
+  }
+}`
+const ALL_JOBS_RANGE_QUERY = `query PbcAllJobsRange(
+  $first: Int!, $after: String,
+  $visitStart: ISO8601DateTime!, $visitEnd: ISO8601DateTime!
+) {
+  jobs(first: $first, after: $after, filter: {
+    visitsScheduledBetween: { after: $visitStart, before: $visitEnd },
+    includeUnscheduled: false
+  }) {
+    pageInfo { hasNextPage endCursor }
+    totalCount
+    nodes { id jobNumber title jobStatus total jobberWebUri startAt endAt
+      visits(first: 100, filter: {
+        startAt: { before: $visitEnd },
+        endAt: { after: $visitStart }
+      }) { nodes { id startAt endAt } }
     }
   }
 }`
@@ -68,11 +107,19 @@ export async function fetchJobberJobsPage(
   userId: string | null,
   page: JobberPageRequest,
   options: JobberJobClientOptions,
+  visitRange: JobberVisitRange | null = null,
 ): Promise<JobberJobsPage> {
-  const query = userId === null ? ALL_JOBS_QUERY : USER_JOBS_QUERY
-  const variables = userId === null
-    ? { first: page.first, after: page.after }
-    : { userId, first: page.first, after: page.after }
+  const query = visitRange === null
+    ? (userId === null ? ALL_JOBS_QUERY : USER_JOBS_QUERY)
+    : (userId === null ? ALL_JOBS_RANGE_QUERY : USER_JOBS_RANGE_QUERY)
+  const variables = {
+    ...(userId === null ? {} : { userId }),
+    first: page.first,
+    after: page.after,
+    ...(visitRange === null
+      ? {}
+      : { visitStart: visitRange.after, visitEnd: visitRange.before }),
+  }
   const data = await request(query, variables, options)
   const jobs = objectValue(data.jobs, 'Invalid Jobber jobs connection')
   if (!Number.isInteger(jobs.totalCount) || Number(jobs.totalCount) < 0) {

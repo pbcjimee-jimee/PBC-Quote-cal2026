@@ -28,14 +28,20 @@ describe('JobRefreshButton', () => {
   })
 
   it('shows a partial refresh warning after a successful manual jobs refresh', async () => {
-    mocks.refreshJobs.mockResolvedValue({
-      ok: true,
-      data: {
-        jobs: [],
-        assignmentLinked: true,
-        filteredJobberUserId: null,
-        refreshWarning,
-      },
+    mocks.refreshJobs.mockImplementation(async (input: unknown) => {
+      const hasMonth = typeof input === 'object' && input !== null
+        && 'month' in input && input.month === '2026-08'
+      return hasMonth
+        ? {
+            ok: true,
+            data: {
+              jobs: [],
+              assignmentLinked: true,
+              filteredJobberUserId: null,
+              refreshWarning,
+            },
+          }
+        : { ok: false, error: 'Calendar month was not forwarded' }
     })
     const { cleanup } = installTestDom()
     let root: Root | null = null
@@ -46,7 +52,7 @@ describe('JobRefreshButton', () => {
       root = createRoot(container)
 
       await act(async () => {
-        root!.render(createElement(JobRefreshButton, { supervisorProfileId: null }))
+        root!.render(createElement(JobRefreshButton, { supervisorProfileId: null, month: '2026-08' }))
       })
 
       await act(async () => {
@@ -55,6 +61,7 @@ describe('JobRefreshButton', () => {
 
       const status = Array.from(container.querySelectorAll('p'))
         .find((element) => element.getAttribute('role') === 'status')
+      expect(status).toBeDefined()
       expect(status?.textContent).toContain(refreshWarning)
       expect(status?.getAttribute('class')).toContain('pbc-alert--warning')
       expect(mocks.routerRefresh).toHaveBeenCalledTimes(1)

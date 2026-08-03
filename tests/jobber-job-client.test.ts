@@ -99,6 +99,47 @@ describe('Jobber job query client', () => {
     expect(assigned.totalCount).toBe(1)
   })
 
+  it('limits admin jobs and nested visits to the requested calendar range', async () => {
+    const fetchMock = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      void input
+      void init
+      return response({
+        jobs: {
+          totalCount: 1,
+          nodes: [{
+            id: 'job-1', jobNumber: 3103, title: 'Belrose', jobStatus: 'today',
+            total: 12437.02, jobberWebUri: 'https://secure.getjobber.com/jobs/job-1',
+            startAt: '2026-08-03T08:00:00+10:00', endAt: '2026-08-05T17:00:00+10:00',
+            visits: { nodes: [{ id: 'visit-1', startAt: '2026-08-03T08:00:00+10:00', endAt: '2026-08-03T17:00:00+10:00' }] },
+          }],
+          pageInfo: { hasNextPage: false, endCursor: null },
+        },
+      })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    await fetchJobberJobsPage(
+      null,
+      { first: 10, after: null },
+      options,
+      { after: '2026-07-26T00:00:00.000Z', before: '2026-09-07T00:00:00.000Z' },
+    )
+
+    const request = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body)) as { query: string; variables: unknown }
+    expect(compact(request.query)).toContain(compact(
+      'visitsScheduledBetween: { after: $visitStart, before: $visitEnd }, includeUnscheduled: false',
+    ))
+    expect(compact(request.query)).toContain(compact(
+      'visits(first: 100, filter: { startAt: { before: $visitEnd }, endAt: { after: $visitStart } })',
+    ))
+    expect(request.variables).toEqual({
+      first: 10,
+      after: null,
+      visitStart: '2026-07-26T00:00:00.000Z',
+      visitEnd: '2026-09-07T00:00:00.000Z',
+    })
+  })
+
   it('uses the confirmed PbcJobExpenses shape and preserves Decimal money strings', async () => {
     const fetchMock = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
       void input

@@ -21,6 +21,11 @@ export interface JobberJobVisit {
   readonly endAt: string | null
 }
 
+export interface JobberVisitRange {
+  readonly after: string
+  readonly before: string
+}
+
 export interface JobberJobSummary {
   readonly id: string
   readonly jobNumber: string

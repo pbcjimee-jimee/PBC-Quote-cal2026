@@ -69,6 +69,23 @@ describe('Jobs page', () => {
     expect(markup).toContain('role="status"')
   })
 
+  it('loads admin jobs for the displayed calendar month', async () => {
+    mocks.listMyJobs.mockImplementationOnce(async (input: unknown) => {
+      const hasMonth = typeof input === 'object' && input !== null
+        && 'month' in input && input.month === '2026-08'
+      return hasMonth
+        ? { ok: true, data: { jobs: [], assignmentLinked: true, filteredJobberUserId: null } }
+        : { ok: false, error: 'Calendar month was not forwarded' }
+    })
+
+    const markup = renderToStaticMarkup(await JobsPage({
+      searchParams: Promise.resolve({ month: '2026-08' }),
+    }))
+
+    expect(markup).toContain('August 2026 job calendar')
+    expect(markup).not.toContain('Calendar month was not forwarded')
+  })
+
   it('explains that supervisor access depends on an official Jobber name match', async () => {
     mocks.requireRole.mockResolvedValueOnce({
       ok: true,

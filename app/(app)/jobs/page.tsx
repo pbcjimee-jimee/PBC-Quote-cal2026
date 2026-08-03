@@ -19,7 +19,7 @@ export default async function JobsPage({
     ? query.supervisor
     : null
   const [jobs, users] = await Promise.all([
-    listMyJobs({ supervisorProfileId }),
+    listMyJobs({ supervisorProfileId, month: query.month }),
     appUser.profile.role === 'admin' ? listUsers({}) : Promise.resolve(null),
   ])
   const supervisors = users?.ok
@@ -30,7 +30,7 @@ export default async function JobsPage({
     <main>
       <header className="pbc-topbar">
         <div className="pbc-crumb"><span>{appUser.profile.role === 'admin' ? 'Admin' : 'Supervisor'}</span>{Icons.arrowDown({ size: 14 })}<b>Jobs</b></div>
-        <div className="pbc-topbar__right"><JobRefreshButton supervisorProfileId={supervisorProfileId} /></div>
+        <div className="pbc-topbar__right"><JobRefreshButton supervisorProfileId={supervisorProfileId} month={query.month} /></div>
       </header>
       <div className="pbc-page">
         <div className="pbc-pagehead"><h1>Jobs</h1><p>Select a scheduled job to review its expenses and profit.</p></div>

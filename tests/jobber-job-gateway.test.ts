@@ -49,6 +49,7 @@ describe('Jobber job gateway', () => {
   })
 
   it('paginates team users and assigned jobs with the shared helper', async () => {
+    const visitRange = { after: '2026-07-26T00:00:00.000Z', before: '2026-09-07T00:00:00.000Z' }
     mocks.teamPage
       .mockResolvedValueOnce({ nodes: [{ id: 'u1' }], pageInfo: { hasNextPage: true, endCursor: 'u-next' } })
       .mockResolvedValueOnce({ nodes: [{ id: 'u2' }], pageInfo: { hasNextPage: false, endCursor: null } })
@@ -57,9 +58,13 @@ describe('Jobber job gateway', () => {
       .mockResolvedValueOnce({ nodes: [{ id: 'j2' }], totalCount: 2, pageInfo: { hasNextPage: false, endCursor: null } })
 
     await expect(listJobberTeamUsers()).resolves.toEqual([{ id: 'u1' }, { id: 'u2' }])
-    await expect(listJobberJobs('u1')).resolves.toEqual([{ id: 'j1' }, { id: 'j2' }])
-    expect(mocks.jobsPage).toHaveBeenNthCalledWith(1, 'u1', { first: 10, after: null }, expect.objectContaining({ accessToken: 'access-1' }))
-    expect(mocks.jobsPage).toHaveBeenNthCalledWith(2, 'u1', { first: 10, after: 'j-next' }, expect.any(Object))
+    await expect(listJobberJobs('u1', visitRange)).resolves.toEqual([{ id: 'j1' }, { id: 'j2' }])
+    expect(mocks.jobsPage).toHaveBeenNthCalledWith(
+      1, 'u1', { first: 10, after: null }, expect.objectContaining({ accessToken: 'access-1' }), visitRange,
+    )
+    expect(mocks.jobsPage).toHaveBeenNthCalledWith(
+      2, 'u1', { first: 10, after: 'j-next' }, expect.any(Object), visitRange,
+    )
   })
 
   it('paginates every expense and returns one normalized job detail', async () => {
@@ -81,6 +86,8 @@ describe('Jobber job gateway', () => {
     expect(mocks.refreshToken).toHaveBeenCalledWith(
       'refresh-1', expect.any(Object), 'owner-1',
     )
-    expect(mocks.jobsPage).toHaveBeenLastCalledWith(null, expect.any(Object), expect.objectContaining({ accessToken: 'access-2' }))
+    expect(mocks.jobsPage).toHaveBeenLastCalledWith(
+      null, expect.any(Object), expect.objectContaining({ accessToken: 'access-2' }), null,
+    )
   })
 })

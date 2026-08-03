@@ -7,7 +7,13 @@ import {
   fetchJobberTeamUsersPage,
   JobberJobApiError,
 } from './job-client'
-import type { JobberJobClientOptions, JobberJobDetail, JobberJobSummary, JobberTeamUser } from './job-types'
+import type {
+  JobberJobClientOptions,
+  JobberJobDetail,
+  JobberJobSummary,
+  JobberTeamUser,
+  JobberVisitRange,
+} from './job-types'
 import { fetchAllJobberPages } from './pagination'
 import {
   getUsableSharedJobberConnectionToken,
@@ -25,9 +31,12 @@ export async function listJobberTeamUsers(): Promise<readonly JobberTeamUser[]> 
   )))
 }
 
-export async function listJobberJobs(jobberUserId: string | null): Promise<readonly JobberJobSummary[]> {
+export async function listJobberJobs(
+  jobberUserId: string | null,
+  visitRange: JobberVisitRange | null = null,
+): Promise<readonly JobberJobSummary[]> {
   return withRestartableToken((options) => fetchAllJobberPages((after) => (
-    fetchJobberJobsPage(jobberUserId, { first: JOB_LIST_PAGE_SIZE, after }, options)
+    fetchJobberJobsPage(jobberUserId, { first: JOB_LIST_PAGE_SIZE, after }, options, visitRange)
   )))
 }
 

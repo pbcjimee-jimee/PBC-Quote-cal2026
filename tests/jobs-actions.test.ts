@@ -256,12 +256,32 @@ describe('job actions', () => {
   it('lets admins load all jobs and marks all-job snapshots', async () => {
     mocks.requireRole.mockResolvedValueOnce(appUser('admin', null))
 
-    await listMyJobs({})
+    await listMyJobs({ month: '2026-08' })
 
-    expect(mocks.listJobberJobs).toHaveBeenCalledWith(null)
+    expect(mocks.listJobberJobs).toHaveBeenCalledWith(null, {
+      after: '2026-07-26T00:00:00.000Z',
+      before: '2026-09-07T00:00:00.000Z',
+    })
     expect(mocks.saveSnapshots).toHaveBeenCalledWith([
       expect.objectContaining({ refreshedForAll: true }),
     ], 'admin-1')
+  })
+
+  it('loads the admin snapshot cache and monthly Jobber schedule concurrently', async () => {
+    mocks.requireRole.mockResolvedValueOnce(appUser('admin', null))
+    let resolveSnapshots!: (value: readonly []) => void
+    const pendingSnapshots = new Promise<readonly []>((resolve) => {
+      resolveSnapshots = resolve
+    })
+    mocks.listSnapshots.mockReturnValueOnce(pendingSnapshots)
+
+    const result = listMyJobs({ month: '2026-08' })
+
+    await vi.waitFor(() => {
+      expect(mocks.listJobberJobs).toHaveBeenCalled()
+    })
+    resolveSnapshots([])
+    await expect(result).resolves.toMatchObject({ ok: true })
   })
 
   it('resolves an admin supervisor filter through the service client', async () => {
