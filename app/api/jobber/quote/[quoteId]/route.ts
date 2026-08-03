@@ -12,8 +12,7 @@ import { getJobberConfig, getMissingGraphqlConfigKeys } from '@/lib/jobber/confi
 import { getUsableDevJobberToken, refreshDevJobberToken } from '@/lib/jobber/dev-tokens'
 import { mapJobberJobToDraft, mapJobberQuoteToDraft } from '@/lib/jobber/mapper'
 import { getUsableSharedJobberConnectionToken, refreshSharedJobberConnectionToken, requireSharedJobberConnectionOwnerId, type StoredJobberToken } from '@/lib/jobber/tokens'
-import { isAuthenticatedUserAllowed } from '@/lib/security/auth-policy'
-import { createClient } from '@/lib/supabase/server'
+import { requireRole } from '@/lib/security/require-app-user'
 import { isDevNoAuthMode } from '@/lib/actions/types'
 
 interface RouteContext {
@@ -146,17 +145,12 @@ function getJobExpensesErrorMessage(error: unknown): string {
 async function getJobberTokenUserId(): Promise<string | null> {
   if (isDevNoAuthMode()) return null
 
-  const supabase = await createClient()
-  const { data: { user }, error: userError } = await supabase.auth.getUser()
-  if (userError || !user) {
+  const allowedUser = await requireRole('admin')
+  if (!allowedUser.ok) {
     throw new JobberAuthError('Login is required to fetch Jobber quotes')
   }
 
-  if (!isAuthenticatedUserAllowed(user)) {
-    throw new JobberAuthError('Login is required to fetch Jobber quotes')
-  }
-
-  return user.id
+  return allowedUser.user.id
 }
 
 interface JobberLookup {

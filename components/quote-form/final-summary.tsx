@@ -27,7 +27,7 @@ function getMarginBarWidth(value: number | null): string {
   return `${Math.min(Math.max(value, 0), 100)}%`
 }
 
-function getMarginBarTone(value: number | null): string {
+export function getMarginBarTone(value: number | null): string {
   if (value === null) return 'bg-[var(--muted-2)]'
   if (value < 20) return 'bg-[var(--danger)]'
   if (value < 35) return 'bg-amber-500'

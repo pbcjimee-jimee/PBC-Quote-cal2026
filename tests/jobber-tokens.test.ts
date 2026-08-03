@@ -67,6 +67,8 @@ function createUpdateBuilder() {
 describe('jobber tokens', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mocks.createServiceClient.mockReset()
+    mocks.refreshAccessToken.mockReset()
     process.env.JOBBER_TOKEN_ENCRYPTION_KEY = ''
   })
 

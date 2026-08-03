@@ -12,14 +12,15 @@
     "test:coverage": "vitest run --coverage",
     "test:rls:local": "vitest run tests/rls-local-integration.test.ts",
     "typecheck": "tsc --noEmit",
-    "verify": "git diff --check && npm run typecheck && npm run lint && npm run test:run && npm run test:coverage && npm run build && npm audit --audit-level=high"
+    "audit:production": "npm audit --omit=dev --audit-level=high",
+    "verify": "git diff --check && npm run typecheck && npm run lint && npm run test:run && npm run test:coverage && npm run build && npm run audit:production"
   },
   "dependencies": {
     "@supabase/ssr": "^0.10.3",
     "@supabase/supabase-js": "^2.105.4",
     "clsx": "^2.1.1",
     "decimal.js": "^10.6.0",
-    "next": "16.2.6",
+    "next": "16.2.12",
     "react": "19.2.4",
     "react-dom": "19.2.4",
     "tailwind-merge": "^3.6.0",
@@ -33,13 +34,14 @@
     "@vitejs/plugin-react": "^6.0.1",
     "@vitest/coverage-v8": "^4.1.6",
     "eslint": "^9",
-    "eslint-config-next": "16.2.6",
+    "eslint-config-next": "16.2.12",
     "supabase": "^2.108.0",
     "tailwindcss": "^4",
     "typescript": "^5",
     "vitest": "^4.1.6"
   },
   "overrides": {
-    "postcss": "^8.5.14"
+    "postcss": "^8.5.14",
+    "sharp": "0.35.0"
   }
 }

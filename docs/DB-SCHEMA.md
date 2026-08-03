@@ -69,10 +69,18 @@ warehouse_inventory(Settings Inventory page, app-only stock list)
 | `20260707003130_add_quote_version_and_save_rpcs.sql` | `quotes.version` + `create_quote_with_children(jsonb)` / `update_quote_with_children(jsonb)` RPC. 견적 본문/자식 행 저장을 서버 트랜잭션으로 묶고 version 기반 동시 편집 충돌 감지 |
 | `20260708000000_add_warehouse_inventory.sql` | `warehouse_inventory` app-only stock list + 2026 equipment workbook seed rows |
 | `20260708220900_recategorize_inventory_workbook_sections.sql` | Existing 2026 inventory seed rows recategorized by workbook section rows (`Tools`, `Sample`, `Weathershield`, etc.) |
+| `20260731010000_add_user_profiles_and_roles.sql` | `user_profiles`, `app_auth.current_role()` 역할 판정 함수, 기존 Auth 사용자 admin 부트스트랩 |
+| `20260731011000_tighten_role_rls.sql` | 기존 견적 앱 테이블을 admin 전용과 admin+supervisor Inventory로 분리 |
+| `20260731012000_add_jobber_job_snapshots.sql` | read-only Jobber job/expense 응답 캐시(`jobber_job_snapshots`, service-role only) |
+
+`20260731` role 마이그레이션은 위 세 개가 전부다. Progress Invoice 마이그레이션은 이 브랜치와 릴리스에 없으며 별도 소유된다.
 
 ---
 
 ## 핵심 테이블 요약
+
+### user_profiles (앱 사용자 역할)
+`auth.users.id`와 1:1인 `id`, 정규화된 `email`, `display_name`, `role`(`admin`/`supervisor`), 선택적 `jobber_user_id`, `is_active`, timestamps. 본인은 자기 행을 조회할 수 있고 admin은 전체 행을 조회할 수 있으나, 생성·역할 변경·비활성화 등 쓰기는 service-role을 사용하는 admin Server Action만 수행한다. 기존 Auth 사용자는 마이그레이션 시 admin으로 멱등 부트스트랩되어 기존 로그인이 중단되지 않는다. `app_auth.protect_last_active_admin()` trigger는 동시 강등/비활성화/삭제를 직렬화해 active admin이 0명이 되는 변경을 DB 경계에서 거부한다. `app_auth.current_role()`은 현재 `auth.uid()`의 active profile 역할만 반환한다.
 
 ### products (페인트 마스터)
 `id, name, manufacturer, type, unit(기본 gallon), market_price, actual_price, color_code, active` + 0004 확장 `category, product_line, base, sheen, volume_litres, price, rrp_price, product_code, source_url`. gin 이름 검색 인덱스, `active` 부분 인덱스.
@@ -98,6 +106,9 @@ warehouse_inventory(Settings Inventory page, app-only stock list)
 ### jobber_tokens (회사 공유 커넥션, 암호화)
 `user_id` PK, `access_token`/`refresh_token`(AES-256-GCM 암호화), `scope`, `expires_at`. RLS enabled + 정책 없음(service-role only 접근). 실제 접근은 `lib/jobber/tokens.ts`의 `createServiceClient` 경유.
 
+### jobber_job_snapshots (Jobber job/expense 캐시)
+`jobber_job_id` PK, 검증된 job·expense 응답 `payload JSONB`, `refreshed_at`, `refreshed_by → auth.users`. RLS를 활성화하되 anon/authenticated 정책과 grant는 두지 않고 service-role에만 권한을 부여한다. Jobber가 진실의 원천이며 supervisor 권한은 cached scope를 신뢰하지 않고 live 배정 목록으로 재확인한다. `synchronize_jobber_job_snapshot_scope` RPC가 해당 사용자의 현재 배정 목록에 없는 job에서 scope를 하나의 transaction으로 철회한다. SQL: `20260731012000_add_jobber_job_snapshots.sql`.
+
 ### jobber_quote_lines (Jobber write-back 로컬 저장)
 공개 Product / Service line만 보관(`kind` line_item/text, `name`, `description`, `quantity`, `unit_price`, `taxable`, `client_visible`, `jobber_line_item_id`, `linked_product_or_service_id`, `position`). 내부 material은 `quote_items`에만 저장. Jobber 실제 mutation은 중앙 client의 승인된 write-back 경로만 사용. SQL: `0010`.
 
@@ -105,7 +116,7 @@ warehouse_inventory(Settings Inventory page, app-only stock list)
 `product_services`: Jobber Products & Services Export CSV 관리(공개 line 자동채우기용). `unit_cost`는 Jobber 호환 필드로만 보관, 계산에는 미사용(소비자가 기준 유지). `quote_line_templates`/`_items`: Settings에서 저장하는 재사용 line/text 묶음, quote에 복사 후에만 write-back. SQL: `0011`/`0012`.
 
 ### warehouse_inventory
-App-only warehouse stock list managed at `/settings/inventory`. Fields: `name`, `category`, `brand`, `model_specification`, `colour`, `size_or_serial`, `quantity`, `purchase_date`, `used_date`, `used_location_text`, `status` (`in_stock`/`out`/`unknown`), `notes`, `source_year`, `active`, timestamps. For the 2026 equipment workbook, `category` follows the workbook section rows such as `Tools`, `Sample`, `Primer`, `Weathershield`, and `Interior walls`, not the generic Paint/Tools column. It is not used by quote calculation, material price snapshots, or Jobber write-back. SQL: `20260708000000_add_warehouse_inventory.sql` + `20260708220900_recategorize_inventory_workbook_sections.sql`.
+App-only warehouse stock list managed at `/inventory` (`/settings/inventory` redirects to the new URL). Fields: `name`, `category`, `brand`, `model_specification`, `colour`, `size_or_serial`, `quantity`, `purchase_date`, `used_date`, `used_location_text`, `status` (`in_stock`/`out`/`unknown`), `notes`, `source_year`, `active`, timestamps. Admin은 전체 CRUD, supervisor는 조회와 `quantity`·`status`·`used_date`·`used_location_text` 재고 이동 필드만 수정할 수 있으며 트리거가 다른 필드 변경을 거부한다. It is not used by quote calculation, material price snapshots, or Jobber write-back. SQL: `20260708000000_add_warehouse_inventory.sql` + `20260708220900_recategorize_inventory_workbook_sections.sql` + `20260731011000_tighten_role_rls.sql`.
 
 ### quote_memos (app-only)
 `quote_id`(CASCADE), `body`, `position`, `created_by`. Jobber 미fetch·미write-back. SQL: `0013`.
@@ -116,21 +127,14 @@ quote/option totals의 price-change 스냅샷을 보관해 이후 편집이 sell
 
 ---
 
-## RLS 정책 (`0002_rls_policies.sql` + 이후 테이블)
+## 역할 기반 RLS 정책 (`20260731010000` + `20260731011000`)
 
-모든 애플리케이션 테이블에 RLS를 켜고 공통 정책을 적용한다:
-
-```sql
-ALTER TABLE <table> ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "authenticated_all" ON <table>
-  FOR ALL TO authenticated USING (true) WITH CHECK (true);
-```
-
-적용 테이블: `products`, `product_services`, `quote_line_templates`, `quote_line_template_items`, `warehouse_inventory`, `pricing_settings`, `quotes`, `quote_items`, `quote_areas`, `jobber_quote_lines`, `quote_options`, `quote_option_items`, `quote_memos`, `quote_price_revisions`.
-
-- `jobber_tokens`만 정책 없음(service-role only). 미인증 사용자는 정책 없음 = 전 테이블 거부.
-- `tests/rls.test.ts`가 마이그레이션 SQL 텍스트로 RLS enable·정책·anon 부재를 회귀 검증한다(실 DB 강제는 `tests/rls-local-integration.test.ts`, env 있을 때만).
-- ⚠️ 현재 정책은 `USING(true)`라 **사용자 간 소유권 격리가 없다**(관리자 2인 전제로 의도됨). 멀티유저 확장 시 `created_by = auth.uid()` 정책 전환 필요. `docs/BACKLOG.md` P2 참조.
+- 역할 판정은 JWT payload나 클라이언트 입력이 아니라 `auth.uid()`와 `user_profiles.is_active`를 조회하는 `app_auth.current_role()` SECURITY DEFINER 함수로 통일한다.
+- admin 전용: 견적·가격·제품·설정·템플릿·메모·가격 이력 테이블과 견적 저장 RPC. supervisor의 direct Supabase 조회·쓰기 및 SECURITY DEFINER RPC 우회는 모두 거부한다.
+- admin+supervisor: `warehouse_inventory` SELECT/UPDATE. supervisor UPDATE는 트리거가 재고 이동 필드 외 변경을 거부하며 INSERT/DELETE는 admin만 허용한다.
+- `user_profiles`: 본인 행 SELECT 또는 admin 전체 SELECT만 허용한다. authenticated 직접 write 정책은 없다.
+- `jobber_tokens`, `jobber_job_snapshots`: RLS enabled + 클라이언트 정책 없음(service-role only).
+- 미인증 사용자는 전 테이블에서 거부된다. `tests/rls.test.ts`의 정적 역할 매트릭스와 `tests/rls-local-integration.test.ts`의 로컬 Supabase 실제 쿼리로 회귀 검증한다.
 
 ---
 
@@ -148,7 +152,7 @@ CREATE POLICY "authenticated_all" ON <table>
 | 영역 | 정책 |
 |---|---|
 | 인증 | Supabase Auth, 세션 7일 |
-| 인가 | RLS — 모든 테이블, v1.0 동일 권한 |
+| 인가 | active `user_profiles` + `app_auth.current_role()` 기반 역할 RLS. admin은 기존 전 기능, supervisor는 Jobs/Inventory만 |
 | 민감 정보 | `actual_price`는 내부 가격 스냅샷 필드, RLS 보호, 로그 출력 금지 |
 
 전체 보안 규칙: `docs/SECURITY.md`.

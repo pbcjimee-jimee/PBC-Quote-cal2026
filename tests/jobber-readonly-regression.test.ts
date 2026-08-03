@@ -49,6 +49,7 @@ describe('Jobber read-only regression guard', () => {
     expect(directGraphqlReferences).toEqual([
       'lib/jobber/client.ts',
       'lib/jobber/config.ts',
+      'lib/jobber/job-client.ts',
     ])
   })
 

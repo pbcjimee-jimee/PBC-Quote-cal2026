@@ -18,8 +18,8 @@ vi.mock('@/lib/actions/types', async () => {
   }
 })
 
-vi.mock('@/lib/security/require-allowed-user', () => ({
-  requireAllowedUser: mocks.requireAllowedUser,
+vi.mock('@/lib/security/require-app-user', () => ({
+  requireRole: mocks.requireAllowedUser,
 }))
 
 import {
@@ -27,6 +27,7 @@ import {
   deleteInventoryItem,
   importInventoryCSV,
   listInventory,
+  updateInventoryMovement,
   updateInventoryItem,
 } from '@/lib/actions/inventory'
 
@@ -152,6 +153,28 @@ describe('inventory actions against Supabase', () => {
     expect(deleteBuilder.update).toHaveBeenCalledWith(expect.objectContaining({
       active: false,
       updated_at: expect.any(String),
+    }))
+  })
+
+  it('allows the any-role guard to update movement fields only', async () => {
+    const updateBuilder = createInsertBuilder({ data: inventoryRow, error: null })
+    mocks.createClient.mockResolvedValueOnce({ from: vi.fn(() => updateBuilder) })
+
+    const result = await updateInventoryMovement({
+      id: inventoryRow.id,
+      quantity: 2,
+      usedDate: '2026-07-31',
+      usedLocationText: 'Job 42',
+      status: 'out',
+    })
+
+    expect(result.ok).toBe(true)
+    expect(mocks.requireAllowedUser).toHaveBeenCalledWith('any')
+    expect(updateBuilder.update).toHaveBeenCalledWith(expect.objectContaining({
+      quantity: '2.00',
+      used_date: '2026-07-31',
+      used_location_text: 'Job 42',
+      status: 'out',
     }))
   })
 

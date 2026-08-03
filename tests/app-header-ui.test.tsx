@@ -30,11 +30,24 @@ vi.mock('@/lib/actions/auth', () => ({
   signOut: vi.fn(),
 }))
 
+function getDesktopNavigationHrefs(markup: string): string[] {
+  const navigationStart = markup.indexOf('<nav class="pbc-nav">')
+  const navigationEnd = markup.indexOf('</nav>', navigationStart)
+
+  if (navigationStart < 0 || navigationEnd < 0) return []
+
+  return Array.from(
+    markup.slice(navigationStart, navigationEnd).matchAll(/href="([^"]+)"/g),
+    ([, href]) => href
+  )
+}
+
 describe('AppHeader sidebar UI', () => {
   const userProfile: UserProfile = {
     id: 'user-1',
     displayName: 'Mia Kang',
     email: 'mia@example.com',
+    role: 'admin',
   }
 
   it('renders the desktop sidebar toggle and expanded state markup', () => {
@@ -46,10 +59,33 @@ describe('AppHeader sidebar UI', () => {
     expect(markup).toContain('data-sidebar-state="expanded"')
     expect(markup).toContain('Overview')
     expect(markup).toContain('New Quote')
+    expect(markup).toContain('Job Expenses')
     expect(markup).toContain('Settings')
     expect(markup).toContain('Inventory')
+    expect(markup).not.toContain('href="/progress-invoices"')
+    expect(markup).not.toContain('Progress Invoices')
     expect(markup).toContain('data-intent-link="true"')
     expect(markup).toContain('pbc-usercard__identity')
+    expect(getDesktopNavigationHrefs(markup)).toEqual([
+      '/quotes',
+      '/quotes/new',
+      '/jobs',
+      '/settings',
+      '/inventory',
+    ])
+  })
+
+  it('shows only Job Expenses and Inventory to supervisors', () => {
+    const markup = renderToStaticMarkup(createElement(AppHeader, {
+      userProfile: { ...userProfile, role: 'supervisor' },
+    }))
+
+    expect(markup).toContain('Supervisor tools')
+    expect(markup).toContain('href="/jobs"')
+    expect(markup).toContain('Job Expenses')
+    expect(markup).not.toContain('>Jobs<')
+    expect(markup).toContain('href="/inventory"')
+    expect(getDesktopNavigationHrefs(markup)).toEqual(['/jobs', '/inventory'])
   })
 
   it('renders the collapsed sidebar as an icon rail without text buttons', () => {
@@ -68,7 +104,7 @@ describe('AppHeader sidebar UI', () => {
 
   it('defers route active classes during server render to avoid hydration mismatch', () => {
     headerState.collapsed = false
-    headerState.pathname = '/settings/inventory'
+    headerState.pathname = '/inventory'
     const markup = renderToStaticMarkup(createElement(AppHeader, { userProfile }))
 
     expect(markup).toContain('Inventory')

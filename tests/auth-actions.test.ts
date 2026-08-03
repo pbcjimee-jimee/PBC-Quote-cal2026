@@ -12,12 +12,30 @@ const mocks = vi.hoisted(() => ({
 }))
 
 vi.mock('@/lib/supabase/server', () => ({
-  createClient: vi.fn(async () => ({
-    auth: {
-      signInWithPassword: mocks.signInWithPassword,
-      signOut: mocks.signOut,
-    },
-  })),
+  createClient: vi.fn(async () => {
+    const maybeSingle = vi.fn(async () => ({
+      data: {
+        id: 'user-1',
+        email: 'user@example.com',
+        display_name: 'User',
+        role: 'admin',
+        jobber_user_id: null,
+        is_active: true,
+      },
+      error: null,
+    }))
+    return {
+      auth: {
+        signInWithPassword: mocks.signInWithPassword,
+        signOut: mocks.signOut,
+      },
+      from: vi.fn(() => ({
+        select: vi.fn(() => ({
+          eq: vi.fn(() => ({ maybeSingle })),
+        })),
+      })),
+    }
+  }),
 }))
 
 vi.mock('next/navigation', () => ({
@@ -49,7 +67,7 @@ describe('auth actions', () => {
   })
 
   it('returns a readable error when Supabase rejects the credentials', async () => {
-    mocks.signInWithPassword.mockResolvedValueOnce({ error: new Error('Invalid login credentials') })
+    mocks.signInWithPassword.mockResolvedValueOnce({ data: { user: null }, error: new Error('Invalid login credentials') })
     const formData = new FormData()
     formData.set('email', 'user@example.com')
     formData.set('password', 'wrong-password')
@@ -76,7 +94,7 @@ describe('auth actions', () => {
   })
 
   it('locks repeated failed login attempts for the same email and request fingerprint', async () => {
-    mocks.signInWithPassword.mockResolvedValue({ error: new Error('Invalid login credentials') })
+    mocks.signInWithPassword.mockResolvedValue({ data: { user: null }, error: new Error('Invalid login credentials') })
     const formData = new FormData()
     formData.set('email', 'user@example.com')
     formData.set('password', 'wrong-password')
@@ -92,7 +110,7 @@ describe('auth actions', () => {
   })
 
   it('redirects to quotes after successful sign in', async () => {
-    mocks.signInWithPassword.mockResolvedValueOnce({ error: null })
+    mocks.signInWithPassword.mockResolvedValueOnce({ data: { user: { id: 'user-1' } }, error: null })
     const formData = new FormData()
     formData.set('email', 'user@example.com')
     formData.set('password', 'correct-password')
@@ -100,6 +118,64 @@ describe('auth actions', () => {
     await expect(signIn(initialAuthState, formData)).rejects.toThrow('redirect:/quotes')
 
     expect(mocks.redirect).toHaveBeenCalledWith('/quotes')
+  })
+
+  it('signs out authenticated users whose app profile is inactive or missing', async () => {
+    const { createClient } = await import('@/lib/supabase/server')
+    vi.mocked(createClient).mockResolvedValueOnce({
+      auth: {
+        signInWithPassword: mocks.signInWithPassword.mockResolvedValueOnce({
+          data: { user: { id: 'user-2' } },
+          error: null,
+        }),
+        signOut: mocks.signOut,
+      },
+      from: vi.fn(() => ({
+        select: vi.fn(() => ({
+          eq: vi.fn(() => ({
+            maybeSingle: vi.fn(async () => ({ data: null, error: null })),
+          })),
+        })),
+      })),
+    } as never)
+    const formData = new FormData()
+    formData.set('email', 'disabled@example.com')
+    formData.set('password', 'correct-password')
+
+    const result = await signIn(initialAuthState, formData)
+
+    expect(result.error).toBe('User is not allowed to access this app')
+    expect(mocks.signOut).toHaveBeenCalled()
+  })
+
+  it('redirects supervisors to jobs after successful sign in', async () => {
+    const { createClient } = await import('@/lib/supabase/server')
+    vi.mocked(createClient).mockResolvedValueOnce({
+      auth: {
+        signInWithPassword: mocks.signInWithPassword.mockResolvedValueOnce({
+          data: { user: { id: 'user-2' } },
+          error: null,
+        }),
+        signOut: mocks.signOut,
+      },
+      from: vi.fn(() => ({
+        select: vi.fn(() => ({
+          eq: vi.fn(() => ({
+            maybeSingle: vi.fn(async () => ({
+              data: { role: 'supervisor', is_active: true },
+              error: null,
+            })),
+          })),
+        })),
+      })),
+    } as never)
+    const formData = new FormData()
+    formData.set('email', 'staff@example.com')
+    formData.set('password', 'correct-password')
+
+    await expect(signIn(initialAuthState, formData)).rejects.toThrow('redirect:/jobs')
+
+    expect(mocks.redirect).toHaveBeenCalledWith('/jobs')
   })
 
   it('signs out and redirects to login', async () => {

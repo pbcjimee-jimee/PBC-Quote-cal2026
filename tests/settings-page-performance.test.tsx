@@ -35,6 +35,10 @@ vi.mock('@/lib/actions/quote-line-templates', async (importOriginal) => ({
   listQuoteLineTemplates: mocks.listQuoteLineTemplates,
 }))
 
+vi.mock('@/lib/security/page-role-guard', () => ({
+  requireAdminPage: vi.fn(async () => undefined),
+}))
+
 import SettingsPage from '@/app/(app)/settings/page'
 
 describe('Settings page initial performance', () => {

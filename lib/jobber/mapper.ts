@@ -1,5 +1,8 @@
-import Decimal from 'decimal.js'
 import type { JobberCustomField, JobberExpense, JobberExpenseUser, JobberJobDetail, JobberQuote, JobberQuoteAddress } from './client'
+import { calculateFinancialSummary } from './financial-summary'
+import type { JobberQuoteFinancialSummary } from './financial-summary'
+
+export type { JobberQuoteFinancialSummary } from './financial-summary'
 
 export interface JobberQuoteDraft {
   jobberQuoteId: string
@@ -16,13 +19,6 @@ export interface JobberQuoteDraft {
   jobExpenses: JobberQuoteDraftJobExpenses[]
   jobExpensesError: string | null
   financialSummary: JobberQuoteFinancialSummary
-}
-
-export interface JobberQuoteFinancialSummary {
-  quoteTotal: number
-  expensesTotal: number
-  profit: number
-  profitMarginPercent: number | null
 }
 
 export interface JobberQuoteDraftLineItem {
@@ -198,45 +194,6 @@ function getJobType(fields: JobberCustomField[]): string {
 
 function formatExpenseUser(user: JobberExpenseUser | null): string | null {
   return user?.name?.full?.trim() || null
-}
-
-function moneyToNumber(value: Decimal): number {
-  return value.toDecimalPlaces(2).toNumber()
-}
-
-function percentToNumber(value: Decimal): number {
-  return value.toDecimalPlaces(1).toNumber()
-}
-
-function calculateFinancialSummary(
-  productsAndServices: JobberQuoteDraftLineItem[],
-  jobExpenses: JobberQuoteDraftJobExpenses[],
-  sourceTotal?: number
-): JobberQuoteFinancialSummary {
-  const quoteTotal = typeof sourceTotal === 'number'
-    ? new Decimal(sourceTotal)
-    : productsAndServices.reduce(
-      (total, item) => total.add(item.totalPrice),
-      new Decimal(0)
-    )
-  const expensesTotal = jobExpenses.reduce(
-    (jobsTotal, job) => jobsTotal.add(job.expenses.reduce(
-      (expenseTotal, expense) => expense.total === null ? expenseTotal : expenseTotal.add(expense.total),
-      new Decimal(0)
-    )),
-    new Decimal(0)
-  )
-  const profit = quoteTotal.sub(expensesTotal)
-  const profitMarginPercent = quoteTotal.gt(0)
-    ? percentToNumber(profit.div(quoteTotal).mul(100))
-    : null
-
-  return {
-    quoteTotal: moneyToNumber(quoteTotal),
-    expensesTotal: moneyToNumber(expensesTotal),
-    profit: moneyToNumber(profit),
-    profitMarginPercent,
-  }
 }
 
 function mapLineItems(items: JobberQuote['lineItems']['nodes']): JobberQuoteDraftLineItem[] {

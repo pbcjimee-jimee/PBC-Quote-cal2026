@@ -5,6 +5,7 @@ import { getPricingSettings } from '@/lib/actions/settings'
 import type { ActionResult } from '@/lib/actions/types'
 import { DEFAULT_PRICING_SETTINGS } from '@/lib/calculator'
 import type { PricingSettings } from '@/lib/calculator'
+import { requireAdminPage } from '@/lib/security/page-role-guard'
 
 function formatErrorMessage(error: unknown, label: string) {
   const text = error instanceof Error ? error.message : 'Unknown error'
@@ -27,6 +28,7 @@ function normalizeResult<T>(result: ActionResult<T> | undefined | null, label: s
 }
 
 export default async function SettingsPage() {
+  await requireAdminPage()
   const rawSettingsResult = await safeResult(getPricingSettings(), 'Failed to load pricing settings')
   const settingsResult = normalizeResult(
     rawSettingsResult as ActionResult<PricingSettings> | undefined,
@@ -38,7 +40,8 @@ export default async function SettingsPage() {
       <header className="pbc-topbar">
         <div className="pbc-crumb"><span>Admin</span>{Icons.arrowDown({ size: 14 })}<b>Settings</b></div>
         <div className="pbc-topbar__right">
-          <Link href="/settings/inventory" className="pbc-btn pbc-btn--ghost">{Icons.layers({ size: 15 })} Inventory</Link>
+          <Link href="/settings/users" className="pbc-btn pbc-btn--ghost">{Icons.user({ size: 15 })} Users</Link>
+          <Link href="/inventory" className="pbc-btn pbc-btn--ghost">{Icons.layers({ size: 15 })} Inventory</Link>
           <Link href="/quotes/new" className="pbc-btn pbc-btn--ghost">{Icons.back({ size: 15 })} Back to quote</Link>
         </div>
       </header>

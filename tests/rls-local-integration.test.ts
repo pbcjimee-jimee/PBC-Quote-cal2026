@@ -11,6 +11,10 @@ const config = {
 
 const hasLocalRlsConfig = Object.values(config).every(Boolean)
 const describeLocal = hasLocalRlsConfig ? describe : describe.skip
+const supervisorEmail = process.env.SUPABASE_RLS_TEST_SUPERVISOR_EMAIL
+  ?? 'supervisor.rls@example.test'
+const supervisorPassword = process.env.SUPABASE_RLS_TEST_SUPERVISOR_PASSWORD
+  ?? 'local-supervisor-password'
 
 interface LocalRlsConfig {
   url: string
@@ -49,8 +53,11 @@ describeLocal('Supabase local RLS CRUD integration', () => {
   let admin: SupabaseClient
   let anon: SupabaseClient
   let authed: SupabaseClient
+  let supervisor: SupabaseClient
   let userId: string
-  let originalF1Rate: string | null = null
+  let supervisorUserId: string
+  let inventoryItemId: string | null = null
+  let originalPricingSettings: { f1LabourRate: string; updatedBy: string | null } | null = null
 
   beforeAll(async () => {
     const local = requireConfig()
@@ -75,6 +82,13 @@ describeLocal('Supabase local RLS CRUD integration', () => {
         persistSession: false,
       },
     })
+    supervisor = createClient(local.url, local.anonKey, {
+      auth: {
+        autoRefreshToken: false,
+        detectSessionInUrl: false,
+        persistSession: false,
+      },
+    })
 
     const created = await admin.auth.admin.createUser({
       email: local.email,
@@ -92,25 +106,75 @@ describeLocal('Supabase local RLS CRUD integration', () => {
     if (signedIn.error) throw signedIn.error
     if (!signedIn.data.user) throw new Error('Supabase test user sign-in did not return a user')
     userId = signedIn.data.user.id
+
+    const createdSupervisor = await admin.auth.admin.createUser({
+      email: supervisorEmail,
+      password: supervisorPassword,
+      email_confirm: true,
+    })
+    if (createdSupervisor.error && !createdSupervisor.error.message.toLowerCase().includes('already')) {
+      throw createdSupervisor.error
+    }
+    const supervisorSignedIn = await supervisor.auth.signInWithPassword({
+      email: supervisorEmail,
+      password: supervisorPassword,
+    })
+    if (supervisorSignedIn.error) throw supervisorSignedIn.error
+    if (!supervisorSignedIn.data.user) {
+      throw new Error('Supabase supervisor test sign-in did not return a user')
+    }
+    supervisorUserId = supervisorSignedIn.data.user.id
+
+    expectNoError(
+      await admin.from('user_profiles').upsert([
+        {
+          id: userId,
+          email: local.email.toLowerCase(),
+          display_name: 'RLS Admin',
+          role: 'admin',
+          is_active: true,
+        },
+        {
+          id: supervisorUserId,
+          email: supervisorEmail,
+          display_name: 'RLS Supervisor',
+          role: 'supervisor',
+          is_active: true,
+        },
+      ])
+    )
   })
 
   afterAll(async () => {
-    if (originalF1Rate !== null) {
-      await admin
-        .from('pricing_settings')
-        .update({ f1_labour_rate: originalF1Rate })
-        .eq('id', 1)
+    if (inventoryItemId) {
+      const removedInventory = await admin
+        .from('warehouse_inventory')
+        .delete()
+        .eq('id', inventoryItemId)
+      if (removedInventory.error) throw removedInventory.error
     }
 
-    if (userId) {
-      await admin.auth.admin.deleteUser(userId)
+    if (originalPricingSettings !== null) {
+      const restored = await admin
+        .from('pricing_settings')
+        .update({
+          f1_labour_rate: originalPricingSettings.f1LabourRate,
+          updated_by: originalPricingSettings.updatedBy,
+        })
+        .eq('id', 1)
+      if (restored.error) throw restored.error
+    }
+
+    if (supervisorUserId) {
+      const deleted = await admin.auth.admin.deleteUser(supervisorUserId)
+      if (deleted.error) throw deleted.error
     }
   })
 
-  it('denies anonymous Data API access through RLS', async () => {
+  it('denies anonymous Data API access through table privileges', async () => {
     const selected = await anon.from('products').select('id').limit(1)
-    expect(selected.error).toBeNull()
-    expect(selected.data).toEqual([])
+    expect(selected.error?.code).toBe('42501')
+    expect(selected.error?.message).toMatch(/permission denied for table products/i)
 
     const inserted = await anon.from('products').insert({
       name: 'anon-rls-denied',
@@ -118,7 +182,229 @@ describeLocal('Supabase local RLS CRUD integration', () => {
       market_price: '1.00',
       actual_price: '1.00',
     })
-    expect(inserted.error).not.toBeNull()
+    expect(inserted.error?.code).toBe('42501')
+    expect(inserted.error?.message).toMatch(/permission denied for table products/i)
+  })
+
+  it('keeps Jobber tokens behind table privileges and RLS', async () => {
+    const anonSelected = await anon.from('jobber_tokens').select('user_id').limit(1)
+    expect(anonSelected.error?.code).toBe('42501')
+    expect(anonSelected.error?.message).toMatch(/permission denied for table jobber_tokens/i)
+
+    const authedSelected = await authed.from('jobber_tokens').select('user_id').limit(1)
+    expect(authedSelected.error?.code).toBe('42501')
+    expect(authedSelected.error?.message).toMatch(/permission denied for table jobber_tokens/i)
+
+    expectNoError(
+      await admin.from('jobber_tokens').upsert({
+        user_id: userId,
+        access_token: 'local-test-access-token',
+        refresh_token: 'local-test-refresh-token',
+        token_type: 'Bearer',
+      })
+    )
+    expectNoError(
+      await admin.from('jobber_tokens').select('user_id').eq('user_id', userId).single()
+    )
+    expectNoError(await admin.from('jobber_tokens').delete().eq('user_id', userId))
+  })
+
+  it('keeps Jobber job snapshots service-role only', async () => {
+    for (const client of [anon, authed, supervisor]) {
+      const selected = await client.from('jobber_job_snapshots').select('jobber_job_id').limit(1)
+      expect(selected.error?.code).toBe('42501')
+      expect(selected.error?.message).toMatch(/permission denied for table jobber_job_snapshots/i)
+    }
+
+    expectNoError(await admin.from('jobber_job_snapshots').upsert([
+      {
+        jobber_job_id: 'local-rls-job',
+        payload: { scopeJobberUserIds: ['local-jobber-user'] },
+        refreshed_by: userId,
+      },
+      {
+        jobber_job_id: 'local-rls-revoked-job',
+        payload: { scopeJobberUserIds: ['local-jobber-user'] },
+        refreshed_by: userId,
+      },
+    ]))
+    const synchronized = expectNoError(await admin.rpc('synchronize_jobber_job_snapshot_scope', {
+      p_jobber_user_id: 'local-jobber-user',
+      p_assigned_job_ids: ['local-rls-job'],
+    }))
+    expect(synchronized.data).toHaveLength(1)
+    expectNoError(
+      await admin.from('jobber_job_snapshots').select('jobber_job_id').eq('jobber_job_id', 'local-rls-job').single()
+    )
+    const scopedRows = expectNoError(
+      await admin
+        .from('jobber_job_snapshots')
+        .select('jobber_job_id, payload')
+        .in('jobber_job_id', ['local-rls-job', 'local-rls-revoked-job'])
+        .order('jobber_job_id')
+    )
+    expect(scopedRows.data).toEqual([
+      {
+        jobber_job_id: 'local-rls-job',
+        payload: { scopeJobberUserIds: ['local-jobber-user'] },
+      },
+      {
+        jobber_job_id: 'local-rls-revoked-job',
+        payload: { scopeJobberUserIds: [] },
+      },
+    ])
+    expectNoError(
+      await admin
+        .from('jobber_job_snapshots')
+        .delete()
+        .in('jobber_job_id', ['local-rls-job', 'local-rls-revoked-job'])
+    )
+  })
+
+  it('exposes only the current profile to supervisors and all profiles to admins', async () => {
+    const supervisorProfiles = expectNoError(
+      await supervisor.from('user_profiles').select('id, role')
+    )
+    expect(supervisorProfiles.data).toEqual([
+      { id: supervisorUserId, role: 'supervisor' },
+    ])
+
+    const adminProfiles = expectNoError(
+      await authed.from('user_profiles').select('id, role').order('role')
+    )
+    expect(adminProfiles.data).toEqual(expect.arrayContaining([
+      { id: userId, role: 'admin' },
+      { id: supervisorUserId, role: 'supervisor' },
+    ]))
+  })
+
+  it('preserves one active admin while allowing changes when another active admin exists', async () => {
+    const lastAdminDemotion = await admin
+      .from('user_profiles')
+      .update({ role: 'supervisor' })
+      .eq('id', userId)
+    if (!lastAdminDemotion.error) {
+      expectNoError(
+        await admin.from('user_profiles').update({ role: 'admin' }).eq('id', userId)
+      )
+    }
+
+    const lastAdminDeactivation = await admin
+      .from('user_profiles')
+      .update({ is_active: false })
+      .eq('id', userId)
+    if (!lastAdminDeactivation.error) {
+      expectNoError(
+        await admin.from('user_profiles').update({ is_active: true }).eq('id', userId)
+      )
+    }
+
+    expectNoError(
+      await admin
+        .from('user_profiles')
+        .update({ role: 'admin' })
+        .eq('id', supervisorUserId)
+    )
+    expectNoError(
+      await admin
+        .from('user_profiles')
+        .update({ role: 'supervisor' })
+        .eq('id', userId)
+    )
+    expectNoError(
+      await admin
+        .from('user_profiles')
+        .update({ role: 'admin', is_active: true })
+        .eq('id', userId)
+    )
+    expectNoError(
+      await admin
+        .from('user_profiles')
+        .update({ role: 'supervisor' })
+        .eq('id', supervisorUserId)
+    )
+
+    expect(lastAdminDemotion.error?.message).toContain('LAST_ACTIVE_ADMIN_REQUIRED')
+    expect(lastAdminDeactivation.error?.message).toContain('LAST_ACTIVE_ADMIN_REQUIRED')
+  })
+
+  it('denies supervisors admin tables', async () => {
+    const products = expectNoError(await supervisor.from('products').select('id').limit(1))
+    expect(products.data).toEqual([])
+
+    const productInsert = await supervisor.from('products').insert({
+      name: 'supervisor-must-not-create',
+      unit: 'gallon',
+      market_price: '1.00',
+      actual_price: '1.00',
+    })
+    expect(productInsert.error?.code).toBe('42501')
+  })
+
+  it('allows supervisor inventory movement but rejects identity edits', async () => {
+    const inserted = expectNoError(
+      await admin
+        .from('warehouse_inventory')
+        .insert({
+          name: 'RLS movement fixture',
+          category: 'Tools',
+          quantity: '2.00',
+          status: 'in_stock',
+          active: true,
+        })
+        .select('id')
+        .single()
+    )
+    inventoryItemId = expectData(inserted.data).id
+
+    const moved = expectNoError(
+      await supervisor
+        .from('warehouse_inventory')
+        .update({
+          quantity: '1.00',
+          status: 'out',
+          used_date: '2026-07-31',
+          used_location_text: 'Local RLS test',
+        })
+        .eq('id', inventoryItemId)
+        .select('quantity, status, used_location_text')
+        .single()
+    )
+    expect(moved.data).toEqual({
+      quantity: 1,
+      status: 'out',
+      used_location_text: 'Local RLS test',
+    })
+
+    const renamed = await supervisor
+      .from('warehouse_inventory')
+      .update({ name: 'Supervisor identity edit denied' })
+      .eq('id', inventoryItemId)
+    expect(renamed.error?.code).toBe('42501')
+    expect(renamed.error?.message).toContain('INVENTORY_ADMIN_FIELDS_REQUIRED')
+  })
+
+  it('allows service-role cleanup on non-secret application tables', async () => {
+    const product = expectNoError(
+      await authed
+        .from('products')
+        .insert({
+          name: `service-cleanup-${Date.now()}`,
+          unit: 'gallon',
+          market_price: '1.00',
+          actual_price: '1.00',
+        })
+        .select('id')
+        .single()
+    )
+    const productData = expectData(product.data)
+
+    expectNoError(await admin.from('products').delete().eq('id', productData.id))
+
+    const selected = expectNoError(
+      await authed.from('products').select('id').eq('id', productData.id)
+    )
+    expect(selected.data).toEqual([])
   })
 
   it('allows authenticated CRUD on RLS-protected app tables', async () => {
@@ -127,12 +413,15 @@ describeLocal('Supabase local RLS CRUD integration', () => {
     const settings = expectNoError(
       await authed
         .from('pricing_settings')
-        .select('f1_labour_rate')
+        .select('f1_labour_rate, updated_by')
         .eq('id', 1)
         .single()
     )
     const settingsData = expectData(settings.data)
-    originalF1Rate = settingsData.f1_labour_rate
+    originalPricingSettings = {
+      f1LabourRate: settingsData.f1_labour_rate,
+      updatedBy: settingsData.updated_by,
+    }
 
     expectNoError(
       await authed

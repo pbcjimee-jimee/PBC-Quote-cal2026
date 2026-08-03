@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest'
-import { isDevNoAuthMode } from '@/lib/actions/types'
+import { isDevNoAuthMode, type ActionResult } from '@/lib/actions/types'
 
 const originalEnv = {
   NEXT_PUBLIC_DEV_NO_AUTH: process.env.NEXT_PUBLIC_DEV_NO_AUTH,
@@ -57,5 +57,35 @@ describe('action runtime mode', () => {
     delete process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY
 
     expect(isDevNoAuthMode()).toBe(true)
+  })
+})
+
+describe('ActionResult compatibility', () => {
+  it('keeps existing success and error values assignable', () => {
+    const success: ActionResult<{ id: string }> = {
+      ok: true,
+      data: { id: 'profile-1' },
+    }
+    const error: ActionResult<{ id: string }> = {
+      ok: false,
+      error: 'Could not save',
+    }
+
+    expect(success).toEqual({ ok: true, data: { id: 'profile-1' } })
+    expect(error).toEqual({ ok: false, error: 'Could not save' })
+  })
+
+  it('supports retained role application error codes', () => {
+    const errors: readonly ActionResult<never>[] = [
+      { ok: false, error: 'Invalid input', code: 'VALIDATION' },
+      { ok: false, error: 'Insufficient role', code: 'FORBIDDEN' },
+      { ok: false, error: 'Jobber unavailable', code: 'JOBBER_ERROR' },
+    ]
+
+    expect(errors).toEqual([
+      { ok: false, error: 'Invalid input', code: 'VALIDATION' },
+      { ok: false, error: 'Insufficient role', code: 'FORBIDDEN' },
+      { ok: false, error: 'Jobber unavailable', code: 'JOBBER_ERROR' },
+    ])
   })
 })

@@ -19,6 +19,7 @@ const mocks = vi.hoisted(() => {
     }),
     getUsableSharedJobberConnectionToken: vi.fn(),
     createClient: vi.fn(),
+    requireRole: vi.fn(),
     mapJobberQuoteToDraft: vi.fn(),
     JobberApiError: MockJobberApiError,
   }
@@ -54,6 +55,10 @@ vi.mock('@/lib/supabase/server', () => ({
   createClient: mocks.createClient,
 }))
 
+vi.mock('@/lib/security/require-app-user', () => ({
+  requireRole: mocks.requireRole,
+}))
+
 import { GET as jobberQuoteRoute } from '@/app/api/jobber/quote/[quoteId]/route'
 
 describe('jobber quote route token refresh', () => {
@@ -61,6 +66,12 @@ describe('jobber quote route token refresh', () => {
     vi.clearAllMocks()
     process.env.NEXT_PUBLIC_DEV_NO_AUTH = 'false'
     process.env.JOBBER_GRAPHQL_VERSION = '2025-04-16'
+
+    mocks.requireRole.mockResolvedValue({
+      ok: true,
+      user: { id: 'user-1', email: 'owner@example.com' },
+      profile: { role: 'admin' },
+    })
 
     mocks.createClient.mockResolvedValue({
       auth: {

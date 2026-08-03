@@ -1,7 +1,7 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest'
 
 const mocks = vi.hoisted(() => ({
-  requireAllowedUser: vi.fn(),
+  requireAppUser: vi.fn(),
   appHeader: vi.fn(() => <header>App header</header>),
   installGuidance: vi.fn(() => <aside>Install guidance</aside>),
   redirect: vi.fn((path: string) => {
@@ -9,8 +9,8 @@ const mocks = vi.hoisted(() => ({
   }),
 }))
 
-vi.mock('@/lib/security/require-allowed-user', () => ({
-  requireAllowedUser: mocks.requireAllowedUser,
+vi.mock('@/lib/security/require-app-user', () => ({
+  requireAppUser: mocks.requireAppUser,
 }))
 
 vi.mock('next/navigation', () => ({
@@ -34,7 +34,7 @@ describe('app layout auth guard', () => {
   })
 
   it('redirects to login when Supabase has no current user', async () => {
-    mocks.requireAllowedUser.mockResolvedValueOnce({
+    mocks.requireAppUser.mockResolvedValueOnce({
       ok: false,
       error: 'Authentication required',
     })
@@ -47,9 +47,17 @@ describe('app layout auth guard', () => {
   })
 
   it('renders protected content when Supabase verifies the current user', async () => {
-    mocks.requireAllowedUser.mockResolvedValueOnce({
+    mocks.requireAppUser.mockResolvedValueOnce({
       ok: true,
       user: { id: 'user-1', email: 'user@example.com', userMetadata: { full_name: 'Mia Kang' } },
+      profile: {
+        id: 'user-1',
+        email: 'user@example.com',
+        displayName: 'Database Mia',
+        role: 'admin',
+        jobberUserId: null,
+        isActive: true,
+      },
     })
 
     const result = await Promise.resolve().then(() =>
@@ -62,7 +70,8 @@ describe('app layout auth guard', () => {
       userProfile: {
         id: 'user-1',
         email: 'user@example.com',
-        displayName: 'Mia Kang',
+        displayName: 'Database Mia',
+        role: 'admin',
       },
     })
     expect(mocks.redirect).not.toHaveBeenCalled()
@@ -70,7 +79,7 @@ describe('app layout auth guard', () => {
 
   it('redirects disallowed authenticated users through sign-out when an email allowlist is configured', async () => {
     process.env.ALLOWED_LOGIN_EMAILS = 'owner@example.com'
-    mocks.requireAllowedUser.mockResolvedValueOnce({
+    mocks.requireAppUser.mockResolvedValueOnce({
       ok: false,
       error: 'User is not allowed to access this app',
     })

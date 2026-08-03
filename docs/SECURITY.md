@@ -66,12 +66,21 @@
 ## RLS (Row-Level Security)
 
 - **모든 테이블 RLS 켜기** (`enable row level security`)
-- v1.0: 모든 인증 사용자 동일 권한
-- 미인증 사용자: 모든 테이블 접근 거부 (`auth.role() = 'authenticated'` 정책)
-- 2026-06-26 기준 실제 사용자는 관리자 2명뿐이므로 별도 관리자 이메일/role gate를 추가하지 않는다. 접근 제한은 Supabase Auth 계정 발급과 기존 allowlist/login 정책으로 관리한다.
+- `user_profiles`의 활성 `admin`/`supervisor` 역할과 `app_auth.current_role()`을 정책의 진실의 원천으로 사용한다.
+- admin은 기존 견적·Settings 기능과 사용자 관리·Jobs·Inventory를 사용한다. supervisor는 Job Expenses(`/jobs`)와 Inventory만 사용하며 `warehouse_inventory`의 재고 이동 필드만 수정할 수 있다.
+- active admin이 0명이 되는 강등·비활성화·삭제는 transaction 직렬화 trigger가 DB 경계에서 거부한다.
+- supervisor의 Jobber job 권한은 cached snapshot scope를 지속 권한으로 신뢰하지 않고, 목록·상세·강제 refresh 전에 현재 live 배정을 재확인한다.
+- 미인증 사용자와 active 프로필이 없는 사용자는 모든 앱 테이블 접근을 거부한다.
 - RLS 자동 테스트 (`tests/rls.test.ts`)로 검증 필수
 
-> ⚠️ **2026-07-06 감사 발견(방어 심화 대상, `docs/BACKLOG.md` P2):** 현재 RLS 정책은 `USING(true)`라 사용자 간 소유권 격리가 없다(관리자 2인 전제로 의도됨). 서버 액션 mutation이 `isAuthenticatedUserAllowed`를 강제하지 않고, `quote_price_revisions.changed_by`가 DB에서 강제되지 않으며, non-prod에서 암호화 키 없으면 Jobber 토큰이 평문 저장될 수 있다. 멀티유저 확장 시 소유권 정책 전환 + allowlist를 앱/DB 방어선으로 승격할 것.
+Progress Invoice는 role 브랜치와 릴리스에 포함되지 않는다. 기존 원격 Progress Invoice 스키마는 별도 소유 상태로 남아 있으며, 별도 브랜치에서 해당 스키마의 access lock 선행 조건을 확보하기 전까지 role production 적용은 차단한다.
+
+### 로그인 허용 판정
+
+- 로그인 성공 후 현재 세션의 active `user_profiles` 행을 반드시 조회하고, 행이 없거나 비활성이면 즉시 sign out한다.
+- `ALLOWED_LOGIN_EMAILS`가 설정된 환경에서는 프로필 허용 조건에 더해 이메일도 일치해야 하는 추가 AND 백스톱으로 사용한다.
+- `ALLOWED_LOGIN_EMAILS`가 비어 있으면 이메일 제한은 적용하지 않으며, active 프로필과 역할이 최종 판정 기준이다.
+- 역할 값이나 사용자 ID를 클라이언트 payload에서 신뢰하지 않는다.
 
 ---
 

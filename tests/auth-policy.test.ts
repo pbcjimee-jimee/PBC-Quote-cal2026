@@ -2,9 +2,9 @@ import { describe, expect, it } from 'vitest'
 import { isAuthenticatedUserAllowed, isLoginEmailAllowed } from '@/lib/security/auth-policy'
 
 describe('auth policy', () => {
-  it('requires an explicit login allowlist in production', () => {
-    expect(isLoginEmailAllowed('owner@example.com', '', 'production')).toBe(false)
-    expect(isAuthenticatedUserAllowed({ email: 'owner@example.com' }, '', 'production')).toBe(false)
+  it('treats an absent login allowlist as no additional email restriction', () => {
+    expect(isLoginEmailAllowed('owner@example.com', '', 'production')).toBe(true)
+    expect(isAuthenticatedUserAllowed({ email: 'owner@example.com' }, '', 'production')).toBe(true)
   })
 
   it('allows only configured emails when a login allowlist is present', () => {

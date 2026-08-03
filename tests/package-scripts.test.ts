@@ -13,7 +13,10 @@ describe('package scripts', () => {
     ) as PackageJson
 
     expect(packageJson.scripts?.verify).toBe(
-      'git diff --check && npm run typecheck && npm run lint && npm run test:run && npm run test:coverage && npm run build && npm audit --audit-level=high'
+      'git diff --check && npm run typecheck && npm run lint && npm run test:run && npm run test:coverage && npm run build && npm run audit:production'
+    )
+    expect(packageJson.scripts?.['audit:production']).toBe(
+      'npm audit --omit=dev --audit-level=high'
     )
   })
 

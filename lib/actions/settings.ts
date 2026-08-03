@@ -2,7 +2,7 @@
 
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
-import { requireAllowedUser } from '@/lib/security/require-allowed-user'
+import { requireRole } from '@/lib/security/require-app-user'
 import { pricingSettingsSchema, type PricingSettingsInput } from '@/lib/validators'
 import type { PricingSettings } from '@/lib/calculator'
 import type { ActionResult } from './types'
@@ -61,7 +61,7 @@ export async function getPricingSettings(): Promise<ActionResult<PricingSettings
     return { ok: true, data: getDevPricingSettings() }
   }
 
-  const allowedUser = await requireAllowedUser()
+  const allowedUser = await requireRole('admin')
   if (!allowedUser.ok) return allowedUser
 
   const supabase = await createClient()
@@ -88,7 +88,7 @@ export async function updatePricingSettings(input: unknown): Promise<ActionResul
     return { ok: true, data: settings }
   }
 
-  const allowedUser = await requireAllowedUser()
+  const allowedUser = await requireRole('admin')
   if (!allowedUser.ok) return allowedUser
 
   const supabase = await createClient()

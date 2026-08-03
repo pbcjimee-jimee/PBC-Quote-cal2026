@@ -16,6 +16,9 @@ const migrations = [
   '0015_add_roof_scope_and_pricing.sql',
   '0017_add_quote_price_revisions.sql',
   '20260708000000_add_warehouse_inventory.sql',
+  '20260731010000_add_user_profiles_and_roles.sql',
+  '20260731011000_tighten_role_rls.sql',
+  '20260731012000_add_jobber_job_snapshots.sql',
 ].map((file) => {
   const path = join(migrationsDir, file)
 
@@ -27,7 +30,7 @@ const migrations = [
 
 const combinedSql = migrations.map(({ sql }) => sql).join('\n')
 
-const authenticatedCrudTables = [
+const nonSecretDataApiTables = [
   'products',
   'pricing_settings',
   'quotes',
@@ -44,44 +47,85 @@ const authenticatedCrudTables = [
   'warehouse_inventory',
 ]
 
+const dataApiGrantMigration = migrations.find(
+  ({ file }) => file === '20260731011000_tighten_role_rls.sql'
+)
+
+const roleRlsMigration = migrations.find(
+  ({ file }) => file === '20260731011000_tighten_role_rls.sql'
+)
+
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
 
 function expectRlsEnabled(table: string): void {
   expect(combinedSql).toMatch(
-    new RegExp(`ALTER\\s+TABLE\\s+${escapeRegExp(table)}\\s+ENABLE\\s+ROW\\s+LEVEL\\s+SECURITY`, 'i')
-  )
-}
-
-function expectAuthenticatedCrudPolicy(table: string): void {
-  expect(combinedSql).toMatch(
     new RegExp(
-      `CREATE\\s+POLICY\\s+"authenticated_all"\\s+ON\\s+${escapeRegExp(table)}\\s+FOR\\s+ALL\\s+TO\\s+authenticated\\s+USING\\s*\\(true\\)\\s+WITH\\s+CHECK\\s*\\(true\\)`,
+      `ALTER\\s+TABLE\\s+(?:public\\.)?${escapeRegExp(table)}\\s+ENABLE\\s+ROW\\s+LEVEL\\s+SECURITY`,
       'i'
     )
   )
 }
 
+function expectAdminCrudPolicy(table: string): void {
+  expect(roleRlsMigration?.sql).toMatch(
+    new RegExp(
+      `CREATE\\s+POLICY\\s+"${escapeRegExp(table)}_admin"\\s+ON\\s+public\\.${escapeRegExp(table)}\\s+FOR\\s+ALL\\s+TO\\s+authenticated\\s+USING\\s*\\(app_auth\\.current_role\\(\\)\\s*=\\s*'admin'\\)\\s+WITH\\s+CHECK\\s*\\(app_auth\\.current_role\\(\\)\\s*=\\s*'admin'\\)`,
+      'i'
+    )
+  )
+}
+
+function expectExplicitDataApiTable(table: string): void {
+  expect(dataApiGrantMigration?.sql).toMatch(
+    new RegExp(`'${escapeRegExp(table)}'`, 'i')
+  )
+}
+
 describe('RLS migrations', () => {
-  it('covers planned Jobber quote lines with authenticated-only RLS', () => {
+  it('covers Jobber quote lines with admin-only RLS', () => {
     const jobberLinesMigration = migrations.find(({ file }) => file === '0010_add_jobber_quote_lines.sql')
 
     expect(jobberLinesMigration?.sql, 'expected supabase/migrations/0010_add_jobber_quote_lines.sql').not.toBe('')
     expectRlsEnabled('jobber_quote_lines')
-    expectAuthenticatedCrudPolicy('jobber_quote_lines')
+    expectAdminCrudPolicy('jobber_quote_lines')
   })
 
   it('enables RLS on every application table', () => {
-    for (const table of [...authenticatedCrudTables, 'jobber_tokens']) {
+    for (const table of [...nonSecretDataApiTables, 'jobber_tokens']) {
       expectRlsEnabled(table)
     }
   })
 
-  it('grants authenticated CRUD only on non-secret application tables', () => {
-    for (const table of authenticatedCrudTables) {
-      expectAuthenticatedCrudPolicy(table)
+  it('defines admin CRUD policies on admin-only application tables', () => {
+    for (const table of nonSecretDataApiTables.filter((table) => table !== 'warehouse_inventory')) {
+      expectAdminCrudPolicy(table)
     }
+  })
+
+  it('declares explicit Data API DML privileges for every retained table', () => {
+    expect(dataApiGrantMigration?.sql, 'expected explicit Data API grant migration').not.toBe('')
+
+    for (const table of nonSecretDataApiTables) {
+      expectExplicitDataApiTable(table)
+    }
+
+    expect(dataApiGrantMigration?.sql).toMatch(
+      /'REVOKE ALL ON TABLE public\.%I FROM PUBLIC, anon, authenticated, service_role'/i
+    )
+    expect(dataApiGrantMigration?.sql).toMatch(
+      /'GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public\.%I TO authenticated, service_role'/i
+    )
+    expect(dataApiGrantMigration?.sql).toMatch(
+      /REVOKE ALL ON TABLE public\.jobber_tokens FROM PUBLIC, anon, authenticated, service_role/i
+    )
+    expect(dataApiGrantMigration?.sql).toMatch(
+      /GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public\.jobber_tokens TO service_role/i
+    )
+    expect(dataApiGrantMigration?.sql).not.toMatch(
+      /GRANT\s+SELECT\s*,\s*INSERT\s*,\s*UPDATE\s*,\s*DELETE\s+ON\s+TABLE\s+public\.jobber_tokens\s+TO\s+(?:anon|authenticated)\b/i
+    )
   })
 
   it('keeps Jobber OAuth tokens service-role only', () => {
@@ -91,7 +135,22 @@ describe('RLS migrations', () => {
   })
 
   it('does not define anonymous access policies', () => {
-    expect(combinedSql).not.toMatch(/\bTO\s+anon\b/i)
-    expect(combinedSql).not.toMatch(/\bTO\s+public\b/i)
+    expect(combinedSql).not.toMatch(/CREATE\s+POLICY[^;]*\bTO\s+anon\b/i)
+    expect(combinedSql).not.toMatch(/CREATE\s+POLICY[^;]*\bTO\s+public\b/i)
+  })
+
+  it('keeps Jobber job snapshots service-role only', () => {
+    const snapshotMigration = migrations.find(
+      ({ file }) => file === '20260731012000_add_jobber_job_snapshots.sql'
+    )
+    expect(snapshotMigration?.sql).toBeDefined()
+    expectRlsEnabled('jobber_job_snapshots')
+    expect(snapshotMigration?.sql).toMatch(
+      /REVOKE\s+ALL\s+ON\s+TABLE\s+public\.jobber_job_snapshots\s+FROM\s+public\s*,\s*anon\s*,\s*authenticated\s*,\s*service_role/i
+    )
+    expect(snapshotMigration?.sql).toMatch(
+      /GRANT\s+SELECT\s*,\s*INSERT\s*,\s*UPDATE\s*,\s*DELETE\s+ON\s+TABLE\s+public\.jobber_job_snapshots\s+TO\s+service_role/i
+    )
+    expect(snapshotMigration?.sql).not.toMatch(/CREATE\s+POLICY/i)
   })
 })

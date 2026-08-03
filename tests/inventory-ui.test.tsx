@@ -116,6 +116,39 @@ describe('inventory UI', () => {
     expect(markup).not.toContain('<label class="pbc-field"><span class="pbc-field__label">Status</span><label')
   })
 
+  it('limits supervisors to inventory movement controls', () => {
+    const items: InventoryItemRecord[] = [{
+      id: '00000000-0000-4000-8000-000000000051',
+      name: 'Drop sheet',
+      category: 'Tools',
+      brand: null,
+      modelSpecification: null,
+      colour: null,
+      sizeOrSerial: null,
+      quantity: '2.00',
+      purchaseDate: null,
+      usedDate: null,
+      usedLocationText: null,
+      status: 'in_stock',
+      notes: null,
+      active: true,
+      sourceYear: '2026',
+      createdAt: '2026-07-31T00:00:00.000Z',
+      updatedAt: '2026-07-31T00:00:00.000Z',
+    }]
+
+    const markup = renderToStaticMarkup(createElement(InventoryManager, {
+      initialItems: items,
+      role: 'supervisor',
+    }))
+
+    expect(markup).toContain('aria-label="Move Drop sheet"')
+    expect(markup).toContain('aria-label="Mark out Drop sheet"')
+    expect(markup).not.toContain('Add Item')
+    expect(markup).not.toContain('Import CSV')
+    expect(markup).not.toContain('aria-label="Delete Drop sheet"')
+  })
+
   it('defines a table-cell background treatment for out inventory rows', () => {
     const css = readFileSync(join(process.cwd(), 'app/styles/components.css'), 'utf8')
 

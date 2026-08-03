@@ -1,9 +1,11 @@
 import { createServiceClient } from '@/lib/supabase/server'
+import type { AppRole } from '@/lib/security/require-app-user'
 
 export interface UserProfile {
   id: string
   email: string | null
   displayName: string
+  role: AppRole
 }
 
 type AuthUserLike = {
@@ -30,9 +32,15 @@ function readDisplayName(metadata: unknown): string | null {
   return null
 }
 
-export function getAuthUserProfile(user: AuthUserLike): UserProfile {
-  const email = typeof user.email === 'string' && user.email.trim() ? user.email.trim() : null
+export function getAuthUserProfile(
+  user: AuthUserLike,
+  appProfile?: { email: string; displayName: string | null; role: AppRole }
+): UserProfile {
+  const authEmail = typeof user.email === 'string' && user.email.trim() ? user.email.trim() : null
+  const email = appProfile?.email?.trim() || authEmail
+  const databaseDisplayName = appProfile?.displayName?.trim() || null
   const displayName =
+    databaseDisplayName ??
     readDisplayName(user.app_metadata) ??
     readDisplayName(user.user_metadata) ??
     email ??
@@ -42,6 +50,7 @@ export function getAuthUserProfile(user: AuthUserLike): UserProfile {
     id: user.id,
     email,
     displayName,
+    role: appProfile?.role ?? 'admin',
   }
 }
 

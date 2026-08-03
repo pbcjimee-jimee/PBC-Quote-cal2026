@@ -341,6 +341,18 @@ export const inventoryUpdateSchema = inventoryCreateSchema.partial().extend({
   id: z.string().uuid(),
 })
 
+export const inventoryMovementSchema = z.object({
+  id: z.string().uuid(),
+  quantity: z.coerce.number().finite().nonnegative().optional(),
+  usedDate: z.string().trim().max(20).nullable().optional(),
+  usedLocationText: z.string().trim().max(500).nullable().optional(),
+  status: z.enum(['in_stock', 'out', 'unknown']).optional(),
+}).refine(
+  ({ quantity, usedDate, usedLocationText, status }) =>
+    [quantity, usedDate, usedLocationText, status].some((value) => value !== undefined),
+  { message: 'No movement fields to update' }
+)
+
 export const inventoryDeleteSchema = z.object({
   id: z.string().uuid(),
 })

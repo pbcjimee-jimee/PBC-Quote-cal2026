@@ -3,8 +3,8 @@ import { assertJobberReadOnlyScopes, getJobberConfig, getMissingOAuthConfigKeys 
 import { saveDevJobberToken } from '@/lib/jobber/dev-tokens'
 import { exchangeAuthorizationCode, getTokenExpiresAt } from '@/lib/jobber/oauth'
 import { encryptTokenValue, getMissingJobberTokenStorageConfigKeys } from '@/lib/jobber/token-encryption'
-import { isAuthenticatedUserAllowed } from '@/lib/security/auth-policy'
-import { createClient, createServiceClient } from '@/lib/supabase/server'
+import { requireRole } from '@/lib/security/require-app-user'
+import { createServiceClient } from '@/lib/supabase/server'
 import { isDevNoAuthMode } from '@/lib/actions/types'
 
 export async function GET(request: NextRequest) {
@@ -45,13 +45,12 @@ export async function GET(request: NextRequest) {
       return response
     }
 
-    const supabase = await createClient()
-    const { data: { user }, error: userError } = await supabase.auth.getUser()
-    if (userError || !user) {
+    const allowedUser = await requireRole('admin')
+    if (!allowedUser.ok && allowedUser.error === 'Authentication required') {
       return NextResponse.redirect(new URL('/login', request.url))
     }
 
-    if (!isAuthenticatedUserAllowed(user)) {
+    if (!allowedUser.ok) {
       return NextResponse.redirect(new URL('/api/auth/signout?reason=not_allowed', request.url))
     }
 
@@ -59,7 +58,7 @@ export async function GET(request: NextRequest) {
     const { error } = await service
       .from('jobber_tokens')
       .upsert({
-        user_id: user.id,
+        user_id: allowedUser.user.id,
         access_token: encryptTokenValue(token.accessToken),
         refresh_token: encryptTokenValue(token.refreshToken),
         token_type: token.tokenType,

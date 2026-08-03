@@ -22,7 +22,7 @@
 ## ✅ 완료 (요약)
 
 ### 인프라 & 셋업
-- Next.js 16.2.6 + React 19.2.4 + TS + Tailwind 4 스캐폴드, `package.json` 스크립트(dev/build/test/verify 등), 핵심 의존성(decimal.js, zod, @supabase/*, vitest).
+- Next.js 16.2.12 + React 19.2.4 + TS + Tailwind 4 스캐폴드, `package.json` 스크립트(dev/build/test/verify 등), 핵심 의존성(decimal.js, zod, @supabase/*, vitest).
 - Vercel 배포 설정, `.env.example`, `.gitignore`. 프로젝트별 CLI 접근(GitHub SSH alias, Vercel/Supabase CLI link, `scripts/check-cli-context.cmd`).
 
 ### DB 마이그레이션
@@ -36,7 +36,7 @@
 - 테스트: `tests/calculator.test.ts`(100% 커버리지 강제), `quote-labour`, `quote-calculation-totals`, `decimal-input-utils`, `material-item-factory`, `tests/fixtures/historical-quotes.ts`(회귀 fixture).
 
 ### Auth & Supabase 클라이언트
-- `lib/supabase/{client,server,middleware,types,env}.ts`, `lib/actions/auth*.ts`, 로그인 폼·인증 가드(`app/(app)/layout.tsx`), `proxy.ts`(라우팅 게이트). rate limit(`lib/security/auth-policy.ts`).
+- `lib/supabase/{client,server,middleware,types,env}.ts`, `lib/actions/auth*.ts`, active `user_profiles` 기반 `requireAppUser()`/`requireRole()` 서버 가드, 로그인 폼·인증 레이아웃, `proxy.ts`(세션 게이트). rate limit(`lib/security/auth-policy.ts`).
 
 ### 견적 핵심 플로우 (v1.0)
 - `/quotes/new`·`/quotes`·`/quotes/[id]` 라우트, `components/quote-form/*`, PaintSearch, area 스냅샷, 5공식 실시간 계산, min/max→subtotal→final(GST), 로컬 draft(`quote-draft.ts`), 상세/수정/삭제.
@@ -47,10 +47,11 @@
 - OAuth + GraphQL 견적 조회 + 토큰 자동 refresh + AES-256-GCM 암호화(`lib/jobber/*`, `app/api/jobber/*`).
 - Controlled write-back: 공개 Product / Service line item만 같은 Jobber quote에 동기화, material 가격·내부 상세 미전송. GraphQL mutation 차단 가드 + write scope 최소화로 read-only 원칙 강제.
 - `jobber_snapshot` 캐시 + 수동 refresh + 변경 감지 diff 알림. Jobber option line preview/manual import. sync preview/retry.
+- G1 계약의 팀원·배정 job·expense read-only 조회, service-role 전용 `jobber_job_snapshots`, Decimal 기반 revenue/expense/profit 계산과 `/jobs` 목록·상세 수동 refresh를 추가했다. 기존 quote write-back 외 Jobber mutation이나 scope 변경은 없다.
 - Product & Service catalog(CSV import)·quote line template.
 
 ### 테스트/검증
-- RLS 회귀(`tests/rls.test.ts`) + 조건부 통합(`tests/rls-local-integration.test.ts`). Server Actions 80%+ 커버리지 threshold. 보안 정적 검색 테스트. `npm.cmd run verify` 통과.
+- 역할 RLS 회귀(`tests/rls.test.ts`) + 로컬 통합(`tests/rls-local-integration.test.ts`), supervisor admin 라우트/액션 차단 정적 테스트. Server Actions 80%+ 커버리지 threshold. 보안 정적 검색 테스트. `npm.cmd run verify` 통과.
 - `/gstack-qa` 브라우저 QA 완료. Production Supabase anon Data API smoke로 미인증 노출 없음 확인.
 
 ### v1.1 보완 (2026-06-26, 구현·검증 완료)
@@ -72,10 +73,27 @@
 - Jobber API Route·OAuth/token·snapshot refresh·Save & Sync production 코드는 변경하지 않았다. Jobber focused 165 tests 통과.
 - `npm.cmd run verify` 통과: 67 files, 557 tests 통과(환경 조건 1 file·2 tests skip), coverage thresholds, Next production build, audit 0 vulnerabilities. Production 카나리에서 Settings→Overview URL 전환 0.45초, New Quote→Overview 0.51초, Overview→quote detail URL 전환 2.69초를 기록했다. 첫 Settings 진입은 약 4.09초, quote detail 서버 콘텐츠는 여전히 수 초 구간이지만 느린 전환 중 top progress와 접근성 status가 실제 표시된다. Settings 탭 lazy-load loading/content, 새 견적 Fetch, 기존 견적 Refresh from Jobber, 브라우저 console error 0건을 확인했다.
 
+### 역할 분리 + Job expense/profit (2026-07-31, role 브랜치 로컬 G2 완료)
+- `user_profiles`와 `app_auth.current_role()`을 도입하고 기존 Auth 사용자를 admin으로 부트스트랩한다. 견적·가격·제품·설정은 admin 전용, Inventory는 admin+supervisor로 분리했으며 supervisor는 재고 이동 필드만 수정한다.
+- 역할 기반 로그인/Server Action/route/nav 경계를 적용했다. supervisor의 기본·허용 화면은 `/jobs`와 `/inventory`뿐이며 `/settings/inventory`는 `/inventory`로 redirect한다. admin은 `/settings/users`에서 사용자 생성·역할/활성 상태 변경·Jobber 팀원 연결을 관리한다.
+- G1에서 검증한 `PbcTeamUsers`/`PbcUserJobs`/`PbcJobExpenses` 셰이프를 fixture 기반 client/gateway에 구현했다. supervisor는 Jobber visit 담당자 기준 자기 job만, admin은 전체 또는 supervisor 필터로 보고 expense·profit 금액/비율을 확인한다.
+- 2026-08-01 final-fix role-only G2 재검증에서 local Supabase clean no-seed reset이 retained migration 27개를 적용했고 pgTAP 2 files/90 assertions, 실제 local RLS 1 file/9 cases, action/snapshot/migration focused 5 files/39 cases와 partial-refresh warning UI focused 2 files/2 cases가 통과했다. Local advisors의 이전 ERROR 0건/기존 WARN 4건 증거는 유지된다.
+- 전체 `npm.cmd run verify`는 Vitest 83 files/658 cases 통과와 환경 조건 local RLS 1 file/9 cases skip, statements 83.52%·branches 69.84%·functions 93.79%·lines 89.13%를 기록했다. `lib/actions`는 84.08%/68.49%/97.54%/91.38%, `lib/calculator.ts`는 전 지표 100%였고 strict TypeScript·ESLint·Next production build·production audit(0 vulnerabilities)가 통과했다. Build route에는 `/inventory`, `/jobs`, `/jobs/[jobberJobId]`가 있고 Progress Invoice app/API route는 없다.
+- Progress Invoice는 이 브랜치와 릴리스에 포함되지 않는다. 기존 원격 스키마는 별도 소유 상태로 남아 있고, 별도 브랜치의 access lock 선행 조건이 확보되기 전까지 production Supabase role migration/seed, 실제 supervisor 계정 생성·매핑, Vercel production 배포를 명시적으로 차단한다.
+
+### 역할/Jobs G3 운영 적용 (2026-08-01)
+
+- 별도 PI 브랜치 `codex/progress-invoice-access-lock` 커밋 `dc0c2c3`에서 기존 원격 PI 스키마를 service-role-only로 잠그는 마이그레이션을 구현했다. 정적 계약 58/58, PI pgTAP 531/531, 최종 lock 14/14, lifecycle 13/13, Vitest 1,138 pass/5 skip, 독립 보안 리뷰 CLEAN을 통과한 뒤 프로덕션 마이그레이션 `progress_invoice_service_role_access_lock`으로 적용했다. Progress Invoice 앱은 배포하지 않았다.
+- 프로덕션 Supabase에 role 마이그레이션 `add_user_profiles_and_roles`, `tighten_role_rls`, `add_jobber_job_snapshots`를 개별 적용하고 멱등 admin bootstrap을 실행했다. 카탈로그는 Auth 2/profile 2/active admin 2, `authenticated_all` 0, admin 정책 13, Inventory 정책 4, Jobber snapshot browser 접근 0/service CRUD만 허용, PI policy/authenticated leak 0/service SELECT 14를 확인했다.
+- Supabase 사후 Advisor는 Security ERROR/HIGH 0, WARN 3(기존 mutable search_path 2 + Auth leaked-password protection 설정 1), Performance WARN 2(기존 `auth_rls_initplan`, `multiple_permissive_policies`)를 기록했다.
+- Vercel production deployment `dpl_E6dit7ck1wt8drHXnQUG1xHk7BPA`는 `role` 커밋 `925bc933741628653b87287743a663f182d8e54b`를 빌드한다. 고유 URL 카나리 후 동일 artifact를 운영 도메인으로 승격했고, `/login`·manifest 200, 비로그인 `/jobs`·`/inventory`·`/settings/users` 로그인 귀결, 최근 runtime error 0을 확인했다. Build route에 Progress Invoice는 없다.
+- 배포 연결이 생성한 임시 로컬 OIDC `.env.local`은 커밋되지 않았고 카나리 후 삭제했다. 배포 직전 `role` worktree와 `origin/role`은 배포 소스 커밋 `925bc93`에서 일치했다.
+
 ---
 
 ## 🔲 남은 작업
 
+- **역할/Jobs G3 실계정 QA**: 기존 admin 2명이 운영 로그인을 직접 확인한다. admin이 `/settings/users`에서 supervisor 실제 이메일·표시 이름·임시 비밀번호를 입력하고 Jobber 팀원을 매핑한 뒤, 역할별 nav·직접 URL 차단·배정 job·expense·profit %를 실데이터로 QA한다. 비밀번호와 기존 admin 자격 증명은 채팅에서 취급하지 않는다.
 - **감사 발견 이슈** (2026-07-06): 우선순위별로 `docs/BACKLOG.md`에 등록. 2026-07-04 hardening으로 마진 CHECK·서버 액션 allowlist 해결, 2026-07-07 quote save conflict hardening으로 견적 저장 트랜잭션·동시 편집 충돌·product 스냅샷 재고정·Jobber 부분 성공 line id 보존을 반영. 남은 항목은 `docs/BACKLOG.md`의 미체크 항목 기준으로 처리.
 - **Supabase 실제 데이터 백업**: 운영 결정 대기(`TODOS.md` #2). Pro/PITR 우선, cron export는 restore 검증 포함 시만.
 - **UX 잔여**: `docs/UI-UX-REVIEW.md` P1 항목(폰트 시스템, 브랜드 색, sticky 결과 카드 등). P0 일부(focus-visible, 대비, draft dialog a11y)는 반영됨.
@@ -95,6 +113,8 @@
 
 | 날짜 | 작업 | 담당 |
 |---|---|---|
+| 2026-08-01 | `role` final review 보안/무결성 수정 및 role-only G2 재검증 완료. supervisor Jobber 배정을 목록·캐시 상세·강제 refresh 전에 live 재확인하고 snapshot scope를 원자적 동기화했으며, admin detail refresh를 5개 bounded batch/부분 저장으로 변경하고 부분 refresh 경고를 초기 Jobs 화면과 수동 Refresh 결과에 표시했다. 기존 role migration에 last-active-admin DB 불변식을 추가했다. clean no-seed reset 27 migrations, pgTAP 2 files/90 assertions, local RLS 1 file/9 cases, focused 7 files/41 cases, full verify 83 files/658 cases(1 file/9 cases skip), coverage 83.52/69.84/93.79/89.13%, build route `/inventory`·`/jobs`·`/jobs/[jobberJobId]`, Progress Invoice app/API route 없음, audit 0 vulnerabilities를 확인했다. Production Supabase·Jobber live/token/scope·supervisor 실계정·Vercel production은 별도 access lock과 사용자 승인 대기. | Codex 5.6-Sol high |
+| 2026-07-31 | `role` 브랜치에서 admin/supervisor 역할 분리와 Jobber job expense/profit 화면을 구현하고 로컬 G2 검증 완료. `user_profiles`/역할 RLS, 역할 서버 가드·nav, `/inventory`, `/settings/users`, read-only Jobber job client/cache/actions, `/jobs` 목록·상세를 반영. 최종 role-only 수치는 2026-08-01 Task 6에서 재검증했다. Production migration·seed·배포는 access lock 선행 조건과 사용자 승인 대기. | Codex 5.6-Sol high |
 | 2026-07-16 | New Quote `Add Text` 제목의 Product & Service 추천 누락 회귀 수정. 제목 검색을 이름 기준으로 제한하고 서버의 6개 선제 제한과 클라이언트 6개 제한을 제거해 관련 항목을 최대 300개까지 스크롤 목록에 표시. Supabase·dev 검색 회귀 테스트 추가. 전체 verify 67 files/561 tests, coverage/build/audit 0 vulnerabilities 통과. | Codex 5.6-Sol high |
 | 2026-07-15 | Jobber 견적 fetch scope 회귀 수정. Jobber가 반환하는 `read_clients`·`read_quotes` 등 prefix형 read scope와 기존 승인된 `write_quotes` 최소 scope를 검증기가 정상 인식하도록 보완하고 실제 연결 scope 회귀 테스트를 추가. Jobber focused 14 files/122 tests, typecheck, 변경 파일 lint 통과. | Codex 5.6-Sol high |
 | 2026-07-14 | 핵심 navigation performance 구현·production 배포·카나리 완료. viewport prefetch fan-out을 intent prefetch로 교체하고 pending progress 추가, Settings 비활성 탭 데이터 lazy load·중복 방지·Retry, quote detail 현재 사용자 profile 재사용을 반영. Jobber production 경로 비변경 및 focused 165 tests 확인. 전체 verify 67 files/557 tests, coverage/build/audit 0 vulnerabilities 통과. Production에서 Settings→Overview 0.45초, New Quote→Overview 0.51초, Overview→detail URL 2.69초, 느린 전환 progress/status, Settings lazy load, Jobber Fetch/Refresh UI, console error 0건 확인. | Codex 5.6-Sol high |

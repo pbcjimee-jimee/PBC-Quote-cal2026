@@ -1,12 +1,13 @@
 'use server'
 
 import { normalizeInventoryItem, type InventoryItemRecord, type InventoryStatus } from '@/lib/inventory/types'
-import { requireAllowedUser } from '@/lib/security/require-allowed-user'
+import { requireRole } from '@/lib/security/require-app-user'
 import { createClient } from '@/lib/supabase/server'
 import {
   inventoryCreateSchema,
   inventoryDeleteSchema,
   inventoryImportSchema,
+  inventoryMovementSchema,
   inventorySearchSchema,
   inventoryUpdateSchema,
 } from '@/lib/validators'
@@ -482,7 +483,7 @@ export async function listInventory(input: unknown = {}): Promise<ActionResult<I
     return { ok: true, data: listDevInventory(query, limit, status, category) }
   }
 
-  const allowedUser = await requireAllowedUser()
+  const allowedUser = await requireRole('any')
   if (!allowedUser.ok) return allowedUser
 
   const supabase = await createClient()
@@ -519,7 +520,7 @@ export async function createInventoryItem(input: unknown): Promise<ActionResult<
     return { ok: true, data: createDevInventoryItem(payload) }
   }
 
-  const allowedUser = await requireAllowedUser()
+  const allowedUser = await requireRole('admin')
   if (!allowedUser.ok) return allowedUser
 
   const supabase = await createClient()
@@ -553,7 +554,44 @@ export async function updateInventoryItem(input: unknown): Promise<ActionResult<
     return { ok: true, data: updated }
   }
 
-  const allowedUser = await requireAllowedUser()
+  const allowedUser = await requireRole('admin')
+  if (!allowedUser.ok) return allowedUser
+
+  const supabase = await createClient()
+  const { data, error } = await supabase
+    .from('warehouse_inventory')
+    .update(payload)
+    .eq('id', id)
+    .select(INVENTORY_COLUMNS)
+    .single()
+
+  if (error) return { ok: false, error: error.message }
+  return { ok: true, data: rowToInventory(data as unknown as InventoryRow) }
+}
+
+export async function updateInventoryMovement(input: unknown): Promise<ActionResult<InventoryItemRecord>> {
+  const parsed = inventoryMovementSchema.safeParse(input)
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.message }
+  }
+
+  const { id, ...movement } = parsed.data
+  const payload: InventoryUpdate = {
+    ...(movement.quantity === undefined ? {} : { quantity: quantityString(movement.quantity) }),
+    ...(movement.usedDate === undefined ? {} : { used_date: normalizeDateInput(movement.usedDate) }),
+    ...(movement.usedLocationText === undefined ? {} : { used_location_text: nullableText(movement.usedLocationText) }),
+    ...(movement.status === undefined ? {} : { status: movement.status }),
+    updated_at: new Date().toISOString(),
+  }
+
+  if (isDevNoAuthMode()) {
+    const { updateDevInventoryItem } = await import('@/lib/dev-data')
+    const updated = updateDevInventoryItem(id, payload)
+    if (!updated) return { ok: false, error: 'Inventory item not found' }
+    return { ok: true, data: updated }
+  }
+
+  const allowedUser = await requireRole('any')
   if (!allowedUser.ok) return allowedUser
 
   const supabase = await createClient()
@@ -586,7 +624,7 @@ export async function deleteInventoryItem(input: unknown): Promise<ActionResult<
     return { ok: true, data: deleted }
   }
 
-  const allowedUser = await requireAllowedUser()
+  const allowedUser = await requireRole('admin')
   if (!allowedUser.ok) return allowedUser
 
   const supabase = await createClient()
@@ -633,7 +671,7 @@ export async function importInventoryCSV(input: unknown): Promise<ActionResult<I
     return { ok: true, data: { imported: created.length, items: created } }
   }
 
-  const allowedUser = await requireAllowedUser()
+  const allowedUser = await requireRole('admin')
   if (!allowedUser.ok) return allowedUser
 
   const supabase = await createClient()
