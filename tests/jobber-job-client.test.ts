@@ -67,6 +67,8 @@ describe('Jobber job query client', () => {
         nodes: [{
           id: 'job-1', jobNumber: 3103, title: 'Belrose', jobStatus: 'today',
           total: 12437.02, jobberWebUri: 'https://secure.getjobber.com/jobs/job-1',
+          startAt: '2026-08-03T08:00:00+10:00', endAt: '2026-08-05T17:00:00+10:00',
+          visits: { nodes: [{ id: 'visit-1', startAt: '2026-08-03T08:00:00+10:00', endAt: '2026-08-03T17:00:00+10:00' }] },
         }],
         pageInfo: { hasNextPage: false, endCursor: null },
       },
@@ -84,6 +86,13 @@ describe('Jobber job query client', () => {
     expect(compact(allBody.query)).toContain('query PbcAllJobs($first: Int!, $after: String)')
     expect(compact(allBody.query)).not.toContain('visitsAssignedToUserId')
     expect(assigned.nodes[0]?.total).toBe('12437.02')
+    expect(assigned.nodes[0]?.startAt).toBe('2026-08-03T08:00:00+10:00')
+    expect(assigned.nodes[0]?.endAt).toBe('2026-08-05T17:00:00+10:00')
+    expect(compact(assignedBody.query)).toContain('startAt endAt')
+    expect(assigned.nodes[0]?.visits).toEqual([{
+      id: 'visit-1', startAt: '2026-08-03T08:00:00+10:00', endAt: '2026-08-03T17:00:00+10:00',
+    }])
+    expect(compact(assignedBody.query)).toContain('visits(first: 10)')
     expect(assigned.totalCount).toBe(1)
   })
 
@@ -95,6 +104,7 @@ describe('Jobber job query client', () => {
       job: {
         id: 'job-1', jobNumber: 3103, title: 'Belrose', jobStatus: 'today', total: '12437.02',
         jobberWebUri: 'https://secure.getjobber.com/jobs/job-1',
+        startAt: '2026-08-03T08:00:00+10:00', endAt: '2026-08-05T17:00:00+10:00',
         expenses: {
           nodes: [{
             id: 'expense-1', title: 'paint', description: 'Dulux', date: '2026-07-30', total: 603.89,
@@ -124,6 +134,7 @@ describe('Jobber job query client', () => {
         job: {
           id: 'job-1', jobNumber: 3103, title: 'Belrose', jobStatus: 'today', total: '12437.02',
           jobberWebUri: 'https://secure.getjobber.com/jobs/job-1',
+          startAt: null, endAt: null,
           expenses: {
             nodes: [{
               id: 'expense-1', title: 'paint', description: 'Dulux', date: '2026-07-30', total: '603.89',

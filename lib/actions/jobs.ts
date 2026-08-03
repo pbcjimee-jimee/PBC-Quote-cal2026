@@ -11,7 +11,7 @@ import {
   type JobSnapshotPayload,
   type StoredJobSnapshot,
 } from '@/lib/jobber/job-snapshots'
-import type { JobberExpense, JobberJobDetail } from '@/lib/jobber/job-types'
+import type { JobberExpense, JobberJobDetail, JobberJobSummary, JobberJobVisit } from '@/lib/jobber/job-types'
 import { requireRole, type AppUserProfile } from '@/lib/security/require-app-user'
 import { createServiceClient } from '@/lib/supabase/server'
 import type { ActionResult } from './types'
@@ -28,6 +28,9 @@ export interface JobListItem {
   readonly jobStatus: string
   readonly total: string
   readonly jobberWebUri: string
+  readonly startAt: string | null
+  readonly endAt: string | null
+  readonly visits: readonly JobberJobVisit[]
   readonly financialSummary: DecimalFinancialSummary
   readonly refreshedAt: string
 }
@@ -49,6 +52,12 @@ interface ResolvedJobberFilter {
 }
 
 interface LoadedJobSnapshots {
+  readonly snapshots: readonly StoredJobSnapshot[]
+  readonly summaries: readonly JobberJobSummary[]
+  readonly refreshWarning?: string
+}
+
+interface FetchedJobSnapshots {
   readonly snapshots: readonly StoredJobSnapshot[]
   readonly refreshWarning?: string
 }
@@ -75,7 +84,7 @@ export async function listMyJobs(input: unknown = {}): Promise<ActionResult<JobL
     return {
       ok: true,
       data: {
-        jobs: sortJobItems(loaded.snapshots.map(toListItem)),
+        jobs: sortJobItems(toListItems(loaded)),
         assignmentLinked: true,
         filteredJobberUserId: jobberUserId,
         ...(loaded.refreshWarning ? { refreshWarning: loaded.refreshWarning } : {}),
@@ -107,7 +116,7 @@ export async function refreshJobs(input: unknown = {}): Promise<ActionResult<Job
     return {
       ok: true,
       data: {
-        jobs: sortJobItems(refreshed.snapshots.map(toListItem)),
+        jobs: sortJobItems(toListItems(refreshed)),
         assignmentLinked: true,
         filteredJobberUserId: jobberUserId,
         ...(refreshed.refreshWarning ? { refreshWarning: refreshed.refreshWarning } : {}),
@@ -188,10 +197,20 @@ async function loadAdminJobList(
   actorId: string,
   existingSnapshots: readonly StoredJobSnapshot[],
 ): Promise<LoadedJobSnapshots> {
+  const summaries = await listJobberJobs(null)
   const cached = filterSnapshots(existingSnapshots, null)
-  return cached.length > 0
-    ? { snapshots: cached }
-    : refreshJobList(actorId, null, existingSnapshots)
+  const cachedById = new Map(cached.map((snapshot) => [snapshot.job.id, snapshot]))
+  const missing = summaries.filter((job) => !cachedById.has(job.id))
+  const refreshed = await fetchAndSaveJobDetails(missing, actorId, null, cachedById)
+  const refreshedById = new Map(refreshed.snapshots.map((snapshot) => [snapshot.job.id, snapshot]))
+  return {
+    snapshots: summaries.flatMap((job) => {
+      const snapshot = refreshedById.get(job.id) ?? cachedById.get(job.id)
+      return snapshot ? [snapshot] : []
+    }),
+    summaries,
+    ...(refreshed.refreshWarning ? { refreshWarning: refreshed.refreshWarning } : {}),
+  }
 }
 
 async function loadAssignedJobList(
@@ -217,6 +236,7 @@ async function loadAssignedJobList(
   })
   return {
     snapshots: visible,
+    summaries: assignedJobs,
     ...(refreshed.refreshWarning ? { refreshWarning: refreshed.refreshWarning } : {}),
   }
 }
@@ -228,7 +248,8 @@ async function refreshJobList(
 ): Promise<LoadedJobSnapshots> {
   const jobs = await listJobberJobs(jobberUserId)
   const existingById = new Map(existingSnapshots.map((snapshot) => [snapshot.job.id, snapshot]))
-  return fetchAndSaveJobDetails(jobs, actorId, jobberUserId, existingById)
+  const refreshed = await fetchAndSaveJobDetails(jobs, actorId, jobberUserId, existingById)
+  return { ...refreshed, summaries: jobs }
 }
 
 async function fetchAndSaveJobDetails(
@@ -236,7 +257,7 @@ async function fetchAndSaveJobDetails(
   actorId: string,
   jobberUserId: string | null,
   existingById: ReadonlyMap<string, StoredJobSnapshot>,
-): Promise<LoadedJobSnapshots> {
+): Promise<FetchedJobSnapshots> {
   const snapshots: StoredJobSnapshot[] = []
   let failedCount = 0
 
@@ -324,8 +345,20 @@ function filterSnapshots(
     : snapshot.scopeJobberUserIds.includes(jobberUserId))
 }
 
-function toListItem(snapshot: StoredJobSnapshot): JobListItem {
-  return { ...snapshot.job, financialSummary: snapshot.financialSummary, refreshedAt: snapshot.refreshedAt }
+function toListItems(loaded: LoadedJobSnapshots): readonly JobListItem[] {
+  const summariesById = new Map(loaded.summaries.map((summary) => [summary.id, summary]))
+  return loaded.snapshots.map((snapshot) => toListItem(snapshot, summariesById.get(snapshot.job.id)))
+}
+
+function toListItem(snapshot: StoredJobSnapshot, liveSummary?: JobberJobSummary): JobListItem {
+  return {
+    ...snapshot.job,
+    startAt: liveSummary ? liveSummary.startAt : snapshot.job.startAt,
+    endAt: liveSummary ? liveSummary.endAt : snapshot.job.endAt,
+    visits: liveSummary ? liveSummary.visits : snapshot.job.visits,
+    financialSummary: snapshot.financialSummary,
+    refreshedAt: snapshot.refreshedAt,
+  }
 }
 
 function toDetail(snapshot: StoredJobSnapshot): JobDetailData {

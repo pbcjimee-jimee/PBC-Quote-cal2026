@@ -15,6 +15,12 @@ export interface JobberTeamUser {
   readonly isAccountOwner: boolean
 }
 
+export interface JobberJobVisit {
+  readonly id: string
+  readonly startAt: string | null
+  readonly endAt: string | null
+}
+
 export interface JobberJobSummary {
   readonly id: string
   readonly jobNumber: string
@@ -22,6 +28,9 @@ export interface JobberJobSummary {
   readonly jobStatus: string
   readonly total: string
   readonly jobberWebUri: string
+  readonly startAt: string | null
+  readonly endAt: string | null
+  readonly visits: readonly JobberJobVisit[]
 }
 
 export interface JobberExpense {

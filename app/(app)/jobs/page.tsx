@@ -9,7 +9,7 @@ import { requireRole } from '@/lib/security/require-app-user'
 export default async function JobsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ supervisor?: string }>
+  searchParams: Promise<{ supervisor?: string; month?: string }>
 }) {
   const appUser = await requireRole('any')
   if (!appUser.ok) redirect('/login')
@@ -33,9 +33,10 @@ export default async function JobsPage({
         <div className="pbc-topbar__right"><JobRefreshButton supervisorProfileId={supervisorProfileId} /></div>
       </header>
       <div className="pbc-page">
-        <div className="pbc-pagehead"><h1>Jobs</h1><p>Jobber revenue, expenses, and profit by assigned job.</p></div>
+        <div className="pbc-pagehead"><h1>Jobs</h1><p>Select a scheduled job to review its expenses and profit.</p></div>
         {appUser.profile.role === 'admin' ? (
           <form className="pbc-card pbc-card--pad mb-4 flex flex-wrap items-end gap-3" method="get">
+            {query.month ? <input type="hidden" name="month" value={query.month} /> : null}
             <label className="pbc-field min-w-64"><span className="pbc-field__label">Supervisor filter</span><select className="pbc-input" name="supervisor" defaultValue={supervisorProfileId ?? ''}><option value="">All jobs</option>{supervisors.map((user) => <option key={user.id} value={user.id}>{user.displayName || user.email}{user.jobberUserId ? '' : ' (not linked)'}</option>)}</select></label>
             <button type="submit" className="pbc-btn pbc-btn--ghost">Apply filter</button>
           </form>
@@ -49,7 +50,7 @@ export default async function JobsPage({
             {jobs.data.refreshWarning ? (
               <p className="pbc-alert pbc-alert--warning mb-4" role="status">{jobs.data.refreshWarning}</p>
             ) : null}
-            <JobsList jobs={jobs.data.jobs} />
+            <JobsList jobs={jobs.data.jobs} month={query.month} supervisorProfileId={supervisorProfileId} />
           </>
         )}
       </div>

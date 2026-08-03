@@ -14,6 +14,8 @@ import {
 const payload = {
   job: {
     id: 'job-1', jobNumber: '3103', title: 'Belrose', jobStatus: 'today', total: '1000', jobberWebUri: 'url',
+    startAt: null, endAt: null,
+    visits: [],
   },
   expenses: [{
     id: 'expense-1', title: 'paint', description: null, date: '2026-07-30', total: '100',
@@ -43,6 +45,24 @@ describe('Jobber job snapshot repository', () => {
       refreshedAt: row.refreshed_at,
       refreshedBy: row.refreshed_by,
     }])
+  })
+
+  it('loads legacy snapshots without schedule fields as unscheduled', async () => {
+    const legacyPayload = {
+      ...payload,
+      job: {
+        id: 'job-1', jobNumber: '3103', title: 'Belrose', jobStatus: 'today', total: '1000', jobberWebUri: 'url',
+      },
+    }
+    const order = vi.fn(async () => ({ data: [{ ...row, payload: legacyPayload }], error: null }))
+    mocks.createServiceClient.mockResolvedValue({
+      from: vi.fn(() => ({ select: vi.fn(() => ({ order })) })),
+    })
+
+    const snapshots = await listJobSnapshots()
+
+    expect(snapshots[0]?.job.startAt).toBeNull()
+    expect(snapshots[0]?.job.endAt).toBeNull()
   })
 
   it('rejects malformed cached payloads', async () => {

@@ -7,6 +7,7 @@ import type {
   JobberExpense,
   JobberJobClientOptions,
   JobberJobExpensesPage,
+  JobberJobVisit,
   JobberJobsPage,
   JobberJobSummary,
   JobberTeamUser,
@@ -22,19 +23,23 @@ const USER_JOBS_QUERY = `query PbcUserJobs($userId: EncodedId!, $first: Int!, $a
   jobs(first: $first, after: $after, filter: { visitsAssignedToUserId: $userId }) {
     pageInfo { hasNextPage endCursor }
     totalCount
-    nodes { id jobNumber title jobStatus total jobberWebUri }
+    nodes { id jobNumber title jobStatus total jobberWebUri startAt endAt
+      visits(first: 10) { nodes { id startAt endAt } }
+    }
   }
 }`
 const ALL_JOBS_QUERY = `query PbcAllJobs($first: Int!, $after: String) {
   jobs(first: $first, after: $after) {
     pageInfo { hasNextPage endCursor }
     totalCount
-    nodes { id jobNumber title jobStatus total jobberWebUri }
+    nodes { id jobNumber title jobStatus total jobberWebUri startAt endAt
+      visits(first: 10) { nodes { id startAt endAt } }
+    }
   }
 }`
 const JOB_EXPENSES_QUERY = `query PbcJobExpenses($id: EncodedId!, $first: Int!, $after: String) {
   job(id: $id) {
-    id jobNumber title jobStatus total jobberWebUri
+    id jobNumber title jobStatus total jobberWebUri startAt endAt
     expenses(first: $first, after: $after) {
       pageInfo { hasNextPage endCursor }
       nodes { id title description date total
@@ -180,7 +185,24 @@ function parseJob(value: unknown): JobberJobSummary {
     jobStatus: stringField(job.jobStatus, 'Invalid Jobber job'),
     total: decimalField(job.total, 'Invalid Jobber job'),
     jobberWebUri: stringField(job.jobberWebUri, 'Invalid Jobber job'),
+    startAt: nullableString(job.startAt, 'Invalid Jobber job'),
+    endAt: nullableString(job.endAt, 'Invalid Jobber job'),
+    visits: parseVisits(job.visits),
   }
+}
+
+function parseVisits(value: unknown): readonly JobberJobVisit[] {
+  if (value === undefined) return []
+  const visits = objectValue(value, 'Invalid Jobber job visits')
+  if (!Array.isArray(visits.nodes)) throw new JobberJobApiError('Invalid Jobber job visits', 502)
+  return Object.freeze(visits.nodes.map((node) => {
+    const visit = objectValue(node, 'Invalid Jobber job visit')
+    return {
+      id: stringField(visit.id, 'Invalid Jobber job visit'),
+      startAt: nullableString(visit.startAt, 'Invalid Jobber job visit'),
+      endAt: nullableString(visit.endAt, 'Invalid Jobber job visit'),
+    }
+  }))
 }
 
 function parseExpense(value: unknown): JobberExpense {

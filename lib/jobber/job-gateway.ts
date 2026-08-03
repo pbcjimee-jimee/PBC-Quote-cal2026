@@ -17,6 +17,7 @@ import {
 } from './tokens'
 
 const PAGE_SIZE = 50
+const JOB_LIST_PAGE_SIZE = 20
 
 export async function listJobberTeamUsers(): Promise<readonly JobberTeamUser[]> {
   return withRestartableToken((options) => fetchAllJobberPages((after) => (
@@ -26,7 +27,7 @@ export async function listJobberTeamUsers(): Promise<readonly JobberTeamUser[]> 
 
 export async function listJobberJobs(jobberUserId: string | null): Promise<readonly JobberJobSummary[]> {
   return withRestartableToken((options) => fetchAllJobberPages((after) => (
-    fetchJobberJobsPage(jobberUserId, { first: PAGE_SIZE, after }, options)
+    fetchJobberJobsPage(jobberUserId, { first: JOB_LIST_PAGE_SIZE, after }, options)
   )))
 }
 

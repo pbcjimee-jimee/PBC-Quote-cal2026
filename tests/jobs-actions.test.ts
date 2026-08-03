@@ -29,6 +29,8 @@ import { getJobDetail, listMyJobs, refreshJobDetail, refreshJobs } from '@/lib/a
 const job = {
   id: 'job-1', jobNumber: '3103', title: 'Belrose', jobStatus: 'today',
   total: '12437.02', jobberWebUri: 'https://secure.getjobber.com/jobs/job-1',
+  startAt: '2026-08-03T08:00:00+10:00', endAt: '2026-08-05T17:00:00+10:00',
+  visits: [{ id: 'visit-1', startAt: '2026-08-03T08:00:00+10:00', endAt: '2026-08-05T17:00:00+10:00' }],
 }
 const expense = {
   id: 'expense-1', title: 'paint', description: 'Dulux', date: '2026-07-30', total: '603.89',
@@ -102,6 +104,44 @@ describe('job actions', () => {
     })
     expect(mocks.listJobberJobs).toHaveBeenCalledWith('jobber-user-1')
     expect(mocks.synchronizeSnapshotScope).toHaveBeenCalledWith('jobber-user-1', ['job-1'])
+  })
+
+  it('uses live Jobber schedule dates with cached expense totals', async () => {
+    const cached = {
+      ...snapshot,
+      job: { ...snapshot.job, startAt: null, endAt: null },
+    }
+    mocks.listSnapshots.mockResolvedValueOnce([cached])
+    mocks.synchronizeSnapshotScope.mockResolvedValueOnce([cached])
+
+    const result = await listMyJobs({})
+
+    expect(result).toMatchObject({
+      ok: true,
+      data: {
+        jobs: [{
+          id: 'job-1',
+          startAt: '2026-08-03T08:00:00+10:00',
+          endAt: '2026-08-05T17:00:00+10:00',
+          visits: [{ id: 'visit-1' }],
+          financialSummary: { expensesTotal: '603.89' },
+        }],
+      },
+    })
+  })
+
+  it('treats a live null schedule as unscheduled instead of using stale cached dates', async () => {
+    const liveUnscheduled = { ...job, startAt: null, endAt: null }
+    mocks.listSnapshots.mockResolvedValueOnce([snapshot])
+    mocks.listJobberJobs.mockResolvedValueOnce([liveUnscheduled])
+    mocks.synchronizeSnapshotScope.mockResolvedValueOnce([snapshot])
+
+    const result = await listMyJobs({})
+
+    expect(result).toMatchObject({
+      ok: true,
+      data: { jobs: [{ id: 'job-1', startAt: null, endAt: null }] },
+    })
   })
 
   it('removes a reassigned job from the supervisor list instead of trusting cached scope', async () => {

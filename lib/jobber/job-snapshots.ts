@@ -24,6 +24,11 @@ const moneySchema = z.string().refine((value) => {
   try { return new Decimal(value).isFinite() } catch { return false }
 }, 'Invalid money value')
 const nullableNameSchema = z.string().nullable()
+const visitSchema = z.object({
+  id: z.string().min(1),
+  startAt: z.string().nullable(),
+  endAt: z.string().nullable(),
+})
 const jobSchema = z.object({
   id: z.string().min(1),
   jobNumber: z.string().min(1),
@@ -31,6 +36,9 @@ const jobSchema = z.object({
   jobStatus: z.string().min(1),
   total: moneySchema,
   jobberWebUri: z.string().min(1),
+  startAt: z.string().nullable().default(null),
+  endAt: z.string().nullable().default(null),
+  visits: z.array(visitSchema).default([]),
 })
 const expenseSchema = z.object({
   id: z.string().min(1),

@@ -14,6 +14,8 @@ vi.mock('@/lib/actions/jobs', () => ({
 const job = {
   id: 'job-1', jobNumber: '3103', title: 'Belrose', jobStatus: 'requires_invoicing',
   total: '12437.02', jobberWebUri: 'https://secure.getjobber.com/jobs/job-1',
+  startAt: '2026-07-01T08:00:00+10:00', endAt: '2026-08-31T17:00:00+10:00',
+  visits: [{ id: 'visit-1', startAt: '2026-08-03T08:00:00+10:00', endAt: '2026-08-05T17:00:00+10:00' }],
   financialSummary: {
     revenue: '12437.02', expensesTotal: '1493.89', profit: '10943.13', profitMarginPercent: '87.988361',
   },
@@ -21,16 +23,28 @@ const job = {
 }
 
 describe('jobs UI', () => {
-  it('renders job revenue, expense, profit percentage, refresh time, and detail link', () => {
-    const markup = renderToStaticMarkup(createElement(JobsList, { jobs: [job] }))
+  it('lays a multi-day job across the month and keeps unscheduled jobs clickable', () => {
+    const unscheduled = {
+      ...job,
+      id: 'job-2',
+      jobNumber: '3104',
+      title: 'Manly',
+      startAt: '2026-08-10T08:00:00+10:00',
+      endAt: '2026-08-12T17:00:00+10:00',
+      visits: [],
+    }
+    const markup = renderToStaticMarkup(createElement(JobsList, {
+      jobs: [job, unscheduled],
+      month: '2026-08',
+      today: '2026-08-03',
+    }))
 
-    expect(markup).toContain('#3103')
-    expect(markup).toContain('requires invoicing')
-    expect(markup).toContain('$12,437.02')
-    expect(markup).toContain('$1,493.89')
-    expect(markup).toContain('88.0%')
-    expect(markup).toContain('href="/jobs/job-1"')
-    expect(markup).toContain('bg-[var(--success)]')
+    expect(markup).toContain('aria-label="August 2026 job calendar"')
+    expect(markup).toContain('pbc-jobcalendar__day--today')
+    expect(markup.match(/href="\/jobs\/job-1"/g)).toHaveLength(3)
+    expect(markup).toContain('Unscheduled')
+    expect(markup).toContain('<h2>Unscheduled</h2><span>1</span>')
+    expect(markup).toContain('href="/jobs/job-2"')
   })
 
   it('renders the shared profit panel, expense lines, refresh, and Jobber source link', () => {

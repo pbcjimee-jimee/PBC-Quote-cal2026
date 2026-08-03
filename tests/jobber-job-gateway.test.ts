@@ -58,8 +58,8 @@ describe('Jobber job gateway', () => {
 
     await expect(listJobberTeamUsers()).resolves.toEqual([{ id: 'u1' }, { id: 'u2' }])
     await expect(listJobberJobs('u1')).resolves.toEqual([{ id: 'j1' }, { id: 'j2' }])
-    expect(mocks.jobsPage).toHaveBeenNthCalledWith(1, 'u1', { first: 50, after: null }, expect.objectContaining({ accessToken: 'access-1' }))
-    expect(mocks.jobsPage).toHaveBeenNthCalledWith(2, 'u1', { first: 50, after: 'j-next' }, expect.any(Object))
+    expect(mocks.jobsPage).toHaveBeenNthCalledWith(1, 'u1', { first: 20, after: null }, expect.objectContaining({ accessToken: 'access-1' }))
+    expect(mocks.jobsPage).toHaveBeenNthCalledWith(2, 'u1', { first: 20, after: 'j-next' }, expect.any(Object))
   })
 
   it('paginates every expense and returns one normalized job detail', async () => {
