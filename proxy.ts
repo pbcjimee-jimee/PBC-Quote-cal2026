@@ -6,11 +6,10 @@ import { NextResponse, type NextRequest } from 'next/server'
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl
 
-  if (pathname === '/') {
-    return NextResponse.rewrite(new URL('/quotes/new', request.url))
-  }
-
   if (process.env.NODE_ENV !== 'production' && process.env.NEXT_PUBLIC_DEV_NO_AUTH !== 'false') {
+    if (pathname === '/') {
+      return NextResponse.rewrite(new URL('/quotes/new', request.url))
+    }
     return NextResponse.next()
   }
 

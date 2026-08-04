@@ -28,11 +28,11 @@ describe('proxy auth routing', () => {
     expect(response.headers.get('location')).toBeNull()
   })
 
-  it('rewrites the landing route directly to the new quote screen', async () => {
+  it('lets the role-aware landing page route authenticated users', async () => {
     const response = await proxy(makeRequest('/', 'sb-abc123-auth-token=session'))
 
     expect(response.status).toBe(200)
-    expect(response.headers.get('x-middleware-rewrite')).toBe('http://localhost:3000/quotes/new')
+    expect(response.headers.get('x-middleware-rewrite')).toBeNull()
   })
 
   it('keeps the direct landing rewrite in local no-auth mode', async () => {

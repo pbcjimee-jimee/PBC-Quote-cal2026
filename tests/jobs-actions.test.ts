@@ -103,7 +103,7 @@ describe('job actions', () => {
         filteredJobberUserId: 'jobber-user-1',
       },
     })
-    expect(mocks.listJobberJobs).toHaveBeenCalledWith('jobber-user-1')
+    expect(mocks.listJobberJobs).toHaveBeenCalledWith('jobber-user-1', expect.any(Object))
   })
 
   it('replaces a stale saved Jobber id with the unique team user matched by login name', async () => {
@@ -113,7 +113,7 @@ describe('job actions', () => {
       ok: true,
       data: { assignmentLinked: true, filteredJobberUserId: 'jobber-user-1' },
     })
-    expect(mocks.listJobberJobs).toHaveBeenCalledWith('jobber-user-1')
+    expect(mocks.listJobberJobs).toHaveBeenCalledWith('jobber-user-1', expect.any(Object))
   })
 
   it('matches an official supervisor without depending on the Jobber status enum spelling', async () => {
@@ -128,7 +128,7 @@ describe('job actions', () => {
     })
   })
 
-  it('revalidates matching supervisor snapshots against live Jobber assignments', async () => {
+  it('revalidates matching supervisor snapshots against live monthly Jobber assignments', async () => {
     mocks.listSnapshots.mockResolvedValueOnce([snapshot])
     mocks.synchronizeSnapshotScope.mockResolvedValueOnce([snapshot])
 
@@ -138,8 +138,41 @@ describe('job actions', () => {
       ok: true,
       data: { jobs: [{ id: 'job-1', financialSummary: { expensesTotal: '603.89' } }] },
     })
-    expect(mocks.listJobberJobs).toHaveBeenCalledWith('jobber-user-1')
-    expect(mocks.synchronizeSnapshotScope).toHaveBeenCalledWith('jobber-user-1', ['job-1'])
+    expect(mocks.listJobberJobs).toHaveBeenCalledWith('jobber-user-1', expect.any(Object))
+    expect(mocks.synchronizeSnapshotScope).not.toHaveBeenCalled()
+  })
+
+  it('bounds the supervisor Jobber query to the requested calendar month', async () => {
+    mocks.listJobberJobs.mockImplementationOnce(async (
+      _jobberUserId: string | null,
+      visitRange?: { after: string; before: string } | null,
+    ) => {
+      if (!visitRange) throw new Error('Supervisor jobs must be month-bounded')
+      return [job]
+    })
+
+    await expect(listMyJobs({ month: '2026-08' })).resolves.toMatchObject({
+      ok: true,
+      data: { jobs: [{ id: 'job-1' }] },
+    })
+    expect(mocks.listJobberJobs).toHaveBeenCalledWith('jobber-user-1', {
+      after: '2026-07-26T00:00:00.000Z',
+      before: '2026-09-07T00:00:00.000Z',
+    })
+  })
+
+  it('uses live monthly job ids without revoking cached scopes outside the month', async () => {
+    mocks.listSnapshots.mockResolvedValueOnce([snapshot])
+    mocks.synchronizeSnapshotScope.mockRejectedValueOnce(
+      new Error('A partial month must not replace the complete assignment scope'),
+    )
+
+    await expect(listMyJobs({ month: '2026-08' })).resolves.toMatchObject({
+      ok: true,
+      data: {
+        jobs: [{ id: 'job-1', financialSummary: { expensesTotal: '603.89' } }],
+      },
+    })
   })
 
   it('does not query jobs when the linked Jobber team name differs from the login name', async () => {
@@ -233,8 +266,8 @@ describe('job actions', () => {
       ok: true,
       data: { jobs: [] },
     })
-    expect(mocks.listJobberJobs).toHaveBeenCalledWith('jobber-user-1')
-    expect(mocks.synchronizeSnapshotScope).toHaveBeenCalledWith('jobber-user-1', [])
+    expect(mocks.listJobberJobs).toHaveBeenCalledWith('jobber-user-1', expect.any(Object))
+    expect(mocks.synchronizeSnapshotScope).not.toHaveBeenCalled()
     expect(mocks.fetchJobberJobDetail).not.toHaveBeenCalled()
   })
 
@@ -242,7 +275,7 @@ describe('job actions', () => {
     const result = await listMyJobs({})
 
     expect(result).toMatchObject({ ok: true, data: { jobs: [{ id: 'job-1' }] } })
-    expect(mocks.listJobberJobs).toHaveBeenCalledWith('jobber-user-1')
+    expect(mocks.listJobberJobs).toHaveBeenCalledWith('jobber-user-1', expect.any(Object))
     expect(mocks.fetchJobberJobDetail).toHaveBeenCalledWith('job-1')
     expect(mocks.saveSnapshots).toHaveBeenCalledWith([
       expect.objectContaining({
@@ -284,6 +317,22 @@ describe('job actions', () => {
     await expect(result).resolves.toMatchObject({ ok: true })
   })
 
+  it('loads the supervisor snapshot cache and monthly Jobber schedule concurrently', async () => {
+    let resolveSnapshots!: (value: readonly []) => void
+    const pendingSnapshots = new Promise<readonly []>((resolve) => {
+      resolveSnapshots = resolve
+    })
+    mocks.listSnapshots.mockReturnValueOnce(pendingSnapshots)
+
+    const result = listMyJobs({ month: '2026-08' })
+
+    await vi.waitFor(() => {
+      expect(mocks.listJobberJobs).toHaveBeenCalled()
+    })
+    resolveSnapshots([])
+    await expect(result).resolves.toMatchObject({ ok: true })
+  })
+
   it('resolves an admin supervisor filter through the service client', async () => {
     mocks.requireRole.mockResolvedValueOnce(appUser('admin', null))
     const maybeSingle = vi.fn(async () => ({
@@ -301,7 +350,7 @@ describe('job actions', () => {
 
     await listMyJobs({ supervisorProfileId: '00000000-0000-4000-8000-000000000102' })
 
-    expect(mocks.listJobberJobs).toHaveBeenCalledWith('jobber-user-2')
+    expect(mocks.listJobberJobs).toHaveBeenCalledWith('jobber-user-2', expect.any(Object))
   })
 
   it('does not turn an unlinked admin supervisor filter into all jobs', async () => {

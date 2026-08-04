@@ -28,14 +28,14 @@ vi.mock('@/lib/security/require-app-user', () => ({
   requireRole: mocks.requireRole,
 }))
 
-import JobsPage from '@/app/(app)/jobs/page'
+import JobsPage, { JobsContent } from '@/app/(app)/jobs/page'
 import JobDetailPage from '@/app/(app)/jobs/[jobberJobId]/page'
 
 const refreshWarning = '1 of 12 Jobber job details could not be refreshed.'
 
 describe('Jobs page', () => {
   beforeEach(() => {
-    vi.clearAllMocks()
+    vi.resetAllMocks()
     mocks.requireRole.mockResolvedValue({
       ok: true,
       user: { id: 'admin-1', email: 'admin@example.com' },
@@ -51,6 +51,17 @@ describe('Jobs page', () => {
     mocks.listUsers.mockResolvedValue({ ok: true, data: [] })
   })
 
+  it('renders the authenticated jobs shell without waiting for Jobber', async () => {
+    mocks.listMyJobs.mockReturnValueOnce(new Promise(() => undefined))
+
+    const outcome = await Promise.race([
+      JobsPage({ searchParams: Promise.resolve({ month: '2026-08' }) }).then(() => 'shell'),
+      new Promise<'blocked'>((resolve) => setTimeout(() => resolve('blocked'), 25)),
+    ])
+
+    expect(outcome).toBe('shell')
+  })
+
   it('shows a partial refresh warning returned during the initial jobs load', async () => {
     mocks.listMyJobs.mockResolvedValue({
       ok: true,
@@ -62,7 +73,11 @@ describe('Jobs page', () => {
       },
     })
 
-    const markup = renderToStaticMarkup(await JobsPage({ searchParams: Promise.resolve({}) }))
+    const markup = renderToStaticMarkup(await JobsContent({
+      query: {},
+      role: 'admin',
+      supervisorProfileId: null,
+    }))
 
     expect(markup).toContain(refreshWarning)
     expect(markup).toContain('pbc-alert--warning')
@@ -78,8 +93,10 @@ describe('Jobs page', () => {
         : { ok: false, error: 'Calendar month was not forwarded' }
     })
 
-    const markup = renderToStaticMarkup(await JobsPage({
-      searchParams: Promise.resolve({ month: '2026-08' }),
+    const markup = renderToStaticMarkup(await JobsContent({
+      query: { month: '2026-08' },
+      role: 'admin',
+      supervisorProfileId: null,
     }))
 
     expect(markup).toContain('August 2026 job calendar')
@@ -104,7 +121,11 @@ describe('Jobs page', () => {
       data: { jobs: [], assignmentLinked: false, filteredJobberUserId: null },
     })
 
-    const markup = renderToStaticMarkup(await JobsPage({ searchParams: Promise.resolve({}) }))
+    const markup = renderToStaticMarkup(await JobsContent({
+      query: {},
+      role: 'supervisor',
+      supervisorProfileId: null,
+    }))
 
     expect(markup).toContain('could not be matched to an official Jobber supervisor')
     expect(markup).not.toContain('not linked to a Jobber user')

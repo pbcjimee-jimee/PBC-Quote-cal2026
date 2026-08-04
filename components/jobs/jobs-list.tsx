@@ -88,7 +88,8 @@ function JobCalendarLink({ job, isPast = false }: { job: JobListItem; isPast?: b
       aria-label={`Job #${job.jobNumber} ${title}.${isPast ? ' Past schedule.' : ''} View expenses`}
     >
       <b>{title}</b>
-      <span>#{job.jobNumber} · {status}</span>
+      <span className="pbc-jobcalendar__jobmeta">#{job.jobNumber} · {status}</span>
+      <span className="pbc-jobcalendar__mobilelabel" aria-hidden="true">#{job.jobNumber}</span>
     </Link>
   )
 }

@@ -97,8 +97,9 @@ export async function listMyJobs(input: unknown = {}): Promise<ActionResult<JobL
       : await loadAssignedJobList(
           appUser.user.id,
           resolvedFilter.supervisorIdentity,
-          await listJobSnapshots(),
+          listJobSnapshots(),
           false,
+          resolveJobCalendarRange(parsed.data.month),
         )
 
     return {
@@ -137,7 +138,13 @@ export async function refreshJobs(input: unknown = {}): Promise<ActionResult<Job
           snapshots,
           resolveJobCalendarRange(parsed.data.month),
         )
-      : await loadAssignedJobList(appUser.user.id, resolvedFilter.supervisorIdentity, snapshots, true)
+      : await loadAssignedJobList(
+          appUser.user.id,
+          resolvedFilter.supervisorIdentity,
+          snapshots,
+          true,
+          resolveJobCalendarRange(parsed.data.month),
+        )
     return {
       ok: true,
       data: {
@@ -248,16 +255,19 @@ async function loadAdminJobList(
 async function loadAssignedJobList(
   actorId: string,
   supervisorIdentity: SupervisorIdentity,
-  existingSnapshots: readonly StoredJobSnapshot[],
+  existingSnapshots: Promise<readonly StoredJobSnapshot[]> | readonly StoredJobSnapshot[],
   forceRefresh: boolean,
+  visitRange: JobberVisitRange,
 ): Promise<LoadedJobSnapshots> {
   const { jobberUserId } = supervisorIdentity
-  const assignedJobs = await listJobberJobs(jobberUserId)
-  const synchronized = await synchronizeJobSnapshotScope(
-    jobberUserId,
-    assignedJobs.map((job) => job.id),
-  )
-  const existingById = new Map(synchronized.map((snapshot) => [snapshot.job.id, snapshot]))
+  const [assignedJobs, cachedSnapshots] = await Promise.all([
+    listJobberJobs(jobberUserId, visitRange),
+    Promise.resolve(existingSnapshots),
+  ])
+  const assignedJobIds = new Set(assignedJobs.map((job) => job.id))
+  const existingById = new Map(cachedSnapshots
+    .filter((snapshot) => assignedJobIds.has(snapshot.job.id))
+    .map((snapshot) => [snapshot.job.id, snapshot]))
   const jobsToRefresh = forceRefresh
     ? assignedJobs
     : assignedJobs.filter((job) => !existingById.has(job.id))

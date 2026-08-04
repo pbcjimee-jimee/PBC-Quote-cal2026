@@ -65,6 +65,16 @@ describe('jobs UI', () => {
     expect(markup).toContain('#3103 · requires invoicing')
   })
 
+  it('renders a compact job number label for narrow calendar cells', () => {
+    const markup = renderToStaticMarkup(createElement(JobsList, {
+      jobs: [job],
+      month: '2026-08',
+      today: '2026-08-03',
+    }))
+
+    expect(markup).toContain('class="pbc-jobcalendar__mobilelabel" aria-hidden="true">#3103</span>')
+  })
+
   it('renders the shared profit panel, expense lines, refresh, and Jobber source link', () => {
     const markup = renderToStaticMarkup(createElement(JobDetail, {
       job: {
