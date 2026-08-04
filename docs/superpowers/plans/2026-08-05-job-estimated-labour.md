@@ -243,7 +243,7 @@ git commit -m "feat: calculate estimated job labour"
 
 ---
 
-### Task 3: Jobber visit 담당자 전체 페이지를 안전하게 조회
+### Task 3: Jobber visit 담당자 전체 페이지를 안전하게 조회 ✅
 
 **Files:**
 - Modify: `lib/jobber/job-types.ts:43-63`
@@ -266,7 +266,7 @@ export interface JobberJobAssignmentVisitsPage
 }
 ```
 
-- [ ] **Step 1: client query/parse 실패 테스트를 작성한다**
+- [x] **Step 1: client query/parse 실패 테스트를 작성한다**
 
 fixture 응답은 두 visit과 담당자 connection을 반환한다. request 검증은 아래 문자열과 변수까지 확인한다.
 
@@ -279,7 +279,7 @@ expect(page?.nodes[0]?.assignedUsers).toEqual([
 ])
 ```
 
-- [ ] **Step 2: 손실 없는 실패 조건 테스트를 작성한다**
+- [x] **Step 2: 손실 없는 실패 조건 테스트를 작성한다**
 
 ```text
 job = null -> null 반환
@@ -291,13 +291,13 @@ assignedUsers.pageInfo.hasNextPage = true -> 명시적 502 오류
 
 `assignedUsers(first: 100)`에 다음 페이지가 있으면 조용히 일부만 세지 않고 refresh 전체를 실패시킨다. PBC 팀 규모에서는 Task 1 증거로 `hasNextPage: false`를 먼저 확인한다.
 
-- [ ] **Step 3: client 테스트가 RED인지 확인한다**
+- [x] **Step 3: client 테스트가 RED인지 확인한다**
 
 Run: `npm.cmd test -- tests/jobber-job-client.test.ts`
 
 Expected: FAIL because the assignment visit function is missing.
 
-- [ ] **Step 4: `PbcJobAssignmentVisits`와 엄격한 parser를 구현한다**
+- [x] **Step 4: `PbcJobAssignmentVisits`와 엄격한 parser를 구현한다**
 
 ```typescript
 export async function fetchJobberJobAssignmentVisitsPage(
@@ -309,7 +309,7 @@ export async function fetchJobberJobAssignmentVisitsPage(
 
 parser는 `assignedUsers.nodes`를 `{ id, fullName }`으로만 정규화한다. request는 기존 `cache: 'no-store'`, GraphQL version 검증, throttle retry 규칙을 그대로 사용한다.
 
-- [ ] **Step 5: gateway 페이지네이션 실패 테스트를 작성한다**
+- [x] **Step 5: gateway 페이지네이션 실패 테스트를 작성한다**
 
 ```typescript
 mocks.assignmentVisitsPage
@@ -329,7 +329,7 @@ await expect(fetchJobberJobAssignmentVisits('job-1')).resolves.toHaveLength(2)
 
 401 fixture는 기존 `withRestartableToken` 계약에 따라 새 access token으로 전체 operation을 한 번 다시 시작하는지 확인한다.
 
-- [ ] **Step 6: gateway 함수를 구현하고 GREEN을 확인한다**
+- [x] **Step 6: gateway 함수를 구현하고 GREEN을 확인한다**
 
 ```typescript
 export async function fetchJobberJobAssignmentVisits(
@@ -351,7 +351,7 @@ Run: `npm.cmd test -- tests/jobber-job-client.test.ts tests/jobber-job-gateway.t
 
 Expected: PASS; 모든 visit 페이지가 합쳐지고 다음 담당자 페이지 가능성은 silent undercount 대신 오류가 된다.
 
-- [ ] **Step 7: Jobber read 경로를 커밋한다**
+- [x] **Step 7: Jobber read 경로를 커밋한다**
 
 ```bash
 git add lib/jobber/job-types.ts lib/jobber/job-client.ts lib/jobber/job-gateway.ts tests/jobber-job-client.test.ts tests/jobber-job-gateway.test.ts

@@ -5,6 +5,7 @@ import { JOBBER_GRAPHQL_URL } from './config'
 import type { JobberConnectionPage, JobberPageRequest } from './pagination'
 import type {
   JobberExpense,
+  JobberJobAssignmentVisitsPage,
   JobberJobClientOptions,
   JobberJobExpensesPage,
   JobberJobVisit,
@@ -86,6 +87,23 @@ const JOB_EXPENSES_QUERY = `query PbcJobExpenses($id: EncodedId!, $first: Int!, 
     }
   }
 }`
+const JOB_ASSIGNMENT_VISITS_QUERY = `query PbcJobAssignmentVisits(
+  $id: EncodedId!, $first: Int!, $after: String
+) {
+  job(id: $id) {
+    id
+    visits(first: $first, after: $after) {
+      pageInfo { hasNextPage endCursor }
+      nodes {
+        id
+        assignedUsers(first: 100) {
+          pageInfo { hasNextPage endCursor }
+          nodes { id name { full } }
+        }
+      }
+    }
+  }
+}`
 const MAX_THROTTLE_RETRIES = 5
 
 export class JobberJobApiError extends Error {
@@ -148,6 +166,32 @@ export async function fetchJobberJobExpensesPage(
   return {
     job: parsedJob,
     ...parseConnection(job.expenses, 'Invalid Jobber job expenses', parseExpense),
+  }
+}
+
+export async function fetchJobberJobAssignmentVisitsPage(
+  jobId: string,
+  page: JobberPageRequest,
+  options: JobberJobClientOptions,
+): Promise<JobberJobAssignmentVisitsPage | null> {
+  const data = await request(
+    JOB_ASSIGNMENT_VISITS_QUERY,
+    { id: jobId, first: page.first, after: page.after },
+    options,
+  )
+  if (data.job === null) return null
+  const job = objectValue(data.job, 'Invalid Jobber job assignment visits')
+  const returnedJobId = stringField(job.id, 'Invalid Jobber job assignment visits')
+  if (returnedJobId !== jobId) {
+    throw new JobberJobApiError('Jobber job response did not match the requested ID', 502)
+  }
+  return {
+    jobId: returnedJobId,
+    ...parseConnection(
+      job.visits,
+      'Invalid Jobber job assignment visits',
+      parseAssignmentVisit,
+    ),
   }
 }
 
@@ -250,6 +294,31 @@ function parseVisits(value: unknown): readonly JobberJobVisit[] {
       endAt: nullableString(visit.endAt, 'Invalid Jobber job visit'),
     }
   }))
+}
+
+function parseAssignmentVisit(value: unknown) {
+  const visit = objectValue(value, 'Invalid Jobber job assignment visit')
+  const assignedUsers = parseConnection(
+    visit.assignedUsers,
+    'Invalid Jobber visit assigned users',
+    parseAssignedUser,
+  )
+  if (assignedUsers.pageInfo.hasNextPage) {
+    throw new JobberJobApiError('Unable to count every Jobber visit assignment', 502)
+  }
+  return {
+    id: stringField(visit.id, 'Invalid Jobber job assignment visit'),
+    assignedUsers: assignedUsers.nodes,
+  }
+}
+
+function parseAssignedUser(value: unknown) {
+  const user = objectValue(value, 'Invalid Jobber assigned user')
+  const name = objectValue(user.name, 'Invalid Jobber assigned user')
+  return {
+    id: stringField(user.id, 'Invalid Jobber assigned user'),
+    fullName: stringField(name.full, 'Invalid Jobber assigned user'),
+  }
 }
 
 function parseExpense(value: unknown): JobberExpense {

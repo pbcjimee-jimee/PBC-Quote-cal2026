@@ -2,6 +2,7 @@ import 'server-only'
 
 import { getJobberConfig } from './config'
 import {
+  fetchJobberJobAssignmentVisitsPage,
   fetchJobberJobExpensesPage,
   fetchJobberJobsPage,
   fetchJobberTeamUsersPage,
@@ -9,6 +10,7 @@ import {
 } from './job-client'
 import type {
   JobberJobClientOptions,
+  JobberJobAssignmentVisit,
   JobberJobDetail,
   JobberJobSummary,
   JobberTeamUser,
@@ -24,6 +26,7 @@ import {
 
 const PAGE_SIZE = 50
 const JOB_LIST_PAGE_SIZE = 10
+const ASSIGNMENT_VISIT_PAGE_SIZE = 10
 
 export async function listJobberTeamUsers(): Promise<readonly JobberTeamUser[]> {
   return withRestartableToken((options) => fetchAllJobberPages((after) => (
@@ -53,6 +56,20 @@ export async function fetchJobberJobDetail(jobberJobId: string): Promise<JobberJ
     if (job === null) throw new Error('Jobber job was not found')
     return { ...(job as JobberJobSummary), expenses }
   })
+}
+
+export async function fetchJobberJobAssignmentVisits(
+  jobberJobId: string,
+): Promise<readonly JobberJobAssignmentVisit[]> {
+  return withRestartableToken((options) => fetchAllJobberPages(async (after) => {
+    const page = await fetchJobberJobAssignmentVisitsPage(
+      jobberJobId,
+      { first: ASSIGNMENT_VISIT_PAGE_SIZE, after },
+      options,
+    )
+    if (page === null) throw new Error('Jobber job was not found')
+    return page
+  }))
 }
 
 async function withRestartableToken<T>(

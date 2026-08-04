@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 vi.mock('server-only', () => ({}))
 
 import {
+  fetchJobberJobAssignmentVisitsPage,
   fetchJobberJobExpensesPage,
   fetchJobberJobsPage,
   fetchJobberTeamUsersPage,
@@ -170,6 +171,93 @@ describe('Jobber job query client', () => {
     expect(page?.nodes[0]?.total).toBe('603.89')
     expect(page?.nodes[0]?.enteredByName).toBe('Sanggi')
     expect(page?.pageInfo).toEqual({ hasNextPage: true, endCursor: 'cursor-1' })
+  })
+
+  it('maps one bounded page of Jobber visit assignments', async () => {
+    const fetchMock = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      void input
+      void init
+      return response({
+        job: {
+          id: 'job-1',
+          visits: {
+            nodes: [{
+              id: 'visit-1',
+              assignedUsers: {
+                nodes: [
+                  { id: 'user-1', name: { full: 'Eric' } },
+                  { id: 'user-2', name: { full: 'Connor' } },
+                ],
+                pageInfo: { hasNextPage: false, endCursor: null },
+              },
+            }],
+            pageInfo: { hasNextPage: true, endCursor: 'visit-next' },
+          },
+        },
+      })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const page = await fetchJobberJobAssignmentVisitsPage(
+      'job-1',
+      { first: 10, after: null },
+      options,
+    )
+
+    const request = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body)) as {
+      query: string
+      variables: unknown
+    }
+    expect(compact(request.query)).toContain(compact('query PbcJobAssignmentVisits'))
+    expect(compact(request.query)).toContain(compact(
+      'assignedUsers(first: 100) { pageInfo { hasNextPage endCursor } nodes { id name { full } } }',
+    ))
+    expect(request.variables).toEqual({ id: 'job-1', first: 10, after: null })
+    expect(page).toEqual({
+      jobId: 'job-1',
+      nodes: [{
+        id: 'visit-1',
+        assignedUsers: [
+          { id: 'user-1', fullName: 'Eric' },
+          { id: 'user-2', fullName: 'Connor' },
+        ],
+      }],
+      pageInfo: { hasNextPage: true, endCursor: 'visit-next' },
+    })
+  })
+
+  it('rejects a visit whose assigned users would be silently truncated', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => response({
+      job: {
+        id: 'job-1',
+        visits: {
+          nodes: [{
+            id: 'visit-1',
+            assignedUsers: {
+              nodes: [{ id: 'user-1', name: { full: 'Eric' } }],
+              pageInfo: { hasNextPage: true, endCursor: 'user-next' },
+            },
+          }],
+          pageInfo: { hasNextPage: false, endCursor: null },
+        },
+      },
+    })))
+
+    await expect(fetchJobberJobAssignmentVisitsPage(
+      'job-1',
+      { first: 10, after: null },
+      options,
+    )).rejects.toThrow('Unable to count every Jobber visit assignment')
+  })
+
+  it('returns null for a missing Jobber assignment job', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => response({ job: null })))
+
+    await expect(fetchJobberJobAssignmentVisitsPage(
+      'job-1',
+      { first: 10, after: null },
+      options,
+    )).resolves.toBeNull()
   })
 
   it('accepts a successful Jobber expense response when optional versioning metadata is absent', async () => {

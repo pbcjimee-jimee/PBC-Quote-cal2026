@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   teamPage: vi.fn(),
   jobsPage: vi.fn(),
   expensesPage: vi.fn(),
+  assignmentVisitsPage: vi.fn(),
 }))
 
 vi.mock('@/lib/jobber/config', () => ({ getJobberConfig: mocks.getJobberConfig }))
@@ -26,10 +27,12 @@ vi.mock('@/lib/jobber/job-client', async () => {
     fetchJobberTeamUsersPage: mocks.teamPage,
     fetchJobberJobsPage: mocks.jobsPage,
     fetchJobberJobExpensesPage: mocks.expensesPage,
+    fetchJobberJobAssignmentVisitsPage: mocks.assignmentVisitsPage,
   }
 })
 
 import {
+  fetchJobberJobAssignmentVisits,
   fetchJobberJobDetail,
   listJobberJobs,
   listJobberTeamUsers,
@@ -74,6 +77,37 @@ describe('Jobber job gateway', () => {
       .mockResolvedValueOnce({ job, nodes: [{ id: 'e2' }], pageInfo: { hasNextPage: false, endCursor: null } })
 
     await expect(fetchJobberJobDetail('j1')).resolves.toEqual({ ...job, expenses: [{ id: 'e1' }, { id: 'e2' }] })
+  })
+
+  it('paginates every assignment visit with the lower query-cost page size', async () => {
+    mocks.assignmentVisitsPage
+      .mockResolvedValueOnce({
+        jobId: 'j1',
+        nodes: [{ id: 'visit-1', assignedUsers: [] }],
+        pageInfo: { hasNextPage: true, endCursor: 'next' },
+      })
+      .mockResolvedValueOnce({
+        jobId: 'j1',
+        nodes: [{ id: 'visit-2', assignedUsers: [] }],
+        pageInfo: { hasNextPage: false, endCursor: null },
+      })
+
+    await expect(fetchJobberJobAssignmentVisits('j1')).resolves.toEqual([
+      { id: 'visit-1', assignedUsers: [] },
+      { id: 'visit-2', assignedUsers: [] },
+    ])
+    expect(mocks.assignmentVisitsPage).toHaveBeenNthCalledWith(
+      1,
+      'j1',
+      { first: 10, after: null },
+      expect.objectContaining({ accessToken: 'access-1' }),
+    )
+    expect(mocks.assignmentVisitsPage).toHaveBeenNthCalledWith(
+      2,
+      'j1',
+      { first: 10, after: 'next' },
+      expect.objectContaining({ accessToken: 'access-1' }),
+    )
   })
 
   it('refreshes once after a 401 and restarts the operation', async () => {

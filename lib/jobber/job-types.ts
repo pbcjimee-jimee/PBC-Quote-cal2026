@@ -67,6 +67,10 @@ export interface JobberJobExpensesPage extends JobberConnectionPage<JobberExpens
   readonly job: JobberJobSummary
 }
 
+export interface JobberJobAssignmentVisitsPage extends JobberConnectionPage<JobberJobAssignmentVisit> {
+  readonly jobId: string
+}
+
 export interface JobberJobDetail extends JobberJobSummary {
   readonly expenses: readonly JobberExpense[]
 }
