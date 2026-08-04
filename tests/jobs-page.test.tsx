@@ -29,6 +29,7 @@ vi.mock('@/lib/security/require-app-user', () => ({
 }))
 
 import JobsPage, { JobsContent } from '@/app/(app)/jobs/page'
+import JobsLoading from '@/app/(app)/jobs/loading'
 import JobDetailPage from '@/app/(app)/jobs/[jobberJobId]/page'
 
 const refreshWarning = '1 of 12 Jobber job details could not be refreshed.'
@@ -60,6 +61,14 @@ describe('Jobs page', () => {
     ])
 
     expect(outcome).toBe('shell')
+  })
+
+  it('renders a calendar-shaped mobile loading state instead of a blank block', () => {
+    const markup = renderToStaticMarkup(<JobsLoading />)
+
+    expect(markup).toContain('aria-label="Loading job calendar"')
+    expect(markup).toContain('pbc-jobcalendar-loading')
+    expect(markup.match(/pbc-jobcalendar-loading__day/g)).toHaveLength(42)
   })
 
   it('shows a partial refresh warning returned during the initial jobs load', async () => {

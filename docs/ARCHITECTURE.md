@@ -138,8 +138,12 @@
 | 견적 목록 페이지 | <500ms, 현재 최신 100건 제한. 전체 페이지네이션은 후속 |
 | Settings 초기 화면 | Labour Rates 필수 데이터만 로드, 비활성 탭 데이터는 첫 진입 시 로드 |
 | 견적 상세 사용자 표시 | 현재 인증 사용자는 Auth 결과 재사용, 다른 사용자만 Auth Admin 조회 |
+| 홈 화면 앱 시작 피드백 | 루트 loading UI를 route stream에서 즉시 표시하며 인증 사용자 데이터는 포함하지 않음 |
+| 연결된 supervisor Jobs 목록 | 공식 팀 사용자 검증과 월간 배정 job 조회를 병렬 시작하되 검증 성공 후에만 결과 사용 |
 
 인증된 앱 내부 링크는 viewport 자동 prefetch를 사용하지 않는다. 링크 hover·focus·touch intent가 있을 때만 대상 route를 한 번 prefetch하여 Overview의 다수 quote row와 sidebar route가 실제 클릭 요청과 경쟁하지 않게 한다. 이 정책은 앱 route 이동에만 적용하며 Jobber fetch API, snapshot refresh, Save & Sync 호출에는 적용하지 않는다.
+
+Jobs의 speculative 월간 조회는 저장된 Jobber 사용자 ID가 있을 때만 수행한다. 공식 supervisor allowlist와 live team-name 검증이 동일 ID를 확인한 경우에만 조회 결과를 재사용한다. 저장 ID가 stale이거나 이름이 일치하지 않으면 speculative 결과는 폐기하고, unique name match로 교정된 ID는 새로 조회한다. 이 최적화는 authorization gate를 완화하지 않는다.
 
 ---
 

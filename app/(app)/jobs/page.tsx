@@ -1,6 +1,7 @@
 import { Suspense } from 'react'
 import { redirect } from 'next/navigation'
 import { JobRefreshButton } from '@/components/jobs/job-refresh-button'
+import { JobsLoadingShell } from '@/components/jobs/jobs-loading-shell'
 import { JobsList } from '@/components/jobs/jobs-list'
 import { Icons } from '@/components/ui/icons'
 import { listMyJobs } from '@/lib/actions/jobs'
@@ -29,7 +30,7 @@ export default async function JobsPage({
       </header>
       <div className="pbc-page">
         <div className="pbc-pagehead"><h1>Jobs</h1><p>Select a scheduled job to review its expenses and profit.</p></div>
-        <Suspense fallback={<JobsDataLoading />}>
+        <Suspense fallback={<JobsLoadingShell />}>
           <JobsContent
             query={query}
             role={appUser.profile.role}
@@ -80,14 +81,5 @@ export async function JobsContent({
         </>
       )}
     </>
-  )
-}
-
-function JobsDataLoading() {
-  return (
-    <div className="pbc-card pbc-card--pad animate-pulse" role="status" aria-label="Loading jobs">
-      <div className="h-10 w-full max-w-sm rounded bg-[var(--surface-soft)]" />
-      <div className="mt-4 h-96 rounded bg-[var(--surface-soft)]" />
-    </div>
   )
 }

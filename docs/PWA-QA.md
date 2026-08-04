@@ -7,6 +7,13 @@
 - [x] Android `beforeinstallprompt` 캡처·설치 action 호출, iOS Safari 수동 안내, standalone 숨김, dismiss 재방문 유지 focused test
 - [x] TypeScript, ESLint, 전체 Vitest(65 files, 550 tests 통과; 환경 조건 1 file·2 tests skip), coverage, production build, diff check, high-severity audit(0 vulnerabilities)
 
+## 2026-08-04 로컬 모바일 Jobs 검증
+
+- [x] 390px viewport(콘텐츠 폭 375px)에서 PWA 시작 화면과 7열 Jobs 로딩 셸 표시, page-level 가로 overflow 없음
+- [x] warm reload 2회에서 시작 화면 0.44~0.60초, Jobs 로딩 셸 0.67~1.05초, 달력 완성 2.03~2.28초 관찰(변경 전 달력 완성 약 3.77초)
+- [x] Jobs 로딩 grid 341px/viewport 343px, document scroll width 375px, 검증 이후 새 browser console error 0건
+- [ ] iPhone 홈 화면 앱 실기기 재측정과 production 배포 확인
+
 ## 배포 후 브라우저·실기기 QA (미실행)
 
 - [ ] 비로그인 `/manifest.webmanifest`·`/sw.js`·`/offline` 각 200, redirect 없음

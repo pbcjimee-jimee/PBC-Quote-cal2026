@@ -66,6 +66,12 @@
 - Android `beforeinstallprompt` action과 iOS Safari `Share → Add to Home Screen` 안내를 앱 shell에 추가했다. standalone에서는 숨기고 localStorage에는 dismiss 선호만 저장한다.
 - 로컬 focused test RED→GREEN과 `npm.cmd run verify`를 확인했다(65 files, 550 tests 통과; 환경 조건 1 file·2 tests skip, coverage/build/audit 0 vulnerabilities). 배포·실기기 미실행 항목은 `docs/PWA-QA.md`에 분리해 기록한다.
 
+### 모바일 PWA 시작·Jobs 로딩 최적화 (2026-08-04, 로컬 구현 완료)
+- 루트 `app/loading.tsx`에 인증 데이터가 없는 PBC 시작 화면을 추가해 홈 화면 앱 실행 중 빈 화면 대신 즉시 진행 상태를 표시한다. Jobs route와 Suspense fallback은 실제 7열 달력 구조를 닮은 공용 42일 로딩 셸을 사용하며 640px 이하에서 화면 폭에 맞춘다.
+- 저장된 Jobber 사용자 ID가 있는 supervisor/admin filter는 공식 팀 사용자 이름 검증과 월간 배정 job 조회를 동시에 시작한다. 팀 사용자 검증이 성공한 동일 ID의 결과만 재사용하며, stale/mismatch 결과는 화면에 노출하지 않는다.
+- 로컬 390px viewport(콘텐츠 폭 375px)에서 warm Jobs 완성 2.03~2.28초, 시작 화면 0.44~0.60초, 달력 로딩 셸 0.67~1.05초에 관찰했다. 변경 전 동일 로컬 경로는 달력 완성 약 3.77초였다. 로딩 셸 grid 341px/viewport 343px, page scroll width 375px, 새 console error 0건을 확인했다. iPhone 실기기와 production 배포 검증은 별도다.
+- Service Worker 캐시 범위는 변경하지 않았으며 인증 HTML·API·Supabase·Server Actions·RSC payload 비캐시 원칙을 유지한다.
+
 ### 핵심 navigation performance (2026-07-14, production 배포·카나리 완료)
 - AppHeader·Overview quote row·quote card의 viewport 자동 prefetch를 끄고 hover·focus·touch intent에서 링크별 한 번만 prefetch한다. route pending 중 고정 top progress를 표시한다.
 - Settings 초기 서버 조회를 pricing settings 하나로 줄였다. Material, Product & Service, Template, Area 데이터는 첫 탭 진입 시 로드하며 성공 결과 재사용·in-flight 중복 방지·탭별 Retry를 제공한다.
@@ -113,6 +119,7 @@
 
 | 날짜 | 작업 | 담당 |
 |---|---|---|
+| 2026-08-04 | iPhone 홈 화면 앱의 시작·Jobs 체감 로딩을 로컬 최적화했다. 인증 데이터 없는 root loading, 모바일 7열/42일 Jobs loading shell, 저장된 Jobber ID의 live 팀 사용자 검증+월간 배정 조회 병렬화를 반영했다. 390px viewport에서 warm 달력 완성 2.03~2.28초(변경 전 약 3.77초), 시작 피드백 0.44~0.60초, page overflow 0, 새 console error 0건을 확인했다. `npm.cmd run verify`는 84 files/687 tests 통과(환경 조건 1 file/9 tests skip), coverage 83.73/70.16/93.68/89.35%, production build, audit 0 vulnerabilities를 통과했다. iPhone 실기기 재측정과 production 배포는 미실행이다. | Codex 5.6-Sol high |
 | 2026-08-03 | `jeonghoni@gmail.com` supervisor 로그인 실패를 진단해 Supabase Auth 계정과 active `user_profiles`는 정상이며, legacy Vercel `ALLOWED_LOGIN_EMAILS`가 password auth 요청 전에 차단하고 있음을 확인했다. 사용자 승인 후 해당 변수를 Production/Preview 환경에서 제거했고 `vercel env ls` 독립 확인 2회 모두 잔존 항목 0건을 확인했다. 변경 적용에는 새 production deployment가 필요하며 실제 비밀번호 로그인은 사용자가 직접 확인한다. | Codex 5.6-Sol high |
 | 2026-08-01 | `role` final review 보안/무결성 수정 및 role-only G2 재검증 완료. supervisor Jobber 배정을 목록·캐시 상세·강제 refresh 전에 live 재확인하고 snapshot scope를 원자적 동기화했으며, admin detail refresh를 5개 bounded batch/부분 저장으로 변경하고 부분 refresh 경고를 초기 Jobs 화면과 수동 Refresh 결과에 표시했다. 기존 role migration에 last-active-admin DB 불변식을 추가했다. clean no-seed reset 27 migrations, pgTAP 2 files/90 assertions, local RLS 1 file/9 cases, focused 7 files/41 cases, full verify 83 files/658 cases(1 file/9 cases skip), coverage 83.52/69.84/93.79/89.13%, build route `/inventory`·`/jobs`·`/jobs/[jobberJobId]`, Progress Invoice app/API route 없음, audit 0 vulnerabilities를 확인했다. Production Supabase·Jobber live/token/scope·supervisor 실계정·Vercel production은 별도 access lock과 사용자 승인 대기. | Codex 5.6-Sol high |
 | 2026-07-31 | `role` 브랜치에서 admin/supervisor 역할 분리와 Jobber job expense/profit 화면을 구현하고 로컬 G2 검증 완료. `user_profiles`/역할 RLS, 역할 서버 가드·nav, `/inventory`, `/settings/users`, read-only Jobber job client/cache/actions, `/jobs` 목록·상세를 반영. 최종 role-only 수치는 2026-08-01 Task 6에서 재검증했다. Production migration·seed·배포는 access lock 선행 조건과 사용자 승인 대기. | Codex 5.6-Sol high |

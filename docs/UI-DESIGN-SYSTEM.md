@@ -111,6 +111,8 @@ Prefer these primitives before recreating card/header markup in page components.
 - Standalone-safe surfaces must add `env(safe-area-inset-*)` to their existing padding. This applies to the mobile sticky header top, mobile total bar bottom, and the auth layout left, right, and bottom edges.
 - Mobile `pbc-iconbtn`, `pbc-iconbtn--compact`, and `pbc-btn--sm` controls must provide at least a `44px` by `44px` hit target. Dense tables may retain internal horizontal scrolling rather than shrinking these targets.
 - The mobile header must expose Overview, New Quote, Settings, and Inventory with a visible active state and remain usable without page-level horizontal scrolling at narrow widths.
+- Standalone startup loading must use a safe-area-aware `100dvh` surface, show branded progress without user-specific data, and respect `prefers-reduced-motion`.
+- Data-route loading placeholders should preserve the final mobile layout shape. The Jobs placeholder uses the same seven-column calendar geometry at `max-width: 640px` instead of a single oversized block.
 
 ## Current cleanup outcome
 

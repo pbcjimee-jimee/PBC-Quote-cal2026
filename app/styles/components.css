@@ -102,6 +102,29 @@
 .pbc-authhead h1 { margin: 0; font-size: 24px; line-height: 1.15; font-weight: 800; color: var(--foreground); }
 .pbc-authhead p { margin: 4px 0 0; font-size: 13px; color: var(--muted); }
 .pbc-form { display: flex; flex-direction: column; gap: 20px; }
+.pbc-startup {
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: grid;
+  place-items: center;
+  padding: calc(20px + env(safe-area-inset-top)) calc(20px + env(safe-area-inset-right)) calc(20px + env(safe-area-inset-bottom)) calc(20px + env(safe-area-inset-left));
+  background: radial-gradient(circle at 50% 18%, var(--primary-soft), transparent 42%), linear-gradient(180deg, var(--bg-grad), var(--background));
+}
+.pbc-startup__card { width: min(100%, 420px); padding: 28px; border: 1px solid var(--border); border-radius: var(--r-lg); background: rgb(255 255 255 / 92%); box-shadow: var(--shadow); }
+.pbc-startup__brand { display: flex; align-items: center; gap: 12px; }
+.pbc-startup__copy { margin-top: 28px; }
+.pbc-startup__copy h1 { margin: 0; color: var(--foreground); font-size: 22px; font-weight: 850; letter-spacing: -.025em; }
+.pbc-startup__copy p { margin: 7px 0 0; color: var(--muted); font-size: 13px; line-height: 1.5; }
+.pbc-startup__progress { height: 4px; margin-top: 22px; overflow: hidden; border-radius: 999px; background: var(--primary-soft); }
+.pbc-startup__progress span { display: block; width: 42%; height: 100%; border-radius: inherit; background: linear-gradient(90deg, var(--primary), var(--primary-strong)); animation: pbc-startup-progress 1.1s ease-in-out infinite alternate; }
+.pbc-startup__preview { display: grid; gap: 9px; margin-top: 24px; }
+.pbc-startup__preview .pbc-loadingbar:nth-child(1) { width: 76%; }
+.pbc-startup__preview .pbc-loadingbar:nth-child(2) { width: 100%; }
+.pbc-startup__preview .pbc-loadingbar:nth-child(3) { width: 58%; }
+@keyframes pbc-startup-progress {
+  from { transform: translateX(-12%); }
+  to { transform: translateX(150%); }
+}
 
 /* Notices / dialogs */
 .pbc-alert { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 16px; padding: 10px 13px; border: 1px solid var(--border); border-radius: 10px; font-size: 13px; font-weight: 600; line-height: 1.45; }
@@ -275,6 +298,33 @@
 .pbc-jobcalendar__job--muted { color: var(--muted); background: var(--surface-soft); }
 .pbc-jobcalendar__job--past { border-color: var(--border); color: var(--muted); background: var(--surface-soft); opacity: .7; }
 .pbc-jobcalendar__job--past b { text-decoration: line-through; text-decoration-thickness: 1.5px; }
+.pbc-loadingbar,
+.pbc-loadingbox { display: block; overflow: hidden; background: var(--surface-soft); }
+.pbc-loadingbar { height: 12px; border-radius: 999px; }
+.pbc-loadingbox { width: 40px; height: 40px; border-radius: 10px; }
+.pbc-loadingbar,
+.pbc-loadingbox,
+.pbc-jobcalendar-loading__day { animation: pbc-loading-pulse 1.25s ease-in-out infinite alternate; }
+.pbc-loading-topbar__title { width: 112px; }
+.pbc-loading-pagehead__title { width: 84px; height: 26px; }
+.pbc-loading-pagehead__copy { width: min(100%, 340px); margin-top: 10px; }
+.pbc-jobcalendar-loading { display: grid; min-width: 0; gap: 14px; }
+.pbc-jobcalendar-loading__toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.pbc-jobcalendar-loading__refresh { width: 96px; height: 36px; border-radius: 10px; }
+.pbc-jobcalendar-loading__monthnav { display: flex; align-items: center; gap: 10px; }
+.pbc-jobcalendar-loading__month { width: 138px; height: 16px; }
+.pbc-jobcalendar-loading__viewport { min-width: 0; max-width: 100%; overflow: hidden; border: 1px solid var(--border); border-radius: var(--r-md); background: var(--surface); box-shadow: var(--shadow-card); }
+.pbc-jobcalendar-loading__grid { display: grid; min-width: 910px; grid-template-columns: repeat(7, minmax(130px, 1fr)); }
+.pbc-jobcalendar-loading__weekday { padding: 13px 8px; border-right: 1px solid var(--border); border-bottom: 1px solid var(--border); color: var(--muted); font-size: 11px; font-weight: 900; letter-spacing: .08em; text-align: center; }
+.pbc-jobcalendar-loading__weekday:nth-child(7) { border-right: 0; }
+.pbc-jobcalendar-loading__day { min-height: 142px; padding: 8px; border-right: 1px solid var(--border); border-bottom: 1px solid var(--border); background: var(--surface); }
+.pbc-jobcalendar-loading__day:nth-child(7n) { border-right: 0; }
+.pbc-jobcalendar-loading__date { width: 20px; height: 10px; }
+.pbc-jobcalendar-loading__job { width: 100%; height: 42px; margin-top: 10px; border-radius: 6px; background: var(--primary-soft); }
+@keyframes pbc-loading-pulse {
+  from { opacity: .48; }
+  to { opacity: 1; }
+}
 @media (max-width: 640px) {
   .pbc-jobcalendar__toolbar { align-items: stretch; flex-direction: column; }
   .pbc-jobcalendar__toolbar > .pbc-btn { align-self: flex-start; }
@@ -290,6 +340,21 @@
   .pbc-jobcalendar__job b,
   .pbc-jobcalendar__jobmeta { display: none; }
   .pbc-jobcalendar__mobilelabel { display: block; overflow: hidden; font-size: 9px; font-weight: 850; line-height: 1; text-overflow: ellipsis; white-space: nowrap; }
+  .pbc-jobcalendar-loading__toolbar { align-items: stretch; flex-direction: column; }
+  .pbc-jobcalendar-loading__refresh { width: 104px; }
+  .pbc-jobcalendar-loading__monthnav { display: grid; width: 100%; grid-template-columns: auto minmax(0, 1fr) auto; gap: 8px; }
+  .pbc-jobcalendar-loading__month { justify-self: center; width: min(100%, 132px); }
+  .pbc-jobcalendar-loading__grid { width: 100%; min-width: 0; grid-template-columns: repeat(7, minmax(0, 1fr)); }
+  .pbc-jobcalendar-loading__weekday { min-width: 0; padding: 10px 0; font-size: 9px; letter-spacing: .03em; }
+  .pbc-jobcalendar-loading__day { min-width: 0; min-height: 72px; overflow: hidden; padding: 4px 2px; }
+  .pbc-jobcalendar-loading__date { width: 12px; height: 8px; margin-left: 2px; }
+  .pbc-jobcalendar-loading__job { height: 44px; margin-top: 4px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .pbc-loadingbar,
+  .pbc-loadingbox,
+  .pbc-jobcalendar-loading__day,
+  .pbc-startup__progress span { animation: none; }
 }
 .pbc-metric { border: 1px solid var(--border); border-radius: 10px; background: #fff; padding: 10px 12px; }
 .pbc-metric span { display: block; font-size: 11.5px; font-weight: 700; color: var(--muted); }

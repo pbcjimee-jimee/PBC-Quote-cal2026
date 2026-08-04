@@ -1,3 +1,19 @@
+import { JobsLoadingShell } from '@/components/jobs/jobs-loading-shell'
+
 export default function JobsLoading() {
-  return <main className="pbc-page"><div className="pbc-card pbc-card--pad animate-pulse"><div className="h-6 w-40 rounded bg-[var(--surface-soft)]" /><div className="mt-4 h-48 rounded bg-[var(--surface-soft)]" /></div></main>
+  return (
+    <main>
+      <header className="pbc-topbar" aria-hidden="true">
+        <span className="pbc-loadingbar pbc-loading-topbar__title" />
+        <span className="pbc-loadingbox" />
+      </header>
+      <div className="pbc-page">
+        <div className="pbc-pagehead" aria-hidden="true">
+          <span className="pbc-loadingbar pbc-loading-pagehead__title" />
+          <span className="pbc-loadingbar pbc-loading-pagehead__copy" />
+        </div>
+        <JobsLoadingShell />
+      </div>
+    </main>
+  )
 }

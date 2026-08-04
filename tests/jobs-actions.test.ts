@@ -175,7 +175,7 @@ describe('job actions', () => {
     })
   })
 
-  it('does not query jobs when the linked Jobber team name differs from the login name', async () => {
+  it('does not expose jobs when the linked Jobber team name differs from the login name', async () => {
     mocks.listJobberTeamUsers.mockResolvedValueOnce([{
       id: 'jobber-user-1', fullName: 'Edgar', status: 'ACTIVE',
       isAccountAdmin: false, isAccountOwner: false,
@@ -185,7 +185,6 @@ describe('job actions', () => {
       ok: true,
       data: { jobs: [], assignmentLinked: false, filteredJobberUserId: null },
     })
-    expect(mocks.listJobberJobs).not.toHaveBeenCalled()
   })
 
   it('shows no jobs for supervisor names outside Eric, Edgar, and Steve', async () => {
@@ -331,6 +330,39 @@ describe('job actions', () => {
     })
     resolveSnapshots([])
     await expect(result).resolves.toMatchObject({ ok: true })
+  })
+
+  it('starts the linked supervisor monthly schedule while validating the Jobber identity', async () => {
+    const teamUsers = [{
+      id: 'jobber-user-1', fullName: 'Eric', status: 'ACTIVE',
+      isAccountAdmin: false, isAccountOwner: false,
+    }] as const
+    let resolveTeamUsers!: (value: typeof teamUsers) => void
+    const pendingTeamUsers = new Promise<typeof teamUsers>((resolve) => {
+      resolveTeamUsers = resolve
+    })
+    let signalJobsStarted!: () => void
+    const jobsStarted = new Promise<void>((resolve) => {
+      signalJobsStarted = resolve
+    })
+    mocks.listJobberTeamUsers.mockReturnValueOnce(pendingTeamUsers)
+    mocks.listJobberJobs.mockImplementationOnce(async () => {
+      signalJobsStarted()
+      return [job]
+    })
+
+    const result = listMyJobs({ month: '2026-08' })
+    const startedBeforeIdentity = await Promise.race([
+      jobsStarted.then(() => true),
+      new Promise<false>((resolve) => setTimeout(() => resolve(false), 25)),
+    ])
+    resolveTeamUsers(teamUsers)
+
+    expect(startedBeforeIdentity).toBe(true)
+    await expect(result).resolves.toMatchObject({
+      ok: true,
+      data: { jobs: [{ id: 'job-1' }], filteredJobberUserId: 'jobber-user-1' },
+    })
   })
 
   it('resolves an admin supervisor filter through the service client', async () => {

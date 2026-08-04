@@ -60,6 +60,7 @@ export interface JobDetailData extends JobListItem {
 interface ResolvedJobberFilter {
   readonly supervisorIdentity: SupervisorIdentity | null
   readonly assignmentLinked: boolean
+  readonly assignedJobs?: Promise<readonly JobberJobSummary[]>
 }
 
 interface SupervisorIdentity {
@@ -86,20 +87,26 @@ export async function listMyJobs(input: unknown = {}): Promise<ActionResult<JobL
   if (!appUser.ok) return appUser
 
   try {
-    const resolvedFilter = await resolveJobberFilter(appUser.profile, parsed.data.supervisorProfileId)
+    const visitRange = resolveJobCalendarRange(parsed.data.month)
+    const resolvedFilter = await resolveJobberFilter(
+      appUser.profile,
+      parsed.data.supervisorProfileId,
+      visitRange,
+    )
     if (!resolvedFilter.assignmentLinked) {
       return { ok: true, data: { jobs: [], assignmentLinked: false, filteredJobberUserId: null } }
     }
     const jobberUserId = resolvedFilter.supervisorIdentity?.jobberUserId ?? null
 
     const loaded = resolvedFilter.supervisorIdentity === null
-      ? await loadAdminJobList(appUser.user.id, resolveJobCalendarRange(parsed.data.month))
+      ? await loadAdminJobList(appUser.user.id, visitRange)
       : await loadAssignedJobList(
           appUser.user.id,
           resolvedFilter.supervisorIdentity,
           listJobSnapshots(),
           false,
-          resolveJobCalendarRange(parsed.data.month),
+          visitRange,
+          resolvedFilter.assignedJobs,
         )
 
     return {
@@ -206,10 +213,10 @@ export async function refreshJobDetail(input: unknown): Promise<ActionResult<Job
 async function resolveJobberFilter(
   profile: AppUserProfile,
   supervisorProfileId?: string | null,
+  visitRange?: JobberVisitRange,
 ): Promise<ResolvedJobberFilter> {
   if (profile.role === 'supervisor') {
-    const supervisorIdentity = await resolveSupervisorIdentity(profile.jobberUserId, profile.displayName)
-    return { supervisorIdentity, assignmentLinked: supervisorIdentity !== null }
+    return resolveSupervisorListIdentity(profile.jobberUserId, profile.displayName, visitRange)
   }
   if (!supervisorProfileId) return { supervisorIdentity: null, assignmentLinked: true }
 
@@ -222,11 +229,11 @@ async function resolveJobberFilter(
     .eq('is_active', true)
     .maybeSingle()
   if (error) throw new Error('Unable to read supervisor profile')
-  const supervisorIdentity = await resolveSupervisorIdentity(
+  return resolveSupervisorListIdentity(
     data?.jobber_user_id ?? null,
     data?.display_name ?? null,
+    visitRange,
   )
-  return { supervisorIdentity, assignmentLinked: supervisorIdentity !== null }
 }
 
 async function loadAdminJobList(
@@ -258,10 +265,11 @@ async function loadAssignedJobList(
   existingSnapshots: Promise<readonly StoredJobSnapshot[]> | readonly StoredJobSnapshot[],
   forceRefresh: boolean,
   visitRange: JobberVisitRange,
+  preloadedAssignedJobs?: Promise<readonly JobberJobSummary[]>,
 ): Promise<LoadedJobSnapshots> {
   const { jobberUserId } = supervisorIdentity
   const [assignedJobs, cachedSnapshots] = await Promise.all([
-    listJobberJobs(jobberUserId, visitRange),
+    preloadedAssignedJobs ?? listJobberJobs(jobberUserId, visitRange),
     Promise.resolve(existingSnapshots),
   ])
   const assignedJobIds = new Set(assignedJobs.map((job) => job.id))
@@ -428,6 +436,29 @@ async function resolveSupervisorIdentity(
   const linkedUser = nameMatches.find((teamUser) => teamUser.id === jobberUserId)
   const matchedUser = linkedUser ?? (nameMatches.length === 1 ? nameMatches[0] : null)
   return matchedUser ? { jobberUserId: matchedUser.id, normalizedName } : null
+}
+
+async function resolveSupervisorListIdentity(
+  jobberUserId: string | null,
+  displayName: string | null,
+  visitRange?: JobberVisitRange,
+): Promise<ResolvedJobberFilter> {
+  if (!displayName || !OFFICIAL_SUPERVISOR_NAMES.has(normalizePersonName(displayName))) {
+    return { supervisorIdentity: null, assignmentLinked: false }
+  }
+  const assignedJobs = jobberUserId && visitRange
+    ? listJobberJobs(jobberUserId, visitRange)
+    : undefined
+  // A stale or mismatched link discards this speculative request, so handle that rejection here.
+  void assignedJobs?.catch(() => undefined)
+
+  const supervisorIdentity = await resolveSupervisorIdentity(jobberUserId, displayName)
+  const canReuseAssignedJobs = supervisorIdentity?.jobberUserId === jobberUserId
+  return {
+    supervisorIdentity,
+    assignmentLinked: supervisorIdentity !== null,
+    ...(canReuseAssignedJobs && assignedJobs ? { assignedJobs } : {}),
+  }
 }
 
 function normalizePersonName(name: string): string {
