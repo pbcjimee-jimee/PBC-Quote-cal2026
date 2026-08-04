@@ -1,8 +1,14 @@
 'use server'
 
 import { z } from 'zod'
+import { calculateEstimatedLabour, type EstimatedLabourSummary } from '@/lib/jobber/estimated-labour'
 import { calculateFinancialSummaryFromAmounts, type DecimalFinancialSummary } from '@/lib/jobber/financial-summary'
-import { fetchJobberJobDetail, listJobberJobs, listJobberTeamUsers } from '@/lib/jobber/job-gateway'
+import {
+  fetchJobberJobAssignmentVisits,
+  fetchJobberJobDetail,
+  listJobberJobs,
+  listJobberTeamUsers,
+} from '@/lib/jobber/job-gateway'
 import {
   getJobSnapshot,
   listJobSnapshots,
@@ -55,6 +61,7 @@ export interface JobListData {
 
 export interface JobDetailData extends JobListItem {
   readonly expenses: readonly JobberExpense[]
+  readonly labourEstimate: EstimatedLabourSummary
 }
 
 interface ResolvedJobberFilter {
@@ -175,7 +182,7 @@ export async function getJobDetail(input: unknown): Promise<ActionResult<JobDeta
 
   try {
     let snapshot = await getJobSnapshot(parsed.data.jobberJobId)
-    if (snapshot && appUser.profile.role === 'admin') {
+    if (snapshot && appUser.profile.role === 'admin' && snapshot.labourEstimate !== null) {
       return { ok: true, data: toDetail(snapshot) }
     }
     snapshot = await fetchAuthorizedDetail(appUser.profile, appUser.user.id, parsed.data.jobberJobId, snapshot)
@@ -362,12 +369,18 @@ async function fetchAuthorizedDetail(
     }
     existing = synchronized.find((snapshot) => snapshot.job.id === jobberJobId) ?? null
   }
-  if (existing && !forceFetch) {
+  if (existing && !forceFetch && existing.labourEstimate !== null) {
     return existing
   }
 
-  const detail = await fetchJobberJobDetail(jobberJobId)
-  const [saved] = await saveJobSnapshots([buildPayload(detail, jobberUserId, existing)], actorId)
+  const [detail, assignmentVisits] = await Promise.all([
+    fetchJobberJobDetail(jobberJobId),
+    fetchJobberJobAssignmentVisits(jobberJobId),
+  ])
+  const labourEstimate = calculateEstimatedLabour(assignmentVisits)
+  const [saved] = await saveJobSnapshots([
+    buildPayload(detail, jobberUserId, existing, labourEstimate),
+  ], actorId)
   if (!saved) throw new Error('Unable to save Jobber job snapshot')
   return saved
 }
@@ -376,6 +389,7 @@ function buildPayload(
   detail: JobberJobDetail,
   jobberUserId: string | null,
   existing?: StoredJobSnapshot | null,
+  labourEstimate: EstimatedLabourSummary | null = existing?.labourEstimate ?? null,
 ): JobSnapshotPayload {
   const scopeJobberUserIds = new Set(existing?.scopeJobberUserIds ?? [])
   if (jobberUserId) scopeJobberUserIds.add(jobberUserId)
@@ -384,6 +398,7 @@ function buildPayload(
     job,
     expenses,
     financialSummary: calculateFinancialSummaryFromAmounts(job.total, expenses.map((expense) => expense.total)),
+    labourEstimate,
     scopeJobberUserIds: [...scopeJobberUserIds].sort(),
     refreshedForAll: existing?.refreshedForAll === true || jobberUserId === null,
   }
@@ -415,7 +430,14 @@ function toListItem(snapshot: StoredJobSnapshot, liveSummary?: JobberJobSummary)
 }
 
 function toDetail(snapshot: StoredJobSnapshot): JobDetailData {
-  return { ...toListItem(snapshot), expenses: snapshot.expenses }
+  if (snapshot.labourEstimate === null) {
+    throw new Error('Jobber labour estimate has not been refreshed')
+  }
+  return {
+    ...toListItem(snapshot),
+    expenses: snapshot.expenses,
+    labourEstimate: snapshot.labourEstimate,
+  }
 }
 
 function sortJobItems(items: readonly JobListItem[]): readonly JobListItem[] {

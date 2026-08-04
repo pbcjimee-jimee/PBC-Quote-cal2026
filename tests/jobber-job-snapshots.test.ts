@@ -22,6 +22,7 @@ const payload = {
     enteredByName: null, paidByName: null, reimbursableToName: null,
   }],
   financialSummary: { revenue: '1000', expensesTotal: '100', profit: '900', profitMarginPercent: '90' },
+  labourEstimate: { assignmentCount: 14, ratePerAssignment: '450', total: '6300' },
   scopeJobberUserIds: ['user-1'],
   refreshedForAll: false,
 }
@@ -63,6 +64,21 @@ describe('Jobber job snapshot repository', () => {
 
     expect(snapshots[0]?.job.startAt).toBeNull()
     expect(snapshots[0]?.job.endAt).toBeNull()
+  })
+
+  it('loads legacy snapshots without a labour estimate as incomplete', async () => {
+    const { labourEstimate: _labourEstimate, ...legacyPayload } = payload
+    const order = vi.fn(async () => ({
+      data: [{ ...row, payload: legacyPayload }],
+      error: null,
+    }))
+    mocks.createServiceClient.mockResolvedValue({
+      from: vi.fn(() => ({ select: vi.fn(() => ({ order })) })),
+    })
+
+    const snapshots = await listJobSnapshots()
+
+    expect(snapshots[0]?.labourEstimate).toBeNull()
   })
 
   it('rejects malformed cached payloads', async () => {

@@ -4,6 +4,7 @@ import Decimal from 'decimal.js'
 import { z } from 'zod'
 import { createServiceClient } from '@/lib/supabase/server'
 import type { Json } from '@/lib/supabase/types'
+import type { EstimatedLabourSummary } from './estimated-labour'
 import type { DecimalFinancialSummary } from './financial-summary'
 import type { JobberExpense, JobberJobDetail } from './job-types'
 
@@ -11,6 +12,7 @@ export interface JobSnapshotPayload {
   readonly job: Omit<JobberJobDetail, 'expenses'>
   readonly expenses: readonly JobberExpense[]
   readonly financialSummary: DecimalFinancialSummary
+  readonly labourEstimate: EstimatedLabourSummary | null
   readonly scopeJobberUserIds: readonly string[]
   readonly refreshedForAll: boolean
 }
@@ -56,10 +58,16 @@ const financialSchema = z.object({
   profit: moneySchema,
   profitMarginPercent: moneySchema.nullable(),
 })
+const labourEstimateSchema = z.object({
+  assignmentCount: z.number().int().nonnegative(),
+  ratePerAssignment: moneySchema,
+  total: moneySchema,
+})
 const payloadSchema = z.object({
   job: jobSchema,
   expenses: z.array(expenseSchema),
   financialSummary: financialSchema,
+  labourEstimate: labourEstimateSchema.nullable().default(null),
   scopeJobberUserIds: z.array(z.string().min(1)),
   refreshedForAll: z.boolean(),
 })

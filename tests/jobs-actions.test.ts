@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
   listJobberJobs: vi.fn(),
   listJobberTeamUsers: vi.fn(),
   fetchJobberJobDetail: vi.fn(),
+  fetchJobberJobAssignmentVisits: vi.fn(),
 }))
 
 vi.mock('@/lib/security/require-app-user', () => ({ requireRole: mocks.requireRole }))
@@ -24,6 +25,7 @@ vi.mock('@/lib/jobber/job-gateway', () => ({
   listJobberJobs: mocks.listJobberJobs,
   listJobberTeamUsers: mocks.listJobberTeamUsers,
   fetchJobberJobDetail: mocks.fetchJobberJobDetail,
+  fetchJobberJobAssignmentVisits: mocks.fetchJobberJobAssignmentVisits,
 }))
 
 import { getJobDetail, listMyJobs, refreshJobDetail, refreshJobs } from '@/lib/actions/jobs'
@@ -44,6 +46,7 @@ const snapshot = {
   financialSummary: {
     revenue: '12437.02', expensesTotal: '603.89', profit: '11833.13', profitMarginPercent: '95.144419',
   },
+  labourEstimate: { assignmentCount: 14, ratePerAssignment: '450', total: '6300' },
   scopeJobberUserIds: ['jobber-user-1'],
   refreshedForAll: false,
   refreshedAt: '2026-07-31T00:00:00.000Z',
@@ -77,6 +80,7 @@ describe('job actions', () => {
     }])
     mocks.listJobberJobs.mockResolvedValue([job])
     mocks.fetchJobberJobDetail.mockResolvedValue({ ...job, expenses: [expense] })
+    mocks.fetchJobberJobAssignmentVisits.mockResolvedValue(assignmentVisits(14))
     mocks.saveSnapshots.mockImplementation(async (payloads: typeof snapshot[], actorId: string) => (
       payloads.map((payload) => ({
         ...payload,
@@ -439,6 +443,27 @@ describe('job actions', () => {
     expect(result).toMatchObject({ ok: true, data: { id: 'job-1', expenses: [{ id: 'expense-1' }] } })
     expect(mocks.listJobberJobs).toHaveBeenCalledWith('jobber-user-1')
     expect(mocks.fetchJobberJobDetail).not.toHaveBeenCalled()
+    expect(mocks.fetchJobberJobAssignmentVisits).not.toHaveBeenCalled()
+  })
+
+  it('backfills a legacy admin detail snapshot before returning it', async () => {
+    mocks.requireRole.mockResolvedValueOnce(appUser('admin', null))
+    mocks.getSnapshot.mockResolvedValueOnce({
+      ...snapshot,
+      labourEstimate: null,
+      refreshedForAll: true,
+    })
+
+    const result = await getJobDetail({ jobberJobId: 'job-1' })
+
+    expect(result).toMatchObject({
+      ok: true,
+      data: {
+        labourEstimate: { assignmentCount: 14, ratePerAssignment: '450', total: '6300' },
+      },
+    })
+    expect(mocks.fetchJobberJobDetail).toHaveBeenCalledWith('job-1')
+    expect(mocks.fetchJobberJobAssignmentVisits).toHaveBeenCalledWith('job-1')
   })
 
   it('denies cached detail after the supervisor assignment is revoked', async () => {
@@ -476,9 +501,63 @@ describe('job actions', () => {
 
     expect(result).toMatchObject({ ok: true, data: { id: 'job-1' } })
     expect(mocks.fetchJobberJobDetail).toHaveBeenCalledWith('job-1')
+    expect(mocks.fetchJobberJobAssignmentVisits).toHaveBeenCalledWith('job-1')
     expect(mocks.saveSnapshots).toHaveBeenCalledWith([
-      expect.objectContaining({ scopeJobberUserIds: ['jobber-user-1'] }),
+      expect.objectContaining({
+        scopeJobberUserIds: ['jobber-user-1'],
+        labourEstimate: { assignmentCount: 14, ratePerAssignment: '450', total: '6300' },
+      }),
     ], 'supervisor-1')
+  })
+
+  it.each([
+    { assignmentCount: 12, total: '5400' },
+    { assignmentCount: 15, total: '6750' },
+  ])('recalculates a stale detail with $assignmentCount assignments', async ({ assignmentCount, total }) => {
+    const staleSnapshot = { ...snapshot, refreshedAt: '2020-01-01T00:00:00.000Z' }
+    mocks.getSnapshot.mockResolvedValueOnce(staleSnapshot)
+    mocks.synchronizeSnapshotScope.mockResolvedValueOnce([staleSnapshot])
+    mocks.fetchJobberJobAssignmentVisits.mockResolvedValueOnce(assignmentVisits(assignmentCount))
+
+    const result = await refreshJobDetail({ jobberJobId: 'job-1' })
+
+    expect(result).toMatchObject({
+      ok: true,
+      data: { labourEstimate: { assignmentCount, ratePerAssignment: '450', total } },
+    })
+  })
+
+  it('keeps the previous snapshot when assignment refresh fails', async () => {
+    const staleSnapshot = { ...snapshot, refreshedAt: '2020-01-01T00:00:00.000Z' }
+    mocks.getSnapshot.mockResolvedValueOnce(staleSnapshot)
+    mocks.synchronizeSnapshotScope.mockResolvedValueOnce([staleSnapshot])
+    mocks.fetchJobberJobAssignmentVisits.mockRejectedValueOnce(new Error('assignment detail unavailable'))
+
+    await expect(refreshJobDetail({ jobberJobId: 'job-1' })).resolves.toEqual({
+      ok: false,
+      error: 'assignment detail unavailable',
+      code: 'JOBBER_ERROR',
+    })
+    expect(mocks.saveSnapshots).not.toHaveBeenCalled()
+  })
+
+  it('preserves a cached labour estimate during list refresh without fetching assignments', async () => {
+    mocks.requireRole.mockResolvedValueOnce(appUser('admin', null))
+    const staleSnapshot = {
+      ...snapshot,
+      refreshedForAll: true,
+      refreshedAt: '2020-01-01T00:00:00.000Z',
+    }
+    mocks.listSnapshots.mockResolvedValueOnce([staleSnapshot])
+
+    await refreshJobs({})
+
+    expect(mocks.saveSnapshots).toHaveBeenCalledWith([
+      expect.objectContaining({
+        labourEstimate: { assignmentCount: 14, ratePerAssignment: '450', total: '6300' },
+      }),
+    ], 'admin-1')
+    expect(mocks.fetchJobberJobAssignmentVisits).not.toHaveBeenCalled()
   })
 
   it('denies forced detail refresh after reassignment before fetching fresh financials', async () => {
@@ -530,3 +609,10 @@ describe('job actions', () => {
     if (result.ok) expect(result.data.jobs).toHaveLength(11)
   })
 })
+
+function assignmentVisits(count: number) {
+  return Array.from({ length: count }, (_, index) => ({
+    id: `labour-visit-${index + 1}`,
+    assignedUsers: [{ id: 'worker-1', fullName: 'Eric' }],
+  }))
+}

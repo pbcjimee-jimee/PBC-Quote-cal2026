@@ -360,7 +360,7 @@ git commit -m "feat: fetch Jobber labour assignments"
 
 ---
 
-### Task 4: 스냅샷 역호환과 상세 Refresh 재계산을 연결
+### Task 4: 스냅샷 역호환과 상세 Refresh 재계산을 연결 ✅
 
 **Files:**
 - Modify: `lib/jobber/job-snapshots.ts:10-64`
@@ -374,7 +374,7 @@ git commit -m "feat: fetch Jobber labour assignments"
 - Produces: `JobSnapshotPayload.labourEstimate: EstimatedLabourSummary | null`.
 - Produces: `JobDetailData.labourEstimate: EstimatedLabourSummary`.
 
-- [ ] **Step 1: legacy snapshot RED 테스트를 작성한다**
+- [x] **Step 1: legacy snapshot RED 테스트를 작성한다**
 
 기존 production JSONB에는 새 키가 없으므로 parser가 아래처럼 역호환해야 한다.
 
@@ -392,7 +392,7 @@ labourEstimate: {
 }
 ```
 
-- [ ] **Step 2: Zod schema와 snapshot 타입을 구현한다**
+- [x] **Step 2: Zod schema와 snapshot 타입을 구현한다**
 
 ```typescript
 const labourEstimateSchema = z.object({
@@ -409,7 +409,7 @@ const payloadSchema = z.object({
 
 JSONB payload 확장이므로 Supabase migration은 만들지 않는다.
 
-- [ ] **Step 3: 상세 action RED 테스트를 작성한다**
+- [x] **Step 3: 상세 action RED 테스트를 작성한다**
 
 다음 호출 계약을 각각 검증한다.
 
@@ -424,13 +424,13 @@ assignment fetch 실패 -> saveJobSnapshots 미호출, ActionResult JOBBER_ERROR
 supervisor 비배정 job -> assignment API 호출 전 FORBIDDEN
 ```
 
-- [ ] **Step 4: action 테스트가 RED인지 확인한다**
+- [x] **Step 4: action 테스트가 RED인지 확인한다**
 
 Run: `npm.cmd test -- tests/jobber-job-snapshots.test.ts tests/jobs-actions.test.ts`
 
 Expected: FAIL because snapshot/action labour fields are absent.
 
-- [ ] **Step 5: 상세 전용 composition을 구현한다**
+- [x] **Step 5: 상세 전용 composition을 구현한다**
 
 `getJobDetail`의 admin cached fast path는 estimate가 있을 때만 사용한다.
 
@@ -452,7 +452,7 @@ const labourEstimate = calculateEstimatedLabour(assignmentVisits)
 
 두 요청이 모두 성공한 뒤에만 `buildPayload`와 `saveJobSnapshots`를 호출한다. 목록용 `fetchAndSaveJobDetails`는 기존 `existing?.labourEstimate ?? null`을 보존하고 assignment API를 호출하지 않는다.
 
-- [ ] **Step 6: 상세 타입 경계를 완성한다**
+- [x] **Step 6: 상세 타입 경계를 완성한다**
 
 ```typescript
 export interface JobDetailData extends JobListItem {
@@ -476,13 +476,13 @@ function toDetail(snapshot: StoredJobSnapshot): JobDetailData {
 }
 ```
 
-- [ ] **Step 7: snapshot/action 테스트를 GREEN으로 만든다**
+- [x] **Step 7: snapshot/action 테스트를 GREEN으로 만든다**
 
 Run: `npm.cmd test -- tests/jobber-job-snapshots.test.ts tests/jobs-actions.test.ts`
 
 Expected: PASS; 특히 14→12 refresh가 `$6,300`→`$5,400`으로 바뀌고 실패 시 snapshot save가 0회다.
 
-- [ ] **Step 8: snapshot/action 연결을 커밋한다**
+- [x] **Step 8: snapshot/action 연결을 커밋한다**
 
 ```bash
 git add lib/jobber/job-snapshots.ts lib/actions/jobs.ts tests/jobber-job-snapshots.test.ts tests/jobs-actions.test.ts

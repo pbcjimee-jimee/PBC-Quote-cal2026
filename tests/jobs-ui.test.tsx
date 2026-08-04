@@ -19,6 +19,7 @@ const job = {
   financialSummary: {
     revenue: '12437.02', expensesTotal: '1493.89', profit: '10943.13', profitMarginPercent: '87.988361',
   },
+  labourEstimate: { assignmentCount: 14, ratePerAssignment: '450', total: '6300' },
   refreshedAt: '2026-07-31T00:00:00.000Z',
 }
 
