@@ -12,11 +12,14 @@
 - [x] 390px viewport(콘텐츠 폭 375px)에서 PWA 시작 화면과 7열 Jobs 로딩 셸 표시, page-level 가로 overflow 없음
 - [x] warm reload 2회에서 시작 화면 0.44~0.60초, Jobs 로딩 셸 0.67~1.05초, 달력 완성 2.03~2.28초 관찰(변경 전 달력 완성 약 3.77초)
 - [x] Jobs 로딩 grid 341px/viewport 343px, document scroll width 375px, 검증 이후 새 browser console error 0건
-- [ ] iPhone 홈 화면 앱 실기기 재측정과 production 배포 확인
+- [x] 커밋 `e8a5e26` production deployment `dpl_7VB1EtTDKnUbf47apC7e8XnNv6Vc` Ready 및 운영 alias 연결
+- [ ] iPhone 홈 화면 앱 실기기 재측정
 
-## 배포 후 브라우저·실기기 QA (미실행)
+## 배포 후 브라우저·실기기 QA (부분 실행)
 
-- [ ] 비로그인 `/manifest.webmanifest`·`/sw.js`·`/offline` 각 200, redirect 없음
+- [x] 비로그인 `/manifest.webmanifest`·`/sw.js`·`/offline` 각 200, redirect 없음
+- [x] `/sw.js` `Cache-Control: public, max-age=0, must-revalidate`
+- [x] 390px production `/login` page-level 가로 overflow 없음, browser console error 0건, 최근 production runtime error log 0건
 - [ ] Chrome DevTools Application: manifest 오류 0건, service worker activated
 - [ ] Android Chrome: 설치 action → 홈 화면 아이콘 → standalone 실행, theme color·로그인 세션 정상
 - [ ] iPhone Safari: `공유 → 홈 화면에 추가` → 아이콘·이름·standalone 정상, 최초 재로그인 후 세션 유지
