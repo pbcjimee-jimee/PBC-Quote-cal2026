@@ -99,6 +99,7 @@
 
 ## 🔲 남은 작업
 
+- **Job Expenses 상세 Estimate labour**: 구현 계획을 `docs/superpowers/plans/2026-08-05-job-estimated-labour.md`에 작성했다. Jobber job의 모든 visit에서 고유 `(visit ID, assigned user ID)` 배정 건수를 세되 정규화된 정확한 이름 `Connor`·`Admin`은 제외하고, AUD 450를 곱한 파생 금액을 `Job revenue` 바로 아래 표시한다. 상세 `Refresh`에서만 최신 배정을 다시 읽고, 원본 담당자 목록은 저장하지 않으며 기존 expense/profit 계산은 바꾸지 않는다. 구현 전 read-only G1에서 job #3103의 14건/AUD 6,300 기준값을 확인한다. 구현은 아직 시작하지 않았다.
 - **역할/Jobs G3 실계정 QA**: 기존 admin 2명이 운영 로그인을 직접 확인한다. admin이 `/settings/users`에서 supervisor 실제 이메일·표시 이름·임시 비밀번호를 입력하고 Jobber 팀원을 매핑한 뒤, 역할별 nav·직접 URL 차단·배정 job·expense·profit %를 실데이터로 QA한다. 비밀번호와 기존 admin 자격 증명은 채팅에서 취급하지 않는다.
 - **감사 발견 이슈** (2026-07-06): 우선순위별로 `docs/BACKLOG.md`에 등록. 2026-07-04 hardening으로 마진 CHECK·서버 액션 allowlist 해결, 2026-07-07 quote save conflict hardening으로 견적 저장 트랜잭션·동시 편집 충돌·product 스냅샷 재고정·Jobber 부분 성공 line id 보존을 반영. 남은 항목은 `docs/BACKLOG.md`의 미체크 항목 기준으로 처리.
 - **Supabase 실제 데이터 백업**: 운영 결정 대기(`TODOS.md` #2). Pro/PITR 우선, cron export는 restore 검증 포함 시만.
@@ -119,6 +120,7 @@
 
 | 날짜 | 작업 | 담당 |
 |---|---|---|
+| 2026-08-05 | Job Expenses 상세 `Estimate labour` 구현 계획 수립(`docs/superpowers/plans/2026-08-05-job-estimated-labour.md`). 집계 단위를 고유 visit/user 배정 건수로 정의하고 `Connor`·`Admin` 정확 이름 제외, AUD 450 고정 단가, #3103 기준 14건/AUD 6,300, 상세 Refresh 재계산, 파생 합계만 snapshot 저장, 기존 expense/profit 비변경을 확정했다. Jobber read-only 계약 검증 → 순수 Decimal 계산 → visit/assignedUsers 페이지네이션 → snapshot/action 역호환 → 상세 UI → 전체 검증의 6개 태스크로 나눴으며 구현은 미착수다. | Codex 5.6-Sol high |
 | 2026-08-04 | 모바일 PWA·Jobs 최적화 커밋 `e8a5e26`을 `origin/main`에 push했고 Vercel production deployment `dpl_7VB1EtTDKnUbf47apC7e8XnNv6Vc`가 해당 커밋을 빌드해 Ready/운영 alias 연결됨을 확인했다. `/manifest.webmanifest`·`/sw.js`·`/offline`·`/login` 200, SW `Cache-Control: public, max-age=0, must-revalidate`, 390px production login page overflow 0/browser console error 0, 최근 production runtime error log 0건을 확인했다. 인증된 Jobs production 측정과 iPhone 홈 화면 앱 실측은 사용자 세션에서 후속 확인한다. | Codex 5.6-Sol high |
 | 2026-08-04 | iPhone 홈 화면 앱의 시작·Jobs 체감 로딩을 로컬 최적화했다. 인증 데이터 없는 root loading, 모바일 7열/42일 Jobs loading shell, 저장된 Jobber ID의 live 팀 사용자 검증+월간 배정 조회 병렬화를 반영했다. 390px viewport에서 warm 달력 완성 2.03~2.28초(변경 전 약 3.77초), 시작 피드백 0.44~0.60초, page overflow 0, 새 console error 0건을 확인했다. `npm.cmd run verify`는 84 files/687 tests 통과(환경 조건 1 file/9 tests skip), coverage 83.73/70.16/93.68/89.35%, production build, audit 0 vulnerabilities를 통과했다. 이 로컬 완료 시점에는 iPhone 실기기 재측정과 production 배포를 실행하지 않았다. | Codex 5.6-Sol high |
 | 2026-08-03 | `jeonghoni@gmail.com` supervisor 로그인 실패를 진단해 Supabase Auth 계정과 active `user_profiles`는 정상이며, legacy Vercel `ALLOWED_LOGIN_EMAILS`가 password auth 요청 전에 차단하고 있음을 확인했다. 사용자 승인 후 해당 변수를 Production/Preview 환경에서 제거했고 `vercel env ls` 독립 확인 2회 모두 잔존 항목 0건을 확인했다. 변경 적용에는 새 production deployment가 필요하며 실제 비밀번호 로그인은 사용자가 직접 확인한다. | Codex 5.6-Sol high |
