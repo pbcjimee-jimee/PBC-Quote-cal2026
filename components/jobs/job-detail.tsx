@@ -15,7 +15,7 @@ export function JobDetail({ job }: { job: JobDetailData }) {
         <div><h1>Job #{job.jobNumber}</h1><p>{job.title || 'Untitled job'} · {job.jobStatus.replaceAll('_', ' ')}</p></div>
         <div className="flex flex-wrap gap-2"><JobRefreshButton jobberJobId={job.id} /><Link href={job.jobberWebUri} target="_blank" rel="noreferrer" className="pbc-btn pbc-btn--ghost">Open in Jobber</Link></div>
       </div>
-      <JobFinancials summary={job.financialSummary} />
+      <JobFinancials summary={job.financialSummary} labourEstimate={job.labourEstimate} />
       <section className="pbc-card pbc-card--pad">
         <div className="pbc-panelhead"><div><h2 className="pbc-paneltitle">Expenses</h2><p className="pbc-panelsub">{job.expenses.length} entries</p></div></div>
         {job.expenses.length === 0 ? <p className="pbc-empty mt-4">No expenses recorded.</p> : (

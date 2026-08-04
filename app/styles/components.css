@@ -267,6 +267,10 @@
 .pbc-jobfinancial__row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 12px; border-radius: var(--r-sm); font-weight: 700; }
 .pbc-jobfinancial__row .pbc-moneytext { color: inherit; }
 .pbc-jobfinancial__row--revenue { background: var(--primary-soft); color: var(--primary); }
+.pbc-jobfinancial__row--labour { flex-wrap: wrap; background: var(--surface-soft); color: var(--foreground); }
+.pbc-jobfinancial__row--labour .pbc-jobfinancial__label { min-width: 0; }
+.pbc-jobfinancial__row--labour small { display: block; margin-top: 2px; overflow-wrap: anywhere; color: var(--muted); font-size: .75rem; font-weight: 600; }
+.pbc-jobfinancial__row--labour .pbc-moneytext { flex: 0 0 auto; margin-left: auto; white-space: nowrap; }
 .pbc-jobfinancial__row--expenses { background: var(--warning-soft); color: var(--warning); }
 .pbc-jobfinancial__row--profit { background: var(--success-soft); color: var(--success); }
 .pbc-jobfinancial__bar { background: var(--hi); }
@@ -326,6 +330,8 @@
   to { opacity: 1; }
 }
 @media (max-width: 640px) {
+  .pbc-jobfinancial__row--labour { align-items: flex-start; row-gap: 8px; }
+  .pbc-jobfinancial__row--labour .pbc-jobfinancial__label { flex: 1 1 180px; }
   .pbc-jobcalendar__toolbar { align-items: stretch; flex-direction: column; }
   .pbc-jobcalendar__toolbar > .pbc-btn { align-self: flex-start; }
   .pbc-jobcalendar__monthnav { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; width: 100%; gap: 8px; }

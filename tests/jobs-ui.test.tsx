@@ -89,6 +89,11 @@ describe('jobs UI', () => {
 
     expect(markup).toContain('aria-label="Jobber profit"')
     expect(markup).toContain('Job revenue')
+    expect(markup).toContain('Estimate labour')
+    expect(markup).toContain('$6,300.00')
+    expect(markup).toContain('14 scheduled assignments × $450.00')
+    expect(markup.indexOf('Job revenue')).toBeLessThan(markup.indexOf('Estimate labour'))
+    expect(markup.indexOf('Estimate labour')).toBeLessThan(markup.indexOf('Expenses total'))
     expect(markup).toContain('Expenses total')
     expect(markup).toContain('paint')
     expect(markup).toContain('Dulux')
@@ -114,11 +119,26 @@ describe('jobs UI', () => {
   })
 
   it('uses distinct revenue, expense, and profit color treatments', () => {
-    const markup = renderToStaticMarkup(createElement(JobFinancials, { summary: job.financialSummary }))
+    const markup = renderToStaticMarkup(createElement(JobFinancials, {
+      summary: job.financialSummary,
+      labourEstimate: job.labourEstimate,
+    }))
 
     expect(markup).toContain('pbc-jobfinancial__row--revenue')
+    expect(markup).toContain('pbc-jobfinancial__row--labour')
     expect(markup).toContain('pbc-jobfinancial__row--expenses')
     expect(markup).toContain('pbc-jobfinancial__row--profit')
+  })
+
+  it('keeps estimated labour out of compact job cards', () => {
+    const markup = renderToStaticMarkup(createElement(JobFinancials, {
+      summary: job.financialSummary,
+      labourEstimate: job.labourEstimate,
+      compact: true,
+    }))
+
+    expect(markup).not.toContain('Estimate labour')
+    expect(markup).not.toContain('$6,300.00')
   })
 
   it('uses the dedicated detail progress bar color treatment', () => {

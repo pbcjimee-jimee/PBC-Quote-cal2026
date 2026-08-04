@@ -491,7 +491,7 @@ git commit -m "feat: refresh estimated job labour"
 
 ---
 
-### Task 5: Job revenue 아래 Estimate labour UI를 추가
+### Task 5: Job revenue 아래 Estimate labour UI를 추가 ✅
 
 **Files:**
 - Modify: `components/jobs/job-financials.tsx:15-42`
@@ -503,7 +503,7 @@ git commit -m "feat: refresh estimated job labour"
 - Consumes: `JobDetailData.labourEstimate`.
 - Produces: 상세 패널의 `Estimate labour` 행과 계산 근거 텍스트.
 
-- [ ] **Step 1: UI 순서와 금액 RED 테스트를 작성한다**
+- [x] **Step 1: UI 순서와 금액 RED 테스트를 작성한다**
 
 ```typescript
 expect(markup).toContain('Estimate labour')
@@ -515,13 +515,13 @@ expect(markup.indexOf('Estimate labour')).toBeLessThan(markup.indexOf('Expenses 
 
 compact `/jobs` 카드에는 `Estimate labour`가 표시되지 않는 것도 고정한다.
 
-- [ ] **Step 2: UI 테스트가 RED인지 확인한다**
+- [x] **Step 2: UI 테스트가 RED인지 확인한다**
 
 Run: `npm.cmd test -- tests/jobs-ui.test.tsx`
 
 Expected: FAIL because the new row is absent.
 
-- [ ] **Step 3: 상세 패널 행을 구현한다**
+- [x] **Step 3: 상세 패널 행을 구현한다**
 
 ```tsx
 <div className="pbc-jobfinancial__row pbc-jobfinancial__row--labour">
@@ -538,7 +538,7 @@ Expected: FAIL because the new row is absent.
 
 이 행은 full detail variant에서만 `Job revenue` 다음에 넣고 compact variant는 현재 Expenses/Profit 표시를 유지한다.
 
-- [ ] **Step 4: 토큰 기반 스타일과 모바일 줄바꿈을 추가한다**
+- [x] **Step 4: 토큰 기반 스타일과 모바일 줄바꿈을 추가한다**
 
 ```css
 .pbc-jobfinancial__row--labour {
@@ -557,13 +557,13 @@ Expected: FAIL because the new row is absent.
 
 좁은 화면에서는 label/meta와 금액이 겹치지 않도록 기존 row를 `flex-wrap: wrap` 가능하게 하되 다른 세 financial row의 데스크톱 정렬은 유지한다.
 
-- [ ] **Step 5: UI 테스트를 GREEN으로 만든다**
+- [x] **Step 5: UI 테스트를 GREEN으로 만든다**
 
 Run: `npm.cmd test -- tests/jobs-ui.test.tsx`
 
 Expected: PASS; 행 순서, `$6,300.00`, 근거 텍스트, compact 미표시가 확인된다.
 
-- [ ] **Step 6: UI를 커밋한다**
+- [x] **Step 6: UI를 커밋한다**
 
 ```bash
 git add components/jobs/job-financials.tsx components/jobs/job-detail.tsx app/styles/components.css tests/jobs-ui.test.tsx
