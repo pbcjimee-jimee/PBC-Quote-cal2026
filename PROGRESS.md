@@ -48,6 +48,7 @@
 - Controlled write-back: 공개 Product / Service line item만 같은 Jobber quote에 동기화, material 가격·내부 상세 미전송. GraphQL mutation 차단 가드 + write scope 최소화로 read-only 원칙 강제.
 - `jobber_snapshot` 캐시 + 수동 refresh + 변경 감지 diff 알림. Jobber option line preview/manual import. sync preview/retry.
 - G1 계약의 팀원·배정 job·expense read-only 조회, service-role 전용 `jobber_job_snapshots`, Decimal 기반 revenue/expense/profit 계산과 `/jobs` 목록·상세 수동 refresh를 추가했다. 기존 quote write-back 외 Jobber mutation이나 scope 변경은 없다.
+- Job Expenses 상세의 `Estimate labour`는 job 전체의 고유 `(visit ID, assigned user ID)` 배정에서 정규화된 정확한 이름 `Connor`·`Admin`을 제외하고 AUD 450를 곱한다. 상세 첫 진입은 기존 snapshot을 역호환 backfill하고 상세 `Refresh`는 최신 Jobber 배정을 다시 집계한다. 파생 count/rate/total만 JSONB에 저장하며 목록 조회, expense total, profit, profit %, Jobber mutation/scope는 변경하지 않는다.
 - Product & Service catalog(CSV import)·quote line template.
 
 ### 테스트/검증
@@ -95,11 +96,17 @@
 - Vercel production deployment `dpl_E6dit7ck1wt8drHXnQUG1xHk7BPA`는 `role` 커밋 `925bc933741628653b87287743a663f182d8e54b`를 빌드한다. 고유 URL 카나리 후 동일 artifact를 운영 도메인으로 승격했고, `/login`·manifest 200, 비로그인 `/jobs`·`/inventory`·`/settings/users` 로그인 귀결, 최근 runtime error 0을 확인했다. Build route에 Progress Invoice는 없다.
 - 배포 연결이 생성한 임시 로컬 OIDC `.env.local`은 커밋되지 않았고 카나리 후 삭제했다. 배포 직전 `role` worktree와 `origin/role`은 배포 소스 커밋 `925bc93`에서 일치했다.
 
+### Job Expenses Estimate labour (2026-08-05, 로컬 구현·검증 완료)
+
+- Jobber read-only G1에서 Job #3103의 전체 visit 6개를 확인했고, `Connor`·`Admin` 제외 고유 visit/user 배정은 14건, Estimate labour는 AUD 6,300이었다. query cost를 고려해 visit 전용 page size 10과 전체 페이지 순회를 사용하며 한 visit의 담당자가 100명을 넘어 중첩 connection이 잘리면 일부 합계를 저장하지 않고 실패시킨다.
+- 순수 Decimal 집계, Jobber client/gateway, snapshot 역호환, 상세 초기 backfill·강제 Refresh, 원자적 저장, 상세 UI를 TDD로 구현했다. fixture에서 12건/AUD 5,400과 15건/AUD 6,750 재계산, 실패 시 snapshot 미저장, `/jobs` 목록 refresh의 cached estimate 보존을 검증했다.
+- 로컬 Job #3103 상세에서 desktop과 iPhone 390×844·375×812 폭을 확인했다. `Job revenue` 바로 아래에 `14 scheduled assignments × $450.00`와 `$6,300.00`가 표시되고, 실제 Refresh pending 후 같은 최신값으로 복귀했으며 가로 overflow와 console error는 0건이었다.
+- 최종 `npm.cmd run verify`는 Vitest 85 files/702 tests 통과와 환경 조건 1 file/9 tests skip, statements 83.87%·branches 70.35%·functions 93.89%·lines 89.43%, strict TypeScript, ESLint, Next production build, production audit 0 vulnerabilities를 통과했다. 새 DB migration·의존성·Jobber mutation/OAuth scope 변경은 없고 Vercel 배포는 아직 실행하지 않았다.
+
 ---
 
 ## 🔲 남은 작업
 
-- **Job Expenses 상세 Estimate labour**: 구현 계획을 `docs/superpowers/plans/2026-08-05-job-estimated-labour.md`에 작성했다. Jobber job의 모든 visit에서 고유 `(visit ID, assigned user ID)` 배정 건수를 세되 정규화된 정확한 이름 `Connor`·`Admin`은 제외하고, AUD 450를 곱한 파생 금액을 `Job revenue` 바로 아래 표시한다. 상세 `Refresh`에서만 최신 배정을 다시 읽고, 원본 담당자 목록은 저장하지 않으며 기존 expense/profit 계산은 바꾸지 않는다. 구현 전 read-only G1에서 job #3103의 14건/AUD 6,300 기준값을 확인한다. 구현은 아직 시작하지 않았다.
 - **역할/Jobs G3 실계정 QA**: 기존 admin 2명이 운영 로그인을 직접 확인한다. admin이 `/settings/users`에서 supervisor 실제 이메일·표시 이름·임시 비밀번호를 입력하고 Jobber 팀원을 매핑한 뒤, 역할별 nav·직접 URL 차단·배정 job·expense·profit %를 실데이터로 QA한다. 비밀번호와 기존 admin 자격 증명은 채팅에서 취급하지 않는다.
 - **감사 발견 이슈** (2026-07-06): 우선순위별로 `docs/BACKLOG.md`에 등록. 2026-07-04 hardening으로 마진 CHECK·서버 액션 allowlist 해결, 2026-07-07 quote save conflict hardening으로 견적 저장 트랜잭션·동시 편집 충돌·product 스냅샷 재고정·Jobber 부분 성공 line id 보존을 반영. 남은 항목은 `docs/BACKLOG.md`의 미체크 항목 기준으로 처리.
 - **Supabase 실제 데이터 백업**: 운영 결정 대기(`TODOS.md` #2). Pro/PITR 우선, cron export는 restore 검증 포함 시만.
@@ -120,7 +127,7 @@
 
 | 날짜 | 작업 | 담당 |
 |---|---|---|
-| 2026-08-05 | Job Expenses 상세 `Estimate labour` 구현 계획 수립(`docs/superpowers/plans/2026-08-05-job-estimated-labour.md`). 집계 단위를 고유 visit/user 배정 건수로 정의하고 `Connor`·`Admin` 정확 이름 제외, AUD 450 고정 단가, #3103 기준 14건/AUD 6,300, 상세 Refresh 재계산, 파생 합계만 snapshot 저장, 기존 expense/profit 비변경을 확정했다. Jobber read-only 계약 검증 → 순수 Decimal 계산 → visit/assignedUsers 페이지네이션 → snapshot/action 역호환 → 상세 UI → 전체 검증의 6개 태스크로 나눴으며 구현은 미착수다. | Codex 5.6-Sol high |
+| 2026-08-05 | Job Expenses 상세 `Estimate labour` 계획을 순차 구현했다. Jobber read-only G1에서 #3103의 14건/AUD 6,300을 확인하고, 고유 visit/user 집계·`Connor`/`Admin` 제외·AUD 450 Decimal 계산, 전용 visit pagination, snapshot 역호환/backfill, 상세 Refresh 원자적 저장, 모바일 행을 반영했다. focused 6 files/66 tests와 full verify 85 files/702 tests(1 file/9 tests skip), coverage/build/audit 0 vulnerabilities를 통과했다. desktop·390×844·375×812에서 실제 Refresh 후 14건/$6,300, overflow 0, console error 0을 확인했다. DB migration·새 의존성·Jobber mutation/scope 변경과 Vercel 배포는 없다. | Codex 5.6-Sol high |
 | 2026-08-04 | 모바일 PWA·Jobs 최적화 커밋 `e8a5e26`을 `origin/main`에 push했고 Vercel production deployment `dpl_7VB1EtTDKnUbf47apC7e8XnNv6Vc`가 해당 커밋을 빌드해 Ready/운영 alias 연결됨을 확인했다. `/manifest.webmanifest`·`/sw.js`·`/offline`·`/login` 200, SW `Cache-Control: public, max-age=0, must-revalidate`, 390px production login page overflow 0/browser console error 0, 최근 production runtime error log 0건을 확인했다. 인증된 Jobs production 측정과 iPhone 홈 화면 앱 실측은 사용자 세션에서 후속 확인한다. | Codex 5.6-Sol high |
 | 2026-08-04 | iPhone 홈 화면 앱의 시작·Jobs 체감 로딩을 로컬 최적화했다. 인증 데이터 없는 root loading, 모바일 7열/42일 Jobs loading shell, 저장된 Jobber ID의 live 팀 사용자 검증+월간 배정 조회 병렬화를 반영했다. 390px viewport에서 warm 달력 완성 2.03~2.28초(변경 전 약 3.77초), 시작 피드백 0.44~0.60초, page overflow 0, 새 console error 0건을 확인했다. `npm.cmd run verify`는 84 files/687 tests 통과(환경 조건 1 file/9 tests skip), coverage 83.73/70.16/93.68/89.35%, production build, audit 0 vulnerabilities를 통과했다. 이 로컬 완료 시점에는 iPhone 실기기 재측정과 production 배포를 실행하지 않았다. | Codex 5.6-Sol high |
 | 2026-08-03 | `jeonghoni@gmail.com` supervisor 로그인 실패를 진단해 Supabase Auth 계정과 active `user_profiles`는 정상이며, legacy Vercel `ALLOWED_LOGIN_EMAILS`가 password auth 요청 전에 차단하고 있음을 확인했다. 사용자 승인 후 해당 변수를 Production/Preview 환경에서 제거했고 `vercel env ls` 독립 확인 2회 모두 잔존 항목 0건을 확인했다. 변경 적용에는 새 production deployment가 필요하며 실제 비밀번호 로그인은 사용자가 직접 확인한다. | Codex 5.6-Sol high |

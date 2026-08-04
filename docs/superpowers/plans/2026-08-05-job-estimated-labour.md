@@ -572,7 +572,7 @@ git commit -m "feat: show estimated labour on job detail"
 
 ---
 
-### Task 6: 통합 검증, 문서 반영, 운영 전 확인
+### Task 6: 통합 검증, 문서 반영, 운영 전 확인 ✅
 
 **Files:**
 - Modify: `docs/DECISIONS.md:46-60`
@@ -586,7 +586,7 @@ git commit -m "feat: show estimated labour on job detail"
 - Consumes: Tasks 1-5의 완료된 동작과 증거.
 - Produces: 검증 가능한 문서·브라우저 QA·배포 전 handoff.
 
-- [ ] **Step 1: 관련 테스트를 한 번에 실행한다**
+- [x] **Step 1: 관련 테스트를 한 번에 실행한다**
 
 Run:
 
@@ -596,7 +596,9 @@ npm.cmd test -- tests/jobber-estimated-labour.test.ts tests/jobber-job-client.te
 
 Expected: 모든 관련 test file PASS.
 
-- [ ] **Step 2: 정적 검증을 실행한다**
+Result: 6 files, 66 tests PASS.
+
+- [x] **Step 2: 정적 검증을 실행한다**
 
 Run:
 
@@ -608,7 +610,7 @@ git diff --check
 
 Expected: exit 0, TypeScript strict error 0, ESLint error 0, whitespace error 0.
 
-- [ ] **Step 3: 로컬 브라우저 QA를 실행한다**
+- [x] **Step 3: 로컬 브라우저 QA를 실행한다**
 
 Desktop과 iPhone 폭(390×844)에서 job #3103 상세를 확인한다.
 
@@ -622,13 +624,17 @@ Expenses total, Profit, Profit %는 labour estimate 추가 전과 동일
 console error 0
 ```
 
-- [ ] **Step 4: 전체 verify를 실행한다**
+Result: desktop과 iPhone 390×844·375×812에서 순서·금액·근거 문구와 overflow 0을 확인했다. 실제 Job #3103 Refresh는 pending 상태 후 14건/$6,300으로 복귀했고 console error는 0건이었다. 배정 감소/증가 재계산은 action fixture 12건/$5,400·15건/$6,750으로 검증했다.
+
+- [x] **Step 4: 전체 verify를 실행한다**
 
 Run: `npm.cmd run verify`
 
 Expected: typecheck, lint, Vitest/coverage, Next production build, production dependency audit 모두 PASS.
 
-- [ ] **Step 5: 영구 문서를 현재 동작과 일치시킨다**
+Result: 85 files/702 tests PASS, 환경 조건 1 file/9 tests skip, coverage 83.87/70.35/93.89/89.43%, production build PASS, production audit 0 vulnerabilities.
+
+- [x] **Step 5: 영구 문서를 현재 동작과 일치시킨다**
 
 문서에 아래 규칙을 정확히 기록한다.
 
@@ -641,14 +647,14 @@ profit and expense totals are unchanged
 no Jobber mutation/scope change
 ```
 
-- [ ] **Step 6: 최종 구현을 커밋한다**
+- [x] **Step 6: 최종 구현을 커밋한다**
 
 ```bash
 git add docs/DECISIONS.md docs/ARCHITECTURE.md docs/UI-PAGES.md docs/DB-SCHEMA.md PROGRESS.md docs/superpowers/plans/2026-08-05-job-estimated-labour.md
 git commit -m "docs: record estimated job labour"
 ```
 
-- [ ] **Step 7: 배포 전 사용자 handoff를 보고한다**
+- [x] **Step 7: 배포 전 사용자 handoff를 보고한다**
 
 보고 내용:
 

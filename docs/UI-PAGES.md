@@ -196,7 +196,7 @@ Inventory is a top-level page shared by admin and supervisor. `/settings/invento
 
 Jobs is available to both roles and is the supervisor landing page. A supervisor sees only jobs returned by Jobber's `visitsAssignedToUserId` filter for the `user_profiles.jobber_user_id` linked to the current session. Admin sees all jobs and may filter by an active supervisor profile. The table shows job number/title, status, revenue, expense total, profit amount/percentage, and last refresh time. Missing Jobber linkage and no-assignment states have explicit guidance, and refresh is manual with a server-enforced cooldown.
 
-`/jobs/[jobberJobId]` displays the selected job's revenue/expense/profit summary using the quote financial panel tone, the expense lines (title, description, date, amount, entered/paid/reimbursable user), refresh control, and a link to the Jobber source. A supervisor direct URL is accepted only when Jobber confirms that job is assigned to the current linked user.
+`/jobs/[jobberJobId]` displays the selected job's revenue/expense/profit summary using the quote financial panel tone, the expense lines (title, description, date, amount, entered/paid/reimbursable user), refresh control, and a link to the Jobber source. `Estimate labour` appears immediately below `Job revenue` with the eligible scheduled assignment count × AUD 450; normalized exact names `Connor` and `Admin` are excluded. It is informational and does not change expense or profit totals. Detail Refresh reloads Jobber visit assignments and recalculates the amount. On mobile the row wraps its count/rate metadata without horizontal page overflow. A supervisor direct URL is accepted only when Jobber confirms that job is assigned to the current linked user.
 
 ---
 

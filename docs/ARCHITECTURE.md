@@ -124,6 +124,15 @@
 - Refresh 기반 변경 감지는 고객/주소/work type/customer type/Product-Service line/Jobber total의 compact summary만 저장한다.
 - Jobber option import는 preview/manual confirm 방식이며 자동 DB 저장을 하지 않는다. 사용자가 import한 후보는 기존 quote save/update 경로로만 `quote_options`에 저장된다.
 
+### Job Expenses 상세 Estimate labour 경계
+
+- 상세 진입에 완성된 labour estimate가 없거나 사용자가 상세 `Refresh`를 누르면, 서버가 expense detail과 job visit 담당자 목록을 병렬로 read-only 조회한다. supervisor는 이 조회 전에 live Jobber 배정 권한을 다시 확인한다.
+- 집계는 job 전체의 고유 `(visit ID, assigned user ID)` 쌍이다. 동일 작업자가 다른 visit에 배정되면 각각 세고 같은 visit의 중복 user ID는 한 번만 센다. 정규화한 정확한 이름 `connor`·`admin`은 제외하고 `decimal.js`로 AUD 450를 곱한다.
+- visit query는 중첩 `assignedUsers(first: 100)`의 Jobber query cost를 고려해 전용 page size 10을 사용한다. 모든 visit page를 읽고, 한 visit의 assignedUsers가 100명을 넘어 다음 page가 있으면 일부 합계를 노출하지 않고 refresh 전체를 실패시킨다.
+- Supabase snapshot에는 파생값 `assignmentCount`·`ratePerAssignment`·`total`만 저장한다. 원본 담당자 이름/ID 목록은 저장·로그·브라우저 전송하지 않는다. 기존 JSONB는 `labourEstimate: null`로 읽고 상세 첫 진입에서 한 번 backfill한다.
+- `/jobs` 목록 조회와 목록 `Refresh`에는 담당자 상세 query를 추가하지 않는다. 기존 labour estimate가 있으면 보존하므로 월간 달력 로딩 성능은 바뀌지 않는다.
+- Estimate labour는 표시용이며 expense total·profit·profit % 계산과 Jobber expense/write-back payload를 변경하지 않는다.
+
 ---
 
 ## 성능 목표
@@ -140,6 +149,7 @@
 | 견적 상세 사용자 표시 | 현재 인증 사용자는 Auth 결과 재사용, 다른 사용자만 Auth Admin 조회 |
 | 홈 화면 앱 시작 피드백 | 루트 loading UI를 route stream에서 즉시 표시하며 인증 사용자 데이터는 포함하지 않음 |
 | 연결된 supervisor Jobs 목록 | 공식 팀 사용자 검증과 월간 배정 job 조회를 병렬 시작하되 검증 성공 후에만 결과 사용 |
+| Job Expenses 상세 labour 갱신 | 권한 확인 후 expense와 assignment visit을 병렬 조회하고 둘 다 성공한 경우에만 snapshot 교체 |
 
 인증된 앱 내부 링크는 viewport 자동 prefetch를 사용하지 않는다. 링크 hover·focus·touch intent가 있을 때만 대상 route를 한 번 prefetch하여 Overview의 다수 quote row와 sidebar route가 실제 클릭 요청과 경쟁하지 않게 한다. 이 정책은 앱 route 이동에만 적용하며 Jobber fetch API, snapshot refresh, Save & Sync 호출에는 적용하지 않는다.
 

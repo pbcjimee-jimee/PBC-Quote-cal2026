@@ -107,7 +107,7 @@ warehouse_inventory(Settings Inventory page, app-only stock list)
 `user_id` PK, `access_token`/`refresh_token`(AES-256-GCM 암호화), `scope`, `expires_at`. RLS enabled + 정책 없음(service-role only 접근). 실제 접근은 `lib/jobber/tokens.ts`의 `createServiceClient` 경유.
 
 ### jobber_job_snapshots (Jobber job/expense 캐시)
-`jobber_job_id` PK, 검증된 job·expense 응답 `payload JSONB`, `refreshed_at`, `refreshed_by → auth.users`. RLS를 활성화하되 anon/authenticated 정책과 grant는 두지 않고 service-role에만 권한을 부여한다. Jobber가 진실의 원천이며 supervisor 권한은 cached scope를 신뢰하지 않고 live 배정 목록으로 재확인한다. `synchronize_jobber_job_snapshot_scope` RPC가 해당 사용자의 현재 배정 목록에 없는 job에서 scope를 하나의 transaction으로 철회한다. SQL: `20260731012000_add_jobber_job_snapshots.sql`.
+`jobber_job_id` PK, 검증된 job·expense 응답과 파생 labour estimate(`assignmentCount`, `ratePerAssignment`, `total`)를 담는 `payload JSONB`, `refreshed_at`, `refreshed_by → auth.users`. 원본 visit 담당자 이름/ID 목록은 저장하지 않으며 기존 payload의 labour 필드 누락은 `null`로 역호환한다. RLS를 활성화하되 anon/authenticated 정책과 grant는 두지 않고 service-role에만 권한을 부여한다. Jobber가 진실의 원천이며 supervisor 권한은 cached scope를 신뢰하지 않고 live 배정 목록으로 재확인한다. `synchronize_jobber_job_snapshot_scope` RPC가 해당 사용자의 현재 배정 목록에 없는 job에서 scope를 하나의 transaction으로 철회한다. JSONB 확장이므로 새 migration은 없다. 기존 테이블 SQL: `20260731012000_add_jobber_job_snapshots.sql`.
 
 ### jobber_quote_lines (Jobber write-back 로컬 저장)
 공개 Product / Service line만 보관(`kind` line_item/text, `name`, `description`, `quantity`, `unit_price`, `taxable`, `client_visible`, `jobber_line_item_id`, `linked_product_or_service_id`, `position`). 내부 material은 `quote_items`에만 저장. Jobber 실제 mutation은 중앙 client의 승인된 write-back 경로만 사용. SQL: `0010`.

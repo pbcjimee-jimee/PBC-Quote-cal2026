@@ -67,7 +67,8 @@ describe('Jobber job snapshot repository', () => {
   })
 
   it('loads legacy snapshots without a labour estimate as incomplete', async () => {
-    const { labourEstimate: _labourEstimate, ...legacyPayload } = payload
+    const { labourEstimate, ...legacyPayload } = payload
+    void labourEstimate
     const order = vi.fn(async () => ({
       data: [{ ...row, payload: legacyPayload }],
       error: null,

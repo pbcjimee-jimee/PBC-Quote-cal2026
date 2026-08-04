@@ -57,6 +57,7 @@
 - Jobber option line item은 자동 저장하지 않는다. 앱은 보수적으로 감지한 후보를 preview로 보여주고, 사용자가 확인한 경우에만 PBC 옵션(`quote_options`) state로 가져온다. 실제 DB 저장은 기존 quote save/update 경로를 따른다.
 - OAuth 2.0, GraphQL API 사용. write scope는 quote line item 업데이트에 필요한 최소 scope만 허용한다.
 - Job Expenses는 Job·팀원·expense를 전용 job 모듈에서 read-only로 조회한다. job profit은 `job.total - expenses 합계`로 계산하며, 기존 quote line write-back 외 새 mutation이나 OAuth scope는 추가하지 않는다.
+- Job Expenses 상세의 `Estimate labour`는 job 전체의 고유 `(visit ID, assigned user ID)` 배정 건수에서 공백·대소문자를 정규화한 정확한 이름 `Connor`·`Admin`을 제외하고 AUD 450를 곱한다. 상세 `Refresh`가 최신 Jobber 배정을 다시 읽으며, 이 값은 표시용 추정치이므로 기존 expense total·profit·profit %에는 합산하지 않는다.
 - 구현 상세: `docs/superpowers/specs/2026-05-19-jobber-write-back-design.md`
 - 구현 순서: `docs/superpowers/plans/2026-05-19-jobber-write-back.md`
 
