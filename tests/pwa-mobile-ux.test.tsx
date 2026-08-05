@@ -132,11 +132,45 @@ describe('PWA mobile UX', () => {
       expect(mobile).toContain(selector)
     }
 
+    for (const selector of [
+      '.pbc-btn',
+      '.pbc-tab',
+      '.pbc-toggle button',
+      'button.pbc-dropdownitem',
+      'a.pbc-dropdownitem',
+      '.pbc-checkfield',
+      '.pbc-stocktoggle',
+      '.pbc-statuscontrol',
+      '.pbc-monthselect select',
+      '.pbc-back',
+      '.pbc-detailmore summary',
+      '.pbc-detaildesc summary',
+    ]) {
+      expect(mobile).toMatch(new RegExp(`${selector.replace(/[.*+?^${}()|[\\]\\]/g, '\\$&')}\\s*(?:,|\\{)[^}]*min-height:\\s*var\\(--mobile-tap-target\\)`))
+    }
+
+    for (const selector of [
+      '.pbc-btn',
+      '.pbc-tab',
+      '.pbc-toggle button',
+      'button.pbc-dropdownitem',
+      'a.pbc-dropdownitem',
+      '.pbc-checkfield',
+      '.pbc-stocktoggle',
+      '.pbc-back',
+      '.pbc-detailmore summary',
+      '.pbc-detaildesc summary',
+    ]) {
+      expect(mobile).toMatch(new RegExp(`${selector.replace(/[.*+?^${}()|[\\]\\]/g, '\\$&')}\\s*(?:,|\\{)[^}]*font-size:\\s*var\\(--mobile-control-font-size\\)`))
+    }
+
     expect(mobile).toContain('min-height: var(--mobile-tap-target)')
     expect(mobile).toContain('font-size: var(--mobile-input-font-size)')
     expect(mobile).toContain('font-size: var(--mobile-control-font-size)')
     expect(narrow).toContain('padding: 22px var(--mobile-page-inset) 48px')
     expect(narrow).toContain('padding: var(--mobile-page-inset)')
+    expect(narrow).toMatch(/\.pbc-page\s*{[^}]*padding:\s*22px var\(--mobile-page-inset\) 48px/)
+    expect(narrow).toMatch(/\.pbc-card--pad\s*{[^}]*padding:\s*var\(--mobile-page-inset\)/)
   })
 
   it('stacks narrow mobile navigation icons above visible labels without shrinking targets', () => {
