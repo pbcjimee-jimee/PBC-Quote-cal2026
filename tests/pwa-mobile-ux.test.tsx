@@ -57,6 +57,17 @@ describe('PWA mobile UX', () => {
     headerState.pathname = '/quotes'
   })
 
+  it('switches Inventory from the desktop table to disclosure cards at 720px', () => {
+    const css = readFileSync('app/styles/components.css', 'utf8')
+    const narrow = getMediaBlock(css, 'max-width: 720px')
+
+    expect(css).toMatch(/\.pbc-inventorymobile\s*{[^}]*display:\s*none/)
+    expect(narrow).toMatch(/\.pbc-inventorydesktop\s*{[^}]*display:\s*none/)
+    expect(narrow).toMatch(/\.pbc-inventorymobile\s*{[^}]*display:\s*grid/)
+    expect(narrow).toContain('overflow-wrap: anywhere')
+    expect(narrow).toContain('min-height: var(--mobile-tap-target)')
+  })
+
   it('renders an explicit, active Overview entry in the mobile navigation', () => {
     const markup = renderToStaticMarkup(createElement(AppHeader, { userProfile }))
     const mobileHeader = markup.slice(markup.indexOf('<header'), markup.indexOf('</header>'))

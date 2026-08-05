@@ -2,11 +2,123 @@ import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { describe, expect, it } from 'vitest'
-import { InventoryManager } from '@/components/inventory/inventory-manager'
+import { describe, expect, it, vi } from 'vitest'
+import {
+  InventoryManager,
+  InventoryMobileList,
+  type InventoryFormState,
+} from '@/components/inventory/inventory-manager'
 import type { InventoryItemRecord } from '@/lib/inventory/types'
 
+const mobileItem: InventoryItemRecord = {
+  id: '00000000-0000-4000-8000-000000000061',
+  name: 'WaterTite',
+  category: 'Tools',
+  brand: 'Zinsser',
+  modelSpecification: null,
+  colour: null,
+  sizeOrSerial: '10L',
+  quantity: '1.00',
+  purchaseDate: null,
+  usedDate: null,
+  usedLocationText: null,
+  status: 'in_stock',
+  notes: null,
+  active: true,
+  sourceYear: '2026',
+  createdAt: '2026-08-05T00:00:00.000Z',
+  updatedAt: '2026-08-05T00:00:00.000Z',
+}
+
+const mobileEditForm: InventoryFormState = {
+  name: 'WaterTite',
+  category: 'Tools',
+  brand: 'Zinsser',
+  modelSpecification: '',
+  colour: '',
+  sizeOrSerial: '10L',
+  quantity: '1.00',
+  purchaseDate: '',
+  usedDate: '',
+  usedLocationText: '',
+  status: 'in_stock',
+  notes: '',
+}
+
+const mobileCallbacks = {
+  onEdit: vi.fn(),
+  onChangeEditField: vi.fn(),
+  onAddCustomCategory: vi.fn(),
+  onSaveEdit: vi.fn(),
+  onCancelEdit: vi.fn(),
+  onDelete: vi.fn(),
+}
+
 describe('inventory UI', () => {
+  it('renders a collapsed mobile card with only the approved summary fields', () => {
+    const markup = renderToStaticMarkup(createElement(InventoryMobileList, {
+      items: [mobileItem],
+      categories: ['Tools'],
+      editingRowId: null,
+      rowEditForm: mobileEditForm,
+      isPending: false,
+      role: 'admin',
+      ...mobileCallbacks,
+    }))
+
+    expect(markup).toContain('class="pbc-inventorymobile')
+    expect(markup).toContain('aria-expanded="false"')
+    expect(markup).toContain('WaterTite')
+    expect(markup).toContain('Category')
+    expect(markup).toContain('Tools')
+    expect(markup).toContain('Size / Serial')
+    expect(markup).toContain('10L')
+    expect(markup).not.toContain('Brand / Spec')
+    expect(markup).not.toContain('Purchase Date')
+    expect(markup).not.toContain('Used Location')
+    expect(markup).not.toContain('Save row')
+  })
+
+  it('renders the complete admin editor only while its mobile card is expanded', () => {
+    const markup = renderToStaticMarkup(createElement(InventoryMobileList, {
+      items: [mobileItem],
+      categories: ['Tools'],
+      editingRowId: mobileItem.id,
+      rowEditForm: mobileEditForm,
+      isPending: false,
+      role: 'admin',
+      ...mobileCallbacks,
+    }))
+
+    expect(markup).toContain('aria-expanded="true"')
+    for (const label of ['Name', 'Category', 'Brand', 'Model / Specification', 'Colour', 'Size / Serial', 'Quantity', 'Purchase Date', 'Used Date', 'Used Location', 'Status', 'Notes']) {
+      expect(markup).toContain(label)
+    }
+    expect(markup).toContain('aria-label="Save row WaterTite"')
+    expect(markup).toContain('aria-label="Cancel row edit WaterTite"')
+    expect(markup).toContain('aria-label="Delete WaterTite"')
+  })
+
+  it('limits the expanded supervisor mobile card to movement fields', () => {
+    const markup = renderToStaticMarkup(createElement(InventoryMobileList, {
+      items: [mobileItem],
+      categories: ['Tools'],
+      editingRowId: mobileItem.id,
+      rowEditForm: mobileEditForm,
+      isPending: false,
+      role: 'supervisor',
+      ...mobileCallbacks,
+    }))
+
+    for (const label of ['Quantity', 'Used Date', 'Used Location', 'Status']) {
+      expect(markup).toContain(label)
+    }
+    expect(markup).not.toContain('aria-label="Name for WaterTite"')
+    expect(markup).not.toContain('Search or add category')
+    expect(markup).not.toContain('aria-label="Delete WaterTite"')
+    expect(markup).toContain('aria-label="Save row WaterTite"')
+  })
+
   it('renders inventory controls and usage fields', () => {
     const items: InventoryItemRecord[] = [{
       id: '00000000-0000-4000-8000-000000000031',
