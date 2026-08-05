@@ -48,7 +48,7 @@
 - Consumes: `revenueValue: Decimal.Value`, `estimatedLabourValue: Decimal.Value`.
 - Produces: `EstimatedProfitSummary`와 `calculateEstimatedProfit(revenueValue, estimatedLabourValue)`.
 
-- [ ] **Step 1: 순수 계산 RED 테스트를 작성한다**
+- [x] **Step 1: 순수 계산 RED 테스트를 작성한다**
 
 `tests/jobber-financial-summary.test.ts` import에 `calculateEstimatedProfit`을 추가하고 다음 테스트를 작성한다.
 
@@ -75,13 +75,13 @@ it('preserves negative estimated profit and margin', () => {
 })
 ```
 
-- [ ] **Step 2: 테스트가 올바른 이유로 RED인지 확인한다**
+- [x] **Step 2: 테스트가 올바른 이유로 RED인지 확인한다**
 
 Run: `npm.cmd test -- tests/jobber-financial-summary.test.ts`
 
 Expected: `calculateEstimatedProfit` export가 없어서 해당 테스트 파일이 FAIL한다.
 
-- [ ] **Step 3: 최소 Decimal 구현을 추가한다**
+- [x] **Step 3: 최소 Decimal 구현을 추가한다**
 
 `lib/jobber/financial-summary.ts`에 다음 경계를 추가한다.
 
@@ -108,13 +108,13 @@ export function calculateEstimatedProfit(
 }
 ```
 
-- [ ] **Step 4: 계산 테스트를 GREEN으로 만든다**
+- [x] **Step 4: 계산 테스트를 GREEN으로 만든다**
 
 Run: `npm.cmd test -- tests/jobber-financial-summary.test.ts`
 
 Expected: 정상값, revenue 0, 음수 이익을 포함한 전체 test file PASS.
 
-- [ ] **Step 5: 계산 경계를 커밋한다**
+- [x] **Step 5: 계산 경계를 커밋한다**
 
 ```bash
 git add lib/jobber/financial-summary.ts tests/jobber-financial-summary.test.ts
@@ -134,7 +134,7 @@ git commit -m "feat: calculate estimated job profit"
 - Consumes: `calculateEstimatedProfit(summary.revenue, labourEstimate.total)`와 기존 `summary.profitMarginPercent`.
 - Produces: 상세 전용 Estimate profit 행, 초록색 Profit 행의 금액/이익률 값 그룹, 모바일 wrapping classes.
 
-- [ ] **Step 1: 상세 행 순서와 표시값 RED 테스트를 작성한다**
+- [x] **Step 1: 상세 행 순서와 표시값 RED 테스트를 작성한다**
 
 기존 shared profit panel 테스트에 다음 계약을 추가한다.
 
@@ -163,13 +163,13 @@ expect(markup).not.toContain('Estimate profit')
 expect(markup).not.toContain('$6,137.02')
 ```
 
-- [ ] **Step 2: UI 테스트가 올바른 이유로 RED인지 확인한다**
+- [x] **Step 2: UI 테스트가 올바른 이유로 RED인지 확인한다**
 
 Run: `npm.cmd test -- tests/jobs-ui.test.tsx`
 
 Expected: Estimate profit 행/금액이 없고 일반 이익률이 패널 상단에 남아 있어 FAIL한다.
 
-- [ ] **Step 3: 상세 component에서 파생값과 값 그룹을 렌더링한다**
+- [x] **Step 3: 상세 component에서 파생값과 값 그룹을 렌더링한다**
 
 `JobFinancials`에서 상세 렌더 전에 다음 값을 계산한다.
 
@@ -207,7 +207,7 @@ const estimatedProfit = labourEstimate
 
 기존 progress bar의 `width` 계산은 일반 `summary.profitMarginPercent`를 계속 사용한다.
 
-- [ ] **Step 4: forecast 색상과 모바일 wrapping을 추가한다**
+- [x] **Step 4: forecast 색상과 모바일 wrapping을 추가한다**
 
 `app/styles/components.css`에 기존 토큰만 사용한다.
 
@@ -223,13 +223,13 @@ const estimatedProfit = labourEstimate
 .pbc-jobfinancial__row--profit { align-items: flex-start; flex-wrap: wrap; row-gap: 6px; }
 ```
 
-- [ ] **Step 5: UI 테스트를 GREEN으로 만든다**
+- [x] **Step 5: UI 테스트를 GREEN으로 만든다**
 
 Run: `npm.cmd test -- tests/jobber-financial-summary.test.ts tests/jobs-ui.test.tsx`
 
 Expected: 두 test file 전체 PASS. compact markup에는 Estimate profit이 없다.
 
-- [ ] **Step 6: UI 구현을 커밋한다**
+- [x] **Step 6: UI 구현을 커밋한다**
 
 ```bash
 git add components/jobs/job-financials.tsx app/styles/components.css tests/jobs-ui.test.tsx
@@ -251,7 +251,7 @@ git commit -m "feat: show estimated job profit"
 - Consumes: Tasks 1-2의 순수 계산과 상세 UI.
 - Produces: 현재 동작과 일치하는 문서, 검증 증거, `main`의 로컬 3000 화면.
 
-- [ ] **Step 1: 관련 테스트와 정적 검증을 실행한다**
+- [x] **Step 1: 관련 테스트와 정적 검증을 실행한다**
 
 ```bash
 npm.cmd test -- tests/jobber-financial-summary.test.ts tests/jobs-ui.test.tsx
@@ -262,7 +262,7 @@ git diff --check
 
 Expected: exit 0, TypeScript/ESLint/whitespace error 0.
 
-- [ ] **Step 2: 영구 문서를 확정 공식과 UI에 맞춘다**
+- [x] **Step 2: 영구 문서를 확정 공식과 UI에 맞춘다**
 
 문서에 다음 내용을 명시한다.
 
@@ -274,13 +274,26 @@ Estimate profit % = Estimate profit / Job revenue × 100
 파생 UI 값만 계산하며 snapshot/DB/Jobber API 변경 없음
 ```
 
-- [ ] **Step 3: 전체 verify를 실행한다**
+- [x] **Step 3: 전체 verify를 실행한다**
 
 Run: `npm.cmd run verify`
 
 Expected: typecheck, lint, Vitest, coverage, Next production build, production audit 모두 PASS.
 
-- [ ] **Step 4: feature branch 구현을 main에 fast-forward 병합한다**
+Result: exit 0. 85 files/705 tests PASS, TypeScript/ESLint/coverage/Next production build/production audit PASS.
+
+- [ ] **Step 4: 구현과 영구 문서를 feature branch에 커밋한다**
+
+fast-forward 병합 전 feature branch를 clean 상태로 만든다.
+
+```bash
+git add docs/DECISIONS.md docs/ARCHITECTURE.md docs/UI-PAGES.md PROGRESS.md docs/superpowers/plans/2026-08-05-job-estimated-profit.md
+git commit -m "docs: document estimated job profit"
+```
+
+Expected: feature worktree clean, 구현·테스트·영구 문서가 모두 feature HEAD에 포함.
+
+- [ ] **Step 5: feature branch 구현을 main에 fast-forward 병합한다**
 
 병합 전 main의 사용자 변경 `next-env.d.ts`를 확인하고 건드리지 않는다. `origin/main`을 ff-only로 갱신한 뒤 feature branch를 병합한다.
 
@@ -291,13 +304,13 @@ git -C <main-root> merge --ff-only codex/job-estimated-profit
 
 Expected: 사용자 변경 보존, main HEAD가 feature HEAD와 일치.
 
-- [ ] **Step 5: 병합된 main 테스트를 다시 실행한다**
+- [ ] **Step 6: 병합된 main 테스트를 다시 실행한다**
 
 Run: `npm.cmd test`
 
 Expected: 전체 Vitest suite PASS.
 
-- [ ] **Step 6: 현재 3000 desktop/mobile 화면을 검증한다**
+- [ ] **Step 7: 현재 3000 desktop/mobile 화면을 검증한다**
 
 Job #3103 상세를 desktop, 390×844, 375×812에서 확인한다.
 
@@ -312,10 +325,10 @@ console error 0
 
 상세 Refresh를 한 번 실행해 최신 labour estimate와 Estimate profit이 함께 다시 표시되는지 확인한다.
 
-- [ ] **Step 7: 문서와 검증 결과를 커밋하고 작업tree를 정리한다**
+- [ ] **Step 8: 최종 검증 결과를 기록하고 작업tree를 정리한다**
 
 ```bash
-git add docs/DECISIONS.md docs/ARCHITECTURE.md docs/UI-PAGES.md PROGRESS.md docs/superpowers/plans/2026-08-05-job-estimated-profit.md
+git add PROGRESS.md docs/superpowers/plans/2026-08-05-job-estimated-profit.md
 git commit -m "docs: record estimated job profit"
 ```
 

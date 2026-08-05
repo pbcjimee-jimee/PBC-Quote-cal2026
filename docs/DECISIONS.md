@@ -58,6 +58,7 @@
 - OAuth 2.0, GraphQL API 사용. write scope는 quote line item 업데이트에 필요한 최소 scope만 허용한다.
 - Job Expenses는 Job·팀원·expense를 전용 job 모듈에서 read-only로 조회한다. job profit은 `job.total - expenses 합계`로 계산하며, 기존 quote line write-back 외 새 mutation이나 OAuth scope는 추가하지 않는다.
 - Job Expenses 상세의 `Estimate labour`는 job 전체의 고유 `(visit ID, assigned user ID)` 배정 건수에서 공백·대소문자를 정규화한 정확한 이름 `Connor`·`Admin`을 제외하고 AUD 450를 곱한다. 상세 `Refresh`가 최신 Jobber 배정을 다시 읽으며, 이 값은 표시용 추정치이므로 기존 expense total·profit·profit %에는 합산하지 않는다.
+- Job Expenses 상세의 `Estimate profit`은 `Job revenue - Estimate labour`, 이익률은 `Estimate profit / Job revenue × 100`으로 Decimal 계산한다. Expenses total은 이 추정치에서 차감하지 않으며, 기존 Profit·Profit %·progress bar 공식은 유지한다. 일반 Profit %는 패널 상단이 아니라 초록색 Profit 행의 금액 옆에 표시한다.
 - 구현 상세: `docs/superpowers/specs/2026-05-19-jobber-write-back-design.md`
 - 구현 순서: `docs/superpowers/plans/2026-05-19-jobber-write-back.md`
 

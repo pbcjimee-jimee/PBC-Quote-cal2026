@@ -124,7 +124,7 @@
 - Refresh 기반 변경 감지는 고객/주소/work type/customer type/Product-Service line/Jobber total의 compact summary만 저장한다.
 - Jobber option import는 preview/manual confirm 방식이며 자동 DB 저장을 하지 않는다. 사용자가 import한 후보는 기존 quote save/update 경로로만 `quote_options`에 저장된다.
 
-### Job Expenses 상세 Estimate labour 경계
+### Job Expenses 상세 Estimate labour 및 Estimate profit 경계
 
 - 상세 진입에 완성된 labour estimate가 없거나 사용자가 상세 `Refresh`를 누르면, 서버가 expense detail과 job visit 담당자 목록을 병렬로 read-only 조회한다. supervisor는 이 조회 전에 live Jobber 배정 권한을 다시 확인한다.
 - 집계는 job 전체의 고유 `(visit ID, assigned user ID)` 쌍이다. 동일 작업자가 다른 visit에 배정되면 각각 세고 같은 visit의 중복 user ID는 한 번만 센다. 정규화한 정확한 이름 `connor`·`admin`은 제외하고 `decimal.js`로 AUD 450를 곱한다.
@@ -132,6 +132,7 @@
 - Supabase snapshot에는 파생값 `assignmentCount`·`ratePerAssignment`·`total`만 저장한다. 원본 담당자 이름/ID 목록은 저장·로그·브라우저 전송하지 않는다. 기존 JSONB는 `labourEstimate: null`로 읽고 상세 첫 진입에서 한 번 backfill한다.
 - `/jobs` 목록 조회와 목록 `Refresh`에는 담당자 상세 query를 추가하지 않는다. 기존 labour estimate가 있으면 보존하므로 월간 달력 로딩 성능은 바뀌지 않는다.
 - Estimate labour는 표시용이며 expense total·profit·profit % 계산과 Jobber expense/write-back payload를 변경하지 않는다.
+- Estimate profit은 상세 UI가 기존 snapshot의 `financialSummary.revenue`와 `labourEstimate.total`을 순수 Decimal 함수에 전달해 `revenue - labour`와 revenue 기준 이익률을 즉시 파생한다. 별도 snapshot 필드를 저장하지 않으므로 labour Refresh와 같은 렌더에서 자동 갱신되며 기존 expense 기반 Profit과 progress bar를 변경하지 않는다.
 
 ---
 

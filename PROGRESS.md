@@ -49,6 +49,7 @@
 - `jobber_snapshot` 캐시 + 수동 refresh + 변경 감지 diff 알림. Jobber option line preview/manual import. sync preview/retry.
 - G1 계약의 팀원·배정 job·expense read-only 조회, service-role 전용 `jobber_job_snapshots`, Decimal 기반 revenue/expense/profit 계산과 `/jobs` 목록·상세 수동 refresh를 추가했다. 기존 quote write-back 외 Jobber mutation이나 scope 변경은 없다.
 - Job Expenses 상세의 `Estimate labour`는 job 전체의 고유 `(visit ID, assigned user ID)` 배정에서 정규화된 정확한 이름 `Connor`·`Admin`을 제외하고 AUD 450를 곱한다. 상세 첫 진입은 기존 snapshot을 역호환 backfill하고 상세 `Refresh`는 최신 Jobber 배정을 다시 집계한다. 파생 count/rate/total만 JSONB에 저장하며 목록 조회, expense total, profit, profit %, Jobber mutation/scope는 변경하지 않는다.
+- 상세 `Estimate profit`은 `Job revenue - Estimate labour`와 revenue 기준 이익률을 Decimal로 즉시 파생한다. 이 값에는 Expenses total을 차감하지 않으며 snapshot에 추가 저장하지 않는다. 일반 Profit %는 패널 상단에서 제거하고 초록색 Profit 행의 금액 옆에 표시하며 기존 expense 기반 Profit과 progress bar는 유지한다.
 - Product & Service catalog(CSV import)·quote line template.
 
 ### 테스트/검증
