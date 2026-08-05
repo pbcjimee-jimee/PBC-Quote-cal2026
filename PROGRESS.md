@@ -104,6 +104,13 @@
 - 로컬 Job #3103 상세에서 desktop과 iPhone 390×844·375×812 폭을 확인했다. `Job revenue` 바로 아래에 `14 scheduled assignments × $450.00`와 `$6,300.00`가 표시되고, 실제 Refresh pending 후 같은 최신값으로 복귀했으며 가로 overflow와 console error는 0건이었다.
 - 최종 `npm.cmd run verify`는 Vitest 85 files/702 tests 통과와 환경 조건 1 file/9 tests skip, statements 83.87%·branches 70.35%·functions 93.89%·lines 89.43%, strict TypeScript, ESLint, Next production build, production audit 0 vulnerabilities를 통과했다. 새 DB migration·의존성·Jobber mutation/OAuth scope 변경은 없고 Vercel 배포는 아직 실행하지 않았다.
 
+### Job Expenses Estimate profit (2026-08-05, 로컬 구현·검증 완료)
+
+- 상세 전용 `Estimate profit = Job revenue - Estimate labour`와 `Estimate profit % = Estimate profit / Job revenue × 100`을 `decimal.js` 순수 함수로 구현했다. Expenses total은 차감하지 않고 revenue 0은 이익률 `-`, 음수 이익·이익률은 그대로 보존한다. 새 snapshot 필드나 DB 저장은 없다.
+- 상세 행 순서를 Job revenue → Estimate labour → Estimate profit → Expenses total → Profit으로 확정했다. 일반 Profit %는 패널 제목 옆에서 제거하고 초록색 Profit 금액 옆에 표시하며 기존 expense 기반 Profit과 progress bar 공식은 유지한다.
+- TDD에서 새 계산 함수 부재와 새 UI 행 부재를 RED로 확인한 뒤 focused 2 files/14 tests를 GREEN으로 만들었다. 전체 `npm.cmd run verify`는 Vitest 85 files/705 tests 통과와 1 file/9 tests skip, statements 83.89%·branches 70.37%·functions 93.90%·lines 89.45%, strict TypeScript, ESLint, Next production build, production audit 0 vulnerabilities를 통과했다. 병합된 `main`의 전체 Vitest도 85 files/705 tests가 통과했다.
+- 로컬 3000의 Job #3103에서 Estimate profit `$6,137.02 · 49.3%`, 일반 Profit `$7,066.17 · 56.8%`를 desktop·390×844·375×812에서 확인했다. 상세 Refresh 후 14건·Estimate labour `$6,300.00`와 Estimate profit이 함께 재표시됐고 가로 overflow 0, console error/warning 0이었다. 새 dependency·Jobber mutation/OAuth scope 변경은 없으며 push·Vercel 배포는 실행하지 않았다.
+
 ---
 
 ## 🔲 남은 작업
@@ -128,6 +135,7 @@
 
 | 날짜 | 작업 | 담당 |
 |---|---|---|
+| 2026-08-05 | Job Expenses 상세에 `Estimate profit = Job revenue - Estimate labour`와 revenue 기준 이익률을 추가하고, 일반 Profit %를 초록색 Profit 금액 옆으로 옮겼다. Decimal 계산·0 revenue·음수 회귀와 상세/compact UI를 TDD로 검증했고 full verify 85 files/705 tests, coverage/build/audit 0 vulnerabilities를 통과했다. Job #3103의 desktop·390×844·375×812 및 Refresh에서 `$6,137.02 · 49.3%`, 일반 Profit `$7,066.17 · 56.8%`, overflow/console 오류 0을 확인했다. main 로컬 병합만 수행했으며 DB/snapshot/dependency/Jobber mutation/scope 변경과 push·Vercel 배포는 없다. | Codex 5.6-Sol high |
 | 2026-08-05 | Job Expenses 상세 `Estimate labour` 계획을 순차 구현했다. Jobber read-only G1에서 #3103의 14건/AUD 6,300을 확인하고, 고유 visit/user 집계·`Connor`/`Admin` 제외·AUD 450 Decimal 계산, 전용 visit pagination, snapshot 역호환/backfill, 상세 Refresh 원자적 저장, 모바일 행을 반영했다. focused 6 files/66 tests와 full verify 85 files/702 tests(1 file/9 tests skip), coverage/build/audit 0 vulnerabilities를 통과했다. desktop·390×844·375×812에서 실제 Refresh 후 14건/$6,300, overflow 0, console error 0을 확인했다. DB migration·새 의존성·Jobber mutation/scope 변경과 Vercel 배포는 없다. | Codex 5.6-Sol high |
 | 2026-08-04 | 모바일 PWA·Jobs 최적화 커밋 `e8a5e26`을 `origin/main`에 push했고 Vercel production deployment `dpl_7VB1EtTDKnUbf47apC7e8XnNv6Vc`가 해당 커밋을 빌드해 Ready/운영 alias 연결됨을 확인했다. `/manifest.webmanifest`·`/sw.js`·`/offline`·`/login` 200, SW `Cache-Control: public, max-age=0, must-revalidate`, 390px production login page overflow 0/browser console error 0, 최근 production runtime error log 0건을 확인했다. 인증된 Jobs production 측정과 iPhone 홈 화면 앱 실측은 사용자 세션에서 후속 확인한다. | Codex 5.6-Sol high |
 | 2026-08-04 | iPhone 홈 화면 앱의 시작·Jobs 체감 로딩을 로컬 최적화했다. 인증 데이터 없는 root loading, 모바일 7열/42일 Jobs loading shell, 저장된 Jobber ID의 live 팀 사용자 검증+월간 배정 조회 병렬화를 반영했다. 390px viewport에서 warm 달력 완성 2.03~2.28초(변경 전 약 3.77초), 시작 피드백 0.44~0.60초, page overflow 0, 새 console error 0건을 확인했다. `npm.cmd run verify`는 84 files/687 tests 통과(환경 조건 1 file/9 tests skip), coverage 83.73/70.16/93.68/89.35%, production build, audit 0 vulnerabilities를 통과했다. 이 로컬 완료 시점에는 iPhone 실기기 재측정과 production 배포를 실행하지 않았다. | Codex 5.6-Sol high |

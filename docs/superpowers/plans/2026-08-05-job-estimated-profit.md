@@ -282,7 +282,7 @@ Expected: typecheck, lint, Vitest, coverage, Next production build, production a
 
 Result: exit 0. 85 files/705 tests PASS, TypeScript/ESLint/coverage/Next production build/production audit PASS.
 
-- [ ] **Step 4: 구현과 영구 문서를 feature branch에 커밋한다**
+- [x] **Step 4: 구현과 영구 문서를 feature branch에 커밋한다**
 
 fast-forward 병합 전 feature branch를 clean 상태로 만든다.
 
@@ -293,7 +293,9 @@ git commit -m "docs: document estimated job profit"
 
 Expected: feature worktree clean, 구현·테스트·영구 문서가 모두 feature HEAD에 포함.
 
-- [ ] **Step 5: feature branch 구현을 main에 fast-forward 병합한다**
+Result: `0289831 docs: document estimated job profit` 커밋 후 feature worktree clean.
+
+- [x] **Step 5: feature branch 구현을 main에 fast-forward 병합한다**
 
 병합 전 main의 사용자 변경 `next-env.d.ts`를 확인하고 건드리지 않는다. `origin/main`을 ff-only로 갱신한 뒤 feature branch를 병합한다.
 
@@ -304,13 +306,17 @@ git -C <main-root> merge --ff-only codex/job-estimated-profit
 
 Expected: 사용자 변경 보존, main HEAD가 feature HEAD와 일치.
 
-- [ ] **Step 6: 병합된 main 테스트를 다시 실행한다**
+Result: `main`을 `0289831`까지 fast-forward 병합했고 기존 `next-env.d.ts` 수정은 보존했다.
+
+- [x] **Step 6: 병합된 main 테스트를 다시 실행한다**
 
 Run: `npm.cmd test`
 
 Expected: 전체 Vitest suite PASS.
 
-- [ ] **Step 7: 현재 3000 desktop/mobile 화면을 검증한다**
+Result: 85 files/705 tests PASS, 1 file/9 tests skip.
+
+- [x] **Step 7: 현재 3000 desktop/mobile 화면을 검증한다**
 
 Job #3103 상세를 desktop, 390×844, 375×812에서 확인한다.
 
@@ -325,7 +331,9 @@ console error 0
 
 상세 Refresh를 한 번 실행해 최신 labour estimate와 Estimate profit이 함께 다시 표시되는지 확인한다.
 
-- [ ] **Step 8: 최종 검증 결과를 기록하고 작업tree를 정리한다**
+Result: Job #3103에서 desktop·390×844·375×812 모두 목표 금액/이익률, 행 순서, overflow 0을 확인했다. Refresh 후 14건·`$6,300.00`·`$6,137.02 · 49.3%`가 다시 표시됐고 console error/warning은 0이었다.
+
+- [x] **Step 8: 최종 검증 결과를 기록하고 작업tree를 정리한다**
 
 ```bash
 git add PROGRESS.md docs/superpowers/plans/2026-08-05-job-estimated-profit.md
@@ -333,6 +341,8 @@ git commit -m "docs: record estimated job profit"
 ```
 
 검증 성공 후 feature worktree를 제거하고 병합된 feature branch를 삭제한다. Vercel push/deploy는 이번 로컬 구현 범위에 포함하지 않는다.
+
+Result: `.worktrees/job-estimated-profit` 제거와 `codex/job-estimated-profit` 브랜치 삭제 완료. push·Vercel 배포 미실행.
 
 ---
 
