@@ -537,6 +537,9 @@
 .pbc-jobbersnapshot[open] summary::after { content: "Hide"; }
 
 @media (max-width: 720px) {
+  .pbc-page { padding: 22px var(--mobile-page-inset) 48px; }
+  .pbc-card--pad { padding: var(--mobile-page-inset); }
+
   .pbc-customerline {
     grid-template-columns: 1fr;
   }
@@ -971,16 +974,49 @@
   .pbc-statuscontrol,
   .pbc-rate__money input,
   .pbc-ptable__money input,
-  .pbc-monthselect select { font-size: 16px; }
+  .pbc-monthselect select {
+    font-size: var(--mobile-input-font-size);
+  }
+
+  .pbc-btn,
+  .pbc-tab,
+  .pbc-toggle button,
+  button.pbc-dropdownitem,
+  a.pbc-dropdownitem,
+  .pbc-checkfield,
+  .pbc-stocktoggle,
+  .pbc-statuscontrol,
+  .pbc-monthselect select,
+  .pbc-back,
+  .pbc-detailmore summary,
+  .pbc-detaildesc summary {
+    min-height: var(--mobile-tap-target);
+  }
+
+  .pbc-btn,
+  .pbc-tab,
+  .pbc-toggle button,
+  button.pbc-dropdownitem,
+  a.pbc-dropdownitem,
+  .pbc-checkfield,
+  .pbc-stocktoggle,
+  .pbc-back,
+  .pbc-detailmore summary,
+  .pbc-detaildesc summary {
+    font-size: var(--mobile-control-font-size);
+  }
+
   .pbc-iconbtn,
-  .pbc-iconbtn--compact { min-width: 44px; min-height: 44px; }
-  .pbc-btn--sm { min-width: 44px; min-height: 44px; }
+  .pbc-iconbtn--compact,
+  .pbc-btn--sm {
+    min-width: var(--mobile-tap-target);
+    min-height: var(--mobile-tap-target);
+  }
 }
 
 @media (max-width: 720px) {
   .pbc-topbar { height: auto; min-height: 64px; flex-wrap: wrap; gap: 10px; padding: 12px 16px; }
   .pbc-topbar__right { width: 100%; justify-content: space-between; gap: 10px; }
-  .pbc-page { padding: 22px 16px 48px; }
   .pbc-laboursummary { grid-template-columns: repeat(3, minmax(0, 1fr)) !important; }
   .pbc-laboursummary > span:first-child { grid-column: 1 / -1; }
   .pbc-laboursummary > span:not(:first-child) { text-align: left; }
@@ -989,7 +1025,6 @@
   .pbc-workspace > section { padding: 16px; }
   .pbc-pagehead--detail { flex-direction: column; }
   .pbc-detailtags { width: 100%; justify-content: flex-start; padding-top: 0; }
-  .pbc-card--pad { padding: 16px; }
   .pbc-stats { grid-template-columns: 1fr; }
   .pbc-listbar { padding: 12px; }
   .pbc-search--inline { flex-basis: 100%; min-width: 0; }

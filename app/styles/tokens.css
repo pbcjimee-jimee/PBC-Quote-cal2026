@@ -58,4 +58,11 @@
   /* ── 폰트 ────────────────────────────────────────────── */
   --font-body: 'Aptos', 'Inter', 'Segoe UI Variable', 'Segoe UI', system-ui, -apple-system, sans-serif;
   --mono: 'Cascadia Mono', 'Roboto Mono', 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace;
+
+  /* ── 모바일 상호작용 / 레이아웃 ───────────────────────── */
+  --mobile-tap-target: 44px;
+  --mobile-input-font-size: 16px;
+  --mobile-control-font-size: 14px;
+  --mobile-page-inset: 16px;
+  --mobile-layout-gap: 16px;
 }

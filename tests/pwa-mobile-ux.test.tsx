@@ -91,7 +91,7 @@ describe('PWA mobile UX', () => {
       '.pbc-ptable__money input',
       '.pbc-monthselect select',
     ]) {
-      expect(lgResponsive).toMatch(new RegExp(`${selector.replace(/[.*+?^${}()|[\\]\\]/g, '\\$&')}[^}]*font-size:\\s*16px`))
+      expect(lgResponsive).toMatch(new RegExp(`${selector.replace(/[.*+?^${}()|[\\]\\]/g, '\\$&')}[^}]*font-size:\\s*var\\(--mobile-input-font-size\\)`))
     }
 
     expect(css).toMatch(/\.pbc-auth\s*{[^}]*min-height:\s*100vh;[^}]*min-height:\s*100dvh;/)
@@ -99,8 +99,44 @@ describe('PWA mobile UX', () => {
     expect(css).toContain('env(safe-area-inset-right)')
     expect(lgResponsive).toContain('env(safe-area-inset-bottom)')
     expect(lgResponsive).toMatch(/\.pbc-mobile-header\s*{[^}]*padding-top:\s*env\(safe-area-inset-top\)/)
-    expect(lgResponsive).toMatch(/\.pbc-iconbtn[\s\S]*?min-width:\s*44px;[\s\S]*?min-height:\s*44px;/)
-    expect(lgResponsive).toMatch(/\.pbc-btn--sm[^}]*min-width:\s*44px;[^}]*min-height:\s*44px;/)
+    expect(lgResponsive).toMatch(/\.pbc-iconbtn[\s\S]*?min-width:\s*var\(--mobile-tap-target\);[\s\S]*?min-height:\s*var\(--mobile-tap-target\);/)
+    expect(lgResponsive).toMatch(/\.pbc-btn--sm[^}]*min-width:\s*var\(--mobile-tap-target\);[^}]*min-height:\s*var\(--mobile-tap-target\);/)
+  })
+
+  it('defines app-wide mobile size tokens and applies them to shared controls', () => {
+    const tokens = readFileSync('app/styles/tokens.css', 'utf8')
+    const css = readFileSync('app/styles/components.css', 'utf8')
+    const mobile = getMediaBlock(css, 'max-width: 1023.98px')
+    const narrow = getMediaBlock(css, 'max-width: 720px')
+
+    expect(tokens).toContain('--mobile-tap-target: 44px')
+    expect(tokens).toContain('--mobile-input-font-size: 16px')
+    expect(tokens).toContain('--mobile-control-font-size: 14px')
+    expect(tokens).toContain('--mobile-page-inset: 16px')
+    expect(tokens).toContain('--mobile-layout-gap: 16px')
+
+    for (const selector of [
+      '.pbc-btn',
+      '.pbc-tab',
+      '.pbc-toggle button',
+      'button.pbc-dropdownitem',
+      'a.pbc-dropdownitem',
+      '.pbc-checkfield',
+      '.pbc-stocktoggle',
+      '.pbc-statuscontrol',
+      '.pbc-monthselect select',
+      '.pbc-back',
+      '.pbc-detailmore summary',
+      '.pbc-detaildesc summary',
+    ]) {
+      expect(mobile).toContain(selector)
+    }
+
+    expect(mobile).toContain('min-height: var(--mobile-tap-target)')
+    expect(mobile).toContain('font-size: var(--mobile-input-font-size)')
+    expect(mobile).toContain('font-size: var(--mobile-control-font-size)')
+    expect(narrow).toContain('padding: 22px var(--mobile-page-inset) 48px')
+    expect(narrow).toContain('padding: var(--mobile-page-inset)')
   })
 
   it('stacks narrow mobile navigation icons above visible labels without shrinking targets', () => {
