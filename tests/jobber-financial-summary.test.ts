@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  calculateEstimatedProfit,
   calculateFinancialSummary,
   calculateFinancialSummaryFromAmounts,
 } from '@/lib/jobber/financial-summary'
@@ -20,6 +21,27 @@ describe('Jobber financial summary', () => {
       expensesTotal: '10',
       profit: '-10',
       profitMarginPercent: null,
+    })
+  })
+
+  it('calculates estimated profit from revenue and estimated labour only', () => {
+    expect(calculateEstimatedProfit('12437.02', '6300')).toEqual({
+      profit: '6137.02',
+      profitMarginPercent: '49.344779',
+    })
+  })
+
+  it('returns a null estimated margin when revenue is zero', () => {
+    expect(calculateEstimatedProfit('0', '450')).toEqual({
+      profit: '-450',
+      profitMarginPercent: null,
+    })
+  })
+
+  it('preserves negative estimated profit and margin', () => {
+    expect(calculateEstimatedProfit('450', '900')).toEqual({
+      profit: '-450',
+      profitMarginPercent: '-100',
     })
   })
 

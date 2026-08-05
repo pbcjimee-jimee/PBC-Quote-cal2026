@@ -14,6 +14,11 @@ export interface DecimalFinancialSummary {
   profitMarginPercent: string | null
 }
 
+export interface EstimatedProfitSummary {
+  readonly profit: string
+  readonly profitMarginPercent: string | null
+}
+
 type FinancialLineItem = { readonly totalPrice: Decimal.Value }
 type FinancialExpenseJob = {
   readonly expenses: readonly { readonly total: Decimal.Value | null }[]
@@ -33,6 +38,22 @@ export function calculateFinancialSummaryFromAmounts(
   return {
     revenue: revenue.toDecimalPlaces(2).toString(),
     expensesTotal: expensesTotal.toDecimalPlaces(2).toString(),
+    profit: profit.toDecimalPlaces(2).toString(),
+    profitMarginPercent,
+  }
+}
+
+export function calculateEstimatedProfit(
+  revenueValue: Decimal.Value,
+  estimatedLabourValue: Decimal.Value,
+): EstimatedProfitSummary {
+  const revenue = new Decimal(revenueValue)
+  const profit = revenue.sub(estimatedLabourValue)
+  const profitMarginPercent = revenue.gt(0)
+    ? profit.div(revenue).mul(100).toDecimalPlaces(6).toString()
+    : null
+
+  return {
     profit: profit.toDecimalPlaces(2).toString(),
     profitMarginPercent,
   }
