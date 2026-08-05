@@ -73,7 +73,9 @@ function isNavItemActive(href: string, pathname: string | null): boolean {
   if (href === '/quotes') {
     return pathname === '/quotes' || (pathname.startsWith('/quotes/') && !pathname.startsWith('/quotes/new'))
   }
-  if (href === '/settings') return pathname === '/settings'
+  if (href === '/settings') {
+    return pathname === '/settings' || pathname.startsWith('/settings/')
+  }
   return pathname.startsWith(href)
 }
 
@@ -182,10 +184,22 @@ export function AppHeader({ userProfile }: { userProfile: UserProfile }) {
 
       <header className="pbc-mobile-header sticky top-0 z-30 border-b border-[var(--border)] bg-[rgba(246,249,255,0.82)] backdrop-blur lg:hidden">
         <div className="pbc-mobile-header__inner">
-          <IntentLink href={roleHome} className="pbc-mobile-header__brand">
-            <span className="pbc-brand__mark !h-9 !w-9 !text-sm">P</span>
-            <span className="text-sm font-extrabold text-[var(--foreground)]">PBC Quote</span>
-          </IntentLink>
+          <div className="pbc-mobile-header__brandrow">
+            <IntentLink href={roleHome} className="pbc-mobile-header__brand">
+              <span className="pbc-brand__mark !h-9 !w-9 !text-sm">P</span>
+              <span className="text-sm font-extrabold text-[var(--foreground)]">PBC Quote</span>
+            </IntentLink>
+            <form action={signOut}>
+              <button
+                type="submit"
+                aria-label="Sign out"
+                title="Sign out"
+                className="pbc-iconbtn pbc-mobile-signout"
+              >
+                {Icons.signOut({ size: 18 })}
+              </button>
+            </form>
+          </div>
 
           <nav aria-label="Mobile navigation" className="pbc-mobile-nav">
             {roleNavItems.map((item) => {

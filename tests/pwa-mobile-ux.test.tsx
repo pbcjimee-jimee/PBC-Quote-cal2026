@@ -177,11 +177,23 @@ describe('PWA mobile UX', () => {
     const css = readFileSync('app/styles/components.css', 'utf8')
     const mobile390Responsive = getMediaBlock(css, 'max-width: 560px')
 
-    expect(css).toMatch(/\.pbc-mobile-nav\s*{[^}]*grid-template-columns:\s*repeat\(5,\s*minmax\(0,\s*1fr\)\)/)
-    expect(mobile390Responsive).toMatch(/\.pbc-mobile-nav\s*{[^}]*grid-template-columns:\s*repeat\(5,\s*minmax\(0,\s*1fr\)\)/)
+    expect(css).toMatch(/\.pbc-mobile-nav\s*{[^}]*grid-auto-flow:\s*column[^}]*grid-auto-columns:\s*minmax\(0,\s*1fr\)/)
+    expect(mobile390Responsive).toMatch(/\.pbc-mobile-nav\s*{[^}]*width:\s*100%/)
     expect(mobile390Responsive).toMatch(/\.pbc-mobile-nav__item\s*{[^}]*min-width:\s*0[^}]*min-height:\s*44px[^}]*flex-direction:\s*column/)
     expect(mobile390Responsive).toMatch(/\.pbc-mobile-nav__item\s+span\s*{[^}]*max-width:\s*100%[^}]*overflow:\s*hidden[^}]*text-overflow:\s*ellipsis/)
     expect(mobile390Responsive).not.toMatch(/\.pbc-mobile-nav__item\s+span\s*{[^}]*(display:\s*none|visibility:\s*hidden)/)
+  })
+
+  it('keeps the mobile shell full-width and role navigation auto-sized', () => {
+    const css = readFileSync('app/styles/components.css', 'utf8')
+    const mobile = getMediaBlock(css, 'max-width: 1023.98px')
+    const narrow = getMediaBlock(css, 'max-width: 560px')
+
+    expect(css).toMatch(/\.pbc-mobile-nav\s*{[^}]*grid-auto-flow:\s*column[^}]*grid-auto-columns:\s*minmax\(0,\s*1fr\)/)
+    expect(mobile).toMatch(/\.pbc-route-progress\s*{[^}]*inset-inline-start:\s*0/)
+    expect(mobile).toMatch(/\.pbc-topbar\s*{[^}]*position:\s*static/)
+    expect(mobile).toMatch(/\.pbc-topbar__right\s*{[^}]*flex-wrap:\s*wrap/)
+    expect(narrow).toMatch(/\.pbc-mobile-header__brandrow\s*{[^}]*width:\s*100%/)
   })
 
   it('keeps component-specific 1080px layouts while moving shell transitions to lg', () => {

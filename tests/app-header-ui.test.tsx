@@ -6,6 +6,7 @@ import type { UserProfile } from '@/lib/user-profiles'
 
 const headerState = vi.hoisted(() => ({
   collapsed: false,
+  hydrated: false,
   pathname: '/quotes/new',
 }))
 
@@ -17,7 +18,9 @@ vi.mock('react', async (importOriginal) => {
       _subscribe: unknown,
       _getSnapshot: unknown,
       getServerSnapshot?: () => unknown
-    ) => getServerSnapshot?.name === 'getServerHydratedSnapshot' ? false : headerState.collapsed),
+    ) => getServerSnapshot?.name === 'getServerHydratedSnapshot'
+      ? headerState.hydrated
+      : headerState.collapsed),
   }
 })
 
@@ -109,5 +112,25 @@ describe('AppHeader sidebar UI', () => {
 
     expect(markup).toContain('Inventory')
     expect(markup).not.toContain('is-active')
+  })
+
+  it('renders an accessible mobile sign-out action', () => {
+    const markup = renderToStaticMarkup(createElement(AppHeader, { userProfile }))
+    const mobileHeader = markup.slice(markup.indexOf('<header'), markup.indexOf('</header>'))
+
+    expect(mobileHeader).toContain('pbc-mobile-header__brandrow')
+    expect(mobileHeader).toContain('pbc-mobile-signout')
+    expect(mobileHeader).toContain('aria-label="Sign out"')
+    expect(mobileHeader).toContain('<form')
+  })
+
+  it('marks Settings active for descendant routes after hydration', () => {
+    headerState.hydrated = true
+    headerState.pathname = '/settings/users'
+    const markup = renderToStaticMarkup(createElement(AppHeader, { userProfile }))
+    const mobileHeader = markup.slice(markup.indexOf('<header'), markup.indexOf('</header>'))
+
+    expect(mobileHeader).toMatch(/<a(?=[^>]*href="\/settings")(?=[^>]*class="[^"]*is-active)[^>]*>/)
+    headerState.hydrated = false
   })
 })
