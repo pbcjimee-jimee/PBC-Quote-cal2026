@@ -205,8 +205,9 @@ target. Category search and custom-category creation remain available to admin.
 Save success updates the item, clears the row form, and collapses the card.
 Cancel discards local row changes and collapses it. A server error leaves the
 card open, preserves the entered values, and shows the existing error message.
-Admin delete continues to use the existing confirmation behavior and removes
-the card only after server success.
+Admin delete continues to use the existing admin-only delete action and removes
+the card only after server success. This work does not add a new confirmation
+step or change the delete contract.
 
 ### Inventory controls around the list
 
