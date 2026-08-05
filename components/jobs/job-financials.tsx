@@ -1,7 +1,7 @@
 import Decimal from 'decimal.js'
 import { getMarginBarTone } from '@/components/quote-form/final-summary'
 import type { EstimatedLabourSummary } from '@/lib/jobber/estimated-labour'
-import type { DecimalFinancialSummary } from '@/lib/jobber/financial-summary'
+import { calculateEstimatedProfit, type DecimalFinancialSummary } from '@/lib/jobber/financial-summary'
 
 export function formatAud(value: string): string {
   const [whole, fraction] = new Decimal(value).toFixed(2).split('.')
@@ -32,9 +32,13 @@ export function JobFinancials({ summary, labourEstimate, compact = false }: {
     )
   }
 
+  const estimatedProfit = labourEstimate
+    ? calculateEstimatedProfit(summary.revenue, labourEstimate.total)
+    : null
+
   return (
     <section className="pbc-card pbc-card--pad" aria-label="Jobber profit">
-      <div className="flex items-center justify-between gap-3"><h2 className="pbc-paneltitle">Jobber profit</h2><b>{formatProfitMargin(summary.profitMarginPercent)}</b></div>
+      <div className="flex items-center justify-between gap-3"><h2 className="pbc-paneltitle">Jobber profit</h2></div>
       <div className="mt-4 space-y-2 text-sm">
         <div className="pbc-jobfinancial__row pbc-jobfinancial__row--revenue"><span>Job revenue</span><b className="pbc-moneytext">{formatAud(summary.revenue)}</b></div>
         {labourEstimate ? (
@@ -49,8 +53,23 @@ export function JobFinancials({ summary, labourEstimate, compact = false }: {
             <b className="pbc-moneytext">{formatAud(labourEstimate.total)}</b>
           </div>
         ) : null}
+        {estimatedProfit ? (
+          <div className="pbc-jobfinancial__row pbc-jobfinancial__row--estimated-profit">
+            <span>Estimate profit</span>
+            <span className="pbc-jobfinancial__values">
+              <b className="pbc-moneytext">{formatAud(estimatedProfit.profit)}</b>
+              <b>{formatProfitMargin(estimatedProfit.profitMarginPercent)}</b>
+            </span>
+          </div>
+        ) : null}
         <div className="pbc-jobfinancial__row pbc-jobfinancial__row--expenses"><span>Expenses total</span><b className="pbc-moneytext">{formatAud(summary.expensesTotal)}</b></div>
-        <div className="pbc-jobfinancial__row pbc-jobfinancial__row--profit"><span>Profit</span><b className="pbc-moneytext">{formatAud(summary.profit)}</b></div>
+        <div className="pbc-jobfinancial__row pbc-jobfinancial__row--profit">
+          <span>Profit</span>
+          <span className="pbc-jobfinancial__values">
+            <b className="pbc-moneytext">{formatAud(summary.profit)}</b>
+            <b>{formatProfitMargin(summary.profitMarginPercent)}</b>
+          </span>
+        </div>
       </div>
       <div className="mt-4 h-3 overflow-hidden rounded-full bg-[var(--surface-soft)]"><div className="pbc-jobfinancial__bar h-full rounded-full" style={{ width }} /></div>
     </section>
