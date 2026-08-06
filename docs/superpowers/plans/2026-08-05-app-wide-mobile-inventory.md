@@ -61,7 +61,7 @@
 - Produces the binding mobile control contract consumed by every later task.
 - Does not change component markup or desktop computed styles.
 
-- [ ] **Step 1: Add failing mobile token and interaction tests**
+- [x] **Step 1: Add failing mobile token and interaction tests**
 
 Add this test beside the existing binding mobile rules in `tests/pwa-mobile-ux.test.tsx`, and update the existing 16px/44px assertions to expect the new CSS variables instead of duplicated literals:
 
@@ -105,7 +105,7 @@ it('defines app-wide mobile size tokens and applies them to shared controls', ()
 
 In the pre-existing `defines the binding mobile input...` test, replace exact `font-size: 16px` expectations with `font-size: var(--mobile-input-font-size)` and replace the compact-button literal `44px` expectations with `var(--mobile-tap-target)`.
 
-- [ ] **Step 2: Run the test and confirm RED**
+- [x] **Step 2: Run the test and confirm RED**
 
 Run:
 
@@ -115,7 +115,7 @@ npm.cmd run test:run -- tests/pwa-mobile-ux.test.tsx
 
 Expected: FAIL because the five mobile tokens and expanded selector contract do not exist.
 
-- [ ] **Step 3: Add the exact mobile tokens**
+- [x] **Step 3: Add the exact mobile tokens**
 
 Append to the `:root` block in `app/styles/tokens.css`:
 
@@ -128,7 +128,7 @@ Append to the `:root` block in `app/styles/tokens.css`:
   --mobile-layout-gap: 16px;
 ```
 
-- [ ] **Step 4: Apply the tokens only inside current mobile media blocks**
+- [x] **Step 4: Apply the tokens only inside current mobile media blocks**
 
 In `app/styles/components.css`, replace the current mobile input and compact target literals and extend the `max-width: 1023.98px` block with:
 
@@ -189,7 +189,7 @@ In the `max-width: 720px` block, change the existing page and card declarations 
 
 Do not change the Jobs calendar font sizes or its `44px` job-cell geometry.
 
-- [ ] **Step 5: Run focused tests and static checks**
+- [x] **Step 5: Run focused tests and static checks**
 
 Run:
 
@@ -202,7 +202,7 @@ git diff --check
 
 Expected: all commands PASS; the Jobs calendar contract remains unchanged.
 
-- [ ] **Step 6: Commit the shared contract**
+- [x] **Step 6: Commit the shared contract**
 
 ```powershell
 git add -- app/styles/tokens.css app/styles/components.css tests/pwa-mobile-ux.test.tsx
@@ -231,7 +231,7 @@ git commit -m "style: define app-wide mobile control sizing"
 - Changes `isNavItemActive('/settings', pathname)` to accept `/settings/*`.
 - Produces an auto-column mobile navigation grid for both role counts.
 
-- [ ] **Step 1: Make hydration state controllable in the header test**
+- [x] **Step 1: Make hydration state controllable in the header test**
 
 Extend `headerState` in `tests/app-header-ui.test.tsx`:
 
@@ -255,7 +255,7 @@ useSyncExternalStore: vi.fn((
   : headerState.collapsed),
 ```
 
-- [ ] **Step 2: Add failing header behavior tests**
+- [x] **Step 2: Add failing header behavior tests**
 
 Add:
 
@@ -301,7 +301,7 @@ Update the old fixed-five-column expectations in the same file to require
 `grid-auto-flow: column` and `grid-auto-columns: minmax(0, 1fr)` instead of
 `repeat(5, ...)`.
 
-- [ ] **Step 3: Run the tests and confirm RED**
+- [x] **Step 3: Run the tests and confirm RED**
 
 ```powershell
 npm.cmd run test:run -- tests/app-header-ui.test.tsx tests/pwa-mobile-ux.test.tsx
@@ -309,7 +309,7 @@ npm.cmd run test:run -- tests/app-header-ui.test.tsx tests/pwa-mobile-ux.test.ts
 
 Expected: FAIL because mobile sign-out, descendant Settings matching, automatic columns, static topbar, and full-width progress are absent.
 
-- [ ] **Step 4: Implement Settings descendant matching**
+- [x] **Step 4: Implement Settings descendant matching**
 
 Change only the Settings branch in `isNavItemActive`:
 
@@ -319,7 +319,7 @@ if (href === '/settings') {
 }
 ```
 
-- [ ] **Step 5: Add the mobile sign-out to the brand row**
+- [x] **Step 5: Add the mobile sign-out to the brand row**
 
 Replace the current standalone mobile brand link with this structure inside
 `.pbc-mobile-header__inner`:
@@ -345,7 +345,7 @@ Replace the current standalone mobile brand link with this structure inside
 
 Keep the existing role-filtered mobile navigation immediately after this row.
 
-- [ ] **Step 6: Implement the shell CSS overrides**
+- [x] **Step 6: Implement the shell CSS overrides**
 
 Change the base mobile header/navigation declarations to:
 
@@ -376,7 +376,7 @@ with:
 Remove the duplicated fixed-five-column rules from both `560px` and
 `359.98px` blocks; keep their icon-above-label and 44px target rules.
 
-- [ ] **Step 7: Run focused tests and lint**
+- [x] **Step 7: Run focused tests and lint**
 
 ```powershell
 npm.cmd run test:run -- tests/app-header-ui.test.tsx tests/pwa-mobile-ux.test.tsx
@@ -387,7 +387,7 @@ git diff --check
 
 Expected: PASS.
 
-- [ ] **Step 8: Commit the mobile shell**
+- [x] **Step 8: Commit the mobile shell**
 
 ```powershell
 git add -- components/layout/app-header.tsx app/styles/components.css tests/app-header-ui.test.tsx tests/pwa-mobile-ux.test.tsx
@@ -417,7 +417,7 @@ git commit -m "feat: fix mobile app shell navigation"
 - `InventoryManager` remains the only state owner and passes `editingRowId`, `rowEditForm`, pending state, role, and existing callbacks.
 - Server action calls and payloads remain exclusively in `InventoryManager`.
 
-- [ ] **Step 1: Add a reusable Inventory test fixture and explicit edit form**
+- [x] **Step 1: Add a reusable Inventory test fixture and explicit edit form**
 
 At the top of `tests/inventory-ui.test.tsx`, import the new exports and define:
 
@@ -475,7 +475,7 @@ const mobileCallbacks = {
 
 Add `vi` to the existing Vitest import.
 
-- [ ] **Step 2: Add failing collapsed and role-specific expanded tests**
+- [x] **Step 2: Add failing collapsed and role-specific expanded tests**
 
 ```tsx
 it('renders a collapsed mobile card with only the approved summary fields', () => {
@@ -543,7 +543,7 @@ it('limits the expanded supervisor mobile card to movement fields', () => {
 })
 ```
 
-- [ ] **Step 3: Add the failing responsive visibility contract**
+- [x] **Step 3: Add the failing responsive visibility contract**
 
 Add to `tests/pwa-mobile-ux.test.tsx`:
 
@@ -560,7 +560,7 @@ it('switches Inventory from the desktop table to disclosure cards at 720px', () 
 })
 ```
 
-- [ ] **Step 4: Run the tests and confirm RED**
+- [x] **Step 4: Run the tests and confirm RED**
 
 ```powershell
 npm.cmd run test:run -- tests/inventory-ui.test.tsx tests/pwa-mobile-ux.test.tsx
@@ -568,7 +568,7 @@ npm.cmd run test:run -- tests/inventory-ui.test.tsx tests/pwa-mobile-ux.test.tsx
 
 Expected: FAIL because `InventoryMobileList` and its CSS do not exist.
 
-- [ ] **Step 5: Export the form type and define the mobile renderer props**
+- [x] **Step 5: Export the form type and define the mobile renderer props**
 
 Change the current form type declaration to:
 
@@ -595,7 +595,7 @@ Add this exact prop type after `InventoryTableProps`:
 export type InventoryMobileListProps = Omit<InventoryTableProps, 'onToggleStatus'>
 ```
 
-- [ ] **Step 6: Add a compact reusable mobile field helper**
+- [x] **Step 6: Add a compact reusable mobile field helper**
 
 Place this helper above `InventoryMobileList` in the same file:
 
@@ -633,7 +633,7 @@ function MobileInventoryField({
 }
 ```
 
-- [ ] **Step 7: Implement `InventoryMobileList` with the approved fields**
+- [x] **Step 7: Implement `InventoryMobileList` with the approved fields**
 
 Add an exported component next to `InventoryTable`. Its structure must be:
 
@@ -760,7 +760,7 @@ export function InventoryMobileList({
 Do not call a server action, add a confirmation step, or maintain separate form
 state inside this component.
 
-- [ ] **Step 8: Wire both renderers to the same manager state**
+- [x] **Step 8: Wire both renderers to the same manager state**
 
 Add `pbc-inventorydesktop` to the existing table wrapper:
 
@@ -789,7 +789,7 @@ render `InventoryMobileList` with the same values and callbacks except
 />
 ```
 
-- [ ] **Step 9: Add Inventory card CSS and the 720px mode switch**
+- [x] **Step 9: Add Inventory card CSS and the 720px mode switch**
 
 Add base styles near the existing Inventory table/category styles:
 
@@ -824,7 +824,7 @@ Add inside `max-width: 720px`:
   .pbc-inventorymobile__actions .pbc-btn { flex: 1 1 96px; justify-content: center; }
 ```
 
-- [ ] **Step 10: Run focused Inventory tests and checks**
+- [x] **Step 10: Run focused Inventory tests and checks**
 
 ```powershell
 npm.cmd run test:run -- tests/inventory-ui.test.tsx tests/pwa-mobile-ux.test.tsx tests/inventory-actions.test.ts tests/inventory-actions-supabase.test.ts
@@ -835,7 +835,7 @@ git diff --check
 
 Expected: PASS. Fix every failure before continuing.
 
-- [ ] **Step 11: Commit Inventory mobile cards**
+- [x] **Step 11: Commit Inventory mobile cards**
 
 ```powershell
 git add -- components/inventory/inventory-manager.tsx app/styles/components.css tests/inventory-ui.test.tsx tests/pwa-mobile-ux.test.tsx
@@ -864,7 +864,7 @@ git commit -m "feat: add mobile inventory cards"
 - Produces `.pbc-topbar__local-save`, which identifies only the local Save duplicated by the mobile total bar.
 - Does not change calculation state, save payloads, Jobber sync availability, or navigation guards.
 
-- [ ] **Step 1: Add failing quote markup tests**
+- [x] **Step 1: Add failing quote markup tests**
 
 Add to `tests/quote-ui.test.tsx`:
 
@@ -925,7 +925,7 @@ it('expands Formula choices and hides only the redundant top Save on narrow scre
 })
 ```
 
-- [ ] **Step 2: Run tests and confirm RED**
+- [x] **Step 2: Run tests and confirm RED**
 
 ```powershell
 npm.cmd run test:run -- tests/quote-ui.test.tsx tests/pwa-mobile-ux.test.tsx
@@ -933,7 +933,7 @@ npm.cmd run test:run -- tests/quote-ui.test.tsx tests/pwa-mobile-ux.test.tsx
 
 Expected: FAIL because neither class exists.
 
-- [ ] **Step 3: Add the Formula choice class without changing radio behavior**
+- [x] **Step 3: Add the Formula choice class without changing radio behavior**
 
 Change both Low and High label class strings in
 `components/quote-form/formula-results.tsx` from `pbc-chip ...` to:
@@ -948,7 +948,7 @@ and:
 className={`pbc-chip pbc-formulachoice cursor-pointer border ${isMax ? '' : 'pbc-chip--muted'}`}
 ```
 
-- [ ] **Step 4: Mark the top local Save only**
+- [x] **Step 4: Mark the top local Save only**
 
 Change the top local-save button in `components/quote-form/quote-form.tsx` to:
 
@@ -965,7 +965,7 @@ Change the top local-save button in `components/quote-form/quote-form.tsx` to:
 
 Do not add this class to the bottom mobile Save or Jobber sync button.
 
-- [ ] **Step 5: Add exact responsive CSS**
+- [x] **Step 5: Add exact responsive CSS**
 
 Inside `max-width: 1023.98px`:
 
@@ -979,7 +979,7 @@ Inside `max-width: 720px`:
   .pbc-topbar__local-save { display: none; }
 ```
 
-- [ ] **Step 6: Run focused quote regression tests and checks**
+- [x] **Step 6: Run focused quote regression tests and checks**
 
 ```powershell
 npm.cmd run test:run -- tests/quote-ui.test.tsx tests/pwa-mobile-ux.test.tsx tests/quote-actions.test.ts tests/jobber-option-mapping.test.ts
@@ -990,7 +990,7 @@ git diff --check
 
 Expected: PASS with no calculation or save tests changed.
 
-- [ ] **Step 7: Commit quote mobile refinements**
+- [x] **Step 7: Commit quote mobile refinements**
 
 ```powershell
 git add -- components/quote-form/formula-results.tsx components/quote-form/quote-form.tsx app/styles/components.css tests/quote-ui.test.tsx tests/pwa-mobile-ux.test.tsx
@@ -1009,7 +1009,7 @@ git commit -m "style: refine mobile quote interactions"
 **Interfaces:**
 - Verifies every prior task against the repository's complete quality gate.
 
-- [ ] **Step 1: Run the combined focused suite**
+- [x] **Step 1: Run the combined focused suite**
 
 ```powershell
 npm.cmd run test:run -- tests/pwa-mobile-ux.test.tsx tests/app-header-ui.test.tsx tests/inventory-ui.test.tsx tests/inventory-actions.test.ts tests/inventory-actions-supabase.test.ts tests/quote-ui.test.tsx tests/jobs-ui.test.tsx tests/settings-ui.test.tsx tests/users-ui.test.tsx
@@ -1017,7 +1017,7 @@ npm.cmd run test:run -- tests/pwa-mobile-ux.test.tsx tests/app-header-ui.test.ts
 
 Expected: PASS.
 
-- [ ] **Step 2: Run the complete repository verification command**
+- [x] **Step 2: Run the complete repository verification command**
 
 ```powershell
 npm.cmd run verify
@@ -1026,14 +1026,14 @@ npm.cmd run verify
 Expected: `git diff --check`, TypeScript, ESLint, all Vitest files, coverage,
 Next production build, and production dependency audit all PASS.
 
-- [ ] **Step 3: Stop on any failure**
+- [x] **Step 3: Stop on any failure**
 
 For a failure, record the exact failing command and first relevant error, write
 or strengthen the narrowest regression test when behavior is not already
 covered, correct only the owning file from Tasks 1-4, rerun the failing command,
 then rerun `npm.cmd run verify`. Do not advance to browser QA until it passes.
 
-- [ ] **Step 4: Confirm repository scope**
+- [x] **Step 4: Confirm repository scope**
 
 ```powershell
 git status --short
@@ -1062,14 +1062,14 @@ create an empty commit when verification requires no changes.
 - Uses the existing authenticated local app at `http://192.168.1.167:3000`.
 - Does not save, delete, import, sync, refresh external data, or otherwise mutate user data during visual QA.
 
-- [ ] **Step 1: Open or reuse the local authenticated browser session**
+- [x] **Step 1: Open or reuse the local authenticated browser session**
 
 Use `browser:control-in-app-browser`. Reuse the existing Inventory/Quotes tab
 when available. Start the development server only if the current URL does not
 respond; use the repository's existing `npm.cmd run dev -- --hostname 0.0.0.0`
 command and keep it in the background.
 
-- [ ] **Step 2: Verify the mobile shell at `375x812`**
+- [x] **Step 2: Verify the mobile shell at `375x812`**
 
 Check admin navigation, the 44px mobile sign-out button, active Settings state
 on `/settings/users`, full-width route progress, wrapping Settings actions, and
@@ -1085,7 +1085,7 @@ non-sticky page topbars. Measure:
 
 Expected: `overflow === 0`.
 
-- [ ] **Step 3: Verify all primary routes at `375x812`**
+- [x] **Step 3: Verify all primary routes at `375x812`**
 
 Visit in this order, resolving the first existing quote/job detail link from its
 list rather than hard-coding an ID:
@@ -1104,7 +1104,7 @@ For each route, require document overflow `0`. Dense Settings, Users, and job
 expense table wrappers may report an internal `scrollWidth` larger than their
 client width; their parent document may not.
 
-- [ ] **Step 4: Verify Inventory interaction without mutation at `375x812`**
+- [x] **Step 4: Verify Inventory interaction without mutation at `375x812`**
 
 On `/inventory`:
 
@@ -1120,12 +1120,12 @@ On `/inventory`:
 
 Do not press Save, Delete, Import, Refresh, or Jobber Sync.
 
-- [ ] **Step 5: Repeat the route and Inventory measurements at `390x844`**
+- [x] **Step 5: Repeat the route and Inventory measurements at `390x844`**
 
 Expected for every route: document overflow `0`, no topbar hidden behind the
 app header, no clipped primary action, and no new console warning/error.
 
-- [ ] **Step 6: Verify desktop preservation at `1280x900`**
+- [x] **Step 6: Verify desktop preservation at `1280x900`**
 
 On `/inventory`, require:
 
@@ -1138,12 +1138,12 @@ On `/inventory`, require:
 Spot-check Quotes, Settings, and Jobs to confirm desktop topbars remain sticky
 and desktop control density is unchanged.
 
-- [ ] **Step 7: Inspect browser logs and reset the viewport**
+- [x] **Step 7: Inspect browser logs and reset the viewport**
 
 Expected: zero new console errors and zero new warnings caused by the changed
 components. Reset the temporary viewport override before finalizing the tab.
 
-- [ ] **Step 8: Correct any browser failure before advancing**
+- [x] **Step 8: Correct any browser failure before advancing**
 
 For each reproducible failure, add the narrowest CSS/markup contract to the
 owning test file, confirm it fails, implement the minimal correction in the
@@ -1183,7 +1183,7 @@ Run only the one `git add` command matching the owning regression, then inspect
 - Makes the new CSS/mobile behavior binding for future work.
 - Records only commands and browser measurements actually completed.
 
-- [ ] **Step 1: Update the design-system mobile rules**
+- [x] **Step 1: Update the design-system mobile rules**
 
 Add these binding rules to `docs/UI-DESIGN-SYSTEM.md`:
 
@@ -1195,7 +1195,7 @@ Add these binding rules to `docs/UI-DESIGN-SYSTEM.md`:
 - At `max-width: 720px`, Inventory uses disclosure cards; collapsed cards show only Name, Category, and Size / Serial. Desktop retains the twelve-column table.
 ```
 
-- [ ] **Step 2: Update page behavior documentation**
+- [x] **Step 2: Update page behavior documentation**
 
 In `docs/UI-PAGES.md` §5, document the exact Inventory collapsed fields,
 tap-to-expand behavior, one-open-card rule, admin full editor, supervisor
@@ -1203,7 +1203,7 @@ movement-only editor, and desktop table preservation. In §7, document
 auto-sized role navigation, mobile sign-out, wrapping/non-sticky topbars, and
 Settings descendant active state.
 
-- [ ] **Step 3: Record actual QA evidence**
+- [x] **Step 3: Record actual QA evidence**
 
 In `docs/PWA-QA.md`, append a dated `2026-08-05 app-wide mobile verification`
 section containing the exact completed viewport sizes, route list, overflow
@@ -1216,13 +1216,13 @@ In `PROGRESS.md`, append a completed summary naming the Inventory card behavior,
 shared control/shell changes, focused test totals, full verification results,
 browser viewports, and commit IDs produced during execution.
 
-- [ ] **Step 4: Mark this plan's completed checkboxes**
+- [x] **Step 4: Mark this plan's completed checkboxes**
 
 Change each executed `- [ ]` to `- [x]`. Leave a checkbox open only when the
 corresponding command or browser check was not performed, and explain that
 specific omission in `docs/PWA-QA.md`.
 
-- [ ] **Step 5: Run final verification after documentation changes**
+- [x] **Step 5: Run final verification after documentation changes**
 
 ```powershell
 npm.cmd run verify
@@ -1233,14 +1233,14 @@ git status --short
 Expected: verification PASS; only the documentation/plan files are uncommitted,
 plus the preserved unrelated `next-env.d.ts` modification.
 
-- [ ] **Step 6: Commit documentation and evidence**
+- [x] **Step 6: Commit documentation and evidence**
 
 ```powershell
 git add -- docs/UI-DESIGN-SYSTEM.md docs/UI-PAGES.md docs/PWA-QA.md PROGRESS.md docs/superpowers/plans/2026-08-05-app-wide-mobile-inventory.md
 git commit -m "docs: record app-wide mobile UX"
 ```
 
-- [ ] **Step 7: Confirm final repository state**
+- [x] **Step 7: Confirm final repository state**
 
 ```powershell
 git status --short --branch

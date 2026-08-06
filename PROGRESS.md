@@ -111,6 +111,14 @@
 - TDD에서 새 계산 함수 부재와 새 UI 행 부재를 RED로 확인한 뒤 focused 2 files/14 tests를 GREEN으로 만들었다. 전체 `npm.cmd run verify`는 Vitest 85 files/705 tests 통과와 1 file/9 tests skip, statements 83.89%·branches 70.37%·functions 93.90%·lines 89.45%, strict TypeScript, ESLint, Next production build, production audit 0 vulnerabilities를 통과했다. 병합된 `main`의 전체 Vitest도 85 files/705 tests가 통과했다.
 - 로컬 3000의 Job #3103에서 Estimate profit `$6,137.02 · 49.3%`, 일반 Profit `$7,066.17 · 56.8%`를 desktop·390×844·375×812에서 확인했다. 상세 Refresh 후 14건·Estimate labour `$6,300.00`와 Estimate profit이 함께 재표시됐고 가로 overflow 0, console error/warning 0이었다. 새 dependency·Jobber mutation/OAuth scope 변경은 없으며 push·Vercel 배포는 실행하지 않았다.
 
+### App-wide mobile UX와 Inventory disclosure cards (2026-08-06, 로컬 구현·검증 완료)
+
+- 공용 mobile token으로 최소 44px target, 16px input text, 14px interactive text, 16px narrow inset/gap을 정의하고 버튼·탭·toggle·dropdown row·check row·stock control·back link에 적용했다. 역할별 mobile nav 자동 크기, brand-row Sign out, Settings 하위 경로 active state, non-sticky/wrapping page topbar, full-width route progress를 반영했다.
+- `max-width: 720px` Inventory는 Name, Category, Size / Serial만 보이는 disclosure card를 사용한다. 한 card만 열리고 admin은 full editor, supervisor는 movement-only editor를 공유 form state로 사용한다. Desktop의 12-column table과 inline controls는 보존했다. Quote Formula 선택 target을 확장하고 좁은 화면에서는 mobile total bar와 중복되는 top local Save만 숨겼다.
+- Task 5 combined focused suite는 9 files/176 tests를 통과했다. 최종 전체 `npm.cmd run verify` 결과는 아래 변경 이력의 실제 최종 수치로 기록했다.
+- 인증된 Chrome에서 `375x812`·`390x844`의 9개 주요 route 모두 document overflow `0`, `1280x900` Inventory desktop table/Quotes·Settings·Jobs sticky topbar 보존, 최종 수화된 `390x844` Inventory open/Cancel·Settings descendant active state, console error/warning `0/0`을 확인했다. supervisor-only editor는 자동 테스트로 검증했으며 iPhone 실기기 검증은 수행하지 않았다.
+- 구현/수정 커밋은 `e8087e4`, `25e3bc9`, `667f39c`, `eab0551`, `8467ead`, `11a1ca9`, `41c28f0`, `ea3cf64`이다. LAN 개발 접속의 Next HMR origin 차단은 `allowedDevOrigins`에 정확한 local host를 추가해 해결했으며 production 접근 정책은 변경하지 않았다.
+
 ---
 
 ## 🔲 남은 작업
@@ -135,6 +143,7 @@
 
 | 날짜 | 작업 | 담당 |
 |---|---|---|
+| 2026-08-06 | App-wide mobile interaction token/shell과 Inventory disclosure card를 적용했다. 375×812·390×844에서 9개 인증 route overflow 0, 1280×900 desktop 보존, 최종 수화된 390×844 Inventory open/Cancel·Settings descendant active, console 0/0을 확인했다. Task 5 focused 9 files/176 tests와 최종 full verify 88 files/719 tests(1 file/9 tests skip), coverage 83.89/70.37/93.90/89.45%, Next production build, production audit 0 vulnerabilities를 통과했다. supervisor-only editor는 automated test로 검증했고 iPhone 실기기 QA는 수행하지 않았다. 커밋 `e8087e4`, `25e3bc9`, `667f39c`, `eab0551`, `8467ead`, `11a1ca9`, `41c28f0`, `ea3cf64`. | Codex 5.6-Sol high |
 | 2026-08-05 | Job Expenses 상세에 `Estimate profit = Job revenue - Estimate labour`와 revenue 기준 이익률을 추가하고, 일반 Profit %를 초록색 Profit 금액 옆으로 옮겼다. Decimal 계산·0 revenue·음수 회귀와 상세/compact UI를 TDD로 검증했고 full verify 85 files/705 tests, coverage/build/audit 0 vulnerabilities를 통과했다. Job #3103의 desktop·390×844·375×812 및 Refresh에서 `$6,137.02 · 49.3%`, 일반 Profit `$7,066.17 · 56.8%`, overflow/console 오류 0을 확인했다. main 로컬 병합만 수행했으며 DB/snapshot/dependency/Jobber mutation/scope 변경과 push·Vercel 배포는 없다. | Codex 5.6-Sol high |
 | 2026-08-05 | Job Expenses 상세 `Estimate labour` 계획을 순차 구현했다. Jobber read-only G1에서 #3103의 14건/AUD 6,300을 확인하고, 고유 visit/user 집계·`Connor`/`Admin` 제외·AUD 450 Decimal 계산, 전용 visit pagination, snapshot 역호환/backfill, 상세 Refresh 원자적 저장, 모바일 행을 반영했다. focused 6 files/66 tests와 full verify 85 files/702 tests(1 file/9 tests skip), coverage/build/audit 0 vulnerabilities를 통과했다. desktop·390×844·375×812에서 실제 Refresh 후 14건/$6,300, overflow 0, console error 0을 확인했다. DB migration·새 의존성·Jobber mutation/scope 변경과 Vercel 배포는 없다. | Codex 5.6-Sol high |
 | 2026-08-04 | 모바일 PWA·Jobs 최적화 커밋 `e8a5e26`을 `origin/main`에 push했고 Vercel production deployment `dpl_7VB1EtTDKnUbf47apC7e8XnNv6Vc`가 해당 커밋을 빌드해 Ready/운영 alias 연결됨을 확인했다. `/manifest.webmanifest`·`/sw.js`·`/offline`·`/login` 200, SW `Cache-Control: public, max-age=0, must-revalidate`, 390px production login page overflow 0/browser console error 0, 최근 production runtime error log 0건을 확인했다. 인증된 Jobs production 측정과 iPhone 홈 화면 앱 실측은 사용자 세션에서 후속 확인한다. | Codex 5.6-Sol high |

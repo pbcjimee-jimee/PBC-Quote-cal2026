@@ -190,6 +190,8 @@ Settings is admin-only and also includes Material, Product & Service, Template, 
 
 Inventory is a top-level page shared by admin and supervisor. `/settings/inventory` redirects here. It supports warehouse stock search, category grouping, purchase/usage metadata, and in-stock/out tracking. Admin can add, fully edit, soft-delete, and import/export CSV. Supervisor can only record stock movement fields (quantity, status, used date, used location); UI guards and database RLS/trigger rules enforce the same boundary. Inventory remains app-only and is not used in quote calculation or Jobber write-back.
 
+At `max-width: 720px`, each Inventory item is a disclosure card. Its collapsed summary shows exactly Name, Category, and Size / Serial; tapping the summary expands the editor, and opening a different card closes the currently open card so only one editor is mounted at a time. Admin receives the full editor and its existing Save, Cancel, and Delete actions. Supervisor receives only the movement editor for quantity, stock status, used date, and used location, with Save and Cancel but no admin-only fields or Delete. Both mobile renderers reuse the manager's existing form state and callbacks. Above the mobile breakpoint, the existing twelve-column table and inline desktop controls remain unchanged.
+
 ---
 
 ## 6. Jobs (`/jobs`)
@@ -204,6 +206,8 @@ Jobs is available to both roles and is the supervisor landing page. A supervisor
 
 - admin 내비게이션: Overview, New Quote, Job Expenses, Settings, Inventory 순서로 표시한다. Settings의 Users에서 사용자 관리를 수행한다.
 - supervisor 내비게이션: Job Expenses, Inventory만 표시한다. `/`, `/quotes`, admin Settings에 직접 접근하면 서버 가드가 `/jobs`로 돌려보내거나 거부한다.
+- 모바일 역할 내비게이션은 고정 열 수가 아니라 현재 역할의 항목 수에 맞춰 자동 크기를 정하고, 브랜드 행에 최소 44px의 Sign out 컨트롤을 제공한다. 페이지 topbar는 모바일에서 non-sticky이며 action group이 줄바꿈되고, sticky app header만 상단 내비게이션 표면으로 유지한다.
+- `/settings/users` 같은 Settings 하위 경로에서도 Settings 항목은 활성 상태와 `aria-current="page"`를 유지한다.
 - Progress Invoice는 이 브랜치와 릴리스에 없으며 admin 라우트가 아니다.
 - 미들웨어는 세션 유무만 판정하고 실제 역할은 서버 컴포넌트·Server Action·RLS가 세션 `auth.uid()` 기준으로 재검증한다.
 
