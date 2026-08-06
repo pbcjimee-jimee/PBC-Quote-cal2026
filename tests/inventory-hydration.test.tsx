@@ -1,9 +1,10 @@
 import { act, createElement } from 'react'
+import { renderToStaticMarkup } from 'react-dom/server'
 import type { Root } from 'react-dom/client'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { InventoryManager } from '@/components/inventory/inventory-manager'
 import type { InventoryItemRecord } from '@/lib/inventory/types'
-import { installTestDom } from '@/tests/helpers/test-dom'
+import { cloneTestElement, installTestDom } from '@/tests/helpers/test-dom'
 
 const inventoryActions = vi.hoisted(() => ({
   createInventoryItem: vi.fn(),
@@ -41,25 +42,44 @@ describe('InventoryManager client interaction', () => {
   })
 
   it('opens the mobile editor from its summary and Cancel closes it without a server mutation', async () => {
-    const { cleanup } = installTestDom()
+    const { cleanup, document: testDocument } = installTestDom()
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    let seedRoot: Root | null = null
     let root: Root | null = null
 
     try {
-      const { createRoot } = await import('react-dom/client')
-      const container = document.createElement('div')
-      root = createRoot(container)
+      const element = createElement(InventoryManager, { initialItems: [item] })
+      const serverMarkup = renderToStaticMarkup(element)
+      const { createRoot, hydrateRoot } = await import('react-dom/client')
+      const seedContainer = testDocument.createElement('div')
+      seedRoot = createRoot(seedContainer as unknown as Element)
 
       await act(async () => {
-        root!.render(createElement(InventoryManager, { initialItems: [item] }))
+        seedRoot!.render(element)
       })
+
+      const container = cloneTestElement(seedContainer)
 
       const summary = Array.from(container.querySelectorAll('button')).find((button) => (
         button.getAttribute('aria-controls') === `inventory-mobile-editor-${item.id}`
       ))
+      expect(serverMarkup).toContain('aria-expanded="false"')
+      expect(serverMarkup).not.toContain(`id="inventory-mobile-editor-${item.id}"`)
       expect(summary?.getAttribute('aria-expanded')).toBe('false')
       expect(Array.from(container.querySelectorAll('div')).some((element) => (
         element.getAttribute('id') === `inventory-mobile-editor-${item.id}`
       ))).toBe(false)
+      expect(container.textContent).toBe(seedContainer.textContent)
+
+      await act(async () => seedRoot?.unmount())
+      seedRoot = null
+
+      const recoverableErrors: unknown[] = []
+      await act(async () => {
+        root = hydrateRoot(container as unknown as Element, element, {
+          onRecoverableError: (error) => recoverableErrors.push(error),
+        })
+      })
 
       await act(async () => {
         summary!.dispatchEvent(new MouseEvent('click', { bubbles: true }))
@@ -86,10 +106,14 @@ describe('InventoryManager client interaction', () => {
       expect(inventoryActions.importInventoryCSV).not.toHaveBeenCalled()
       expect(inventoryActions.updateInventoryMovement).not.toHaveBeenCalled()
       expect(inventoryActions.updateInventoryItem).not.toHaveBeenCalled()
+      expect(recoverableErrors).toEqual([])
+      expect(consoleError).not.toHaveBeenCalled()
     } finally {
       try {
+        if (seedRoot) await act(async () => seedRoot?.unmount())
         if (root) await act(async () => root?.unmount())
       } finally {
+        consoleError.mockRestore()
         cleanup()
       }
     }

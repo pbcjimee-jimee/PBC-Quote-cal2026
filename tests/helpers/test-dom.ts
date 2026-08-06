@@ -26,6 +26,22 @@ export class TestNode {
     return this.childNodes[this.childNodes.length - 1] ?? null
   }
 
+  get nextSibling(): TestNode | null {
+    if (!this.parentNode) return null
+    const index = this.parentNode.childNodes.indexOf(this)
+    return index < 0 ? null : this.parentNode.childNodes[index + 1] ?? null
+  }
+
+  get previousSibling(): TestNode | null {
+    if (!this.parentNode) return null
+    const index = this.parentNode.childNodes.indexOf(this)
+    return index <= 0 ? null : this.parentNode.childNodes[index - 1] ?? null
+  }
+
+  get parentElement(): TestElement | null {
+    return this.parentNode instanceof TestElement ? this.parentNode : null
+  }
+
   get textContent(): string {
     return this.childNodes.map((child) => child.textContent).join('')
   }
@@ -86,23 +102,65 @@ class TestTextNode extends TestNode {
   override set textContent(value: string) {
     this.text = value
   }
+
+  get data(): string {
+    return this.text
+  }
+
+  set data(value: string) {
+    this.text = value
+  }
+
+  get nodeValue(): string {
+    return this.text
+  }
+
+  set nodeValue(value: string) {
+    this.text = value
+  }
 }
 
 class TestStyleDeclaration {
   [property: string]: unknown
 
+  readonly #onChange: (cssText: string) => void
+
+  constructor(onChange: (cssText: string) => void) {
+    this.#onChange = onChange
+    return new Proxy(this, {
+      set: (target, property, value) => {
+        Reflect.set(target, property, value)
+        target.#onChange(target.toCssText())
+        return true
+      },
+    })
+  }
+
   setProperty(name: string, value: string): void {
     this[name] = value
+  }
+
+  private toCssText(): string {
+    return Object.entries(this)
+      .filter(([, value]) => typeof value === 'string' && value.length > 0)
+      .map(([name, value]) => {
+        const cssName = name.startsWith('--')
+          ? name
+          : name.replace(/[A-Z]/g, (character) => `-${character.toLowerCase()}`)
+        return `${cssName}:${value}`
+      })
+      .join(';')
   }
 }
 
 export class TestElement extends TestNode {
   readonly listeners = new Map<string, Set<TestEventListener>>()
   readonly attributes = new Map<string, string>()
-  readonly style = new TestStyleDeclaration()
+  readonly style: TestStyleDeclaration
   namespaceURI: string
   tagName: string
   value = ''
+  private inputType = ''
   checked = false
   disabled = false
   selected = false
@@ -123,10 +181,30 @@ export class TestElement extends TestNode {
     this.nodeName = this.tagName
     this.ownerDocument = ownerDocument
     this.namespaceURI = namespaceURI
+    this.style = new TestStyleDeclaration((cssText) => {
+      if (cssText) {
+        this.attributes.set('style', cssText)
+      } else {
+        this.attributes.delete('style')
+      }
+    })
   }
 
   get options(): TestElement[] {
     return this.tagName === 'SELECT' ? this.querySelectorAll('option') : []
+  }
+
+  get type(): string {
+    return this.inputType
+  }
+
+  set type(value: string) {
+    this.inputType = value
+    if (value) {
+      this.attributes.set('type', value)
+    } else {
+      this.attributes.delete('type')
+    }
   }
 
   setAttribute(name: string, value: unknown): void {
@@ -136,6 +214,7 @@ export class TestElement extends TestNode {
       Object.defineProperty(this, name, { configurable: true, value: () => undefined })
     }
     if (name === 'value') this.value = stringValue
+    if (name === 'type') this.inputType = stringValue
     if (name === 'disabled') this.disabled = true
   }
 
@@ -143,8 +222,13 @@ export class TestElement extends TestNode {
     return this.attributes.get(name) ?? null
   }
 
+  hasAttribute(name: string): boolean {
+    return this.attributes.has(name)
+  }
+
   removeAttribute(name: string): void {
     this.attributes.delete(name)
+    if (name === 'type') this.inputType = ''
     if (name === 'disabled') this.disabled = false
   }
 
@@ -197,6 +281,33 @@ export class TestElement extends TestNode {
     }
     return matches
   }
+}
+
+export function cloneTestElement(source: TestElement): TestElement {
+  const ownerDocument = source.ownerDocument
+  const clone = new TestElement(source.tagName, ownerDocument, source.namespaceURI)
+
+  for (const [name, value] of source.attributes) {
+    clone.setAttribute(name, value)
+  }
+  for (const [name, value] of Object.entries(source.style)) {
+    clone.style.setProperty(name, String(value))
+  }
+  clone.value = source.value
+  clone.type = source.type
+  clone.checked = source.checked
+  clone.disabled = source.disabled
+  clone.selected = source.selected
+  clone.defaultSelected = source.defaultSelected
+  clone.multiple = source.multiple
+
+  for (const child of source.childNodes) {
+    clone.appendChild(child instanceof TestElement
+      ? cloneTestElement(child)
+      : new TestTextNode(child.textContent, ownerDocument))
+  }
+
+  return clone
 }
 
 export class TestDocument extends TestNode {

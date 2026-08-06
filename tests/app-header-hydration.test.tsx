@@ -5,11 +5,12 @@ import {
   type AnchorHTMLAttributes,
   type ReactNode,
 } from 'react'
+import { renderToStaticMarkup } from 'react-dom/server'
 import type { Root } from 'react-dom/client'
 import { describe, expect, it, vi } from 'vitest'
 import { AppHeader } from '@/components/layout/app-header'
 import type { UserProfile } from '@/lib/user-profiles'
-import { installTestDom } from '@/tests/helpers/test-dom'
+import { cloneTestElement, installTestDom } from '@/tests/helpers/test-dom'
 
 vi.mock('next/navigation', () => ({
   usePathname: () => '/settings/users',
@@ -42,16 +43,53 @@ describe('AppHeader client hydration', () => {
       email: 'mia@example.com',
       role: 'admin',
     }
-    const { cleanup } = installTestDom()
+    const { cleanup, document: testDocument } = installTestDom()
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    let seedRoot: Root | null = null
     let root: Root | null = null
 
     try {
-      const { createRoot } = await import('react-dom/client')
-      const container = document.createElement('div')
-      root = createRoot(container)
+      const element = createElement(AppHeader, { userProfile })
+      const serverMarkup = renderToStaticMarkup(element)
+      const { createRoot, hydrateRoot } = await import('react-dom/client')
+      const seedContainer = testDocument.createElement('div')
+      seedRoot = createRoot(seedContainer as unknown as Element)
 
       await act(async () => {
-        root!.render(createElement(AppHeader, { userProfile }))
+        seedRoot!.render(element)
+      })
+
+      const container = cloneTestElement(seedContainer)
+      const preHydrationSettingsLinks = Array.from(container.querySelectorAll('a')).filter((link) => (
+        link.getAttribute('href') === '/settings'
+      ))
+      for (const link of preHydrationSettingsLinks) {
+        link.setAttribute(
+          'class',
+          link.getAttribute('class')?.startsWith('pbc-nav__item')
+            ? 'pbc-nav__item  '
+            : 'pbc-mobile-nav__item '
+        )
+        link.removeAttribute('aria-current')
+      }
+
+      expect(serverMarkup).not.toContain('is-active')
+      expect(serverMarkup).not.toContain('aria-current="page"')
+      expect(preHydrationSettingsLinks).toHaveLength(2)
+      expect(preHydrationSettingsLinks.every((link) => (
+        !link.getAttribute('class')?.includes('is-active')
+        && link.getAttribute('aria-current') === null
+      ))).toBe(true)
+      expect(container.textContent).toBe(seedContainer.textContent)
+
+      await act(async () => seedRoot?.unmount())
+      seedRoot = null
+
+      const recoverableErrors: unknown[] = []
+      await act(async () => {
+        root = hydrateRoot(container as unknown as Element, element, {
+          onRecoverableError: (error) => recoverableErrors.push(error),
+        })
       })
 
       const currentSettingsLink = Array.from(container.querySelectorAll('a')).find((link) => (
@@ -61,10 +99,14 @@ describe('AppHeader client hydration', () => {
 
       expect(currentSettingsLink).toBeDefined()
       expect(currentSettingsLink?.getAttribute('class')).toContain('is-active')
+      expect(recoverableErrors).toEqual([])
+      expect(consoleError).not.toHaveBeenCalled()
     } finally {
       try {
+        if (seedRoot) await act(async () => seedRoot?.unmount())
         if (root) await act(async () => root?.unmount())
       } finally {
+        consoleError.mockRestore()
         cleanup()
       }
     }
