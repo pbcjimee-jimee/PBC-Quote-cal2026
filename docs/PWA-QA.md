@@ -18,13 +18,14 @@
 ## 2026-08-05 app-wide mobile verification
 
 - [x] 인증된 로컬 개발 앱에서 `375x812`와 `390x844` viewport로 `/quotes`, `/quotes/new`, 첫 실제 `/quotes/[id]`, 해당 `/quotes/[id]/edit`, `/settings`, `/settings/users`, `/jobs`, 첫 실제 `/jobs/[jobberJobId]`, `/inventory`의 9개 경로를 각각 측정했다. 두 크기의 모든 경로에서 document-level horizontal overflow는 `0`이었다.
-- [x] 두 모바일 크기에서 page topbar가 app header 바로 아래의 non-sticky 영역에 놓이고, Sign out은 `44x44`, Settings action은 잘림 없이 줄바꿈됨을 확인했다. 최종 수화된 `390x844` 재검증에서 `/settings/users`의 Settings 링크는 `is-active`와 `aria-current="page"`를 표시했다.
+- [x] 두 모바일 크기에서 page topbar가 app header 바로 아래의 non-sticky 영역에 놓이고, Sign out은 `44x44`, Settings action은 잘림 없이 줄바꿈됨을 확인했다. 최종 수화된 `375x812`와 `390x844` 재검증에서 `/settings/users`의 Settings 링크는 `is-active`와 `aria-current="page"`를 표시했다.
+- [x] `375x812`에서 mobile navigation을 클릭했을 때 `[data-route-progress]`는 opacity `1`, height `3px`, left `0`, width `360px`로 표시됐으며, `360px` layout viewport 전체 너비와 정확히 일치했다.
 - [x] Inventory 모바일은 desktop renderer를 숨기고 112개 disclosure summary를 grid로 표시했다. collapsed card는 Name, Category, Size / Serial만 노출했고, 최장 실데이터 이름은 card 안에서 줄바꿈됐다. 검색·필터 입력은 `16px`, summary는 최소 `95.5px`, CSV control은 `44px`였고 category badge/CSV controls는 문서 overflow 없이 줄바꿈됐다. Out item은 danger 배경·테두리와 line-through를 유지했다.
-- [x] 최종 수화된 `390x844` interaction 재검증에서 검색 결과가 `112→1→112`로 반응했고, summary의 `aria-expanded`가 `false→true→false`로 바뀌며 editor가 viewport 안에 mount된 뒤 Cancel로 unmount됐다. Save, Delete, Import, Refresh, Sync, stock-status 변경은 수행하지 않았다.
-- [x] `1280x900`에서 Inventory desktop renderer가 보이고 mobile renderer가 숨겨졌으며, 17개 category table에 Name, Category, Brand / Spec, Colour, Size / Serial, Qty, Purchase Date, Used Date, Used Location, Stock, Notes, Actions의 12개 header와 기존 inline control이 유지됐다. Quotes, Settings, Jobs topbar는 sticky였고 document overflow는 `0`이었다.
-- [x] 인증 route/interaction 최종 console audit는 error `0`, warning `0`이었다. viewport와 원래 Job detail URL은 검증 후 복구했다.
+- [x] 최종 수화된 `390x844` interaction 재검증에서 검색 결과가 `112→1→112`로 반응했고, summary의 `aria-expanded`가 `false→true→false`로 바뀌며 editor가 viewport 안에 mount된 뒤 Cancel로 unmount됐다. 보충 `375x812` 재검증에서도 `112→1→112`, `false→true→false`였고 editor top `453.5px`가 `812px` viewport 안에 있었으며 Cancel 후 editor count는 `0`이었다. Save, Delete, Import, Refresh, Sync, stock-status 변경은 수행하지 않았다.
+- [x] `1280x900`에서 Inventory desktop renderer가 보이고 mobile renderer가 숨겨졌으며, 17개 category table에 Name, Category, Brand / Spec, Colour, Size / Serial, Qty, Purchase Date, Used Date, Used Location, Stock, Notes, Actions의 정확한 12개 header를 확인했다. Edit를 누르면 Save와 Cancel이 나타났고 Cancel로 원복했으며 Stock과 Delete도 유지됐다. Quotes, Settings, Jobs topbar는 sticky였고 document overflow는 `0`이었다.
+- [x] 인증 route/interaction 최종 console audit는 error `0`, warning `0`이었다. 모든 viewport override를 reset하고 temporary QA tab을 닫았다. 보충 검증 종료 시 automation이 기존 사용자 Chrome tab 한 개의 URL 복구를 거부해 그 tab은 `/settings/users`에 남았으며, 별도 in-app browser context는 변경하지 않았다.
 - [x] 첫 인증 Chrome binding에서 React 수화가 전역적으로 실행되지 않아 Inventory edit와 Settings active state가 동작하지 않는 것처럼 보였지만, 검색도 DOM 값만 바뀌고 결과 수가 유지되는 환경 증거로 제품별 회귀와 분리했다. LAN 개발 origin의 차단 경고는 `allowedDevOrigins`에 정확한 host를 추가한 테스트 우선 수정으로 제거했고, 새 수화 browser binding에서 위 interaction을 재검증했다.
-- [x] supervisor 전용 Inventory movement editor의 허용 필드와 admin-only 필드 부재는 자동화 테스트로 검증했다. 이번 browser QA에는 supervisor 계정 세션을 사용하지 않았다.
+- [x] supervisor 전용 Inventory movement editor는 커밋 `b93c132`의 자동화 테스트에서 허용된 Quantity, Used Date, Used Location, Status 네 필드를 모두 표시하고 Name, Category, Brand, Model / Specification, Colour, Size / Serial, Purchase Date, Notes, Delete를 모두 숨기는지 검증했다. 이번 browser QA에는 supervisor 계정 세션을 사용하지 않았다.
 - [ ] iPhone 실기기에서 이번 app-wide mobile 변경을 재검증하지 않았다. 위 결과는 Chrome의 지정 viewport 및 자동화 테스트 결과이며 iPhone 실기기 완료를 의미하지 않는다.
 
 ## 배포 후 브라우저·실기기 QA (부분 실행)

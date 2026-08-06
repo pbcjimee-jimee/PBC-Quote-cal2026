@@ -1085,6 +1085,10 @@ non-sticky page topbars. Measure:
 
 Expected: `overflow === 0`.
 
+Execution evidence: at hydrated `375x812`, Settings was active on
+`/settings/users` and `[data-route-progress]` was visible at opacity `1`, height
+`3px`, left `0`, and width `360px`, exactly matching the `360px` layout viewport.
+
 - [x] **Step 3: Verify all primary routes at `375x812`**
 
 Visit in this order, resolving the first existing quote/job detail link from its
@@ -1120,6 +1124,10 @@ On `/inventory`:
 
 Do not press Save, Delete, Import, Refresh, or Jobber Sync.
 
+Execution evidence: hydrated `375x812` search changed `112 → 1 → 112`; the
+card changed `false → true`, mounted its editor at top `453.5px` within the
+`812px` viewport, and Cancel restored `false` with editor count `0`.
+
 - [x] **Step 5: Repeat the route and Inventory measurements at `390x844`**
 
 Expected for every route: document overflow `0`, no topbar hidden behind the
@@ -1137,6 +1145,10 @@ On `/inventory`, require:
 
 Spot-check Quotes, Settings, and Jobs to confirm desktop topbars remain sticky
 and desktop control density is unchanged.
+
+Execution evidence: at `1280x900`, desktop/mobile display modes and the exact
+twelve headers passed; Edit exposed Save and Cancel, Cancel restored the row,
+Stock and Delete remained present, and document overflow was `0`.
 
 - [x] **Step 7: Inspect browser logs and reset the viewport**
 
@@ -1215,6 +1227,10 @@ complete unless they were actually performed.
 In `PROGRESS.md`, append a completed summary naming the Inventory card behavior,
 shared control/shell changes, focused test totals, full verification results,
 browser viewports, and commit IDs produced during execution.
+
+Supplemental evidence: commit `b93c132` verifies all four supervisor movement
+fields and the absence of every admin-only field plus Delete. Browser console
+errors/warnings were `0/0`; no physical iPhone QA was performed.
 
 - [x] **Step 4: Mark this plan's completed checkboxes**
 
