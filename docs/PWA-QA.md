@@ -26,6 +26,7 @@
 - [x] 인증 route/interaction 최종 console audit는 error `0`, warning `0`이었다. 모든 viewport override를 reset하고 temporary QA tab을 닫았다. 보충 검증 종료 시 automation이 기존 사용자 Chrome tab 한 개의 URL 복구를 거부해 그 tab은 `/settings/users`에 남았으며, 별도 in-app browser context는 변경하지 않았다.
 - [x] 첫 인증 Chrome binding에서 React 수화가 전역적으로 실행되지 않아 Inventory edit와 Settings active state가 동작하지 않는 것처럼 보였지만, 검색도 DOM 값만 바뀌고 결과 수가 유지되는 환경 증거로 제품별 회귀와 분리했다. LAN 개발 origin의 차단 경고는 `allowedDevOrigins`에 정확한 host를 추가한 테스트 우선 수정으로 제거했고, 새 수화 browser binding에서 위 interaction을 재검증했다.
 - [x] supervisor 전용 Inventory movement editor는 커밋 `b93c132`의 자동화 테스트에서 허용된 Quantity, Used Date, Used Location, Status 네 필드를 모두 표시하고 Name, Category, Brand, Model / Specification, Colour, Size / Serial, Purchase Date, Notes, Delete를 모두 숨기는지 검증했다. 이번 browser QA에는 supervisor 계정 세션을 사용하지 않았다.
+- [x] 최종 safeguard 커밋 `4fa517f`의 수화된 `375x812` focused QA에서 summary의 `aria-controls` target은 collapsed 상태에 동일 ID로 mounted·hidden·empty였고, expanded 상태에서 같은 target이 visible·populated가 된 뒤 Cancel 후 다시 hidden·empty로 돌아갔다. document overflow `0`, console error/warning `0/0`이었으며 Save나 다른 데이터 mutation은 수행하지 않았다. 자동화 테스트는 Save pending 동안 summary가 disabled되고 실패 응답 후에도 editor와 입력값이 보존되는지 검증한다.
 - [ ] iPhone 실기기에서 이번 app-wide mobile 변경을 재검증하지 않았다. 위 결과는 Chrome의 지정 viewport 및 자동화 테스트 결과이며 iPhone 실기기 완료를 의미하지 않는다.
 
 ## 배포 후 브라우저·실기기 QA (부분 실행)
