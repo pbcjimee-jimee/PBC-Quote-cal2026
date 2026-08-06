@@ -110,12 +110,31 @@ describe('inventory UI', () => {
       ...mobileCallbacks,
     }))
 
-    for (const label of ['Quantity', 'Used Date', 'Used Location', 'Status']) {
-      expect(markup).toContain(label)
+    const movementControls = [
+      'Quantity for WaterTite',
+      'Used Date for WaterTite',
+      'Used Location for WaterTite',
+      'Mark out WaterTite while editing',
+    ]
+    for (const accessibleName of movementControls) {
+      expect(markup).toContain(`aria-label="${accessibleName}"`)
     }
-    expect(markup).not.toContain('aria-label="Name for WaterTite"')
-    expect(markup).not.toContain('Search or add category')
-    expect(markup).not.toContain('aria-label="Delete WaterTite"')
+
+    const adminOnlyControls = [
+      ['Name', 'Name for WaterTite'],
+      ['Category', 'Search or add category'],
+      ['Brand', 'Brand for WaterTite'],
+      ['Model / Specification', 'Model / Specification for WaterTite'],
+      ['Colour', 'Colour for WaterTite'],
+      ['Size / Serial', 'Size / Serial for WaterTite'],
+      ['Purchase Date', 'Purchase Date for WaterTite'],
+      ['Notes', 'Notes for WaterTite'],
+      ['Delete', 'Delete WaterTite'],
+    ] as const
+    for (const [field, accessibleName] of adminOnlyControls) {
+      expect(markup, `${field} must remain unavailable to supervisors`).not.toContain(`aria-label="${accessibleName}"`)
+    }
+
     expect(markup).toContain('aria-label="Save row WaterTite"')
   })
 
