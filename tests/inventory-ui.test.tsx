@@ -68,6 +68,8 @@ describe('inventory UI', () => {
 
     expect(markup).toContain('class="pbc-inventorymobile')
     expect(markup).toContain('aria-expanded="false"')
+    expect(markup).toContain(`id="inventory-mobile-editor-${mobileItem.id}"`)
+    expect(markup).toMatch(new RegExp(`id="inventory-mobile-editor-${mobileItem.id}"[^>]*hidden=""></div>`))
     expect(markup).toContain('WaterTite')
     expect(markup).toContain('Category')
     expect(markup).toContain('Tools')
@@ -91,6 +93,8 @@ describe('inventory UI', () => {
     }))
 
     expect(markup).toContain('aria-expanded="true"')
+    expect(markup).toContain(`id="inventory-mobile-editor-${mobileItem.id}"`)
+    expect(markup).not.toContain(`id="inventory-mobile-editor-${mobileItem.id}" hidden=""`)
     for (const label of ['Name', 'Category', 'Brand', 'Model / Specification', 'Colour', 'Size / Serial', 'Quantity', 'Purchase Date', 'Used Date', 'Used Location', 'Status', 'Notes']) {
       expect(markup).toContain(label)
     }

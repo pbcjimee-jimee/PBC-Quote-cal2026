@@ -573,6 +573,7 @@ export function InventoryMobileList({
               className="pbc-inventorymobile__summary"
               aria-expanded={isEditing}
               aria-controls={editorId}
+              disabled={isPending}
               onClick={() => isEditing ? onCancelEdit() : onEdit(item)}
             >
               <span className="pbc-inventorymobile__name">{item.name}</span>
@@ -585,69 +586,71 @@ export function InventoryMobileList({
               </span>
             </button>
 
-            {isEditing ? (
-              <div id={editorId} className="pbc-inventorymobile__editor">
-                <div className="pbc-inventorymobile__fields">
-                  {canAdminister ? (
-                    <>
-                      <MobileInventoryField itemName={item.name} label="Name" field="name" value={rowEditForm.name} onChange={onChangeEditField} />
-                      <div className="pbc-field">
-                        <span className="pbc-field__label">Category</span>
-                        <CategoryPicker
-                          value={rowEditForm.category}
-                          categories={categories}
+            <div id={editorId} className="pbc-inventorymobile__editor" hidden={!isEditing}>
+              {isEditing ? (
+                <>
+                  <div className="pbc-inventorymobile__fields">
+                    {canAdminister ? (
+                      <>
+                        <MobileInventoryField itemName={item.name} label="Name" field="name" value={rowEditForm.name} onChange={onChangeEditField} />
+                        <div className="pbc-field">
+                          <span className="pbc-field__label">Category</span>
+                          <CategoryPicker
+                            value={rowEditForm.category}
+                            categories={categories}
+                            disabled={isPending}
+                            onChange={(value) => onChangeEditField('category', value)}
+                            onAddCustomCategory={(category) => onAddCustomCategory(category, 'row')}
+                          />
+                        </div>
+                        <MobileInventoryField itemName={item.name} label="Brand" field="brand" value={rowEditForm.brand} onChange={onChangeEditField} />
+                        <MobileInventoryField itemName={item.name} label="Model / Specification" field="modelSpecification" value={rowEditForm.modelSpecification} onChange={onChangeEditField} />
+                        <MobileInventoryField itemName={item.name} label="Colour" field="colour" value={rowEditForm.colour} onChange={onChangeEditField} />
+                        <MobileInventoryField itemName={item.name} label="Size / Serial" field="sizeOrSerial" value={rowEditForm.sizeOrSerial} onChange={onChangeEditField} />
+                      </>
+                    ) : null}
+
+                    <MobileInventoryField itemName={item.name} label="Quantity" field="quantity" value={rowEditForm.quantity} onChange={onChangeEditField} inputMode="decimal" />
+                    {canAdminister ? <MobileInventoryField itemName={item.name} label="Purchase Date" field="purchaseDate" value={rowEditForm.purchaseDate} onChange={onChangeEditField} type="date" /> : null}
+                    <MobileInventoryField itemName={item.name} label="Used Date" field="usedDate" value={rowEditForm.usedDate} onChange={onChangeEditField} type="date" />
+                    <MobileInventoryField itemName={item.name} label="Used Location" field="usedLocationText" value={rowEditForm.usedLocationText} onChange={onChangeEditField} />
+
+                    <div className="pbc-field">
+                      <span className="pbc-field__label">Status</span>
+                      <label className="pbc-input pbc-statuscontrol">
+                        <input
+                          type="checkbox"
+                          checked={rowEditForm.status === 'out'}
+                          onChange={(event) => onChangeEditField('status', event.target.checked ? 'out' : 'in_stock')}
                           disabled={isPending}
-                          onChange={(value) => onChangeEditField('category', value)}
-                          onAddCustomCategory={(category) => onAddCustomCategory(category, 'row')}
+                          aria-label={`Mark out ${item.name} while editing`}
+                          className="pbc-checkbox"
                         />
-                      </div>
-                      <MobileInventoryField itemName={item.name} label="Brand" field="brand" value={rowEditForm.brand} onChange={onChangeEditField} />
-                      <MobileInventoryField itemName={item.name} label="Model / Specification" field="modelSpecification" value={rowEditForm.modelSpecification} onChange={onChangeEditField} />
-                      <MobileInventoryField itemName={item.name} label="Colour" field="colour" value={rowEditForm.colour} onChange={onChangeEditField} />
-                      <MobileInventoryField itemName={item.name} label="Size / Serial" field="sizeOrSerial" value={rowEditForm.sizeOrSerial} onChange={onChangeEditField} />
-                    </>
-                  ) : null}
+                        <span>{rowEditForm.status === 'out' ? 'Out' : 'In stock'}</span>
+                      </label>
+                    </div>
 
-                  <MobileInventoryField itemName={item.name} label="Quantity" field="quantity" value={rowEditForm.quantity} onChange={onChangeEditField} inputMode="decimal" />
-                  {canAdminister ? <MobileInventoryField itemName={item.name} label="Purchase Date" field="purchaseDate" value={rowEditForm.purchaseDate} onChange={onChangeEditField} type="date" /> : null}
-                  <MobileInventoryField itemName={item.name} label="Used Date" field="usedDate" value={rowEditForm.usedDate} onChange={onChangeEditField} type="date" />
-                  <MobileInventoryField itemName={item.name} label="Used Location" field="usedLocationText" value={rowEditForm.usedLocationText} onChange={onChangeEditField} />
-
-                  <div className="pbc-field">
-                    <span className="pbc-field__label">Status</span>
-                    <label className="pbc-input pbc-statuscontrol">
-                      <input
-                        type="checkbox"
-                        checked={rowEditForm.status === 'out'}
-                        onChange={(event) => onChangeEditField('status', event.target.checked ? 'out' : 'in_stock')}
-                        disabled={isPending}
-                        aria-label={`Mark out ${item.name} while editing`}
-                        className="pbc-checkbox"
-                      />
-                      <span>{rowEditForm.status === 'out' ? 'Out' : 'In stock'}</span>
-                    </label>
+                    {canAdminister ? (
+                      <label className="pbc-field pbc-inventorymobile__notes">
+                        <span className="pbc-field__label">Notes</span>
+                        <textarea
+                          value={rowEditForm.notes}
+                          onChange={(event) => onChangeEditField('notes', event.target.value)}
+                          className="pbc-textarea"
+                          aria-label={`Notes for ${item.name}`}
+                        />
+                      </label>
+                    ) : null}
                   </div>
 
-                  {canAdminister ? (
-                    <label className="pbc-field pbc-inventorymobile__notes">
-                      <span className="pbc-field__label">Notes</span>
-                      <textarea
-                        value={rowEditForm.notes}
-                        onChange={(event) => onChangeEditField('notes', event.target.value)}
-                        className="pbc-textarea"
-                        aria-label={`Notes for ${item.name}`}
-                      />
-                    </label>
-                  ) : null}
-                </div>
-
-                <div className="pbc-inventorymobile__actions">
-                  <button type="button" onClick={onSaveEdit} disabled={isPending || !canSaveEdit} aria-label={`Save row ${item.name}`} className="pbc-btn pbc-btn--primary">Save</button>
-                  <button type="button" onClick={onCancelEdit} disabled={isPending} aria-label={`Cancel row edit ${item.name}`} className="pbc-btn pbc-btn--ghost">Cancel</button>
-                  {canAdminister ? <button type="button" onClick={() => onDelete(item.id)} disabled={isPending} aria-label={`Delete ${item.name}`} className="pbc-btn pbc-btn--danger">Delete</button> : null}
-                </div>
-              </div>
-            ) : null}
+                  <div className="pbc-inventorymobile__actions">
+                    <button type="button" onClick={onSaveEdit} disabled={isPending || !canSaveEdit} aria-label={`Save row ${item.name}`} className="pbc-btn pbc-btn--primary">Save</button>
+                    <button type="button" onClick={onCancelEdit} disabled={isPending} aria-label={`Cancel row edit ${item.name}`} className="pbc-btn pbc-btn--ghost">Cancel</button>
+                    {canAdminister ? <button type="button" onClick={() => onDelete(item.id)} disabled={isPending} aria-label={`Delete ${item.name}`} className="pbc-btn pbc-btn--danger">Delete</button> : null}
+                  </div>
+                </>
+              ) : null}
+            </div>
           </article>
         )
       })}
