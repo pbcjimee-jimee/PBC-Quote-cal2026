@@ -831,7 +831,12 @@ export function QuoteForm({ settings, areas, productServices = [], quoteLineTemp
             Cancel
           </button>
           <div className="flex flex-wrap justify-end gap-2">
-            <button type="button" onClick={() => saveQuote('local')} disabled={isPending} className="pbc-btn pbc-btn--primary">
+            <button
+              type="button"
+              onClick={() => saveQuote('local')}
+              disabled={isPending}
+              className="pbc-btn pbc-btn--primary pbc-topbar__local-save"
+            >
               {Icons.check({ size: 15 })} {localSaveLabel}
             </button>
             <button

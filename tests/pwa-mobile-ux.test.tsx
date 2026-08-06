@@ -184,6 +184,15 @@ describe('PWA mobile UX', () => {
     expect(narrow).toMatch(/\.pbc-card--pad\s*{[^}]*padding:\s*var\(--mobile-page-inset\)/)
   })
 
+  it('expands Formula choices and hides only the redundant top Save on narrow screens', () => {
+    const css = readFileSync('app/styles/components.css', 'utf8')
+    const mobile = getMediaBlock(css, 'max-width: 1023.98px')
+    const narrow = getMediaBlock(css, 'max-width: 720px')
+
+    expect(mobile).toMatch(/\.pbc-formulachoice\s*{[^}]*min-height:\s*var\(--mobile-tap-target\)/)
+    expect(narrow).toMatch(/\.pbc-topbar__local-save\s*{[^}]*display:\s*none/)
+  })
+
   it('stacks narrow mobile navigation icons above visible labels without shrinking targets', () => {
     const css = readFileSync('app/styles/components.css', 'utf8')
     const mobile390Responsive = getMediaBlock(css, 'max-width: 560px')

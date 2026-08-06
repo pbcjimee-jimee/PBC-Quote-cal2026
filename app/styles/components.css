@@ -558,6 +558,7 @@
 @media (max-width: 720px) {
   .pbc-page { padding: 22px var(--mobile-page-inset) 48px; }
   .pbc-card--pad { padding: var(--mobile-page-inset); }
+  .pbc-topbar__local-save { display: none; }
   .pbc-inventorydesktop { display: none; }
   .pbc-inventorymobile { display: grid; min-width: 0; max-width: 100%; gap: var(--mobile-layout-gap); }
   .pbc-inventorymobile__summary { min-height: var(--mobile-tap-target); }
@@ -977,6 +978,7 @@
   .pbc-route-progress { inset-inline-start: 0; }
   .pbc-topbar { position: static; }
   .pbc-topbar__right { min-width: 0; flex-wrap: wrap; }
+  .pbc-formulachoice { min-height: var(--mobile-tap-target); justify-content: center; padding-inline: 16px; font-size: var(--mobile-control-font-size); }
   .pbc-page > .pbc-mobile-totalbar,
   .pbc-mobile-totalbar {
     position: sticky;

@@ -5,6 +5,7 @@ import Decimal from 'decimal.js'
 import { describe, expect, it, vi } from 'vitest'
 import { CustomerPanel, JobberQuoteSummary } from '@/components/quote-form/customer-panel'
 import { FinalSummary } from '@/components/quote-form/final-summary'
+import { FormulaResults } from '@/components/quote-form/formula-results'
 import { AreaPickerDropdown, MaterialRow, updateMaterialRrp } from '@/components/quote-form/material-row'
 import { MaterialsPanel, assignMaterialToActiveArea } from '@/components/quote-form/materials-panel'
 import { OptionTotalsSummary } from '@/components/quote-form/option-totals-summary'
@@ -361,6 +362,39 @@ describe('quote form pricing UI', () => {
     expect(markup).toContain('Save &amp; Sync to Jobber')
     expect(markup).toContain('pbc-topbar')
     expect(markup).toContain('pbc-btn pbc-btn--primary')
+  })
+
+  it('marks Formula Low and High labels as mobile-sized choices', () => {
+    const markup = renderToStaticMarkup(createElement(FormulaResults, {
+      results: [{
+        formulaNum: 1,
+        name: 'Standard labour',
+        total: new Decimal('500.00'),
+      }],
+      selectedMin: 1,
+      selectedMax: 1,
+      onSelectedMinChange: vi.fn(),
+      onSelectedMaxChange: vi.fn(),
+    }))
+
+    expect(markup.match(/pbc-formulachoice/g)).toHaveLength(2)
+  })
+
+  it('marks only the top local Save as redundant on mobile', () => {
+    const markup = renderToStaticMarkup(createElement(QuoteForm, {
+      settings: quoteRecord.pricingSettingsSnapshot,
+      areas: [],
+      productServices: [],
+      quoteLineTemplates: [],
+      initialQuote: quoteRecord,
+    }))
+    const topbar = markup.slice(markup.indexOf('pbc-topbar'), markup.indexOf('pbc-page'))
+    const mobileBar = markup.slice(markup.indexOf('pbc-mobile-totalbar'))
+
+    expect(topbar).toContain('pbc-topbar__local-save')
+    expect(topbar).toContain('Save &amp; Sync to Jobber')
+    expect(mobileBar).toContain('Save')
+    expect(mobileBar).not.toContain('pbc-topbar__local-save')
   })
 
   it('disables Jobber sync until a fetched Jobber quote id is available', () => {
