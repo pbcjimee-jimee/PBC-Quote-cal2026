@@ -88,10 +88,18 @@ class TestTextNode extends TestNode {
   }
 }
 
+class TestStyleDeclaration {
+  [property: string]: unknown
+
+  setProperty(name: string, value: string): void {
+    this[name] = value
+  }
+}
+
 export class TestElement extends TestNode {
   readonly listeners = new Map<string, Set<TestEventListener>>()
   readonly attributes = new Map<string, string>()
-  readonly style: Record<string, string> = {}
+  readonly style = new TestStyleDeclaration()
   namespaceURI: string
   tagName: string
   value = ''
