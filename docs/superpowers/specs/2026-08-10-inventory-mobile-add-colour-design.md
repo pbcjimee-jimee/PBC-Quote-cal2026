@@ -233,11 +233,20 @@ Verify authenticated admin behavior at `375x812`, `390x844`, and `1280x900`:
 
 - mobile initial form closed;
 - open, Cancel, failed-save preservation, and successful-save closure;
-- saved Colour values and `-` fallbacks;
-- a long Colour value wraps inside the card;
+- saved Colour values;
+- when existing safe-to-read rows contain null/empty or long Colour values,
+  their `-` fallback and wrapping behavior;
 - document horizontal overflow is zero;
 - desktop Add form remains initially visible;
 - desktop table still has all twelve columns and existing edit actions.
+
+Browser QA must not create or delete test rows through an environment connected
+to production Supabase. Successful and failed creation state transitions are
+verified by the hydrated interaction tests unless the browser is explicitly
+connected to a disposable local Supabase instance. If safe-to-read live data
+does not contain a missing or long Colour value, those two visual cases are
+verified by the component and responsive CSS tests instead of mutating data to
+manufacture them.
 
 Supervisor visibility and edit restrictions must be enforced by component tests
 even if a supervisor browser session is unavailable.
