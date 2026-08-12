@@ -83,6 +83,23 @@ export async function listJobSnapshots(): Promise<readonly StoredJobSnapshot[]> 
   return data.map((row) => parseStoredSnapshot(row.payload, row.refreshed_at, row.refreshed_by))
 }
 
+export async function listJobSnapshotsByIds(
+  jobberJobIds: readonly string[],
+): Promise<readonly StoredJobSnapshot[]> {
+  const ids = [...new Set(jobberJobIds.map((id) => id.trim()).filter(Boolean))]
+  if (ids.length === 0) return []
+
+  const service = await createServiceClient()
+  const { data, error } = await service
+    .from('jobber_job_snapshots')
+    .select('payload, refreshed_at, refreshed_by')
+    .in('jobber_job_id', ids)
+    .order('refreshed_at', { ascending: false })
+  if (error) throw new Error('Unable to read Jobber job snapshots')
+
+  return data.map((row) => parseStoredSnapshot(row.payload, row.refreshed_at, row.refreshed_by))
+}
+
 export async function getJobSnapshot(jobberJobId: string): Promise<StoredJobSnapshot | null> {
   const service = await createServiceClient()
   const { data, error } = await service

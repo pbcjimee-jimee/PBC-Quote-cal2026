@@ -3,7 +3,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const mocks = vi.hoisted(() => ({
   requireRole: vi.fn(),
   createServiceClient: vi.fn(),
+  createJobberGateway: vi.fn(),
   listSnapshots: vi.fn(),
+  listSnapshotsByIds: vi.fn(),
   getSnapshot: vi.fn(),
   saveSnapshots: vi.fn(),
   synchronizeSnapshotScope: vi.fn(),
@@ -17,11 +19,13 @@ vi.mock('@/lib/security/require-app-user', () => ({ requireRole: mocks.requireRo
 vi.mock('@/lib/supabase/server', () => ({ createServiceClient: mocks.createServiceClient }))
 vi.mock('@/lib/jobber/job-snapshots', () => ({
   listJobSnapshots: mocks.listSnapshots,
+  listJobSnapshotsByIds: mocks.listSnapshotsByIds,
   getJobSnapshot: mocks.getSnapshot,
   saveJobSnapshots: mocks.saveSnapshots,
   synchronizeJobSnapshotScope: mocks.synchronizeSnapshotScope,
 }))
 vi.mock('@/lib/jobber/job-gateway', () => ({
+  createJobberGateway: mocks.createJobberGateway,
   listJobberJobs: mocks.listJobberJobs,
   listJobberTeamUsers: mocks.listJobberTeamUsers,
   fetchJobberJobDetail: mocks.fetchJobberJobDetail,
@@ -73,6 +77,7 @@ describe('job actions', () => {
     vi.resetAllMocks()
     mocks.requireRole.mockResolvedValue(appUser('supervisor', 'jobber-user-1'))
     mocks.listSnapshots.mockResolvedValue([])
+    mocks.listSnapshotsByIds.mockResolvedValue([])
     mocks.getSnapshot.mockResolvedValue(null)
     mocks.listJobberTeamUsers.mockResolvedValue([{
       id: 'jobber-user-1', fullName: 'Eric', status: 'ACTIVE',
@@ -81,6 +86,12 @@ describe('job actions', () => {
     mocks.listJobberJobs.mockResolvedValue([job])
     mocks.fetchJobberJobDetail.mockResolvedValue({ ...job, expenses: [expense] })
     mocks.fetchJobberJobAssignmentVisits.mockResolvedValue(assignmentVisits(14))
+    mocks.createJobberGateway.mockResolvedValue({
+      listTeamUsers: mocks.listJobberTeamUsers,
+      listJobs: mocks.listJobberJobs,
+      fetchJobDetail: mocks.fetchJobberJobDetail,
+      fetchJobAssignmentVisits: mocks.fetchJobberJobAssignmentVisits,
+    })
     mocks.saveSnapshots.mockImplementation(async (payloads: typeof snapshot[], actorId: string) => (
       payloads.map((payload) => ({
         ...payload,
@@ -133,7 +144,7 @@ describe('job actions', () => {
   })
 
   it('revalidates matching supervisor snapshots against live monthly Jobber assignments', async () => {
-    mocks.listSnapshots.mockResolvedValueOnce([snapshot])
+    mocks.listSnapshotsByIds.mockResolvedValueOnce([snapshot])
     mocks.synchronizeSnapshotScope.mockResolvedValueOnce([snapshot])
 
     const result = await listMyJobs({})
@@ -166,7 +177,7 @@ describe('job actions', () => {
   })
 
   it('uses live monthly job ids without revoking cached scopes outside the month', async () => {
-    mocks.listSnapshots.mockResolvedValueOnce([snapshot])
+    mocks.listSnapshotsByIds.mockResolvedValueOnce([snapshot])
     mocks.synchronizeSnapshotScope.mockRejectedValueOnce(
       new Error('A partial month must not replace the complete assignment scope'),
     )
@@ -227,7 +238,7 @@ describe('job actions', () => {
       ...snapshot,
       job: { ...snapshot.job, startAt: null, endAt: null },
     }
-    mocks.listSnapshots.mockResolvedValueOnce([cached])
+    mocks.listSnapshotsByIds.mockResolvedValueOnce([cached])
     mocks.synchronizeSnapshotScope.mockResolvedValueOnce([cached])
 
     const result = await listMyJobs({})
@@ -248,7 +259,7 @@ describe('job actions', () => {
 
   it('treats a live null schedule as unscheduled instead of using stale cached dates', async () => {
     const liveUnscheduled = { ...job, startAt: null, endAt: null }
-    mocks.listSnapshots.mockResolvedValueOnce([snapshot])
+    mocks.listSnapshotsByIds.mockResolvedValueOnce([snapshot])
     mocks.listJobberJobs.mockResolvedValueOnce([liveUnscheduled])
     mocks.synchronizeSnapshotScope.mockResolvedValueOnce([snapshot])
 
@@ -261,7 +272,7 @@ describe('job actions', () => {
   })
 
   it('removes a reassigned job from the supervisor list instead of trusting cached scope', async () => {
-    mocks.listSnapshots.mockResolvedValueOnce([snapshot])
+    mocks.listSnapshotsByIds.mockResolvedValueOnce([snapshot])
     mocks.listJobberJobs.mockResolvedValueOnce([])
     mocks.synchronizeSnapshotScope.mockResolvedValueOnce([])
 
@@ -303,37 +314,59 @@ describe('job actions', () => {
     ], 'admin-1')
   })
 
-  it('loads the admin snapshot cache and monthly Jobber schedule concurrently', async () => {
+  it('loads admin snapshots only for visible Jobber ids', async () => {
+    const job2 = { ...job, id: 'job-2', jobNumber: '3104' }
+    const adminSnapshot = { ...snapshot, refreshedForAll: true }
+    const snapshot2 = { ...adminSnapshot, job: job2 }
     mocks.requireRole.mockResolvedValueOnce(appUser('admin', null))
-    let resolveSnapshots!: (value: readonly []) => void
-    const pendingSnapshots = new Promise<readonly []>((resolve) => {
-      resolveSnapshots = resolve
-    })
-    mocks.listSnapshots.mockReturnValueOnce(pendingSnapshots)
+    mocks.listJobberJobs.mockResolvedValueOnce([job, job2])
+    mocks.listSnapshotsByIds.mockResolvedValueOnce([adminSnapshot, snapshot2])
 
-    const result = listMyJobs({ month: '2026-08' })
-
-    await vi.waitFor(() => {
-      expect(mocks.listJobberJobs).toHaveBeenCalled()
+    await expect(listMyJobs({ month: '2026-08' })).resolves.toMatchObject({
+      ok: true,
+      data: { jobs: [{ id: 'job-2' }, { id: 'job-1' }] },
     })
-    resolveSnapshots([])
-    await expect(result).resolves.toMatchObject({ ok: true })
+
+    expect(mocks.listSnapshotsByIds).toHaveBeenCalledWith(['job-1', 'job-2'])
+    expect(mocks.listSnapshots).not.toHaveBeenCalled()
+    expect(mocks.createJobberGateway).toHaveBeenCalledTimes(1)
   })
 
-  it('loads the supervisor snapshot cache and monthly Jobber schedule concurrently', async () => {
-    let resolveSnapshots!: (value: readonly []) => void
-    const pendingSnapshots = new Promise<readonly []>((resolve) => {
-      resolveSnapshots = resolve
+  it('loads the admin snapshot cache after the monthly Jobber schedule resolves', async () => {
+    mocks.requireRole.mockResolvedValueOnce(appUser('admin', null))
+    let resolveJobs!: (value: readonly [typeof job]) => void
+    const pendingJobs = new Promise<readonly [typeof job]>((resolve) => {
+      resolveJobs = resolve
     })
-    mocks.listSnapshots.mockReturnValueOnce(pendingSnapshots)
+    mocks.listJobberJobs.mockReturnValueOnce(pendingJobs)
 
     const result = listMyJobs({ month: '2026-08' })
 
     await vi.waitFor(() => {
       expect(mocks.listJobberJobs).toHaveBeenCalled()
     })
-    resolveSnapshots([])
+    expect(mocks.listSnapshotsByIds).not.toHaveBeenCalled()
+    resolveJobs([job])
     await expect(result).resolves.toMatchObject({ ok: true })
+    expect(mocks.listSnapshotsByIds).toHaveBeenCalledWith(['job-1'])
+  })
+
+  it('loads the supervisor snapshot cache after the monthly Jobber schedule resolves', async () => {
+    let resolveJobs!: (value: readonly [typeof job]) => void
+    const pendingJobs = new Promise<readonly [typeof job]>((resolve) => {
+      resolveJobs = resolve
+    })
+    mocks.listJobberJobs.mockReturnValueOnce(pendingJobs)
+
+    const result = listMyJobs({ month: '2026-08' })
+
+    await vi.waitFor(() => {
+      expect(mocks.listJobberJobs).toHaveBeenCalled()
+    })
+    expect(mocks.listSnapshotsByIds).not.toHaveBeenCalled()
+    resolveJobs([job])
+    await expect(result).resolves.toMatchObject({ ok: true })
+    expect(mocks.listSnapshotsByIds).toHaveBeenCalledWith(['job-1'])
   })
 
   it('starts the linked supervisor monthly schedule while validating the Jobber identity', async () => {
@@ -481,14 +514,15 @@ describe('job actions', () => {
   })
 
   it('rate-limits manual list refreshes from recent snapshots', async () => {
-    mocks.listSnapshots.mockResolvedValueOnce([{ ...snapshot, refreshedAt: new Date().toISOString() }])
+    mocks.listSnapshotsByIds.mockResolvedValueOnce([{ ...snapshot, refreshedAt: new Date().toISOString() }])
 
     await expect(refreshJobs({})).resolves.toMatchObject({
       ok: false,
       error: 'Jobs were refreshed recently. Try again in 30 seconds.',
       code: 'JOBBER_ERROR',
     })
-    expect(mocks.listJobberJobs).not.toHaveBeenCalled()
+    expect(mocks.listJobberJobs).toHaveBeenCalledWith('jobber-user-1', expect.any(Object))
+    expect(mocks.fetchJobberJobDetail).not.toHaveBeenCalled()
   })
 
   it('refreshes an authorized stale detail and preserves its scope', async () => {
@@ -548,7 +582,7 @@ describe('job actions', () => {
       refreshedForAll: true,
       refreshedAt: '2020-01-01T00:00:00.000Z',
     }
-    mocks.listSnapshots.mockResolvedValueOnce([staleSnapshot])
+    mocks.listSnapshotsByIds.mockResolvedValueOnce([staleSnapshot])
 
     await refreshJobs({})
 

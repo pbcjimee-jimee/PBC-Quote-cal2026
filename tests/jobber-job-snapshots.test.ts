@@ -7,6 +7,7 @@ vi.mock('@/lib/supabase/server', () => ({ createServiceClient: mocks.createServi
 import {
   getJobSnapshot,
   listJobSnapshots,
+  listJobSnapshotsByIds,
   saveJobSnapshots,
   synchronizeJobSnapshotScope,
 } from '@/lib/jobber/job-snapshots'
@@ -46,6 +47,27 @@ describe('Jobber job snapshot repository', () => {
       refreshedAt: row.refreshed_at,
       refreshedBy: row.refreshed_by,
     }])
+  })
+
+  it('returns before creating a service client when no snapshot ids are requested', async () => {
+    await expect(listJobSnapshotsByIds([])).resolves.toEqual([])
+    expect(mocks.createServiceClient).not.toHaveBeenCalled()
+  })
+
+  it('loads only normalized unique snapshot ids with the same payload parsing', async () => {
+    const order = vi.fn(async () => ({ data: [row], error: null }))
+    const snapshotQuery = { in: vi.fn(() => ({ order })) }
+    mocks.createServiceClient.mockResolvedValue({
+      from: vi.fn(() => ({ select: vi.fn(() => snapshotQuery) })),
+    })
+
+    await expect(listJobSnapshotsByIds([' job-1 ', 'job-2', 'job-1', '  '])).resolves.toEqual([{
+      ...payload,
+      refreshedAt: row.refreshed_at,
+      refreshedBy: row.refreshed_by,
+    }])
+    expect(snapshotQuery.in).toHaveBeenCalledWith('jobber_job_id', ['job-1', 'job-2'])
+    expect(order).toHaveBeenCalledWith('refreshed_at', { ascending: false })
   })
 
   it('loads legacy snapshots without schedule fields as unscheduled', async () => {

@@ -32,6 +32,7 @@ vi.mock('@/lib/jobber/job-client', async () => {
 })
 
 import {
+  createJobberGateway,
   fetchJobberJobAssignmentVisits,
   fetchJobberJobDetail,
   listJobberJobs,
@@ -119,6 +120,57 @@ describe('Jobber job gateway', () => {
 
     expect(mocks.refreshToken).toHaveBeenCalledWith(
       'refresh-1', expect.any(Object), 'owner-1',
+    )
+    expect(mocks.jobsPage).toHaveBeenLastCalledWith(
+      null, expect.any(Object), expect.objectContaining({ accessToken: 'access-2' }), null,
+    )
+  })
+
+  it('reuses one shared token across methods on the same gateway', async () => {
+    mocks.teamPage.mockResolvedValueOnce({
+      nodes: [], pageInfo: { hasNextPage: false, endCursor: null },
+    })
+    mocks.jobsPage.mockResolvedValueOnce({
+      nodes: [], totalCount: 0, pageInfo: { hasNextPage: false, endCursor: null },
+    })
+
+    const gateway = await createJobberGateway()
+    await gateway.listTeamUsers()
+    await gateway.listJobs(null)
+
+    expect(mocks.getToken).toHaveBeenCalledTimes(1)
+  })
+
+  it('coordinates concurrent 401 refreshes across gateway methods', async () => {
+    let rejectRequests!: () => void
+    const requestsReady = new Promise<void>((resolve) => {
+      rejectRequests = resolve
+    })
+    let firstTokenRequests = 0
+    const pageForToken = async (options: { accessToken: string }) => {
+      if (options.accessToken === 'access-2') {
+        return { nodes: [], pageInfo: { hasNextPage: false, endCursor: null } }
+      }
+      firstTokenRequests += 1
+      if (firstTokenRequests === 2) rejectRequests()
+      await requestsReady
+      throw new JobberJobApiError('unauthorized', 401)
+    }
+    mocks.teamPage.mockImplementation(async (_page, options) => pageForToken(options))
+    mocks.jobsPage.mockImplementation(async (_userId, _page, options) => ({
+      ...await pageForToken(options),
+      totalCount: 0,
+    }))
+
+    const gateway = await createJobberGateway()
+    await expect(Promise.all([
+      gateway.listTeamUsers(),
+      gateway.listJobs(null),
+    ])).resolves.toEqual([[], []])
+
+    expect(mocks.refreshToken).toHaveBeenCalledTimes(1)
+    expect(mocks.teamPage).toHaveBeenLastCalledWith(
+      expect.any(Object), expect.objectContaining({ accessToken: 'access-2' }),
     )
     expect(mocks.jobsPage).toHaveBeenLastCalledWith(
       null, expect.any(Object), expect.objectContaining({ accessToken: 'access-2' }), null,

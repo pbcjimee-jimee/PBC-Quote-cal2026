@@ -4,14 +4,12 @@ import { z } from 'zod'
 import { calculateEstimatedLabour, type EstimatedLabourSummary } from '@/lib/jobber/estimated-labour'
 import { calculateFinancialSummaryFromAmounts, type DecimalFinancialSummary } from '@/lib/jobber/financial-summary'
 import {
-  fetchJobberJobAssignmentVisits,
-  fetchJobberJobDetail,
-  listJobberJobs,
-  listJobberTeamUsers,
+  createJobberGateway,
+  type JobberGateway,
 } from '@/lib/jobber/job-gateway'
 import {
   getJobSnapshot,
-  listJobSnapshots,
+  listJobSnapshotsByIds,
   saveJobSnapshots,
   synchronizeJobSnapshotScope,
   type JobSnapshotPayload,
@@ -94,8 +92,10 @@ export async function listMyJobs(input: unknown = {}): Promise<ActionResult<JobL
   if (!appUser.ok) return appUser
 
   try {
+    const gateway = await createJobberGateway()
     const visitRange = resolveJobCalendarRange(parsed.data.month)
     const resolvedFilter = await resolveJobberFilter(
+      gateway,
       appUser.profile,
       parsed.data.supervisorProfileId,
       visitRange,
@@ -106,11 +106,11 @@ export async function listMyJobs(input: unknown = {}): Promise<ActionResult<JobL
     const jobberUserId = resolvedFilter.supervisorIdentity?.jobberUserId ?? null
 
     const loaded = resolvedFilter.supervisorIdentity === null
-      ? await loadAdminJobList(appUser.user.id, visitRange)
+      ? await loadAdminJobList(gateway, appUser.user.id, visitRange)
       : await loadAssignedJobList(
+          gateway,
           appUser.user.id,
           resolvedFilter.supervisorIdentity,
-          listJobSnapshots(),
           false,
           visitRange,
           resolvedFilter.assignedJobs,
@@ -138,24 +138,27 @@ export async function refreshJobs(input: unknown = {}): Promise<ActionResult<Job
   if (!appUser.ok) return appUser
 
   try {
-    const resolvedFilter = await resolveJobberFilter(appUser.profile, parsed.data.supervisorProfileId)
+    const gateway = await createJobberGateway()
+    const resolvedFilter = await resolveJobberFilter(
+      gateway,
+      appUser.profile,
+      parsed.data.supervisorProfileId,
+    )
     if (!resolvedFilter.assignmentLinked) {
       return { ok: true, data: { jobs: [], assignmentLinked: false, filteredJobberUserId: null } }
     }
     const jobberUserId = resolvedFilter.supervisorIdentity?.jobberUserId ?? null
-    const snapshots = await listJobSnapshots()
-    assertRefreshAllowed(filterSnapshots(snapshots, jobberUserId))
     const refreshed = resolvedFilter.supervisorIdentity === null
       ? await refreshJobList(
+          gateway,
           appUser.user.id,
           null,
-          snapshots,
           resolveJobCalendarRange(parsed.data.month),
         )
       : await loadAssignedJobList(
+          gateway,
           appUser.user.id,
           resolvedFilter.supervisorIdentity,
-          snapshots,
           true,
           resolveJobCalendarRange(parsed.data.month),
         )
@@ -181,11 +184,18 @@ export async function getJobDetail(input: unknown): Promise<ActionResult<JobDeta
   if (!appUser.ok) return appUser
 
   try {
+    const gateway = await createJobberGateway()
     let snapshot = await getJobSnapshot(parsed.data.jobberJobId)
     if (snapshot && appUser.profile.role === 'admin' && snapshot.labourEstimate !== null) {
       return { ok: true, data: toDetail(snapshot) }
     }
-    snapshot = await fetchAuthorizedDetail(appUser.profile, appUser.user.id, parsed.data.jobberJobId, snapshot)
+    snapshot = await fetchAuthorizedDetail(
+      gateway,
+      appUser.profile,
+      appUser.user.id,
+      parsed.data.jobberJobId,
+      snapshot,
+    )
     return { ok: true, data: toDetail(snapshot) }
   } catch (error) {
     if (error instanceof JobAccessError) return { ok: false, error: error.message, code: 'FORBIDDEN' }
@@ -201,9 +211,11 @@ export async function refreshJobDetail(input: unknown): Promise<ActionResult<Job
   if (!appUser.ok) return appUser
 
   try {
+    const gateway = await createJobberGateway()
     const existing = await getJobSnapshot(parsed.data.jobberJobId)
     if (existing) assertRefreshAllowed([existing])
     const refreshed = await fetchAuthorizedDetail(
+      gateway,
       appUser.profile,
       appUser.user.id,
       parsed.data.jobberJobId,
@@ -218,12 +230,13 @@ export async function refreshJobDetail(input: unknown): Promise<ActionResult<Job
 }
 
 async function resolveJobberFilter(
+  gateway: JobberGateway,
   profile: AppUserProfile,
   supervisorProfileId?: string | null,
   visitRange?: JobberVisitRange,
 ): Promise<ResolvedJobberFilter> {
   if (profile.role === 'supervisor') {
-    return resolveSupervisorListIdentity(profile.jobberUserId, profile.displayName, visitRange)
+    return resolveSupervisorListIdentity(gateway, profile.jobberUserId, profile.displayName, visitRange)
   }
   if (!supervisorProfileId) return { supervisorIdentity: null, assignmentLinked: true }
 
@@ -237,6 +250,7 @@ async function resolveJobberFilter(
     .maybeSingle()
   if (error) throw new Error('Unable to read supervisor profile')
   return resolveSupervisorListIdentity(
+    gateway,
     data?.jobber_user_id ?? null,
     data?.display_name ?? null,
     visitRange,
@@ -244,17 +258,16 @@ async function resolveJobberFilter(
 }
 
 async function loadAdminJobList(
+  gateway: JobberGateway,
   actorId: string,
   visitRange: JobberVisitRange,
 ): Promise<LoadedJobSnapshots> {
-  const [summaries, existingSnapshots] = await Promise.all([
-    listJobberJobs(null, visitRange),
-    listJobSnapshots(),
-  ])
+  const summaries = await gateway.listJobs(null, visitRange)
+  const existingSnapshots = await listJobSnapshotsByIds(summaries.map((job) => job.id))
   const cached = filterSnapshots(existingSnapshots, null)
   const cachedById = new Map(cached.map((snapshot) => [snapshot.job.id, snapshot]))
   const missing = summaries.filter((job) => !cachedById.has(job.id))
-  const refreshed = await fetchAndSaveJobDetails(missing, actorId, null, cachedById)
+  const refreshed = await fetchAndSaveJobDetails(gateway, missing, actorId, null, cachedById)
   const refreshedById = new Map(refreshed.snapshots.map((snapshot) => [snapshot.job.id, snapshot]))
   return {
     snapshots: summaries.flatMap((job) => {
@@ -267,18 +280,17 @@ async function loadAdminJobList(
 }
 
 async function loadAssignedJobList(
+  gateway: JobberGateway,
   actorId: string,
   supervisorIdentity: SupervisorIdentity,
-  existingSnapshots: Promise<readonly StoredJobSnapshot[]> | readonly StoredJobSnapshot[],
   forceRefresh: boolean,
   visitRange: JobberVisitRange,
   preloadedAssignedJobs?: Promise<readonly JobberJobSummary[]>,
 ): Promise<LoadedJobSnapshots> {
   const { jobberUserId } = supervisorIdentity
-  const [assignedJobs, cachedSnapshots] = await Promise.all([
-    preloadedAssignedJobs ?? listJobberJobs(jobberUserId, visitRange),
-    Promise.resolve(existingSnapshots),
-  ])
+  const assignedJobs = await (preloadedAssignedJobs ?? gateway.listJobs(jobberUserId, visitRange))
+  const cachedSnapshots = await listJobSnapshotsByIds(assignedJobs.map((job) => job.id))
+  if (forceRefresh) assertRefreshAllowed(filterSnapshots(cachedSnapshots, jobberUserId))
   const assignedJobIds = new Set(assignedJobs.map((job) => job.id))
   const existingById = new Map(cachedSnapshots
     .filter((snapshot) => assignedJobIds.has(snapshot.job.id))
@@ -286,7 +298,7 @@ async function loadAssignedJobList(
   const jobsToRefresh = forceRefresh
     ? assignedJobs
     : assignedJobs.filter((job) => !existingById.has(job.id))
-  const refreshed = await fetchAndSaveJobDetails(jobsToRefresh, actorId, jobberUserId, existingById)
+  const refreshed = await fetchAndSaveJobDetails(gateway, jobsToRefresh, actorId, jobberUserId, existingById)
   const refreshedById = new Map(refreshed.snapshots.map((snapshot) => [snapshot.job.id, snapshot]))
   const visible = assignedJobs.flatMap((job) => {
     const snapshot = refreshedById.get(job.id) ?? existingById.get(job.id)
@@ -300,18 +312,22 @@ async function loadAssignedJobList(
 }
 
 async function refreshJobList(
+  gateway: JobberGateway,
   actorId: string,
   jobberUserId: string | null,
-  existingSnapshots: readonly StoredJobSnapshot[],
   visitRange: JobberVisitRange | null = null,
 ): Promise<LoadedJobSnapshots> {
-  const jobs = await listJobberJobs(jobberUserId, visitRange)
+  const jobs = await gateway.listJobs(jobberUserId, visitRange)
+  const snapshots = await listJobSnapshotsByIds(jobs.map((job) => job.id))
+  const existingSnapshots = filterSnapshots(snapshots, jobberUserId)
+  assertRefreshAllowed(existingSnapshots)
   const existingById = new Map(existingSnapshots.map((snapshot) => [snapshot.job.id, snapshot]))
-  const refreshed = await fetchAndSaveJobDetails(jobs, actorId, jobberUserId, existingById)
+  const refreshed = await fetchAndSaveJobDetails(gateway, jobs, actorId, jobberUserId, existingById)
   return { ...refreshed, summaries: jobs }
 }
 
 async function fetchAndSaveJobDetails(
+  gateway: JobberGateway,
   jobs: readonly { readonly id: string }[],
   actorId: string,
   jobberUserId: string | null,
@@ -324,7 +340,7 @@ async function fetchAndSaveJobDetails(
     const batch = jobs.slice(offset, offset + DETAIL_FETCH_CONCURRENCY)
     const outcomes = await Promise.all(batch.map(async (job) => {
       try {
-        return { detail: await fetchJobberJobDetail(job.id) }
+        return { detail: await gateway.fetchJobDetail(job.id) }
       } catch {
         return { detail: null }
       }
@@ -348,6 +364,7 @@ async function fetchAndSaveJobDetails(
 }
 
 async function fetchAuthorizedDetail(
+  gateway: JobberGateway,
   profile: AppUserProfile,
   actorId: string,
   jobberJobId: string,
@@ -356,10 +373,14 @@ async function fetchAuthorizedDetail(
 ): Promise<StoredJobSnapshot> {
   let jobberUserId: string | null = null
   if (profile.role === 'supervisor') {
-    const supervisorIdentity = await resolveSupervisorIdentity(profile.jobberUserId, profile.displayName)
+    const supervisorIdentity = await resolveSupervisorIdentity(
+      gateway,
+      profile.jobberUserId,
+      profile.displayName,
+    )
     if (!supervisorIdentity) throw new JobAccessError('This job is not assigned to the current supervisor')
     jobberUserId = supervisorIdentity.jobberUserId
-    const assignedJobs = await listJobberJobs(jobberUserId)
+    const assignedJobs = await gateway.listJobs(jobberUserId)
     const synchronized = await synchronizeJobSnapshotScope(
       jobberUserId,
       assignedJobs.map((job) => job.id),
@@ -374,8 +395,8 @@ async function fetchAuthorizedDetail(
   }
 
   const [detail, assignmentVisits] = await Promise.all([
-    fetchJobberJobDetail(jobberJobId),
-    fetchJobberJobAssignmentVisits(jobberJobId),
+    gateway.fetchJobDetail(jobberJobId),
+    gateway.fetchJobAssignmentVisits(jobberJobId),
   ])
   const labourEstimate = calculateEstimatedLabour(assignmentVisits)
   const [saved] = await saveJobSnapshots([
@@ -445,13 +466,14 @@ function sortJobItems(items: readonly JobListItem[]): readonly JobListItem[] {
 }
 
 async function resolveSupervisorIdentity(
+  gateway: JobberGateway,
   jobberUserId: string | null,
   displayName: string | null,
 ): Promise<SupervisorIdentity | null> {
   if (!displayName) return null
   const normalizedName = normalizePersonName(displayName)
   if (!OFFICIAL_SUPERVISOR_NAMES.has(normalizedName)) return null
-  const teamUsers = await listJobberTeamUsers()
+  const teamUsers = await gateway.listTeamUsers()
   const nameMatches = teamUsers.filter((teamUser) => (
     normalizePersonName(teamUser.fullName) === normalizedName
   ))
@@ -461,6 +483,7 @@ async function resolveSupervisorIdentity(
 }
 
 async function resolveSupervisorListIdentity(
+  gateway: JobberGateway,
   jobberUserId: string | null,
   displayName: string | null,
   visitRange?: JobberVisitRange,
@@ -469,12 +492,12 @@ async function resolveSupervisorListIdentity(
     return { supervisorIdentity: null, assignmentLinked: false }
   }
   const assignedJobs = jobberUserId && visitRange
-    ? listJobberJobs(jobberUserId, visitRange)
+    ? gateway.listJobs(jobberUserId, visitRange)
     : undefined
   // A stale or mismatched link discards this speculative request, so handle that rejection here.
   void assignedJobs?.catch(() => undefined)
 
-  const supervisorIdentity = await resolveSupervisorIdentity(jobberUserId, displayName)
+  const supervisorIdentity = await resolveSupervisorIdentity(gateway, jobberUserId, displayName)
   const canReuseAssignedJobs = supervisorIdentity?.jobberUserId === jobberUserId
   return {
     supervisorIdentity,
