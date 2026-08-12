@@ -87,8 +87,9 @@ describe('inventory actions', () => {
 
     expect(result.ok).toBe(true)
     if (result.ok) {
-      expect(result.data).toHaveLength(1)
-      expect(result.data[0].name).toBe('Weathershield')
+      expect(result.data.items).toHaveLength(1)
+      expect(result.data.items[0].name).toBe('Weathershield')
+      expect(result.data).toMatchObject({ hasMore: false, nextOffset: null })
     }
   })
 
@@ -127,7 +128,8 @@ describe('inventory actions', () => {
     const list = await listInventory({ query: 'Aquanamel', limit: 10 })
     expect(list.ok).toBe(true)
     if (list.ok) {
-      expect(list.data).toHaveLength(0)
+      expect(list.data.items).toHaveLength(0)
+      expect(list.data).toMatchObject({ hasMore: false, nextOffset: null })
     }
   })
 

@@ -9,7 +9,7 @@ export default async function InventoryPage() {
   const appUser = await requireRole('any')
   if (!appUser.ok) redirect('/login')
 
-  const inventory = await listInventory({ limit: 500 })
+  const inventory = await listInventory({ limit: 50, offset: 0 })
   const isAdmin = appUser.profile.role === 'admin'
 
   return (
@@ -31,7 +31,7 @@ export default async function InventoryPage() {
           {!inventory.ok ? <p className="text-[var(--danger)]">{inventory.error}</p> : null}
         </div>
         <InventoryManager
-          initialItems={inventory.ok ? inventory.data : []}
+          initialPage={inventory.ok ? inventory.data : { items: [], hasMore: false, nextOffset: null }}
           role={appUser.profile.role}
         />
       </div>

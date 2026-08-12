@@ -1,15 +1,17 @@
 'use client'
 
-import { useMemo, useRef, useState, useTransition } from 'react'
+import { useEffect, useMemo, useRef, useState, useTransition } from 'react'
 import type { CSSProperties } from 'react'
 import { Icons } from '@/components/ui/icons'
 import {
   createInventoryItem,
   deleteInventoryItem,
   importInventoryCSV,
+  listInventory,
   updateInventoryMovement,
   updateInventoryItem,
 } from '@/lib/actions/inventory'
+import type { InventoryPageResult } from '@/lib/actions/inventory'
 import type { AppRole } from '@/lib/security/require-app-user'
 import type { InventoryItemRecord, InventoryStatus } from '@/lib/inventory/types'
 import { resolveWorkbookInventoryCategory, WORKBOOK_CATEGORY_ORDER } from '@/lib/inventory/workbook-categories'
@@ -205,6 +207,17 @@ function displayInventoryItem(item: InventoryItemRecord): InventoryItemRecord {
     ...item,
     category: resolveWorkbookInventoryCategory(item),
   }
+}
+
+function mergeInventoryItemsById(current: InventoryItemRecord[], incoming: InventoryItemRecord[]): InventoryItemRecord[] {
+  const knownIds = new Set(current.map((item) => item.id))
+  const merged = [...current]
+  for (const item of incoming) {
+    if (knownIds.has(item.id)) continue
+    knownIds.add(item.id)
+    merged.push(item)
+  }
+  return merged
 }
 
 function categorySort(a: string, b: string): number {
@@ -659,15 +672,17 @@ export function InventoryMobileList({
 }
 
 export function InventoryManager({
-  initialItems,
+  initialPage,
   role = 'admin',
 }: {
-  initialItems: InventoryItemRecord[]
+  initialPage: InventoryPageResult
   role?: AppRole
 }) {
   const canAdminister = role === 'admin'
   const fileInputRef = useRef<HTMLInputElement | null>(null)
-  const [items, setItems] = useState(() => initialItems.map(displayInventoryItem))
+  const [items, setItems] = useState(() => initialPage.items.map(displayInventoryItem))
+  const [hasMore, setHasMore] = useState(initialPage.hasMore)
+  const [nextOffset, setNextOffset] = useState(initialPage.nextOffset)
   const [query, setQuery] = useState('')
   const [statusFilter, setStatusFilter] = useState<'all' | InventoryStatus>('all')
   const [categoryFilter, setCategoryFilter] = useState('all')
@@ -678,6 +693,18 @@ export function InventoryManager({
   const [message, setMessage] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [isPending, startTransition] = useTransition()
+  const [committedFilters, setCommittedFilters] = useState({
+    query: '',
+    status: undefined as InventoryStatus | undefined,
+    category: undefined as string | undefined,
+  })
+  const requestSequenceRef = useRef(0)
+  const isInitialFilterEffect = useRef(true)
+  const selectedStatus = statusFilter === 'all' ? undefined : statusFilter
+  const selectedCategory = categoryFilter === 'all' ? undefined : categoryFilter
+  const filtersArePending = query !== committedFilters.query
+    || selectedStatus !== committedFilters.status
+    || selectedCategory !== committedFilters.category
 
   const categories = useMemo(() => {
     return Array.from(new Set([
@@ -687,29 +714,40 @@ export function InventoryManager({
     ])).sort(categorySort)
   }, [customCategories, items])
 
-  const filteredItems = useMemo(() => {
-    const tokens = query.trim().toLowerCase().split(/\s+/).filter(Boolean)
-    return items.filter((item) => {
-      if (statusFilter !== 'all' && item.status !== statusFilter) return false
-      if (categoryFilter !== 'all' && item.category !== categoryFilter) return false
-      if (tokens.length === 0) return true
+  const groupedItems = useMemo(() => groupInventoryItems(items), [items])
 
-      const haystack = [
-        item.name,
-        resolveWorkbookInventoryCategory(item),
-        item.brand,
-        item.modelSpecification,
-        item.colour,
-        item.sizeOrSerial,
-        item.usedLocationText,
-        item.notes,
-      ].filter(Boolean).join(' ').toLowerCase()
+  useEffect(() => {
+    const requestSequence = ++requestSequenceRef.current
+    if (isInitialFilterEffect.current) {
+      isInitialFilterEffect.current = false
+      return
+    }
 
-      return tokens.every((token) => haystack.includes(token))
-    })
-  }, [categoryFilter, items, query, statusFilter])
+    const filters = {
+      query,
+      status: statusFilter === 'all' ? undefined : statusFilter,
+      category: categoryFilter === 'all' ? undefined : categoryFilter,
+    }
+    const timer = globalThis.setTimeout(() => {
+      setError(null)
+      startTransition(async () => {
+        const result = await listInventory({ ...filters, offset: 0, limit: 50 })
+        if (requestSequence !== requestSequenceRef.current) return
+        if (!result.ok) {
+          setError(result.error)
+          return
+        }
 
-  const groupedItems = useMemo(() => groupInventoryItems(filteredItems), [filteredItems])
+        setItems(result.data.items.map(displayInventoryItem))
+        setHasMore(result.data.hasMore)
+        setNextOffset(result.data.nextOffset)
+        setCommittedFilters(filters)
+        resetRowEdit()
+      })
+    }, 300)
+
+    return () => globalThis.clearTimeout(timer)
+  }, [categoryFilter, query, statusFilter])
 
   function setField(field: keyof InventoryFormState, value: string) {
     setForm((current) => ({ ...current, [field]: value }))
@@ -828,6 +866,25 @@ export function InventoryManager({
     })
   }
 
+  function loadMore() {
+    if (nextOffset === null || filtersArePending) return
+    setError(null)
+    const requestSequence = ++requestSequenceRef.current
+    startTransition(async () => {
+      const result = await listInventory({ ...committedFilters, offset: nextOffset, limit: 50 })
+      if (requestSequence !== requestSequenceRef.current) return
+      if (!result.ok) {
+        setError(result.error)
+        return
+      }
+
+      const incoming = result.data.items.map(displayInventoryItem)
+      setItems((current) => mergeInventoryItemsById(current, incoming))
+      setHasMore(result.data.hasMore)
+      setNextOffset(result.data.nextOffset)
+    })
+  }
+
   async function importCsv(file: File | null) {
     if (!file) return
     setMessage(null)
@@ -846,7 +903,7 @@ export function InventoryManager({
   }
 
   function exportCsv() {
-    downloadTextFile('warehouse-inventory.csv', buildInventoryCsv(filteredItems))
+    downloadTextFile('warehouse-inventory.csv', buildInventoryCsv(items))
   }
 
   function exportTemplate() {
@@ -860,7 +917,7 @@ export function InventoryManager({
       <div className="pbc-panelhead mb-4">
         <div className="pbc-panelhead__copy">
           <h2 className="pbc-paneltitle">Warehouse Inventory</h2>
-          <p className="pbc-panelsub">{filteredItems.length} of {items.length} items</p>
+          <p className="pbc-panelsub">{items.length} loaded filtered items</p>
         </div>
         <div className="pbc-panelhead__actions w-full sm:w-auto">
           <input
@@ -971,8 +1028,8 @@ export function InventoryManager({
         <button type="button" onClick={() => fileInputRef.current?.click()} disabled={isPending} className="pbc-btn pbc-btn--ghost pbc-btn--sm">
           {Icons.plus({ size: 14 })} Import CSV
         </button></> : null}
-        <button type="button" onClick={exportCsv} disabled={filteredItems.length === 0} className="pbc-btn pbc-btn--ghost pbc-btn--sm">
-          Export CSV
+        <button type="button" onClick={exportCsv} disabled={items.length === 0} className="pbc-btn pbc-btn--ghost pbc-btn--sm">
+          Export loaded filtered rows
         </button>
         <button type="button" onClick={exportTemplate} className="pbc-btn pbc-btn--ghost pbc-btn--sm">
           CSV Template
@@ -983,7 +1040,7 @@ export function InventoryManager({
       {error ? <p className="pbc-alert pbc-alert--danger mt-3">{error}</p> : null}
 
       <div className="mt-5 space-y-5">
-        {filteredItems.length === 0 ? (
+        {items.length === 0 ? (
           <p className="pbc-empty">No inventory items found.</p>
         ) : null}
         {groupedItems.map((group) => {
@@ -1027,6 +1084,11 @@ export function InventoryManager({
             </section>
           )
         })}
+        {hasMore ? (
+          <button type="button" onClick={loadMore} disabled={isPending || filtersArePending} className="pbc-btn pbc-btn--ghost">
+            Load more
+          </button>
+        ) : null}
       </div>
     </div>
   )

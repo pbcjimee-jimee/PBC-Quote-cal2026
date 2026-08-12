@@ -40,6 +40,12 @@ type InventoryImportResult = {
   items: InventoryItemRecord[]
 }
 
+export type InventoryPageResult = {
+  items: InventoryItemRecord[]
+  nextOffset: number | null
+  hasMore: boolean
+}
+
 const INVENTORY_COLUMNS = [
   'id',
   'name',
@@ -470,17 +476,17 @@ function toInventoryInsertPayload(rows: InventoryImportRow[]): InventoryInsert[]
   return rows.map(importRowToInsert)
 }
 
-export async function listInventory(input: unknown = {}): Promise<ActionResult<InventoryItemRecord[]>> {
+export async function listInventory(input: unknown = {}): Promise<ActionResult<InventoryPageResult>> {
   const parsed = inventorySearchSchema.safeParse(input)
   if (!parsed.success) {
     return { ok: false, error: parsed.error.message }
   }
 
-  const { query, limit, status, category } = parsed.data
+  const { query, offset, limit, status, category } = parsed.data
 
   if (isDevNoAuthMode()) {
     const { listDevInventory } = await import('@/lib/dev-data')
-    return { ok: true, data: listDevInventory(query, limit, status, category) }
+    return { ok: true, data: listDevInventory(query, offset, limit, status, category) }
   }
 
   const allowedUser = await requireRole('any')
@@ -493,7 +499,6 @@ export async function listInventory(input: unknown = {}): Promise<ActionResult<I
     .select(INVENTORY_COLUMNS)
     .eq('active', true)
     .order('created_at', { ascending: false })
-    .limit(limit)
 
   if (status) request = request.eq('status', status)
   if (category?.trim()) request = request.eq('category', category.trim())
@@ -502,9 +507,20 @@ export async function listInventory(input: unknown = {}): Promise<ActionResult<I
     request = request.or(inventorySearchOr(token))
   }
 
+  request = request.range(offset, offset + limit)
+
   const { data, error } = await request
   if (error) return { ok: false, error: error.message }
-  return { ok: true, data: (data as unknown as InventoryRow[]).map(rowToInventory) }
+  const rows = (data as unknown as InventoryRow[]).map(rowToInventory)
+  const hasMore = rows.length > limit
+  return {
+    ok: true,
+    data: {
+      items: rows.slice(0, limit),
+      hasMore,
+      nextOffset: hasMore ? offset + limit : null,
+    },
+  }
 }
 
 export async function createInventoryItem(input: unknown): Promise<ActionResult<InventoryItemRecord>> {

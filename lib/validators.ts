@@ -317,7 +317,8 @@ export const inventorySearchSchema = z.object({
   query: z.string().max(100).default(''),
   status: inventoryStatusSchema.optional(),
   category: z.string().trim().max(120).optional(),
-  limit: z.number().int().positive().max(500).default(200),
+  offset: z.number().int().min(0).default(0),
+  limit: z.number().int().positive().max(50).default(50),
 })
 
 export const inventoryCreateSchema = z.object({

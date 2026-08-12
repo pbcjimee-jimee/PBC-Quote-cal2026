@@ -434,13 +434,14 @@ function rowToDevInventoryItem(
 
 export function listDevInventory(
   query = '',
-  limit = 200,
+  offset = 0,
+  limit = 50,
   status?: InventoryStatus,
   category?: string
-): InventoryItemRecord[] {
+): { items: InventoryItemRecord[]; nextOffset: number | null; hasMore: boolean } {
   const tokens = searchTokens(query)
   const normalizedCategory = category?.trim().toLowerCase() ?? ''
-  return [...store.inventoryItems]
+  const rows = [...store.inventoryItems]
     .filter((item) => {
       if (!item.active) return false
       if (status && item.status !== status) return false
@@ -464,7 +465,13 @@ export function listDevInventory(
       return tokens.every((token) => haystack.includes(token))
     })
     .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
-    .slice(0, limit)
+    .slice(offset, offset + limit + 1)
+  const hasMore = rows.length > limit
+  return {
+    items: rows.slice(0, limit),
+    hasMore,
+    nextOffset: hasMore ? offset + limit : null,
+  }
 }
 
 export function createDevInventoryItem(

@@ -57,6 +57,7 @@ function createThenableRequest(response: unknown) {
     eq: vi.fn(() => request),
     order: vi.fn(() => request),
     limit: vi.fn(() => request),
+    range: vi.fn(() => request),
     or: vi.fn(() => request),
     then: (resolve: (value: unknown) => unknown) => resolve(response),
   }
@@ -122,7 +123,52 @@ describe('inventory actions against Supabase', () => {
     expect(request.eq).toHaveBeenCalledWith('active', true)
     expect(request.eq).toHaveBeenCalledWith('status', 'out')
     expect(request.or).toHaveBeenCalledTimes(2)
-    expect(request.limit).toHaveBeenCalledWith(25)
+    expect(request.range).toHaveBeenCalledWith(0, 25)
+    if (result.ok) {
+      expect(result.data).toEqual({
+        items: [expect.objectContaining({ id: inventoryRow.id })],
+        hasMore: false,
+        nextOffset: null,
+      })
+    }
+  })
+
+  it('fetches one extra row and returns a full inventory page with the next offset', async () => {
+    const rows = Array.from({ length: 51 }, (_, index) => ({
+      ...inventoryRow,
+      id: `00000000-0000-4000-8000-${String(index).padStart(12, '0')}`,
+    }))
+    const request = createThenableRequest({ data: rows, error: null })
+    mocks.createClient.mockResolvedValueOnce({ from: vi.fn(() => request) })
+
+    const result = await listInventory({ offset: 50, limit: 50 })
+
+    expect(request.range).toHaveBeenCalledWith(50, 100)
+    expect(result.ok).toBe(true)
+    if (result.ok) {
+      expect(result.data.items).toHaveLength(50)
+      expect(result.data.hasMore).toBe(true)
+      expect(result.data.nextOffset).toBe(100)
+    }
+  })
+
+  it('returns no next offset when an inventory page is shorter than the limit', async () => {
+    const rows = Array.from({ length: 20 }, (_, index) => ({
+      ...inventoryRow,
+      id: `00000000-0000-4000-8000-${String(index).padStart(12, '0')}`,
+    }))
+    const request = createThenableRequest({ data: rows, error: null })
+    mocks.createClient.mockResolvedValueOnce({ from: vi.fn(() => request) })
+
+    const result = await listInventory({ offset: 50, limit: 50 })
+
+    expect(request.range).toHaveBeenCalledWith(50, 100)
+    expect(result.ok).toBe(true)
+    if (result.ok) {
+      expect(result.data.items).toHaveLength(20)
+      expect(result.data.hasMore).toBe(false)
+      expect(result.data.nextOffset).toBeNull()
+    }
   })
 
   it('updates usage fields and soft deletes rows through Supabase', async () => {

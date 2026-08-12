@@ -10,6 +10,7 @@ const inventoryActions = vi.hoisted(() => ({
   createInventoryItem: vi.fn(),
   deleteInventoryItem: vi.fn(),
   importInventoryCSV: vi.fn(),
+  listInventory: vi.fn(),
   updateInventoryMovement: vi.fn(),
   updateInventoryItem: vi.fn(),
 }))
@@ -36,6 +37,18 @@ const item: InventoryItemRecord = {
   updatedAt: '2026-08-05T00:00:00.000Z',
 }
 
+const searchItem: InventoryItemRecord = {
+  ...item,
+  id: '00000000-0000-4000-8000-000000000072',
+  name: 'Server search result',
+}
+
+const moreItem: InventoryItemRecord = {
+  ...item,
+  id: '00000000-0000-4000-8000-000000000073',
+  name: 'Loaded later',
+}
+
 function deferred<T>() {
   let resolve!: (value: T) => void
   const promise = new Promise<T>((settle) => {
@@ -59,6 +72,214 @@ function findMobileEditor(container: TestElement): TestElement | undefined {
 describe('InventoryManager client interaction', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    inventoryActions.listInventory.mockReset()
+  })
+
+  it('debounces server search, replaces results, resets filters, and merges load-more rows by ID', async () => {
+    vi.useFakeTimers()
+    inventoryActions.listInventory
+      .mockResolvedValueOnce({
+        ok: true,
+        data: { items: [searchItem], hasMore: true, nextOffset: 50 },
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        data: { items: [searchItem, searchItem, moreItem], hasMore: false, nextOffset: null },
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        data: { items: [moreItem], hasMore: false, nextOffset: null },
+      })
+    const { cleanup, document: testDocument } = installTestDom()
+    let root: Root | null = null
+
+    try {
+      const { createRoot } = await import('react-dom/client')
+      const container = testDocument.createElement('div')
+      root = createRoot(container as unknown as Element)
+
+      await act(async () => {
+        root!.render(createElement(InventoryManager, {
+          initialPage: { items: [item], hasMore: false, nextOffset: null },
+        }))
+      })
+
+      const search = Array.from(container.querySelectorAll('input')).find((input) => (
+        input.getAttribute('placeholder') === 'Search inventory...'
+      ))
+      expect(search).toBeDefined()
+
+      await act(async () => {
+        search!.value = 'server result'
+        search!.dispatchEvent(new Event('input', { bubbles: true }))
+        search!.dispatchEvent(new Event('change', { bubbles: true }))
+      })
+      await act(async () => {
+        vi.advanceTimersByTime(299)
+      })
+      expect(inventoryActions.listInventory).not.toHaveBeenCalled()
+
+      await act(async () => {
+        vi.advanceTimersByTime(1)
+        await Promise.resolve()
+      })
+      expect(inventoryActions.listInventory).toHaveBeenNthCalledWith(1, {
+        query: 'server result',
+        status: undefined,
+        category: undefined,
+        offset: 0,
+        limit: 50,
+      })
+      expect(container.textContent).toContain(searchItem.name)
+      expect(container.textContent).not.toContain(item.name)
+
+      const loadMore = Array.from(container.querySelectorAll('button')).find((button) => button.textContent === 'Load more')
+      expect(loadMore).toBeDefined()
+      await act(async () => {
+        loadMore!.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+        await Promise.resolve()
+      })
+      expect(inventoryActions.listInventory).toHaveBeenNthCalledWith(2, {
+        query: 'server result',
+        status: undefined,
+        category: undefined,
+        offset: 50,
+        limit: 50,
+      })
+      expect(Array.from(container.querySelectorAll('button')).filter((button) => (
+        button.getAttribute('aria-controls') === `inventory-mobile-editor-${searchItem.id}`
+      ))).toHaveLength(1)
+      expect(container.textContent).toContain(moreItem.name)
+
+      const status = container.querySelectorAll('select')[0]
+      await act(async () => {
+        status.value = 'out'
+        status.dispatchEvent(new Event('change', { bubbles: true }))
+        vi.advanceTimersByTime(300)
+        await Promise.resolve()
+      })
+      expect(inventoryActions.listInventory).toHaveBeenNthCalledWith(3, {
+        query: 'server result',
+        status: 'out',
+        category: undefined,
+        offset: 0,
+        limit: 50,
+      })
+      expect(container.textContent).not.toContain(searchItem.name)
+      expect(container.textContent).toContain(moreItem.name)
+    } finally {
+      try {
+        if (root) await act(async () => root?.unmount())
+      } finally {
+        vi.useRealTimers()
+        cleanup()
+      }
+    }
+  })
+
+  it('does not load the previous page while a new filter is waiting for debounce', async () => {
+    vi.useFakeTimers()
+    inventoryActions.listInventory.mockResolvedValueOnce({
+      ok: true,
+      data: { items: [searchItem], hasMore: false, nextOffset: null },
+    })
+    const { cleanup, document: testDocument } = installTestDom()
+    let root: Root | null = null
+
+    try {
+      const { createRoot } = await import('react-dom/client')
+      const container = testDocument.createElement('div')
+      root = createRoot(container as unknown as Element)
+      await act(async () => {
+        root!.render(createElement(InventoryManager, {
+          initialPage: { items: [item], hasMore: true, nextOffset: 50 },
+        }))
+      })
+      const search = Array.from(container.querySelectorAll('input')).find((input) => (
+        input.getAttribute('placeholder') === 'Search inventory...'
+      ))!
+      const loadMore = Array.from(container.querySelectorAll('button')).find((button) => button.textContent === 'Load more')!
+
+      await act(async () => {
+        search.value = 'server result'
+        search.dispatchEvent(new Event('input', { bubbles: true }))
+      })
+      expect(loadMore.disabled).toBe(true)
+      await act(async () => {
+        loadMore.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+        vi.advanceTimersByTime(300)
+        await Promise.resolve()
+      })
+
+      expect(inventoryActions.listInventory).toHaveBeenCalledTimes(1)
+      expect(inventoryActions.listInventory).toHaveBeenCalledWith(expect.objectContaining({
+        query: 'server result',
+        offset: 0,
+      }))
+    } finally {
+      try {
+        if (root) await act(async () => root?.unmount())
+      } finally {
+        vi.useRealTimers()
+        cleanup()
+      }
+    }
+  })
+
+  it('ignores a stale inventory search response that resolves after the latest request', async () => {
+    vi.useFakeTimers()
+    const stale = deferred<{ ok: true; data: { items: InventoryItemRecord[]; hasMore: false; nextOffset: null } }>()
+    const latest = deferred<{ ok: true; data: { items: InventoryItemRecord[]; hasMore: false; nextOffset: null } }>()
+    inventoryActions.listInventory
+      .mockReturnValueOnce(stale.promise)
+      .mockReturnValueOnce(latest.promise)
+    const { cleanup, document: testDocument } = installTestDom()
+    let root: Root | null = null
+
+    try {
+      const { createRoot } = await import('react-dom/client')
+      const container = testDocument.createElement('div')
+      root = createRoot(container as unknown as Element)
+      await act(async () => {
+        root!.render(createElement(InventoryManager, {
+          initialPage: { items: [item], hasMore: false, nextOffset: null },
+        }))
+      })
+      const search = Array.from(container.querySelectorAll('input')).find((input) => (
+        input.getAttribute('placeholder') === 'Search inventory...'
+      ))!
+
+      await act(async () => {
+        search.value = 'stale'
+        search.dispatchEvent(new Event('input', { bubbles: true }))
+      })
+      await act(async () => {
+        vi.advanceTimersByTime(300)
+      })
+      await act(async () => {
+        search.value = 'latest'
+        search.dispatchEvent(new Event('input', { bubbles: true }))
+      })
+      await act(async () => {
+        vi.advanceTimersByTime(300)
+      })
+      latest.resolve({ ok: true, data: { items: [moreItem], hasMore: false, nextOffset: null } })
+      await act(async () => latest.promise)
+      stale.resolve({ ok: true, data: { items: [searchItem], hasMore: false, nextOffset: null } })
+      await act(async () => stale.promise)
+
+      expect(container.textContent).toContain(moreItem.name)
+      expect(container.textContent).not.toContain(searchItem.name)
+    } finally {
+      try {
+        stale.resolve({ ok: true, data: { items: [], hasMore: false, nextOffset: null } })
+        latest.resolve({ ok: true, data: { items: [], hasMore: false, nextOffset: null } })
+        if (root) await act(async () => root?.unmount())
+      } finally {
+        vi.useRealTimers()
+        cleanup()
+      }
+    }
   })
 
   it('opens the mobile editor from its summary and Cancel closes it without a server mutation', async () => {
@@ -68,7 +289,9 @@ describe('InventoryManager client interaction', () => {
     let root: Root | null = null
 
     try {
-      const element = createElement(InventoryManager, { initialItems: [item] })
+      const element = createElement(InventoryManager, {
+        initialPage: { items: [item], hasMore: false, nextOffset: null },
+      })
       const serverMarkup = renderToStaticMarkup(element)
       const { createRoot, hydrateRoot } = await import('react-dom/client')
       const seedContainer = testDocument.createElement('div')
@@ -153,7 +376,9 @@ describe('InventoryManager client interaction', () => {
       root = createRoot(container as unknown as Element)
 
       await act(async () => {
-        root!.render(createElement(InventoryManager, { initialItems: [item] }))
+        root!.render(createElement(InventoryManager, {
+          initialPage: { items: [item], hasMore: false, nextOffset: null },
+        }))
       })
 
       const summary = findMobileSummary(container)
