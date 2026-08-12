@@ -4,7 +4,7 @@ export default function manifest(): MetadataRoute.Manifest {
   return {
     name: 'PBC Quote Calculator',
     short_name: 'PBC Quotes',
-    start_url: '/',
+    start_url: '/jobs',
     display: 'standalone',
     theme_color: '#0b66d8',
     background_color: '#eef3fb',
