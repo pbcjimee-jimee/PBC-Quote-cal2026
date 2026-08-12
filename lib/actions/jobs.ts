@@ -184,11 +184,11 @@ export async function getJobDetail(input: unknown): Promise<ActionResult<JobDeta
   if (!appUser.ok) return appUser
 
   try {
-    const gateway = await createJobberGateway()
     let snapshot = await getJobSnapshot(parsed.data.jobberJobId)
     if (snapshot && appUser.profile.role === 'admin' && snapshot.labourEstimate !== null) {
       return { ok: true, data: toDetail(snapshot) }
     }
+    const gateway = await createJobberGateway()
     snapshot = await fetchAuthorizedDetail(
       gateway,
       appUser.profile,

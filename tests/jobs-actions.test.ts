@@ -479,6 +479,20 @@ describe('job actions', () => {
     expect(mocks.fetchJobberJobAssignmentVisits).not.toHaveBeenCalled()
   })
 
+  it('returns a complete cached admin detail when the Jobber gateway is unavailable', async () => {
+    mocks.requireRole.mockResolvedValueOnce(appUser('admin', null))
+    mocks.getSnapshot.mockResolvedValueOnce({ ...snapshot, refreshedForAll: true })
+    mocks.createJobberGateway.mockRejectedValueOnce(new Error('Jobber is not connected'))
+
+    await expect(getJobDetail({ jobberJobId: 'job-1' })).resolves.toMatchObject({
+      ok: true,
+      data: {
+        id: 'job-1',
+        labourEstimate: { assignmentCount: 14, ratePerAssignment: '450', total: '6300' },
+      },
+    })
+  })
+
   it('backfills a legacy admin detail snapshot before returning it', async () => {
     mocks.requireRole.mockResolvedValueOnce(appUser('admin', null))
     mocks.getSnapshot.mockResolvedValueOnce({
