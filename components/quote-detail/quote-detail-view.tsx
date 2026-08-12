@@ -523,7 +523,14 @@ export function QuoteDetailView({ quote }: QuoteDetailViewProps) {
             <Card className="pbc-dspan">
               <SectionLabel icon={Icons.template({ size: 16 })}>Jobber Data</SectionLabel>
               <div className="space-y-4">
-                <JobberRefreshPanel quote={quote} />
+                <JobberRefreshPanel quote={{
+                  id: quote.id,
+                  jobberQuoteId: quote.jobberQuoteId,
+                  jobberSnapshotRefreshedAt: quote.jobberSnapshotRefreshedAt,
+                  jobberSnapshotRefreshError: quote.jobberSnapshotRefreshError,
+                  jobberSnapshotChangeStatus: quote.jobberSnapshotChangeStatus,
+                  jobberSnapshotChangeSummary: quote.jobberSnapshotChangeSummary,
+                }} />
                 {quote.jobberSnapshot ? (
                   <details className="pbc-detailmore">
                     <summary>Show saved Jobber snapshot</summary>

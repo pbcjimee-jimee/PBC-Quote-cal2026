@@ -119,6 +119,35 @@ describe('quote form pricing UI', () => {
     ],
   }
 
+  it('passes only Jobber refresh fields from quote detail to the client panel', async () => {
+    let receivedQuote: unknown
+    vi.resetModules()
+    vi.doMock('@/components/quote-detail/jobber-refresh-panel', () => ({
+      JobberRefreshPanel: ({ quote }: { quote: unknown }) => {
+        receivedQuote = quote
+        return null
+      },
+    }))
+
+    try {
+      const { QuoteDetailView: IsolatedQuoteDetailView } = await import('@/components/quote-detail/quote-detail-view')
+
+      renderToStaticMarkup(createElement(IsolatedQuoteDetailView, { quote: quoteRecord }))
+
+      expect(receivedQuote).toEqual({
+        id: 'quote-id-1',
+        jobberQuoteId: 'encoded-quote-id',
+        jobberSnapshotRefreshedAt: null,
+        jobberSnapshotRefreshError: null,
+        jobberSnapshotChangeStatus: 'unknown',
+        jobberSnapshotChangeSummary: [],
+      })
+    } finally {
+      vi.doUnmock('@/components/quote-detail/jobber-refresh-panel')
+      vi.resetModules()
+    }
+  })
+
   it('keeps quote form panels on the shared design system instead of legacy visual Tailwind', () => {
     const files = [
       'components/quote-form/customer-panel.tsx',

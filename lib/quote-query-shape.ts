@@ -12,5 +12,161 @@ export const QUOTES_LIST_SELECT = [
   'created_by',
   'created_at',
 ].join(', ')
-export const QUOTE_DETAIL_SELECT = '*, quote_items(*), quote_options(*, quote_option_items(*)), jobber_quote_lines(*), quote_memos(*), quote_price_revisions(*)'
-export const QUOTE_DETAIL_WITHOUT_MEMOS_SELECT = '*, quote_items(*), quote_options(*, quote_option_items(*)), jobber_quote_lines(*), quote_price_revisions(*)'
+
+const QUOTE_DETAIL_COLUMNS = [
+  'id',
+  'version',
+  'customer_name',
+  'customer_address',
+  'jobber_quote_id',
+  'jobber_snapshot',
+  'jobber_save_mode',
+  'jobber_sync_status',
+  'jobber_last_synced_at',
+  'jobber_sync_error',
+  'jobber_snapshot_refreshed_at',
+  'jobber_snapshot_change_status',
+  'jobber_snapshot_change_summary',
+  'jobber_snapshot_refresh_error',
+  'area_sqft',
+  'work_type',
+  'working_days',
+  'labour_per_day',
+  'formula1_total',
+  'formula2_total',
+  'formula3_total',
+  'formula4_total',
+  'formula5_total',
+  'selected_min',
+  'selected_max',
+  'interior_selected_min',
+  'interior_selected_max',
+  'exterior_selected_min',
+  'exterior_selected_max',
+  'roof_selected_min',
+  'roof_selected_max',
+  'subtotal',
+  'final_total',
+  'pricing_settings_snapshot',
+  'created_by',
+  'created_at',
+] as const
+
+const QUOTE_ITEM_COLUMNS = [
+  'id',
+  'quote_id',
+  'product_id',
+  'product_name_snapshot',
+  'market_price_snapshot',
+  'actual_price_snapshot',
+  'quantity',
+  'working_days',
+  'labour_per_day',
+  'area_id',
+  'area_name_snapshot',
+  'area_scope_snapshot',
+  'is_custom',
+  'position',
+] as const
+
+const QUOTE_OPTION_COLUMNS = [
+  'id',
+  'quote_id',
+  'title',
+  'working_days',
+  'labour_per_day',
+  'material_market',
+  'material_actual',
+  'formula1_total',
+  'formula2_total',
+  'formula3_total',
+  'formula4_total',
+  'formula5_total',
+  'selected_min',
+  'selected_max',
+  'subtotal',
+  'final_total',
+  'position',
+] as const
+
+const QUOTE_OPTION_ITEM_COLUMNS = [
+  'id',
+  'option_id',
+  'product_id',
+  'product_name_snapshot',
+  'market_price_snapshot',
+  'actual_price_snapshot',
+  'quantity',
+  'working_days',
+  'labour_per_day',
+  'area_id',
+  'area_name_snapshot',
+  'area_scope_snapshot',
+  'is_custom',
+  'position',
+] as const
+
+const JOBBER_QUOTE_LINE_COLUMNS = [
+  'id',
+  'quote_id',
+  'kind',
+  'name',
+  'description',
+  'quantity',
+  'unit_price',
+  'total_price',
+  'taxable',
+  'client_visible',
+  'jobber_line_item_id',
+  'linked_product_or_service_id',
+  'position',
+  'created_at',
+  'updated_at',
+] as const
+
+const QUOTE_MEMO_COLUMNS = [
+  'id',
+  'quote_id',
+  'body',
+  'position',
+  'created_by',
+  'created_at',
+  'updated_at',
+] as const
+
+const QUOTE_PRICE_REVISION_COLUMNS = [
+  'id',
+  'quote_id',
+  'revision_number',
+  'event_type',
+  'previous_subtotal',
+  'previous_final_total',
+  'new_subtotal',
+  'new_final_total',
+  'previous_jobber_lines_total',
+  'new_jobber_lines_total',
+  'previous_options_subtotal',
+  'new_options_subtotal',
+  'previous_options_final_total',
+  'new_options_final_total',
+  'changed_by',
+  'changed_at',
+] as const
+
+const QUOTE_DETAIL_RELATIONS = [
+  `quote_items(${QUOTE_ITEM_COLUMNS.join(', ')})`,
+  `quote_options(${QUOTE_OPTION_COLUMNS.join(', ')}, quote_option_items(${QUOTE_OPTION_ITEM_COLUMNS.join(', ')}))`,
+  `jobber_quote_lines(${JOBBER_QUOTE_LINE_COLUMNS.join(', ')})`,
+  `quote_memos(${QUOTE_MEMO_COLUMNS.join(', ')})`,
+  `quote_price_revisions(${QUOTE_PRICE_REVISION_COLUMNS.join(', ')})`,
+] as const
+
+export const QUOTE_DETAIL_SELECT = [
+  ...QUOTE_DETAIL_COLUMNS,
+  ...QUOTE_DETAIL_RELATIONS,
+].join(', ')
+
+export const QUOTE_DETAIL_WITHOUT_MEMOS_SELECT = [
+  ...QUOTE_DETAIL_COLUMNS,
+  ...QUOTE_DETAIL_RELATIONS.filter((relation) => !relation.startsWith('quote_memos(')),
+].join(', ')

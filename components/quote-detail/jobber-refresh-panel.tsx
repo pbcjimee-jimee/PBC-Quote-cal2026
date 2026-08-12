@@ -6,7 +6,17 @@ import type { QuoteRecord } from '@/lib/dev-data'
 import { formatJobberRefreshTime } from '@/components/quote-detail/jobber-refresh-time'
 import { Icons } from '@/components/ui/icons'
 
-export function JobberRefreshPanel({ quote }: { quote: QuoteRecord }) {
+export type JobberRefreshQuote = Pick<
+  QuoteRecord,
+  | 'id'
+  | 'jobberQuoteId'
+  | 'jobberSnapshotRefreshedAt'
+  | 'jobberSnapshotRefreshError'
+  | 'jobberSnapshotChangeStatus'
+  | 'jobberSnapshotChangeSummary'
+>
+
+export function JobberRefreshPanel({ quote }: { quote: JobberRefreshQuote }) {
   const [isPending, startTransition] = useTransition()
   const [error, setError] = useState<string | null>(null)
 

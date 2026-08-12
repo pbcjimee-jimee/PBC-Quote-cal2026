@@ -1,4 +1,4 @@
-import { createServiceClient } from '@/lib/supabase/server'
+import { createClient, createServiceClient } from '@/lib/supabase/server'
 import type { AppRole } from '@/lib/security/require-app-user'
 
 export interface UserProfile {
@@ -52,6 +52,40 @@ export function getAuthUserProfile(
     displayName,
     role: appProfile?.role ?? 'admin',
   }
+}
+
+export async function getUserProfilesById(userIds: readonly string[]): Promise<Map<string, UserProfile>> {
+  const uniqueIds = [...new Set(userIds.filter((id) => id.trim()))]
+  const profiles = new Map<string, UserProfile>()
+  if (uniqueIds.length === 0) return profiles
+
+  let supabase: Awaited<ReturnType<typeof createClient>>
+
+  try {
+    supabase = await createClient()
+  } catch {
+    return profiles
+  }
+
+  const { data, error } = await supabase
+    .from('user_profiles')
+    .select('id, email, display_name, role')
+    .eq('is_active', true)
+    .in('id', uniqueIds)
+
+  if (error) return profiles
+
+  for (const row of data ?? []) {
+    const email = row.email.trim() || null
+    profiles.set(row.id, {
+      id: row.id,
+      email,
+      displayName: row.display_name?.trim() || email || 'Unknown user',
+      role: row.role,
+    })
+  }
+
+  return profiles
 }
 
 export async function getAuthUserProfilesById(userIds: string[]): Promise<Map<string, UserProfile>> {

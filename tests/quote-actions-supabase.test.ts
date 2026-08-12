@@ -316,7 +316,10 @@ function createInsertSelectBuilder(response: unknown) {
 
 function createSelectSingleBuilder(response: unknown) {
   const builder = {
-    select: vi.fn(() => builder),
+    select: vi.fn((columns?: string) => {
+      void columns
+      return builder
+    }),
     eq: vi.fn(() => builder),
     single: vi.fn(async () => response),
   }
@@ -353,6 +356,8 @@ function createThenableBuilder(response: unknown) {
 describe('quote actions against Supabase', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mocks.createClient.mockReset()
+    mocks.createServiceClient.mockReset()
     mocks.isDevNoAuthMode.mockReturnValue(false)
     mocks.requireAllowedUser.mockResolvedValue({
       ok: true,
@@ -2152,6 +2157,57 @@ describe('quote actions against Supabase', () => {
     }
   })
 
+  it('requests every field needed to map quote detail without wildcard selects', async () => {
+    const detailBuilder = createSelectSingleBuilder({ data: quoteRow, error: null })
+    mocks.createClient.mockResolvedValueOnce({ from: vi.fn(() => detailBuilder) })
+
+    await getQuote(quoteId)
+
+    expect(detailBuilder.select).toHaveBeenCalledWith([
+      'id',
+      'version',
+      'customer_name',
+      'customer_address',
+      'jobber_quote_id',
+      'jobber_snapshot',
+      'jobber_save_mode',
+      'jobber_sync_status',
+      'jobber_last_synced_at',
+      'jobber_sync_error',
+      'jobber_snapshot_refreshed_at',
+      'jobber_snapshot_change_status',
+      'jobber_snapshot_change_summary',
+      'jobber_snapshot_refresh_error',
+      'area_sqft',
+      'work_type',
+      'working_days',
+      'labour_per_day',
+      'formula1_total',
+      'formula2_total',
+      'formula3_total',
+      'formula4_total',
+      'formula5_total',
+      'selected_min',
+      'selected_max',
+      'interior_selected_min',
+      'interior_selected_max',
+      'exterior_selected_min',
+      'exterior_selected_max',
+      'roof_selected_min',
+      'roof_selected_max',
+      'subtotal',
+      'final_total',
+      'pricing_settings_snapshot',
+      'created_by',
+      'created_at',
+      'quote_items(id, quote_id, product_id, product_name_snapshot, market_price_snapshot, actual_price_snapshot, quantity, working_days, labour_per_day, area_id, area_name_snapshot, area_scope_snapshot, is_custom, position)',
+      'quote_options(id, quote_id, title, working_days, labour_per_day, material_market, material_actual, formula1_total, formula2_total, formula3_total, formula4_total, formula5_total, selected_min, selected_max, subtotal, final_total, position, quote_option_items(id, option_id, product_id, product_name_snapshot, market_price_snapshot, actual_price_snapshot, quantity, working_days, labour_per_day, area_id, area_name_snapshot, area_scope_snapshot, is_custom, position))',
+      'jobber_quote_lines(id, quote_id, kind, name, description, quantity, unit_price, total_price, taxable, client_visible, jobber_line_item_id, linked_product_or_service_id, position, created_at, updated_at)',
+      'quote_memos(id, quote_id, body, position, created_by, created_at, updated_at)',
+      'quote_price_revisions(id, quote_id, revision_number, event_type, previous_subtotal, previous_final_total, new_subtotal, new_final_total, previous_jobber_lines_total, new_jobber_lines_total, previous_options_subtotal, new_options_subtotal, previous_options_final_total, new_options_final_total, changed_by, changed_at)',
+    ].join(', '))
+  })
+
   it('reuses the allowed user profile for current-user quote details without an Auth Admin lookup', async () => {
     mocks.requireAllowedUser.mockResolvedValueOnce({
       ok: true,
@@ -2175,7 +2231,62 @@ describe('quote actions against Supabase', () => {
     expect(mocks.createServiceClient).not.toHaveBeenCalled()
   })
 
-  it('uses Auth Admin only for quote detail users missing from the allowed user profile', async () => {
+  it('loads non-current quote detail users in one authenticated app-profile query', async () => {
+    mocks.requireAllowedUser.mockResolvedValueOnce({
+      ok: true,
+      user: {
+        id: 'user-1',
+        email: 'owner@example.com',
+        userMetadata: { full_name: 'Mia Direct' },
+        appMetadata: {},
+      },
+    })
+    const detailBuilder = createSelectSingleBuilder({
+      data: {
+        ...quoteRow,
+        quote_price_revisions: [
+          ...quoteRow.quote_price_revisions,
+          {
+            ...quoteRow.quote_price_revisions[0],
+            id: '00000000-0000-4000-8000-000000000602',
+            revision_number: 2,
+            event_type: 'updated',
+            changed_by: 'user-2',
+          },
+          {
+            ...quoteRow.quote_price_revisions[0],
+            id: '00000000-0000-4000-8000-000000000603',
+            revision_number: 3,
+            event_type: 'updated',
+            changed_by: 'user-3',
+          },
+        ],
+      },
+      error: null,
+    })
+    const profileQuery = createThenableBuilder({
+      data: [
+        { id: 'user-2', email: 'two@example.com', display_name: 'User Two', role: 'admin' },
+        { id: 'user-3', email: 'three@example.com', display_name: 'User Three', role: 'supervisor' },
+      ],
+      error: null,
+    })
+    mocks.createClient
+      .mockResolvedValueOnce({ from: vi.fn(() => detailBuilder) })
+      .mockResolvedValueOnce({ from: vi.fn(() => profileQuery) })
+
+    const result = await getQuote(quoteId)
+
+    expect(result.ok).toBe(true)
+    if (result.ok) {
+      expect(result.data?.priceRevisions[1]?.changedByName).toBe('User Two')
+      expect(result.data?.priceRevisions[2]?.changedByName).toBe('User Three')
+    }
+    expect(profileQuery.in).toHaveBeenCalledWith('id', ['user-2', 'user-3'])
+    expect(mocks.createServiceClient).not.toHaveBeenCalled()
+  })
+
+  it('uses Auth Admin only for quote detail users absent from active app profiles', async () => {
     mocks.requireAllowedUser.mockResolvedValueOnce({
       ok: true,
       user: {
@@ -2189,8 +2300,8 @@ describe('quote actions against Supabase', () => {
       data: {
         user: {
           id: userId,
-          email: 'estimator@example.com',
-          user_metadata: { full_name: 'Other Estimator' },
+          email: 'legacy@example.com',
+          user_metadata: { full_name: 'Legacy Estimator' },
           app_metadata: {},
         },
       },
@@ -2209,21 +2320,38 @@ describe('quote actions against Supabase', () => {
             event_type: 'updated',
             changed_by: 'user-2',
           },
+          {
+            ...quoteRow.quote_price_revisions[0],
+            id: '00000000-0000-4000-8000-000000000603',
+            revision_number: 3,
+            event_type: 'updated',
+            changed_by: 'user-3',
+          },
         ],
       },
       error: null,
     })
-    mocks.createClient.mockResolvedValueOnce({ from: vi.fn(() => detailBuilder) })
+    const profileQuery = createThenableBuilder({
+      data: [
+        { id: 'user-2', email: 'two@example.com', display_name: 'User Two', role: 'admin' },
+      ],
+      error: null,
+    })
+    mocks.createClient
+      .mockResolvedValueOnce({ from: vi.fn(() => detailBuilder) })
+      .mockResolvedValueOnce({ from: vi.fn(() => profileQuery) })
 
     const result = await getQuote(quoteId)
 
     expect(result.ok).toBe(true)
     if (result.ok) {
       expect(result.data?.createdByName).toBe('Mia Direct')
-      expect(result.data?.priceRevisions[1]?.changedByName).toBe('Other Estimator')
+      expect(result.data?.priceRevisions[1]?.changedByName).toBe('User Two')
+      expect(result.data?.priceRevisions[2]?.changedByName).toBe('Legacy Estimator')
     }
+    expect(profileQuery.in).toHaveBeenCalledWith('id', ['user-2', 'user-3'])
     expect(getUserById).toHaveBeenCalledTimes(1)
-    expect(getUserById).toHaveBeenCalledWith('user-2')
+    expect(getUserById).toHaveBeenCalledWith('user-3')
   })
 
   it('normalizes numeric Supabase decimal values before sending quote data to the edit form', async () => {
@@ -2354,7 +2482,11 @@ describe('quote actions against Supabase', () => {
     const result = await getQuote(quoteId)
 
     expect(result.ok).toBe(true)
-    expect(fallbackBuilder.select).toHaveBeenCalledWith('*, quote_items(*), quote_options(*, quote_option_items(*)), jobber_quote_lines(*), quote_price_revisions(*)')
+    const fallbackSelect = fallbackBuilder.select.mock.calls[0]?.[0]
+    expect(fallbackSelect).not.toContain('*')
+    expect(fallbackSelect).not.toContain('quote_memos(')
+    expect(fallbackSelect).toContain('quote_items(id, quote_id')
+    expect(fallbackSelect).toContain('quote_price_revisions(id, quote_id')
     if (result.ok) {
       expect(result.data?.jobberQuoteLines[0].name).toBe('Public painting service')
       expect(result.data?.memos).toEqual([])
