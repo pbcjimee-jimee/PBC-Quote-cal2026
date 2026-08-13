@@ -1,6 +1,7 @@
 'use client'
 
 import { useRef } from 'react'
+import type { SettingsPaginationPresentation } from '@/components/settings/settings-form'
 import type { ProductServiceRecord } from '@/lib/product-services/types'
 
 export interface ProductServiceFormState {
@@ -26,10 +27,9 @@ export interface ProductServicesTableProps {
 
 export interface ProductServiceSettingsTabProps {
   productServices: ProductServiceRecord[]
-  total: number
+  pagination: SettingsPaginationPresentation
   activeItemCount: number
   query: string
-  page: number
   newForm: ProductServiceFormState
   editingId: string | null
   editForm: ProductServiceFormState
@@ -50,25 +50,18 @@ export interface ProductServiceSettingsTabProps {
   onEditFieldChange: (field: keyof ProductServiceFormState, value: string | boolean) => void
 }
 
-const PAGE_SIZE = 25
-
 function trimFormValue(value: unknown): string {
   return value === null || value === undefined ? '' : String(value).trim()
 }
 
-function SettingsTablePager({ page, total, onPageChange }: { page: number; total: number; onPageChange: (page: number) => void }) {
-  const pageCount = Math.max(Math.ceil(total / PAGE_SIZE), 1)
-  const safePage = Math.min(Math.max(page, 1), pageCount)
-  const start = total === 0 ? 0 : (safePage - 1) * PAGE_SIZE + 1
-  const end = Math.min(safePage * PAGE_SIZE, total)
-
+function SettingsTablePager({ pagination, onPageChange }: { pagination: SettingsPaginationPresentation; onPageChange: (page: number) => void }) {
   return (
     <div className="pbc-tablepager">
-      <span>Showing {start}-{end} of {total}</span>
+      <span>Showing {pagination.start}-{pagination.end} of {pagination.total}</span>
       <div>
-        <button type="button" onClick={() => onPageChange(safePage - 1)} disabled={safePage <= 1} className="pbc-btn pbc-btn--ghost pbc-btn--sm">Previous</button>
-        <span className="mono">{safePage} / {pageCount}</span>
-        <button type="button" onClick={() => onPageChange(safePage + 1)} disabled={safePage >= pageCount} className="pbc-btn pbc-btn--ghost pbc-btn--sm">Next</button>
+        <button type="button" onClick={() => onPageChange(pagination.page - 1)} disabled={!pagination.canPrevious} className="pbc-btn pbc-btn--ghost pbc-btn--sm">Previous</button>
+        <span className="mono">{pagination.page} / {pagination.pageCount}</span>
+        <button type="button" onClick={() => onPageChange(pagination.page + 1)} disabled={!pagination.canNext} className="pbc-btn pbc-btn--ghost pbc-btn--sm">Next</button>
       </div>
     </div>
   )
@@ -145,7 +138,7 @@ export default function ProductServiceSettingsTab(props: ProductServiceSettingsT
   return (
     <div className="pbc-formsection pbc-formsection--center">
       <div className="pbc-panelhead mb-4">
-        <div className="pbc-panelhead__copy"><h2 className="pbc-paneltitle">Product & Service</h2><p className="pbc-panelsub">{props.total} Product & Service items</p></div>
+        <div className="pbc-panelhead__copy"><h2 className="pbc-paneltitle">Product & Service</h2><p className="pbc-panelsub">{props.pagination.total} Product & Service items</p></div>
         <div className="pbc-panelhead__actions w-full sm:w-auto">
           <input value={props.query} onChange={(event) => props.onQueryChange(event.target.value)} className="pbc-input sm:max-w-xs" placeholder="Search product or service..." />
           <input ref={fileInputRef} type="file" accept=".csv,text/csv" onChange={(event) => { props.onImport(event.target.files?.[0] ?? null); event.currentTarget.value = '' }} className="hidden" />
@@ -158,7 +151,7 @@ export default function ProductServiceSettingsTab(props: ProductServiceSettingsT
       </div>
       <ProductServiceAddItemForm form={props.newForm} onFieldChange={props.onNewFieldChange} onAdd={props.onAdd} disabled={props.disabled} />
       <ProductServicesTable productServices={props.productServices} editingProductServiceId={props.editingId} editForm={props.editForm} onEdit={props.onEdit} onCancel={props.onCancelEdit} onSave={props.onSave} onDelete={props.onDelete} onFieldChange={props.onEditFieldChange} disabled={props.disabled} />
-      <SettingsTablePager page={props.page} total={props.total} onPageChange={props.onPageChange} />
+      <SettingsTablePager pagination={props.pagination} onPageChange={props.onPageChange} />
       {props.message ? <p className="pbc-alert pbc-alert--success mt-3">{props.message}</p> : null}
       {props.importError ? <p className="pbc-alert pbc-alert--danger mt-3">{props.importError}</p> : null}
     </div>

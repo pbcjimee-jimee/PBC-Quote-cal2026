@@ -237,12 +237,37 @@ const PRODUCT_SERVICE_CSV_TEMPLATE_ROWS = [
 
 const SETTINGS_TABLE_PAGE_SIZE = 25
 
-function getPageCount(total: number): number {
-  return Math.max(Math.ceil(total / SETTINGS_TABLE_PAGE_SIZE), 1)
+export interface SettingsPaginationPresentation {
+  page: number
+  pageCount: number
+  start: number
+  end: number
+  total: number
+  canPrevious: boolean
+  canNext: boolean
 }
 
-function getSafePage(page: number, total: number): number {
-  return Math.min(Math.max(page, 1), getPageCount(total))
+function paginateSettingsRows<T>(rows: T[], requestedPage: number): {
+  rows: T[]
+  pagination: SettingsPaginationPresentation
+} {
+  const total = rows.length
+  const pageCount = Math.max(Math.ceil(total / SETTINGS_TABLE_PAGE_SIZE), 1)
+  const page = Math.min(Math.max(requestedPage, 1), pageCount)
+  const offset = (page - 1) * SETTINGS_TABLE_PAGE_SIZE
+
+  return {
+    rows: rows.slice(offset, offset + SETTINGS_TABLE_PAGE_SIZE),
+    pagination: {
+      page,
+      pageCount,
+      start: total === 0 ? 0 : offset + 1,
+      end: Math.min(offset + SETTINGS_TABLE_PAGE_SIZE, total),
+      total,
+      canPrevious: page > 1,
+      canNext: page < pageCount,
+    },
+  }
 }
 
 function buildMaterialCsv(products: ProductRecord[]): string {
@@ -976,12 +1001,8 @@ export function SettingsForm({
       .includes(needle)
   })
 
-  const safeMaterialPage = getSafePage(materialPage, filteredProducts.length)
-  const materialPageStart = (safeMaterialPage - 1) * SETTINGS_TABLE_PAGE_SIZE
-  const pagedProducts = filteredProducts.slice(materialPageStart, materialPageStart + SETTINGS_TABLE_PAGE_SIZE)
-  const safeProductServicePage = getSafePage(productServicePage, filteredProductServices.length)
-  const productServicePageStart = (safeProductServicePage - 1) * SETTINGS_TABLE_PAGE_SIZE
-  const pagedProductServices = filteredProductServices.slice(productServicePageStart, productServicePageStart + SETTINGS_TABLE_PAGE_SIZE)
+  const { rows: pagedProducts, pagination: materialPagination } = paginateSettingsRows(filteredProducts, materialPage)
+  const { rows: pagedProductServices, pagination: productServicePagination } = paginateSettingsRows(filteredProductServices, productServicePage)
 
   const tabs: Array<{ key: SettingsTab; label: string; icon: React.ReactNode }> = [
     { key: 'labour', label: 'Labour Rates', icon: Icons.dollar({ size: 16 }) },
@@ -1100,10 +1121,9 @@ export function SettingsForm({
       ) : activeTab === 'material' ? (
         <MaterialSettingsTab
           products={pagedProducts}
-          total={filteredProducts.length}
+          pagination={materialPagination}
           activeProductCount={materialProducts.filter((product) => product.active !== false).length}
           query={materialQuery}
-          page={safeMaterialPage}
           newMaterialForm={newMaterialForm}
           editingProductId={editingProductId}
           editForm={editForm}
@@ -1126,10 +1146,9 @@ export function SettingsForm({
       ) : activeTab === 'productService' ? (
         <ProductServiceSettingsTab
           productServices={pagedProductServices}
-          total={filteredProductServices.length}
+          pagination={productServicePagination}
           activeItemCount={productServices.filter((item) => item.active !== false).length}
           query={productServiceQuery}
-          page={safeProductServicePage}
           newForm={newProductServiceForm}
           editingId={editingProductServiceId}
           editForm={productServiceEditForm}

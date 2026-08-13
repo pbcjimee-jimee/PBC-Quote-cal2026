@@ -21,6 +21,7 @@ import { installTestDom } from '@/tests/helpers/test-dom'
 
 const settingsDataMocks = vi.hoisted(() => ({
   listAreas: vi.fn(),
+  deleteProduct: vi.fn(),
   listProducts: vi.fn(),
   listProductServices: vi.fn(),
   listQuoteLineTemplates: vi.fn(),
@@ -67,6 +68,7 @@ vi.mock('@/lib/actions/areas', async (importOriginal) => ({
 
 vi.mock('@/lib/actions/products', async (importOriginal) => ({
   ...await importOriginal<typeof import('@/lib/actions/products')>(),
+  deleteProduct: settingsDataMocks.deleteProduct,
   listProducts: settingsDataMocks.listProducts,
 }))
 
@@ -102,20 +104,54 @@ function pricingSettingsFormState(
   }
 }
 
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>((next) => {
+    resolve = next
+  })
+  return { promise, resolve }
+}
+
+function productFixture(index: number): ProductRecord {
+  const sequence = String(index).padStart(2, '0')
+  return {
+    id: `product-${sequence}`,
+    name: `Paint ${sequence}`,
+    manufacturer: 'Dulux',
+    type: null,
+    unit: '15L',
+    marketPrice: '100.00',
+    actualPrice: '80.00',
+    colorCode: null,
+    active: true,
+    productLine: `Paint ${sequence}`,
+    base: null,
+    sheen: null,
+    volumeLitres: '15',
+    rrpPrice: '100.00',
+  }
+}
+
 describe('settings material UI', () => {
   it.each([
     ['Material', 0, 'listProducts'],
     ['Product & Service', 1, 'listProductServices'],
     ['Template', 2, 'listQuoteLineTemplates'],
     ['Area', 3, 'listAreas'],
-  ] as const)('defers inactive modules and mounts only the %s module after its data is ready', async (tabLabel, moduleIndex, resourceMock) => {
+  ] as const)('does not request the %s module until every exact resource is ready', async (tabLabel, moduleIndex, resourceMock) => {
     dynamicTabMocks.requested.fill(0)
     dynamicTabMocks.mounted.fill(0)
     dynamicTabMocks.pending.fill(null)
-    settingsDataMocks.listProducts.mockReset().mockResolvedValue({ ok: true, data: [] })
-    settingsDataMocks.listProductServices.mockReset().mockResolvedValue({ ok: true, data: [] })
-    settingsDataMocks.listQuoteLineTemplates.mockReset().mockResolvedValue({ ok: true, data: [] })
-    settingsDataMocks.listAreas.mockReset().mockResolvedValue({ ok: true, data: [] })
+    const resourceRequests = {
+      listAreas: deferred<{ ok: true; data: [] }>(),
+      listProducts: deferred<{ ok: true; data: [] }>(),
+      listProductServices: deferred<{ ok: true; data: [] }>(),
+      listQuoteLineTemplates: deferred<{ ok: true; data: [] }>(),
+    }
+    settingsDataMocks.listProducts.mockReset().mockReturnValue(resourceRequests.listProducts.promise)
+    settingsDataMocks.listProductServices.mockReset().mockReturnValue(resourceRequests.listProductServices.promise)
+    settingsDataMocks.listQuoteLineTemplates.mockReset().mockReturnValue(resourceRequests.listQuoteLineTemplates.promise)
+    settingsDataMocks.listAreas.mockReset().mockReturnValue(resourceRequests.listAreas.promise)
     const { cleanup } = installTestDom()
     let root: Root | null = null
 
@@ -138,12 +174,28 @@ describe('settings material UI', () => {
         tab!.dispatchEvent(new MouseEvent('click', { bubbles: true }))
         await Promise.resolve()
       })
+
+      expect(settingsDataMocks[resourceMock]).toHaveBeenCalledTimes(1)
+      expect(dynamicTabMocks.requested).toEqual([0, 0, 0, 0])
+      expect(dynamicTabMocks.mounted).toEqual([0, 0, 0, 0])
+
+      if (tabLabel === 'Template') {
+        resourceRequests.listQuoteLineTemplates.resolve({ ok: true, data: [] })
+        await act(async () => { await resourceRequests.listQuoteLineTemplates.promise })
+        expect(dynamicTabMocks.requested).toEqual([0, 0, 0, 0])
+        resourceRequests.listProductServices.resolve({ ok: true, data: [] })
+        await act(async () => { await resourceRequests.listProductServices.promise })
+      } else {
+        resourceRequests[resourceMock].resolve({ ok: true, data: [] })
+        await act(async () => { await resourceRequests[resourceMock].promise })
+      }
+
+      await act(async () => undefined)
+      expect(dynamicTabMocks.requested[moduleIndex]).toBe(1)
       await act(async () => {
         await dynamicTabMocks.pending[moduleIndex]
       })
 
-      expect(settingsDataMocks[resourceMock]).toHaveBeenCalledTimes(1)
-      expect(dynamicTabMocks.requested[moduleIndex]).toBe(1)
       expect(dynamicTabMocks.mounted[moduleIndex]).toBeGreaterThan(0)
       expect(dynamicTabMocks.requested.filter(Boolean)).toHaveLength(1)
       expect(dynamicTabMocks.mounted.filter(Boolean)).toHaveLength(1)
@@ -154,6 +206,123 @@ describe('settings material UI', () => {
         cleanup()
       }
     }
+  })
+
+  it('keeps controller pagination and the Material view aligned for 26 rows and filter shrink', async () => {
+    dynamicTabMocks.requested.fill(0)
+    dynamicTabMocks.mounted.fill(0)
+    dynamicTabMocks.pending.fill(null)
+    const { cleanup } = installTestDom()
+    let root: Root | null = null
+
+    try {
+      const { createRoot } = await import('react-dom/client')
+      const container = document.createElement('div')
+      root = createRoot(container)
+
+      await act(async () => {
+        root!.render(createElement(SettingsForm, {
+          initialProducts: Array.from({ length: 26 }, (_, index) => productFixture(index + 1)),
+          initialSettings: DEFAULT_PRICING_SETTINGS,
+        }))
+      })
+      const materialTab = Array.from(container.querySelectorAll('button')).find((button) => button.textContent.includes('Material'))
+      await act(async () => { materialTab!.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
+      await act(async () => { await dynamicTabMocks.pending[0] })
+
+      const next = Array.from(container.querySelectorAll('button')).find((button) => button.textContent === 'Next')
+      await act(async () => { next!.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
+      expect(container.textContent).toContain('Showing 26-26 of 26')
+      expect(container.textContent).toContain('2 / 2')
+      expect(container.textContent).toContain('Paint 26')
+
+      const search = Array.from(container.querySelectorAll('input')).find((input) => input.getAttribute('placeholder') === 'Search material...')
+      await act(async () => {
+        search!.value = 'Paint 01'
+        search!.dispatchEvent(new Event('input', { bubbles: true }))
+        search!.dispatchEvent(new Event('change', { bubbles: true }))
+      })
+      expect(container.textContent).toContain('Showing 1-1 of 1')
+      expect(container.textContent).toContain('1 / 1')
+      expect(container.textContent).toContain('Paint 01')
+      expect(container.textContent).not.toContain('Paint 26')
+    } finally {
+      try {
+        if (root) await act(async () => root?.unmount())
+      } finally {
+        cleanup()
+      }
+    }
+  })
+
+  it('shrinks the Material last page after deleting its only row', async () => {
+    dynamicTabMocks.requested.fill(0)
+    dynamicTabMocks.mounted.fill(0)
+    dynamicTabMocks.pending.fill(null)
+    settingsDataMocks.deleteProduct.mockReset().mockResolvedValue({ ok: true, data: undefined })
+    const { cleanup } = installTestDom()
+    let root: Root | null = null
+
+    try {
+      const { createRoot } = await import('react-dom/client')
+      const container = document.createElement('div')
+      root = createRoot(container)
+      await act(async () => {
+        root!.render(createElement(SettingsForm, {
+          initialProducts: Array.from({ length: 26 }, (_, index) => productFixture(index + 1)),
+          initialSettings: DEFAULT_PRICING_SETTINGS,
+        }))
+      })
+      const materialTab = Array.from(container.querySelectorAll('button')).find((button) => button.textContent.includes('Material'))
+      await act(async () => { materialTab!.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
+      await act(async () => { await dynamicTabMocks.pending[0] })
+      const next = Array.from(container.querySelectorAll('button')).find((button) => button.textContent === 'Next')
+      await act(async () => { next!.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
+      const remove = Array.from(container.querySelectorAll('button')).find((button) => button.textContent === 'Delete')
+      await act(async () => { remove!.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
+
+      expect(settingsDataMocks.deleteProduct).toHaveBeenCalledWith({ id: 'product-26' })
+      expect(container.textContent).toContain('Showing 1-25 of 25')
+      expect(container.textContent).toContain('1 / 1')
+      expect(container.textContent).not.toContain('Paint 26')
+    } finally {
+      try {
+        if (root) await act(async () => root?.unmount())
+      } finally {
+        cleanup()
+      }
+    }
+  })
+
+  it('keeps pagination arithmetic in the Settings controller only', () => {
+    const controller = readFileSync('components/settings/settings-form.tsx', 'utf8')
+    const materialView = readFileSync('components/settings/tabs/material-settings-tab.tsx', 'utf8')
+    const productServiceView = readFileSync('components/settings/tabs/product-service-settings-tab.tsx', 'utf8')
+
+    expect(controller).toContain('SETTINGS_TABLE_PAGE_SIZE')
+    for (const view of [materialView, productServiceView]) {
+      expect(view).not.toContain('PAGE_SIZE')
+      expect(view).not.toContain('Math.ceil')
+      expect(view).not.toContain('Math.min(safePage')
+    }
+  })
+
+  it('keeps the four inactive tab modules behind dynamic-only value boundaries', () => {
+    const controller = readFileSync('components/settings/settings-form.tsx', 'utf8')
+    const modules = [
+      'material-settings-tab',
+      'product-service-settings-tab',
+      'template-settings-tab',
+      'area-settings-tab',
+    ]
+
+    for (const tabModule of modules) {
+      const path = `@/components/settings/tabs/${tabModule}`
+      expect(controller).toContain(`() => import('${path}')`)
+      expect(controller).not.toMatch(new RegExp(`import\\s+(?!type\\s)[^\\n]+from ['\"]${path}['\"]`))
+      expect(controller).not.toMatch(new RegExp(`export\\s+[^\\n]+from ['\"]${path}['\"]`))
+    }
+    expect(controller.match(/const \w+SettingsTab = dynamic\(/g)).toHaveLength(4)
   })
 
   it('shows paint kind without the full product name subtitle', () => {
