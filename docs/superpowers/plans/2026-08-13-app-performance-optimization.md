@@ -457,12 +457,13 @@ git commit -m "docs: record app performance optimization rollout"
 
 #### Task 7 verification evidence
 
-- Focused security/behavior: 8 files, 135 tests passed; exit 0.
-- `git diff --check`, typecheck, lint, full Vitest, coverage, and production build: exit 0. Full/coverage runs recorded 92 passed files and 781 passed tests, with the environment-conditioned local RLS file (9 tests) skipped.
-- Coverage: statements 84.41%, branches 70.89%, functions 94.35%, lines 89.83%.
+- Final integrated focused binding suite: 8 files, 140 tests passed; exit 0.
+- `git diff --check`, typecheck, lint, full Vitest, coverage, and production build (18/18 static pages): exit 0. Full/coverage runs recorded 92 passed files and 789 passed tests, with the environment-conditioned local RLS file (9 tests) skipped.
+- Coverage: statements 84.47% (3,205/3,794), branches 70.99% (2,301/3,241), functions 94.36% (704/746), lines 89.88% (2,914/3,242).
 - `next-env.d.ts` retained the branch import `./.next/types/routes.d.ts` and the same SHA-256 before/after build.
 - Production audit: exit 1 for existing `nanoid <3.3.17`, high `GHSA-2v37-7h3g-55p8`; `npm audit fix` is available. No dependency or lockfile change was made.
-- Deterministic manifests remained stable while measured: baseline BUILD_ID `7GGZvnV9XHYRkWgZpzvCX`, branch BUILD_ID `fP8u_Dm3P3pnCyvmRcr6P`. Assets were deduplicated, gzip-compressed per response, and nomodule polyfills excluded.
+- Deterministic manifests remained stable while measured: baseline BUILD_ID `7GGZvnV9XHYRkWgZpzvCX`, final branch BUILD_ID `NMa2CWX7zOx7yZRB0vRq0`. Assets were deduplicated, gzip-compressed per response, and nomodule polyfills excluded.
 - Settings route-owned JS: 12,181→7,741 bytes (-36.450%); initial JS: 166,572→162,172 bytes (-2.642%). Four deferred chunks total 8,982 bytes and are excluded from initial loading.
 - Inventory route-owned JS: +9.209%; initial JS: +0.411%. No route initial JS/CSS total exceeded 10% growth. New/Edit Quote and Jobs list/detail retained identical client asset sets within each pair.
+- Final review P2 fix preflights unlinked filters before gateway creation and hardens refresh/retry failure paths; the final scoped rereview passed.
 - These are branch/build results, not live latency results. The post-push Sydney preview gate in `docs/DEPLOY.md` remains required before promotion or a live performance claim.
