@@ -2,16 +2,17 @@ import { describe, expect, it } from 'vitest'
 import { addInventoryCategoryOption } from '@/components/inventory/inventory-manager'
 
 describe('inventory category options', () => {
-  it('adds a trimmed custom category to dropdown options in category sort order', () => {
+  it('preserves an exact stored category value in category sort order', () => {
     expect(addInventoryCategoryOption(['Tools', 'Weathershield'], '  Consumables  ')).toEqual([
       'Tools',
       'Weathershield',
-      'Consumables',
+      '  Consumables  ',
     ])
   })
 
-  it('does not add empty or duplicate categories', () => {
+  it('does not add whitespace-only or exact duplicate categories', () => {
     expect(addInventoryCategoryOption(['Tools'], '  ')).toEqual(['Tools'])
     expect(addInventoryCategoryOption(['Tools'], 'Tools')).toEqual(['Tools'])
+    expect(addInventoryCategoryOption(['Tools'], 'tools')).toEqual(['Tools', 'tools'])
   })
 })

@@ -139,11 +139,13 @@ describe('inventory actions against Supabase', () => {
   it('lists normalized active inventory categories independently of item pages', async () => {
     const request = createThenableRequest({
       data: [
-        { category: ' Tools ' },
         { category: 'Paint' },
-        { category: 'tools' },
+        { category: 'paint' },
+        { category: ' Paint ' },
+        { category: 'Paint' },
         { category: null },
         { category: '' },
+        { category: '   ' },
       ],
       error: null,
     })
@@ -151,10 +153,20 @@ describe('inventory actions against Supabase', () => {
 
     const result = await listInventoryCategories()
 
-    expect(result).toEqual({ ok: true, data: ['Paint', 'Tools'] })
+    expect(result).toEqual({ ok: true, data: [' Paint ', 'Paint', 'paint'] })
     expect(request.select).toHaveBeenCalledWith('category')
     expect(request.eq).toHaveBeenCalledWith('active', true)
     expect(request.range).toHaveBeenCalledWith(0, 999)
+  })
+
+  it.each(['Paint', 'paint', ' Paint '])('queries the exact inventory category option %j', async (category) => {
+    const request = createThenableRequest({ data: [inventoryRow], error: null })
+    mocks.createClient.mockResolvedValueOnce({ from: vi.fn(() => request) })
+
+    const result = await listInventory({ category, limit: 10 })
+
+    expect(result.ok).toBe(true)
+    expect(request.eq).toHaveBeenCalledWith('category', category)
   })
 
   it('reads every category batch beyond the Supabase row cap', async () => {

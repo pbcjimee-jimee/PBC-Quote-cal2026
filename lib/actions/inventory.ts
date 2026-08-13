@@ -95,7 +95,7 @@ const MONTHS: Record<string, string> = {
 }
 
 function rowToInventory(row: InventoryRow): InventoryItemRecord {
-  return normalizeInventoryItem({
+  const normalized = normalizeInventoryItem({
     id: row.id,
     name: row.name,
     category: row.category,
@@ -114,6 +114,7 @@ function rowToInventory(row: InventoryRow): InventoryItemRecord {
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   })
+  return { ...normalized, category: row.category }
 }
 
 function nullableText(value: string | null | undefined): string | null {
@@ -239,14 +240,13 @@ function inventorySearchOr(token: string): string {
 }
 
 function normalizeInventoryCategories(rows: InventoryCategoryRow[]): string[] {
-  const categories = new Map<string, string>()
+  const categories = new Set<string>()
   for (const row of rows) {
-    const category = row.category?.trim()
-    if (!category) continue
-    const key = category.toLowerCase()
-    if (!categories.has(key)) categories.set(key, category)
+    const category = row.category
+    if (!category || !category.trim()) continue
+    categories.add(category)
   }
-  return [...categories.values()].sort((a, b) => a.localeCompare(b))
+  return [...categories].sort((a, b) => a < b ? -1 : a > b ? 1 : 0)
 }
 
 function normalizeCsvHeaderValue(value: string): string {
@@ -514,7 +514,7 @@ export async function listInventory(input: unknown = {}): Promise<ActionResult<I
     .order('id', { ascending: false })
 
   if (status) request = request.eq('status', status)
-  if (category?.trim()) request = request.eq('category', category.trim())
+  if (category !== undefined && category.trim()) request = request.eq('category', category)
 
   for (const token of tokens) {
     request = request.or(inventorySearchOr(token))

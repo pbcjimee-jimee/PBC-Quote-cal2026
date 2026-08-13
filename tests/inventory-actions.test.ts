@@ -37,7 +37,7 @@ describe('inventory actions', () => {
       })
       expect(result.data.items[1]).toMatchObject({
         name: 'Weathershield',
-        category: 'Weathershield',
+        category: 'Paint',
         colour: 'Monument (low)',
         sizeOrSerial: '15L',
         status: 'out',
@@ -136,24 +136,33 @@ describe('inventory actions', () => {
     }
   })
 
-  it('lists all normalized active categories outside the bounded item page', async () => {
-    await importInventoryCSV({
-      sourceYear: '2026',
-      csvText: [
-        'Name,Category,Quantity,Status',
-        'Category source 1, Zeta ,1,in_stock',
-        'Category source 2,alpha,1,in_stock',
-        'Category source 3,ALPHA,1,in_stock',
-      ].join('\n'),
+  it('keeps exact case variants available and queryable in dev inventory categories', async () => {
+    await createInventoryItem({
+      name: 'Category source 1',
+      category: 'Paint',
+      quantity: 1,
+      status: 'in_stock',
+    })
+    await createInventoryItem({
+      name: 'Category source 2',
+      category: 'paint',
+      quantity: 1,
+      status: 'in_stock',
     })
 
     const result = await listInventoryCategories()
+    const upper = await listInventory({ category: 'Paint', limit: 10 })
+    const lower = await listInventory({ category: 'paint', limit: 10 })
 
     expect(result).toEqual(expect.objectContaining({ ok: true }))
     if (result.ok) {
-      expect(result.data).toEqual(expect.arrayContaining(['alpha', 'Zeta']))
-      expect(result.data.filter((category) => category.toLowerCase() === 'alpha')).toHaveLength(1)
+      expect(result.data).toEqual(expect.arrayContaining(['Paint', 'paint']))
     }
+    if (!upper.ok || !lower.ok) throw new Error('Expected exact dev category queries to succeed')
+    expect(upper.data.items.map((item) => item.name)).toContain('Category source 1')
+    expect(upper.data.items.map((item) => item.name)).not.toContain('Category source 2')
+    expect(lower.data.items.map((item) => item.name)).toContain('Category source 2')
+    expect(lower.data.items.map((item) => item.name)).not.toContain('Category source 1')
   })
 
   it('creates, updates, and soft deletes manual inventory records', async () => {

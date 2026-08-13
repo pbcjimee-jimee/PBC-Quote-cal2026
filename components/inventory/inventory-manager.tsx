@@ -251,14 +251,13 @@ function categorySort(a: string, b: string): number {
   if (aRank !== undefined && bRank !== undefined) return aRank - bRank
   if (aRank !== undefined) return -1
   if (bRank !== undefined) return 1
-  return a.localeCompare(b)
+  return a < b ? -1 : a > b ? 1 : 0
 }
 
 export function addInventoryCategoryOption(options: string[], rawCategory: string): string[] {
-  const category = rawCategory.trim()
-  if (!category) return options
-  if (options.some((option) => option.toLowerCase() === category.toLowerCase())) return options
-  return [...options, category].sort(categorySort)
+  if (!rawCategory.trim()) return options
+  if (options.includes(rawCategory)) return options
+  return [...options, rawCategory].sort(categorySort)
 }
 
 function groupInventoryItems(items: InventoryItemRecord[]): InventoryGroup[] {
@@ -729,6 +728,7 @@ export function InventoryManager({
     category: undefined as string | undefined,
   })
   const requestSequenceRef = useRef(0)
+  const desiredFiltersRef = useRef<InventoryFilters>({ query: '', status: undefined, category: undefined })
   const isInitialFilterEffect = useRef(true)
   const selectedStatus = statusFilter === 'all' ? undefined : statusFilter
   const selectedCategory = categoryFilter === 'all' ? undefined : categoryFilter
@@ -799,6 +799,30 @@ export function InventoryManager({
     }
   }
 
+  function setDesiredQuery(value: string) {
+    desiredFiltersRef.current = { ...desiredFiltersRef.current, query: value }
+    requestSequenceRef.current += 1
+    setQuery(value)
+  }
+
+  function setDesiredStatus(value: 'all' | InventoryStatus) {
+    desiredFiltersRef.current = {
+      ...desiredFiltersRef.current,
+      status: value === 'all' ? undefined : value,
+    }
+    requestSequenceRef.current += 1
+    setStatusFilter(value)
+  }
+
+  function setDesiredCategory(value: string) {
+    desiredFiltersRef.current = {
+      ...desiredFiltersRef.current,
+      category: value === 'all' ? undefined : value,
+    }
+    requestSequenceRef.current += 1
+    setCategoryFilter(value)
+  }
+
   function rememberItemCategories(newItems: InventoryItemRecord[]) {
     setCustomCategories((current) => newItems.reduce((categories, item) => (
       item.category ? addInventoryCategoryOption(categories, item.category) : categories
@@ -806,8 +830,9 @@ export function InventoryManager({
   }
 
   async function reconcileCommittedInventoryPage() {
+    const filters = { ...desiredFiltersRef.current }
     const requestSequence = ++requestSequenceRef.current
-    const result = await listInventory({ ...committedFilters, offset: 0, limit: 50 })
+    const result = await listInventory({ ...filters, offset: 0, limit: 50 })
     if (requestSequence !== requestSequenceRef.current) return
     if (!result.ok) {
       setError(result.error)
@@ -817,6 +842,7 @@ export function InventoryManager({
     setItems(result.data.items.map(displayInventoryItem))
     setHasMore(result.data.hasMore)
     setNextOffset(result.data.nextOffset)
+    setCommittedFilters(filters)
   }
 
   function resetForm() {
@@ -847,7 +873,7 @@ export function InventoryManager({
         rememberItemCategories([result.data])
         setItems((current) => {
           const savedItem = displayInventoryItem(result.data)
-          if (!inventoryItemMatchesFilters(result.data, committedFilters)) return current
+          if (!inventoryItemMatchesFilters(result.data, desiredFiltersRef.current)) return current
           return [savedItem, ...current.filter((item) => item.id !== savedItem.id)].slice(0, 50)
         })
         setMessage('Inventory item added.')
@@ -881,7 +907,7 @@ export function InventoryManager({
         rememberItemCategories([result.data])
         setItems((current) => current.flatMap((item) => {
           if (item.id !== updatedItem.id) return [item]
-          return inventoryItemMatchesFilters(result.data, committedFilters) ? [updatedItem] : []
+          return inventoryItemMatchesFilters(result.data, desiredFiltersRef.current) ? [updatedItem] : []
         }))
         setMessage('Inventory item updated.')
         resetRowEdit()
@@ -919,7 +945,7 @@ export function InventoryManager({
         const updatedItem = displayInventoryItem(result.data)
         setItems((current) => current.flatMap((currentItem) => {
           if (currentItem.id !== updatedItem.id) return [currentItem]
-          return inventoryItemMatchesFilters(result.data, committedFilters) ? [updatedItem] : []
+          return inventoryItemMatchesFilters(result.data, desiredFiltersRef.current) ? [updatedItem] : []
         }))
         setMessage(nextStatus === 'out' ? 'Inventory item marked out.' : 'Inventory item marked in stock.')
         await reconcileCommittedInventoryPage()
@@ -958,7 +984,7 @@ export function InventoryManager({
       if (result.ok) {
         rememberItemCategories(result.data.items)
         const importedItems = result.data.items
-          .filter((item) => inventoryItemMatchesFilters(item, committedFilters))
+          .filter((item) => inventoryItemMatchesFilters(item, desiredFiltersRef.current))
           .map(displayInventoryItem)
         setItems((current) => mergeInventoryItemsById(importedItems, current).slice(0, 50))
         setMessage(`Imported ${result.data.imported} inventory items.`)
@@ -990,17 +1016,17 @@ export function InventoryManager({
         <div className="pbc-panelhead__actions w-full sm:w-auto">
           <input
             value={query}
-            onChange={(event) => setQuery(event.target.value)}
+            onChange={(event) => setDesiredQuery(event.target.value)}
             className="pbc-input sm:max-w-xs"
             placeholder="Search inventory..."
           />
-          <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as 'all' | InventoryStatus)} className="pbc-input sm:max-w-[160px]">
+          <select value={statusFilter} onChange={(event) => setDesiredStatus(event.target.value as 'all' | InventoryStatus)} className="pbc-input sm:max-w-[160px]">
             <option value="all">All status</option>
             <option value="in_stock">In stock</option>
             <option value="out">Out</option>
             <option value="unknown">Unknown</option>
           </select>
-          <select value={categoryFilter} onChange={(event) => setCategoryFilter(event.target.value)} className="pbc-input sm:max-w-[180px]">
+          <select value={categoryFilter} onChange={(event) => setDesiredCategory(event.target.value)} className="pbc-input sm:max-w-[180px]">
             <option value="all">All categories</option>
             {categories.map((category) => (
               <option key={category} value={category}>{category}</option>

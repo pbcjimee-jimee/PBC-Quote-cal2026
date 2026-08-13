@@ -411,7 +411,7 @@ function rowToDevInventoryItem(
   }
 ): InventoryItemRecord {
   const now = new Date().toISOString()
-  return normalizeInventoryItem({
+  const normalized = normalizeInventoryItem({
     id: row.id ?? crypto.randomUUID(),
     name: row.name,
     category: row.category ?? null,
@@ -430,6 +430,7 @@ function rowToDevInventoryItem(
     createdAt: row.created_at ?? now,
     updatedAt: row.updated_at ?? now,
   })
+  return { ...normalized, category: row.category ?? null }
 }
 
 export function listDevInventory(
@@ -440,12 +441,11 @@ export function listDevInventory(
   category?: string
 ): { items: InventoryItemRecord[]; nextOffset: number | null; hasMore: boolean } {
   const tokens = searchTokens(query)
-  const normalizedCategory = category?.trim().toLowerCase() ?? ''
   const rows = [...store.inventoryItems]
     .filter((item) => {
       if (!item.active) return false
       if (status && item.status !== status) return false
-      if (normalizedCategory && (item.category ?? '').toLowerCase() !== normalizedCategory) return false
+      if (category !== undefined && item.category !== category) return false
       if (tokens.length === 0) return true
 
       const haystack = [
@@ -475,15 +475,14 @@ export function listDevInventory(
 }
 
 export function listDevInventoryCategories(): string[] {
-  const categories = new Map<string, string>()
+  const categories = new Set<string>()
   for (const item of store.inventoryItems) {
     if (!item.active) continue
-    const category = item.category?.trim()
-    if (!category) continue
-    const key = category.toLowerCase()
-    if (!categories.has(key)) categories.set(key, category)
+    const category = item.category
+    if (!category || !category.trim()) continue
+    categories.add(category)
   }
-  return [...categories.values()].sort((a, b) => a.localeCompare(b))
+  return [...categories].sort((a, b) => a < b ? -1 : a > b ? 1 : 0)
 }
 
 export function createDevInventoryItem(
@@ -512,10 +511,11 @@ export function updateDevInventoryItem(
   const current = store.inventoryItems[index]
   const hasField = <K extends keyof Database['public']['Tables']['warehouse_inventory']['Update']>(field: K) =>
     Object.prototype.hasOwnProperty.call(updates, field)
+  const category = hasField('category') ? updates.category ?? null : current.category
   const updated = normalizeInventoryItem({
     ...current,
     name: hasField('name') ? updates.name ?? current.name : current.name,
-    category: hasField('category') ? updates.category ?? null : current.category,
+    category,
     brand: hasField('brand') ? updates.brand ?? null : current.brand,
     modelSpecification: hasField('model_specification') ? updates.model_specification ?? null : current.modelSpecification,
     colour: hasField('colour') ? updates.colour ?? null : current.colour,
@@ -530,6 +530,7 @@ export function updateDevInventoryItem(
     sourceYear: hasField('source_year') ? updates.source_year ?? null : current.sourceYear,
     updatedAt: updates.updated_at ?? new Date().toISOString(),
   })
+  updated.category = category
 
   store.inventoryItems = [...store.inventoryItems]
   store.inventoryItems[index] = updated

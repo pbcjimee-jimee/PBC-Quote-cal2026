@@ -56,6 +56,24 @@ const nonmatchingItem: InventoryItemRecord = {
   category: 'Created Category',
 }
 
+const filterAItem: InventoryItemRecord = {
+  ...item,
+  id: '00000000-0000-4000-8000-000000000081',
+  name: 'Filter A item',
+}
+
+const filterBItem: InventoryItemRecord = {
+  ...item,
+  id: '00000000-0000-4000-8000-000000000082',
+  name: 'Filter B item',
+}
+
+const filterCItem: InventoryItemRecord = {
+  ...item,
+  id: '00000000-0000-4000-8000-000000000083',
+  name: 'Filter C item',
+}
+
 function deferred<T>() {
   let resolve!: (value: T) => void
   const promise = new Promise<T>((settle) => {
@@ -283,6 +301,155 @@ describe('InventoryManager client interaction', () => {
       try {
         stale.resolve({ ok: true, data: { items: [], hasMore: false, nextOffset: null } })
         latest.resolve({ ok: true, data: { items: [], hasMore: false, nextOffset: null } })
+        if (root) await act(async () => root?.unmount())
+      } finally {
+        vi.useRealTimers()
+        cleanup()
+      }
+    }
+  })
+
+  it('reconciles a mutation with the latest filter selected while the mutation was in flight', async () => {
+    vi.useFakeTimers()
+    const mutation = deferred<{ ok: true; data: InventoryItemRecord }>()
+    inventoryActions.updateInventoryItem.mockReturnValueOnce(mutation.promise)
+    inventoryActions.listInventory
+      .mockResolvedValueOnce({ ok: true, data: { items: [filterAItem], hasMore: false, nextOffset: null } })
+      .mockResolvedValueOnce({ ok: true, data: { items: [filterBItem], hasMore: false, nextOffset: null } })
+    const { cleanup, document: testDocument } = installTestDom()
+    let root: Root | null = null
+
+    try {
+      const { createRoot } = await import('react-dom/client')
+      const container = testDocument.createElement('div')
+      root = createRoot(container as unknown as Element)
+      await act(async () => {
+        root!.render(createElement(InventoryManager, {
+          initialPage: { items: [item], hasMore: false, nextOffset: null },
+          initialCategories: ['Tools'],
+        }))
+      })
+      const search = Array.from(container.querySelectorAll('input')).find((input) => input.getAttribute('placeholder') === 'Search inventory...')!
+      await act(async () => {
+        search.value = 'Filter A'
+        search.dispatchEvent(new Event('input', { bubbles: true }))
+      })
+      await act(async () => {
+        vi.advanceTimersByTime(300)
+        await Promise.resolve()
+      })
+      const edit = Array.from(container.querySelectorAll('button')).find((button) => button.getAttribute('aria-label') === `Edit ${filterAItem.name}`)!
+      await act(async () => edit.dispatchEvent(new MouseEvent('click', { bubbles: true })))
+      const save = Array.from(container.querySelectorAll('button')).find((button) => button.getAttribute('aria-label') === `Save row ${filterAItem.name}`)!
+      save.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await act(async () => Promise.resolve())
+
+      await act(async () => {
+        search.value = 'Filter B'
+        search.dispatchEvent(new Event('input', { bubbles: true }))
+      })
+      await act(async () => {
+        mutation.resolve({ ok: true, data: filterAItem })
+        await mutation.promise
+        await Promise.resolve()
+      })
+
+      expect(inventoryActions.listInventory).toHaveBeenNthCalledWith(2, {
+        query: 'Filter B',
+        status: undefined,
+        category: undefined,
+        offset: 0,
+        limit: 50,
+      })
+      expect(container.textContent).toContain(filterBItem.name)
+      expect(container.textContent).not.toContain(filterAItem.name)
+    } finally {
+      try {
+        mutation.resolve({ ok: true, data: filterAItem })
+        if (root) await act(async () => root?.unmount())
+      } finally {
+        vi.useRealTimers()
+        cleanup()
+      }
+    }
+  })
+
+  it('keeps mutation reconciliation stale when filters change again and clears pending on the newest result', async () => {
+    vi.useFakeTimers()
+    const mutation = deferred<{ ok: true; data: InventoryItemRecord }>()
+    const reconciliationB = deferred<{ ok: true; data: { items: InventoryItemRecord[]; hasMore: false; nextOffset: null } }>()
+    const filterC = deferred<{ ok: true; data: { items: InventoryItemRecord[]; hasMore: true; nextOffset: 50 } }>()
+    inventoryActions.updateInventoryItem.mockReturnValueOnce(mutation.promise)
+    inventoryActions.listInventory
+      .mockResolvedValueOnce({ ok: true, data: { items: [filterAItem], hasMore: false, nextOffset: null } })
+      .mockReturnValueOnce(reconciliationB.promise)
+      .mockReturnValueOnce(filterC.promise)
+    const { cleanup, document: testDocument } = installTestDom()
+    let root: Root | null = null
+
+    try {
+      const { createRoot } = await import('react-dom/client')
+      const container = testDocument.createElement('div')
+      root = createRoot(container as unknown as Element)
+      await act(async () => {
+        root!.render(createElement(InventoryManager, {
+          initialPage: { items: [item], hasMore: false, nextOffset: null },
+          initialCategories: ['Tools'],
+        }))
+      })
+      const search = Array.from(container.querySelectorAll('input')).find((input) => input.getAttribute('placeholder') === 'Search inventory...')!
+      await act(async () => {
+        search.value = 'Filter A'
+        search.dispatchEvent(new Event('input', { bubbles: true }))
+      })
+      await act(async () => {
+        vi.advanceTimersByTime(300)
+        await Promise.resolve()
+      })
+      const edit = Array.from(container.querySelectorAll('button')).find((button) => button.getAttribute('aria-label') === `Edit ${filterAItem.name}`)!
+      await act(async () => edit.dispatchEvent(new MouseEvent('click', { bubbles: true })))
+      const save = Array.from(container.querySelectorAll('button')).find((button) => button.getAttribute('aria-label') === `Save row ${filterAItem.name}`)!
+      save.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await act(async () => Promise.resolve())
+
+      await act(async () => {
+        search.value = 'Filter B'
+        search.dispatchEvent(new Event('input', { bubbles: true }))
+      })
+      await act(async () => {
+        mutation.resolve({ ok: true, data: filterAItem })
+        await mutation.promise
+        await Promise.resolve()
+      })
+      expect(inventoryActions.listInventory).toHaveBeenNthCalledWith(2, expect.objectContaining({ query: 'Filter B', offset: 0 }))
+
+      await act(async () => {
+        search.value = 'Filter C'
+        search.dispatchEvent(new Event('input', { bubbles: true }))
+      })
+      await act(async () => {
+        vi.advanceTimersByTime(300)
+      })
+      expect(inventoryActions.listInventory).toHaveBeenNthCalledWith(3, expect.objectContaining({ query: 'Filter C', offset: 0 }))
+      await act(async () => {
+        filterC.resolve({ ok: true, data: { items: [filterCItem], hasMore: true, nextOffset: 50 } })
+        await filterC.promise
+      })
+      await act(async () => {
+        reconciliationB.resolve({ ok: true, data: { items: [filterBItem], hasMore: false, nextOffset: null } })
+        await reconciliationB.promise
+      })
+
+      expect(container.textContent).toContain(filterCItem.name)
+      expect(container.textContent).not.toContain(filterAItem.name)
+      expect(container.textContent).not.toContain(filterBItem.name)
+      const loadMore = Array.from(container.querySelectorAll('button')).find((button) => button.textContent === 'Load more')
+      expect(loadMore?.disabled).toBe(false)
+    } finally {
+      try {
+        mutation.resolve({ ok: true, data: filterAItem })
+        reconciliationB.resolve({ ok: true, data: { items: [], hasMore: false, nextOffset: null } })
+        filterC.resolve({ ok: true, data: { items: [], hasMore: true, nextOffset: 50 } })
         if (root) await act(async () => root?.unmount())
       } finally {
         vi.useRealTimers()
