@@ -16,6 +16,7 @@ import { isDevNoAuthMode } from './types'
 import type { Database } from '@/lib/supabase/types'
 
 type InventoryRow = Database['public']['Tables']['warehouse_inventory']['Row']
+type InventoryCategoryRow = Pick<InventoryRow, 'category'>
 type InventoryInsert = Database['public']['Tables']['warehouse_inventory']['Insert']
 type InventoryUpdate = Database['public']['Tables']['warehouse_inventory']['Update']
 
@@ -235,6 +236,17 @@ function inventorySearchOr(token: string): string {
     `used_location_text.ilike.${q}`,
     `notes.ilike.${q}`,
   ].join(',')
+}
+
+function normalizeInventoryCategories(rows: InventoryCategoryRow[]): string[] {
+  const categories = new Map<string, string>()
+  for (const row of rows) {
+    const category = row.category?.trim()
+    if (!category) continue
+    const key = category.toLowerCase()
+    if (!categories.has(key)) categories.set(key, category)
+  }
+  return [...categories.values()].sort((a, b) => a.localeCompare(b))
 }
 
 function normalizeCsvHeaderValue(value: string): string {
@@ -499,6 +511,7 @@ export async function listInventory(input: unknown = {}): Promise<ActionResult<I
     .select(INVENTORY_COLUMNS)
     .eq('active', true)
     .order('created_at', { ascending: false })
+    .order('id', { ascending: false })
 
   if (status) request = request.eq('status', status)
   if (category?.trim()) request = request.eq('category', category.trim())
@@ -521,6 +534,39 @@ export async function listInventory(input: unknown = {}): Promise<ActionResult<I
       nextOffset: hasMore ? offset + limit : null,
     },
   }
+}
+
+export async function listInventoryCategories(): Promise<ActionResult<string[]>> {
+  if (isDevNoAuthMode()) {
+    const { listDevInventoryCategories } = await import('@/lib/dev-data')
+    return { ok: true, data: listDevInventoryCategories() }
+  }
+
+  const allowedUser = await requireRole('any')
+  if (!allowedUser.ok) return allowedUser
+
+  const supabase = await createClient()
+  const rows: InventoryCategoryRow[] = []
+  const batchSize = 1000
+  let offset = 0
+
+  while (true) {
+    const { data, error } = await supabase
+      .from('warehouse_inventory')
+      .select('category')
+      .eq('active', true)
+      .order('category', { ascending: true })
+      .order('id', { ascending: true })
+      .range(offset, offset + batchSize - 1)
+
+    if (error) return { ok: false, error: error.message }
+    const batch = data as unknown as InventoryCategoryRow[]
+    rows.push(...batch)
+    if (batch.length < batchSize) break
+    offset += batchSize
+  }
+
+  return { ok: true, data: normalizeInventoryCategories(rows) }
 }
 
 export async function createInventoryItem(input: unknown): Promise<ActionResult<InventoryItemRecord>> {

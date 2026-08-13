@@ -165,6 +165,7 @@ describe('inventory UI', () => {
 
     const markup = renderToStaticMarkup(createElement(InventoryManager, {
       initialPage: { items, hasMore: false, nextOffset: null },
+      initialCategories: ['Archived Equipment'],
     }))
 
     expect(markup).toContain('Warehouse Inventory')
@@ -172,6 +173,7 @@ describe('inventory UI', () => {
     expect(markup).toContain('Add Item')
     expect(markup).toContain('Import CSV')
     expect(markup).toContain('Export loaded filtered rows')
+    expect(markup).toContain('Archived Equipment')
     expect(markup).toContain('Purchase Date')
     expect(markup).toContain('Used Date')
     expect(markup).toContain('Used Location')
@@ -228,6 +230,7 @@ describe('inventory UI', () => {
 
     const markup = renderToStaticMarkup(createElement(InventoryManager, {
       initialPage: { items, hasMore: false, nextOffset: null },
+      initialCategories: [],
     }))
 
     expect(markup).toContain('aria-label="Weathershield inventory group"')
@@ -279,6 +282,7 @@ describe('inventory UI', () => {
 
     const markup = renderToStaticMarkup(createElement(InventoryManager, {
       initialPage: { items, hasMore: false, nextOffset: null },
+      initialCategories: [],
       role: 'supervisor',
     }))
 
@@ -367,6 +371,7 @@ describe('inventory UI', () => {
 
     const markup = renderToStaticMarkup(createElement(InventoryManager, {
       initialPage: { items, hasMore: false, nextOffset: null },
+      initialCategories: [],
     }))
 
     expect(markup).toContain('aria-label="Interior walls inventory group"')

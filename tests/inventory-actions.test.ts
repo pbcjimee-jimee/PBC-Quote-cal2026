@@ -1,9 +1,10 @@
-import { beforeEach, describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   createInventoryItem,
   deleteInventoryItem,
   importInventoryCSV,
   listInventory,
+  listInventoryCategories,
   updateInventoryItem,
 } from '@/lib/actions/inventory'
 import { resetDevData } from '@/lib/dev-data'
@@ -90,6 +91,68 @@ describe('inventory actions', () => {
       expect(result.data.items).toHaveLength(1)
       expect(result.data.items[0].name).toBe('Weathershield')
       expect(result.data).toMatchObject({ hasMore: false, nextOffset: null })
+    }
+  })
+
+  it('paginates tied creation timestamps by descending ID without duplicates or omissions', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-08-13T00:00:00.000Z'))
+    const generatedIds = [
+      '00000000-0000-4000-8000-000000000101',
+      '00000000-0000-4000-8000-000000000102',
+      '00000000-0000-4000-8000-000000000103',
+      '00000000-0000-4000-8000-000000000104',
+      '00000000-0000-4000-8000-000000000105',
+    ] as `${string}-${string}-${string}-${string}-${string}`[]
+    const randomUuid = vi.spyOn(crypto, 'randomUUID')
+    for (const id of generatedIds) randomUuid.mockReturnValueOnce(id)
+
+    try {
+      const imported = await importInventoryCSV({
+        sourceYear: '2026',
+        csvText: [
+          'Name,Category,Quantity,Status',
+          'TiedPage 1,Pagination,1,in_stock',
+          'TiedPage 2,Pagination,1,in_stock',
+          'TiedPage 3,Pagination,1,in_stock',
+          'TiedPage 4,Pagination,1,in_stock',
+          'TiedPage 5,Pagination,1,in_stock',
+        ].join('\n'),
+      })
+      if (!imported.ok) throw new Error(imported.error)
+
+      const first = await listInventory({ query: 'TiedPage', offset: 0, limit: 2 })
+      const second = await listInventory({ query: 'TiedPage', offset: 2, limit: 2 })
+      const third = await listInventory({ query: 'TiedPage', offset: 4, limit: 2 })
+      if (!first.ok || !second.ok || !third.ok) throw new Error('Expected all tied pages to load')
+
+      const pagedIds = [...first.data.items, ...second.data.items, ...third.data.items].map((item) => item.id)
+      expect(pagedIds).toEqual([...generatedIds].sort((a, b) => b.localeCompare(a)))
+      expect(new Set(pagedIds).size).toBe(5)
+      expect(pagedIds).toEqual(expect.arrayContaining(imported.data.items.map((item) => item.id)))
+    } finally {
+      randomUuid.mockRestore()
+      vi.useRealTimers()
+    }
+  })
+
+  it('lists all normalized active categories outside the bounded item page', async () => {
+    await importInventoryCSV({
+      sourceYear: '2026',
+      csvText: [
+        'Name,Category,Quantity,Status',
+        'Category source 1, Zeta ,1,in_stock',
+        'Category source 2,alpha,1,in_stock',
+        'Category source 3,ALPHA,1,in_stock',
+      ].join('\n'),
+    })
+
+    const result = await listInventoryCategories()
+
+    expect(result).toEqual(expect.objectContaining({ ok: true }))
+    if (result.ok) {
+      expect(result.data).toEqual(expect.arrayContaining(['alpha', 'Zeta']))
+      expect(result.data.filter((category) => category.toLowerCase() === 'alpha')).toHaveLength(1)
     }
   })
 

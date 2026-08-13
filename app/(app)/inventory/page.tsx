@@ -2,14 +2,17 @@ import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import { InventoryManager } from '@/components/inventory/inventory-manager'
 import { Icons } from '@/components/ui/icons'
-import { listInventory } from '@/lib/actions/inventory'
+import { listInventory, listInventoryCategories } from '@/lib/actions/inventory'
 import { requireRole } from '@/lib/security/require-app-user'
 
 export default async function InventoryPage() {
   const appUser = await requireRole('any')
   if (!appUser.ok) redirect('/login')
 
-  const inventory = await listInventory({ limit: 50, offset: 0 })
+  const [inventory, inventoryCategories] = await Promise.all([
+    listInventory({ limit: 50, offset: 0 }),
+    listInventoryCategories(),
+  ])
   const isAdmin = appUser.profile.role === 'admin'
 
   return (
@@ -29,9 +32,11 @@ export default async function InventoryPage() {
           <h1>Inventory</h1>
           <p>{isAdmin ? 'Manage warehouse inventory and movement records.' : 'Update stock quantities and usage details.'}</p>
           {!inventory.ok ? <p className="text-[var(--danger)]">{inventory.error}</p> : null}
+          {!inventoryCategories.ok ? <p className="text-[var(--danger)]">{inventoryCategories.error}</p> : null}
         </div>
         <InventoryManager
           initialPage={inventory.ok ? inventory.data : { items: [], hasMore: false, nextOffset: null }}
+          initialCategories={inventoryCategories.ok ? inventoryCategories.data : []}
           role={appUser.profile.role}
         />
       </div>

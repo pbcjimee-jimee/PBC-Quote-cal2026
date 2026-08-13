@@ -220,6 +220,31 @@ function mergeInventoryItemsById(current: InventoryItemRecord[], incoming: Inven
   return merged
 }
 
+type InventoryFilters = {
+  query: string
+  status: InventoryStatus | undefined
+  category: string | undefined
+}
+
+function inventoryItemMatchesFilters(item: InventoryItemRecord, filters: InventoryFilters): boolean {
+  if (filters.status && item.status !== filters.status) return false
+  if (filters.category && item.category !== filters.category) return false
+  const tokens = filters.query.trim().toLowerCase().split(/\s+/).filter(Boolean)
+  if (tokens.length === 0) return true
+
+  const haystack = [
+    item.name,
+    item.category,
+    item.brand,
+    item.modelSpecification,
+    item.colour,
+    item.sizeOrSerial,
+    item.usedLocationText,
+    item.notes,
+  ].filter(Boolean).join(' ').toLowerCase()
+  return tokens.every((token) => haystack.includes(token))
+}
+
 function categorySort(a: string, b: string): number {
   const aRank = WORKBOOK_CATEGORY_RANK.get(a)
   const bRank = WORKBOOK_CATEGORY_RANK.get(b)
@@ -673,9 +698,11 @@ export function InventoryMobileList({
 
 export function InventoryManager({
   initialPage,
+  initialCategories,
   role = 'admin',
 }: {
   initialPage: InventoryPageResult
+  initialCategories: string[]
   role?: AppRole
 }) {
   const canAdminister = role === 'admin'
@@ -686,7 +713,10 @@ export function InventoryManager({
   const [query, setQuery] = useState('')
   const [statusFilter, setStatusFilter] = useState<'all' | InventoryStatus>('all')
   const [categoryFilter, setCategoryFilter] = useState('all')
-  const [customCategories, setCustomCategories] = useState<string[]>([])
+  const [customCategories, setCustomCategories] = useState(() => initialCategories.reduce(
+    (categories, category) => addInventoryCategoryOption(categories, category),
+    [] as string[]
+  ))
   const [form, setForm] = useState<InventoryFormState>(EMPTY_FORM)
   const [editingRowId, setEditingRowId] = useState<string | null>(null)
   const [rowEditForm, setRowEditForm] = useState<InventoryFormState>(EMPTY_FORM)
@@ -710,14 +740,13 @@ export function InventoryManager({
     return Array.from(new Set([
       ...WORKBOOK_CATEGORY_ORDER,
       ...customCategories,
-      ...items.map((item) => resolveWorkbookInventoryCategory(item)).filter((value): value is string => Boolean(value)),
     ])).sort(categorySort)
-  }, [customCategories, items])
+  }, [customCategories])
 
   const groupedItems = useMemo(() => groupInventoryItems(items), [items])
 
   useEffect(() => {
-    const requestSequence = ++requestSequenceRef.current
+    requestSequenceRef.current += 1
     if (isInitialFilterEffect.current) {
       isInitialFilterEffect.current = false
       return
@@ -729,6 +758,7 @@ export function InventoryManager({
       category: categoryFilter === 'all' ? undefined : categoryFilter,
     }
     const timer = globalThis.setTimeout(() => {
+      const requestSequence = ++requestSequenceRef.current
       setError(null)
       startTransition(async () => {
         const result = await listInventory({ ...filters, offset: 0, limit: 50 })
@@ -769,6 +799,26 @@ export function InventoryManager({
     }
   }
 
+  function rememberItemCategories(newItems: InventoryItemRecord[]) {
+    setCustomCategories((current) => newItems.reduce((categories, item) => (
+      item.category ? addInventoryCategoryOption(categories, item.category) : categories
+    ), current))
+  }
+
+  async function reconcileCommittedInventoryPage() {
+    const requestSequence = ++requestSequenceRef.current
+    const result = await listInventory({ ...committedFilters, offset: 0, limit: 50 })
+    if (requestSequence !== requestSequenceRef.current) return
+    if (!result.ok) {
+      setError(result.error)
+      return
+    }
+
+    setItems(result.data.items.map(displayInventoryItem))
+    setHasMore(result.data.hasMore)
+    setNextOffset(result.data.nextOffset)
+  }
+
   function resetForm() {
     setForm(EMPTY_FORM)
   }
@@ -794,12 +844,15 @@ export function InventoryManager({
       const result = await createInventoryItem(payload)
 
       if (result.ok) {
+        rememberItemCategories([result.data])
         setItems((current) => {
           const savedItem = displayInventoryItem(result.data)
-          return [savedItem, ...current]
+          if (!inventoryItemMatchesFilters(result.data, committedFilters)) return current
+          return [savedItem, ...current.filter((item) => item.id !== savedItem.id)].slice(0, 50)
         })
         setMessage('Inventory item added.')
         resetForm()
+        await reconcileCommittedInventoryPage()
       } else {
         setError(result.error)
       }
@@ -825,9 +878,14 @@ export function InventoryManager({
 
       if (result.ok) {
         const updatedItem = displayInventoryItem(result.data)
-        setItems((current) => current.map((item) => item.id === updatedItem.id ? updatedItem : item))
+        rememberItemCategories([result.data])
+        setItems((current) => current.flatMap((item) => {
+          if (item.id !== updatedItem.id) return [item]
+          return inventoryItemMatchesFilters(result.data, committedFilters) ? [updatedItem] : []
+        }))
         setMessage('Inventory item updated.')
         resetRowEdit()
+        await reconcileCommittedInventoryPage()
       } else {
         setError(result.error)
       }
@@ -843,6 +901,7 @@ export function InventoryManager({
         setItems((current) => current.filter((item) => item.id !== id))
         if (editingRowId === id) resetRowEdit()
         setMessage('Inventory item deleted.')
+        await reconcileCommittedInventoryPage()
       } else {
         setError(result.error)
       }
@@ -858,8 +917,12 @@ export function InventoryManager({
       const result = await updateInventoryMovement({ id: item.id, status: nextStatus })
       if (result.ok) {
         const updatedItem = displayInventoryItem(result.data)
-        setItems((current) => current.map((currentItem) => currentItem.id === updatedItem.id ? updatedItem : currentItem))
+        setItems((current) => current.flatMap((currentItem) => {
+          if (currentItem.id !== updatedItem.id) return [currentItem]
+          return inventoryItemMatchesFilters(result.data, committedFilters) ? [updatedItem] : []
+        }))
         setMessage(nextStatus === 'out' ? 'Inventory item marked out.' : 'Inventory item marked in stock.')
+        await reconcileCommittedInventoryPage()
       } else {
         setError(result.error)
       }
@@ -893,8 +956,13 @@ export function InventoryManager({
     startTransition(async () => {
       const result = await importInventoryCSV({ csvText, sourceYear: '2026' })
       if (result.ok) {
-        setItems((current) => [...result.data.items.map(displayInventoryItem), ...current])
+        rememberItemCategories(result.data.items)
+        const importedItems = result.data.items
+          .filter((item) => inventoryItemMatchesFilters(item, committedFilters))
+          .map(displayInventoryItem)
+        setItems((current) => mergeInventoryItemsById(importedItems, current).slice(0, 50))
         setMessage(`Imported ${result.data.imported} inventory items.`)
+        await reconcileCommittedInventoryPage()
       } else {
         setError(result.error)
       }

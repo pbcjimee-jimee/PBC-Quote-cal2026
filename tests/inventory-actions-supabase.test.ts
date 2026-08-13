@@ -27,6 +27,7 @@ import {
   deleteInventoryItem,
   importInventoryCSV,
   listInventory,
+  listInventoryCategories,
   updateInventoryMovement,
   updateInventoryItem,
 } from '@/lib/actions/inventory'
@@ -123,6 +124,8 @@ describe('inventory actions against Supabase', () => {
     expect(request.eq).toHaveBeenCalledWith('active', true)
     expect(request.eq).toHaveBeenCalledWith('status', 'out')
     expect(request.or).toHaveBeenCalledTimes(2)
+    expect(request.order).toHaveBeenNthCalledWith(1, 'created_at', { ascending: false })
+    expect(request.order).toHaveBeenNthCalledWith(2, 'id', { ascending: false })
     expect(request.range).toHaveBeenCalledWith(0, 25)
     if (result.ok) {
       expect(result.data).toEqual({
@@ -131,6 +134,45 @@ describe('inventory actions against Supabase', () => {
         nextOffset: null,
       })
     }
+  })
+
+  it('lists normalized active inventory categories independently of item pages', async () => {
+    const request = createThenableRequest({
+      data: [
+        { category: ' Tools ' },
+        { category: 'Paint' },
+        { category: 'tools' },
+        { category: null },
+        { category: '' },
+      ],
+      error: null,
+    })
+    mocks.createClient.mockResolvedValueOnce({ from: vi.fn(() => request) })
+
+    const result = await listInventoryCategories()
+
+    expect(result).toEqual({ ok: true, data: ['Paint', 'Tools'] })
+    expect(request.select).toHaveBeenCalledWith('category')
+    expect(request.eq).toHaveBeenCalledWith('active', true)
+    expect(request.range).toHaveBeenCalledWith(0, 999)
+  })
+
+  it('reads every category batch beyond the Supabase row cap', async () => {
+    const firstRequest = createThenableRequest({
+      data: Array.from({ length: 1000 }, () => ({ category: 'Common' })),
+      error: null,
+    })
+    const secondRequest = createThenableRequest({ data: [{ category: 'Rare' }], error: null })
+    const from = vi.fn()
+      .mockReturnValueOnce(firstRequest)
+      .mockReturnValueOnce(secondRequest)
+    mocks.createClient.mockResolvedValueOnce({ from })
+
+    const result = await listInventoryCategories()
+
+    expect(result).toEqual({ ok: true, data: ['Common', 'Rare'] })
+    expect(firstRequest.range).toHaveBeenCalledWith(0, 999)
+    expect(secondRequest.range).toHaveBeenCalledWith(1000, 1999)
   })
 
   it('fetches one extra row and returns a full inventory page with the next offset', async () => {

@@ -464,7 +464,7 @@ export function listDevInventory(
 
       return tokens.every((token) => haystack.includes(token))
     })
-    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id))
     .slice(offset, offset + limit + 1)
   const hasMore = rows.length > limit
   return {
@@ -472,6 +472,18 @@ export function listDevInventory(
     hasMore,
     nextOffset: hasMore ? offset + limit : null,
   }
+}
+
+export function listDevInventoryCategories(): string[] {
+  const categories = new Map<string, string>()
+  for (const item of store.inventoryItems) {
+    if (!item.active) continue
+    const category = item.category?.trim()
+    if (!category) continue
+    const key = category.toLowerCase()
+    if (!categories.has(key)) categories.set(key, category)
+  }
+  return [...categories.values()].sort((a, b) => a.localeCompare(b))
 }
 
 export function createDevInventoryItem(
