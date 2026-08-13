@@ -1,5 +1,6 @@
 'use client'
 
+import dynamic from 'next/dynamic'
 import { useRef, useState, useTransition } from 'react'
 import { createArea, deleteArea, listAreas, updateArea } from '@/lib/actions/areas'
 import { createProduct, deleteProduct, importProductsCSV, listProducts, updateProduct } from '@/lib/actions/products'
@@ -19,41 +20,41 @@ import {
 import { updatePricingSettings } from '@/lib/actions/settings'
 import type { ActionResult } from '@/lib/actions/types'
 import { Icons } from '@/components/ui/icons'
-import { JobberProductServiceEditor } from '@/components/quote-form/jobber-product-service-editor'
 import type { JobberQuoteLineItemDraft } from '@/components/quote-form/types'
 import type { AreaRecord, AreaScope } from '@/lib/areas/types'
-import { AREA_SCOPE_LABELS, AREA_SCOPES } from '@/lib/areas/constants'
 import type { PricingSettings } from '@/lib/calculator'
 import type { ProductRecord } from '@/lib/products/types'
 import type { ProductServiceRecord } from '@/lib/product-services/types'
 import type { QuoteLineTemplateRecord } from '@/lib/quote-line-templates/types'
+import type { AreaEditFormState } from '@/components/settings/tabs/area-settings-tab'
+import type { MaterialEditFormState } from '@/components/settings/tabs/material-settings-tab'
+import type { ProductServiceFormState } from '@/components/settings/tabs/product-service-settings-tab'
 
-type MaterialFormState = {
-  manufacturer: string
-  productLine: string
-  base: string
-  sheen: string
-  unit: string
-  rrpPrice: string
+function SettingsTabModuleLoading({ label }: { label: string }) {
+  return (
+    <div className="pbc-formsection pbc-formsection--center" role="status" aria-label={`Loading ${label}`}>
+      <div className="pbc-skeleton h-5 w-40" />
+      <div className="pbc-skeleton mt-4 h-12 w-full" />
+    </div>
+  )
 }
 
-type MaterialEditFormState = MaterialFormState & {
-  volumeLitres: string
-}
-
-type ProductServiceFormState = {
-  name: string
-  description: string
-  category: string
-  unitPrice: string
-  unitCost: string
-  taxable: boolean
-}
-
-type AreaEditFormState = {
-  scope: AreaScope
-  name: string
-}
+const MaterialSettingsTab = dynamic(
+  () => import('@/components/settings/tabs/material-settings-tab'),
+  { loading: () => <SettingsTabModuleLoading label="Material settings" /> }
+)
+const ProductServiceSettingsTab = dynamic(
+  () => import('@/components/settings/tabs/product-service-settings-tab'),
+  { loading: () => <SettingsTabModuleLoading label="Product and Service settings" /> }
+)
+const TemplateSettingsTab = dynamic(
+  () => import('@/components/settings/tabs/template-settings-tab'),
+  { loading: () => <SettingsTabModuleLoading label="Template settings" /> }
+)
+const AreaSettingsTab = dynamic(
+  () => import('@/components/settings/tabs/area-settings-tab'),
+  { loading: () => <SettingsTabModuleLoading label="Area settings" /> }
+)
 
 type MaterialUpdateInput = {
   id: string
@@ -87,25 +88,6 @@ const SETTINGS_TAB_RESOURCES: Record<SettingsTab, SettingsResource[]> = {
 
 function formatSettingsLoadError(error: unknown): string {
   return error instanceof Error ? error.message : 'Unable to load this settings tab.'
-}
-
-interface MaterialProductsTableProps {
-  products: ProductRecord[]
-  editingProductId?: string | null
-  editForm?: MaterialEditFormState
-  onEdit?: (product: ProductRecord) => void
-  onCancel?: () => void
-  onSave?: () => void
-  onDelete?: (id: string) => void
-  onFieldChange?: (field: keyof Required<MaterialProductsTableProps>['editForm'], value: string) => void
-  disabled?: boolean
-}
-
-interface MaterialAddItemFormProps {
-  form?: MaterialFormState
-  onFieldChange?: (field: keyof Required<MaterialAddItemFormProps>['form'], value: string) => void
-  onAdd?: () => void
-  disabled?: boolean
 }
 
 function toFormString(value: unknown): string {
@@ -263,36 +245,6 @@ function getSafePage(page: number, total: number): number {
   return Math.min(Math.max(page, 1), getPageCount(total))
 }
 
-function SettingsTablePager({
-  page,
-  total,
-  onPageChange,
-}: {
-  page: number
-  total: number
-  onPageChange: (page: number) => void
-}) {
-  const safePage = getSafePage(page, total)
-  const pageCount = getPageCount(total)
-  const start = total === 0 ? 0 : (safePage - 1) * SETTINGS_TABLE_PAGE_SIZE + 1
-  const end = Math.min(safePage * SETTINGS_TABLE_PAGE_SIZE, total)
-
-  return (
-    <div className="pbc-tablepager">
-      <span>Showing {start}-{end} of {total}</span>
-      <div>
-        <button type="button" onClick={() => onPageChange(safePage - 1)} disabled={safePage <= 1} className="pbc-btn pbc-btn--ghost pbc-btn--sm">
-          Previous
-        </button>
-        <span className="mono">{safePage} / {pageCount}</span>
-        <button type="button" onClick={() => onPageChange(safePage + 1)} disabled={safePage >= pageCount} className="pbc-btn pbc-btn--ghost pbc-btn--sm">
-          Next
-        </button>
-      </div>
-    </div>
-  )
-}
-
 function buildMaterialCsv(products: ProductRecord[]): string {
   const lines = products.map((product) => {
     const price = product.rrpPrice ?? product.marketPrice
@@ -363,400 +315,6 @@ export function ProductServiceCsvTemplate(): string {
   return buildProductServiceCsvTemplate()
 }
 
-export function MaterialAddItemForm({
-  form = {
-    manufacturer: '',
-    productLine: '',
-    base: '',
-    sheen: '',
-    unit: '',
-    rrpPrice: '',
-  },
-  onFieldChange = () => undefined,
-  onAdd = () => undefined,
-  disabled = false,
-}: MaterialAddItemFormProps) {
-  const canAdd = !disabled && trimFormValue(form.productLine) && trimFormValue(form.rrpPrice)
-
-  return (
-    <form
-      onSubmit={(event) => {
-        event.preventDefault()
-        if (canAdd) onAdd()
-      }}
-      className="pbc-formgroup"
-    >
-      <h3 className="pbc-paneltitle">Add Item</h3>
-      <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-6">
-        <label className="pbc-field">
-          <span className="pbc-field__label">Brand</span>
-          <input
-            value={form.manufacturer}
-            onChange={(event) => onFieldChange('manufacturer', event.target.value)}
-            className="pbc-input"
-            placeholder="e.g. Dulux"
-          />
-        </label>
-        <label className="pbc-field sm:col-span-2">
-          <span className="pbc-field__label">Material or service name</span>
-          <input
-            value={form.productLine}
-            onChange={(event) => onFieldChange('productLine', event.target.value)}
-            className="pbc-input"
-            placeholder="e.g. Minor drywall repair"
-          />
-        </label>
-        <label className="pbc-field">
-          <span className="pbc-field__label">Base</span>
-          <input
-            value={form.base}
-            onChange={(event) => onFieldChange('base', event.target.value)}
-            className="pbc-input"
-            placeholder="Optional"
-          />
-        </label>
-        <label className="pbc-field">
-          <span className="pbc-field__label">Sheen/Finish</span>
-          <input
-            value={form.sheen}
-            onChange={(event) => onFieldChange('sheen', event.target.value)}
-            className="pbc-input"
-            placeholder="Optional"
-          />
-        </label>
-        <label className="pbc-field">
-          <span className="pbc-field__label">Unit</span>
-          <input
-            value={form.unit}
-            onChange={(event) => onFieldChange('unit', event.target.value)}
-            className="pbc-input"
-            placeholder="each / 4L"
-          />
-        </label>
-        <label className="pbc-field">
-          <span className="pbc-field__label">Price</span>
-          <input
-            value={form.rrpPrice}
-            onChange={(event) => onFieldChange('rrpPrice', event.target.value)}
-            inputMode="decimal"
-            className="pbc-input"
-            placeholder="0.00"
-          />
-        </label>
-      </div>
-      <button
-        type="submit"
-        disabled={!canAdd}
-        className="pbc-btn pbc-btn--primary mt-3"
-      >
-        Add Item
-      </button>
-    </form>
-  )
-}
-
-export function MaterialProductsTable({
-  products,
-  editingProductId = null,
-  editForm = {
-    manufacturer: '',
-    productLine: '',
-    base: '',
-    sheen: '',
-    volumeLitres: '',
-    unit: '',
-    rrpPrice: '',
-  },
-  onEdit = () => undefined,
-  onCancel = () => undefined,
-  onSave = () => undefined,
-  onDelete = () => undefined,
-  onFieldChange = () => undefined,
-  disabled = false,
-}: MaterialProductsTableProps) {
-  return (
-    <div className="pbc-tablewrap">
-      <table className="pbc-table">
-        <thead>
-          <tr>
-            <th className="px-3 py-2 font-semibold">Brand</th>
-            <th className="px-3 py-2 font-semibold">Kind</th>
-            <th className="px-3 py-2 font-semibold">Base</th>
-            <th className="px-3 py-2 font-semibold">Sheen/Finish</th>
-            <th className="px-3 py-2 font-semibold">Volume (L)</th>
-            <th className="px-3 py-2 text-right font-semibold">Price (RRP)</th>
-            <th className="px-3 py-2 text-right font-semibold">Actions</th>
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-slate-100">
-          {products.map((product) => {
-            const isEditing = editingProductId === product.id
-            return (
-              <tr key={product.id} className="align-top">
-                <td className="px-3 py-2">
-                  {isEditing ? (
-                    <input
-                      value={editForm.manufacturer}
-                      onChange={(event) => onFieldChange('manufacturer', event.target.value)}
-                      className="pbc-tableinput"
-                    />
-                  ) : (
-                    <span className="pbc-tabletext pbc-tabletext--strong">{product.manufacturer ?? '-'}</span>
-                  )}
-                </td>
-                <td className="px-3 py-2">
-                  {isEditing ? (
-                    <input
-                      value={editForm.productLine}
-                      onChange={(event) => onFieldChange('productLine', event.target.value)}
-                      className="pbc-tableinput"
-                    />
-                  ) : (
-                    <span className="pbc-tabletext pbc-tabletext--strong">{product.productLine ?? product.type ?? '-'}</span>
-                  )}
-                </td>
-                <td className="px-3 py-2">
-                  {isEditing ? (
-                    <input value={editForm.base} onChange={(event) => onFieldChange('base', event.target.value)} className="pbc-tableinput" />
-                  ) : (
-                    <span className="pbc-tabletext">{product.base ?? '-'}</span>
-                  )}
-                </td>
-                <td className="px-3 py-2">
-                  {isEditing ? (
-                    <input value={editForm.sheen} onChange={(event) => onFieldChange('sheen', event.target.value)} className="pbc-tableinput" />
-                  ) : (
-                    <span className="pbc-tabletext">{product.sheen ?? '-'}</span>
-                  )}
-                </td>
-                <td className="px-3 py-2">
-                  {isEditing ? (
-                    <input
-                      value={editForm.volumeLitres}
-                      onChange={(event) => onFieldChange('volumeLitres', event.target.value)}
-                      className="pbc-tableinput"
-                    />
-                  ) : (
-                    <span className="pbc-tabletext">{product.volumeLitres ? `${product.volumeLitres}L` : product.unit}</span>
-                  )}
-                </td>
-                <td className="px-3 py-2 text-right">
-                  {isEditing ? (
-                    <input
-                      value={editForm.rrpPrice}
-                      onChange={(event) => onFieldChange('rrpPrice', event.target.value)}
-                      inputMode="decimal"
-                      className="pbc-tableinput text-right"
-                    />
-                  ) : (
-                    <span className="pbc-tabletext--money">${product.rrpPrice ?? product.marketPrice}</span>
-                  )}
-                </td>
-                <td className="px-3 py-2">
-                  {isEditing ? (
-                    <div className="pbc-tableactions">
-                      <button
-                        type="button"
-                        onClick={() => onSave()}
-                        disabled={disabled}
-                        className="pbc-btn pbc-btn--primary pbc-btn--sm"
-                      >
-                        Save
-                      </button>
-                      <button
-                        type="button"
-                        onClick={onCancel}
-                        disabled={disabled}
-                        className="pbc-btn pbc-btn--ghost pbc-btn--sm"
-                      >
-                        Cancel
-                      </button>
-                    </div>
-                  ) : (
-                    <div className="pbc-tableactions">
-                      <button
-                        type="button"
-                        onClick={() => onEdit(product)}
-                        disabled={disabled}
-                        className="pbc-btn pbc-btn--ghost pbc-btn--sm"
-                      >
-                        Edit
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => onDelete(product.id)}
-                        disabled={disabled}
-                        className="pbc-btn pbc-btn--danger pbc-btn--sm"
-                      >
-                        Delete
-                      </button>
-                    </div>
-                  )}
-                </td>
-              </tr>
-            )
-          })}
-        </tbody>
-      </table>
-    </div>
-  )
-}
-
-interface ProductServicesTableProps {
-  productServices: ProductServiceRecord[]
-  editingProductServiceId?: string | null
-  editForm?: ProductServiceFormState
-  onEdit?: (productService: ProductServiceRecord) => void
-  onCancel?: () => void
-  onSave?: () => void
-  onDelete?: (id: string) => void
-  onFieldChange?: (field: keyof ProductServiceFormState, value: string | boolean) => void
-  disabled?: boolean
-}
-
-export function ProductServiceAddItemForm({
-  form = {
-    name: '',
-    description: '',
-    category: 'Service',
-    unitPrice: '',
-    unitCost: '',
-    taxable: true,
-  },
-  onFieldChange = () => undefined,
-  onAdd = () => undefined,
-  disabled = false,
-}: {
-  form?: ProductServiceFormState
-  onFieldChange?: (field: keyof ProductServiceFormState, value: string | boolean) => void
-  onAdd?: () => void
-  disabled?: boolean
-}) {
-  const canAdd = !disabled && trimFormValue(form.name) && trimFormValue(form.unitPrice)
-
-  return (
-    <form
-      onSubmit={(event) => {
-        event.preventDefault()
-        if (canAdd) onAdd()
-      }}
-      className="pbc-formgroup"
-    >
-      <h3 className="pbc-paneltitle">Add Product & Service</h3>
-      <div className="mt-3 grid gap-3 lg:grid-cols-[1.2fr_1.4fr_0.8fr_0.7fr_0.7fr_auto]">
-        <label className="pbc-field">
-          <span className="pbc-field__label">Name</span>
-          <input value={form.name} onChange={(event) => onFieldChange('name', event.target.value)} className="pbc-input" placeholder="e.g. Ceiling" />
-        </label>
-        <label className="pbc-field">
-          <span className="pbc-field__label">Description</span>
-          <input value={form.description} onChange={(event) => onFieldChange('description', event.target.value)} className="pbc-input" placeholder="Public quote description" />
-        </label>
-        <label className="pbc-field">
-          <span className="pbc-field__label">Category</span>
-          <input value={form.category} onChange={(event) => onFieldChange('category', event.target.value)} className="pbc-input" placeholder="Service" />
-        </label>
-        <label className="pbc-field">
-          <span className="pbc-field__label">Unit Price</span>
-          <input value={form.unitPrice} onChange={(event) => onFieldChange('unitPrice', event.target.value)} inputMode="decimal" className="pbc-input" placeholder="0.00" />
-        </label>
-        <label className="pbc-field">
-          <span className="pbc-field__label">Unit Cost</span>
-          <input value={form.unitCost} onChange={(event) => onFieldChange('unitCost', event.target.value)} inputMode="decimal" className="pbc-input" placeholder="Optional" />
-        </label>
-        <label className="pbc-checkfield">
-          <input type="checkbox" checked={form.taxable} onChange={(event) => onFieldChange('taxable', event.target.checked)} className="pbc-checkbox" />
-          Taxable
-        </label>
-      </div>
-      <button type="submit" disabled={!canAdd} className="pbc-btn pbc-btn--primary mt-3">
-        Add Product & Service
-      </button>
-    </form>
-  )
-}
-
-export function ProductServicesTable({
-  productServices,
-  editingProductServiceId = null,
-  editForm = {
-    name: '',
-    description: '',
-    category: '',
-    unitPrice: '',
-    unitCost: '',
-    taxable: true,
-  },
-  onEdit = () => undefined,
-  onCancel = () => undefined,
-  onSave = () => undefined,
-  onDelete = () => undefined,
-  onFieldChange = () => undefined,
-  disabled = false,
-}: ProductServicesTableProps) {
-  return (
-    <div className="pbc-tablewrap">
-      <table className="pbc-table">
-        <thead>
-          <tr>
-            <th className="px-3 py-2 font-semibold">Name</th>
-            <th className="px-3 py-2 font-semibold">Description</th>
-            <th className="px-3 py-2 font-semibold">Category</th>
-            <th className="px-3 py-2 text-right font-semibold">Unit Price</th>
-            <th className="px-3 py-2 text-right font-semibold">Unit Cost</th>
-            <th className="px-3 py-2 font-semibold">Tax</th>
-            <th className="px-3 py-2 text-right font-semibold">Actions</th>
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-slate-100">
-          {productServices.map((item) => {
-            const isEditing = editingProductServiceId === item.id
-            return (
-              <tr key={item.id} className="align-top">
-                <td className="px-3 py-2">
-                  {isEditing ? <input value={editForm.name} onChange={(event) => onFieldChange('name', event.target.value)} className="pbc-tableinput" /> : <span className="pbc-tabletext pbc-tabletext--strong">{item.name}</span>}
-                </td>
-                <td className="max-w-md px-3 py-2">
-                  {isEditing ? <textarea value={editForm.description} onChange={(event) => onFieldChange('description', event.target.value)} className="pbc-tableinput min-h-20" /> : <span className="line-clamp-3 pbc-tabletext">{item.description ?? '-'}</span>}
-                </td>
-                <td className="px-3 py-2">
-                  {isEditing ? <input value={editForm.category} onChange={(event) => onFieldChange('category', event.target.value)} className="pbc-tableinput" /> : <span className="pbc-tabletext">{item.category ?? '-'}</span>}
-                </td>
-                <td className="px-3 py-2 text-right">
-                  {isEditing ? <input value={editForm.unitPrice} onChange={(event) => onFieldChange('unitPrice', event.target.value)} inputMode="decimal" className="pbc-tableinput text-right" /> : <span className="pbc-tabletext--money">${item.unitPrice}</span>}
-                </td>
-                <td className="px-3 py-2 text-right">
-                  {isEditing ? <input value={editForm.unitCost} onChange={(event) => onFieldChange('unitCost', event.target.value)} inputMode="decimal" className="pbc-tableinput text-right" /> : <span className="pbc-tabletext--money">{item.unitCost ? `$${item.unitCost}` : '-'}</span>}
-                </td>
-                <td className="px-3 py-2">
-                  {isEditing ? (
-                    <input type="checkbox" checked={editForm.taxable} onChange={(event) => onFieldChange('taxable', event.target.checked)} className="pbc-checkbox" />
-                  ) : (
-                    <span className="pbc-tabletext">{item.taxable ? 'Taxable' : 'No tax'}</span>
-                  )}
-                </td>
-                <td className="px-3 py-2">
-                  {isEditing ? (
-                    <div className="pbc-tableactions">
-                      <button type="button" onClick={onSave} disabled={disabled} className="pbc-btn pbc-btn--primary pbc-btn--sm">Save</button>
-                      <button type="button" onClick={onCancel} disabled={disabled} className="pbc-btn pbc-btn--ghost pbc-btn--sm">Cancel</button>
-                    </div>
-                  ) : (
-                    <div className="pbc-tableactions">
-                      <button type="button" onClick={() => onEdit(item)} disabled={disabled} className="pbc-btn pbc-btn--ghost pbc-btn--sm">Edit</button>
-                      <button type="button" onClick={() => onDelete(item.id)} disabled={disabled} className="pbc-btn pbc-btn--danger pbc-btn--sm">Delete</button>
-                    </div>
-                  )}
-                </td>
-              </tr>
-            )
-          })}
-        </tbody>
-      </table>
-    </div>
-  )
-}
-
 function templateItemToDraft(item: QuoteLineTemplateRecord['items'][number]): JobberQuoteLineItemDraft {
   return {
     id: item.id,
@@ -783,144 +341,6 @@ function templateLinesToInput(lines: JobberQuoteLineItemDraft[]) {
     linkedProductOrServiceId: line.linkedProductOrServiceId ?? null,
     position: index,
   }))
-}
-
-export function QuoteLineTemplateEditor({
-  templates,
-  productServices,
-  disabled = false,
-  onTemplatesChange = () => undefined,
-}: {
-  templates: QuoteLineTemplateRecord[]
-  productServices: ProductServiceRecord[]
-  disabled?: boolean
-  onTemplatesChange?: (templates: QuoteLineTemplateRecord[]) => void
-}) {
-  const [isPending, startTransition] = useTransition()
-  const [editingTemplateId, setEditingTemplateId] = useState<string | null>(null)
-  const [templateName, setTemplateName] = useState('')
-  const [templateLines, setTemplateLines] = useState<JobberQuoteLineItemDraft[]>([])
-  const [message, setMessage] = useState<string | null>(null)
-  const isDisabled = disabled || isPending
-
-  function resetForm() {
-    setEditingTemplateId(null)
-    setTemplateName('')
-    setTemplateLines([])
-  }
-
-  function editTemplate(template: QuoteLineTemplateRecord) {
-    setMessage(null)
-    setEditingTemplateId(template.id)
-    setTemplateName(template.name)
-    setTemplateLines(template.items.map(templateItemToDraft))
-  }
-
-  function saveTemplate() {
-    const name = trimFormValue(templateName)
-    if (!name) {
-      setMessage('Template name is required.')
-      return
-    }
-
-    setMessage(null)
-    startTransition(async () => {
-      const payload = {
-        name,
-        items: templateLinesToInput(templateLines),
-      }
-      const result = editingTemplateId
-        ? await updateQuoteLineTemplate({ id: editingTemplateId, ...payload })
-        : await createQuoteLineTemplate(payload)
-
-      if (result.ok) {
-        onTemplatesChange(editingTemplateId
-          ? templates.map((template) => template.id === result.data.id ? result.data : template)
-          : [result.data, ...templates]
-        )
-        resetForm()
-        setMessage('Template saved.')
-      } else {
-        setMessage(result.error)
-      }
-    })
-  }
-
-  function removeTemplate(id: string) {
-    setMessage(null)
-    startTransition(async () => {
-      const result = await deleteQuoteLineTemplate({ id })
-      if (result.ok) {
-        onTemplatesChange(templates.filter((template) => template.id !== id))
-        if (editingTemplateId === id) resetForm()
-        setMessage('Template deleted.')
-      } else {
-        setMessage(result.error)
-      }
-    })
-  }
-
-  return (
-    <div className="space-y-5">
-      <div className="pbc-panelhead">
-        <div className="pbc-panelhead__copy">
-          <h2 className="pbc-paneltitle">Template</h2>
-          <p className="pbc-panelsub">Save reusable Product / Service line item and text item sets for new quotes.</p>
-        </div>
-      </div>
-
-      <div className="pbc-formgroup">
-        <label className="pbc-field">
-          <span className="pbc-field__label">Template name</span>
-          <input
-            value={templateName}
-            onChange={(event) => setTemplateName(event.target.value)}
-            className="pbc-input"
-            placeholder="e.g. Standard interior quote"
-          />
-        </label>
-        <JobberProductServiceEditor
-          value={templateLines}
-          productServices={productServices}
-          onChange={setTemplateLines}
-        />
-        <div className="pbc-panelhead__actions mt-4">
-          <button type="button" onClick={saveTemplate} disabled={isDisabled || !trimFormValue(templateName)} className="pbc-btn pbc-btn--primary">
-            {isPending ? 'Saving...' : 'Save Template'}
-          </button>
-          {editingTemplateId ? (
-            <button type="button" onClick={resetForm} disabled={isDisabled} className="pbc-btn pbc-btn--ghost">
-              Cancel
-            </button>
-          ) : null}
-          {message ? <p className="pbc-panelsub">{message}</p> : null}
-        </div>
-      </div>
-
-      <div className="pbc-list">
-        {templates.length === 0 ? <p className="pbc-empty">No templates saved yet.</p> : null}
-        {templates.map((template) => (
-          <div key={template.id} className="pbc-listitem">
-            <div className="pbc-listitem__main">
-              <p className="pbc-listitem__title">{template.name}</p>
-              <p className="pbc-listitem__meta">{template.items.length} line items</p>
-              {template.items.length > 0 ? (
-                <p className="pbc-listitem__sub">{template.items.map((item) => item.name).join(', ')}</p>
-              ) : null}
-            </div>
-            <div className="pbc-panelhead__actions">
-              <button type="button" onClick={() => editTemplate(template)} disabled={isDisabled} className="pbc-btn pbc-btn--ghost pbc-btn--sm">
-                Edit
-              </button>
-              <button type="button" onClick={() => removeTemplate(template.id)} disabled={isDisabled} className="pbc-btn pbc-btn--danger pbc-btn--sm">
-                Delete
-              </button>
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  )
 }
 
 export function SettingsForm({
@@ -950,10 +370,13 @@ export function SettingsForm({
   const [productServicePage, setProductServicePage] = useState(1)
   const [productServices, setProductServices] = useState(initialProductServices ?? [])
   const [quoteLineTemplates, setQuoteLineTemplates] = useState(initialQuoteLineTemplates ?? [])
+  const [editingTemplateId, setEditingTemplateId] = useState<string | null>(null)
+  const [templateName, setTemplateName] = useState('')
+  const [templateLines, setTemplateLines] = useState<JobberQuoteLineItemDraft[]>([])
+  const [templateMessage, setTemplateMessage] = useState<string | null>(null)
   const [editingProductServiceId, setEditingProductServiceId] = useState<string | null>(null)
   const [productServiceMessage, setProductServiceMessage] = useState<string | null>(null)
   const [productServiceImportError, setProductServiceImportError] = useState<string | null>(null)
-  const productServiceFileInputRef = useRef<HTMLInputElement>(null)
   const [newProductServiceForm, setNewProductServiceForm] = useState<ProductServiceFormState>({
     name: '',
     description: '',
@@ -989,7 +412,6 @@ export function SettingsForm({
   })
   const [message, setMessage] = useState<string | null>(null)
   const [materialImportError, setMaterialImportError] = useState<string | null>(null)
-  const fileInputRef = useRef<HTMLInputElement>(null)
   const [areaMessage, setAreaMessage] = useState<string | null>(null)
   const [areas, setAreas] = useState(initialAreas ?? [])
   const [areaScope, setAreaScope] = useState<AreaScope>('interior')
@@ -1296,6 +718,60 @@ export function SettingsForm({
     })
   }
 
+  function resetTemplateForm() {
+    setEditingTemplateId(null)
+    setTemplateName('')
+    setTemplateLines([])
+  }
+
+  function editTemplate(template: QuoteLineTemplateRecord) {
+    setTemplateMessage(null)
+    setEditingTemplateId(template.id)
+    setTemplateName(template.name)
+    setTemplateLines(template.items.map(templateItemToDraft))
+  }
+
+  function saveTemplate() {
+    const name = trimFormValue(templateName)
+    if (!name) {
+      setTemplateMessage('Template name is required.')
+      return
+    }
+
+    setTemplateMessage(null)
+    startTransition(async () => {
+      const payload = { name, items: templateLinesToInput(templateLines) }
+      const result = editingTemplateId
+        ? await updateQuoteLineTemplate({ id: editingTemplateId, ...payload })
+        : await createQuoteLineTemplate(payload)
+
+      if (result.ok) {
+        setQuoteLineTemplates((current) => editingTemplateId
+          ? current.map((template) => template.id === result.data.id ? result.data : template)
+          : [result.data, ...current]
+        )
+        resetTemplateForm()
+        setTemplateMessage('Template saved.')
+      } else {
+        setTemplateMessage(result.error)
+      }
+    })
+  }
+
+  function removeTemplate(id: string) {
+    setTemplateMessage(null)
+    startTransition(async () => {
+      const result = await deleteQuoteLineTemplate({ id })
+      if (result.ok) {
+        setQuoteLineTemplates((current) => current.filter((template) => template.id !== id))
+        if (editingTemplateId === id) resetTemplateForm()
+        setTemplateMessage('Template deleted.')
+      } else {
+        setTemplateMessage(result.error)
+      }
+    })
+  }
+
   function exportMaterials() {
     const csvData = materialProducts.filter((product) => product.active !== false)
     if (csvData.length === 0) {
@@ -1345,7 +821,6 @@ export function SettingsForm({
         setMaterialMessage(null)
       }
 
-      if (fileInputRef.current) fileInputRef.current.value = ''
     })
   }
 
@@ -1370,7 +845,6 @@ export function SettingsForm({
         setProductServiceMessage(null)
       }
 
-      if (productServiceFileInputRef.current) productServiceFileInputRef.current.value = ''
     })
   }
 
@@ -1458,6 +932,16 @@ export function SettingsForm({
         setAreaMessage(formatAreaMutationError('delete', error))
       }
     })
+  }
+
+  function changeMaterialQuery(value: string) {
+    setMaterialQuery(value)
+    setMaterialPage(1)
+  }
+
+  function changeProductServiceQuery(value: string) {
+    setProductServiceQuery(value)
+    setProductServicePage(1)
   }
 
   const filteredProducts = materialProducts.filter((product) => {
@@ -1614,282 +1098,91 @@ export function SettingsForm({
           <p className="pbc-alert pbc-alert--warning mt-4">{Icons.lock({ size: 15 })}<span><b>Snapshot protected.</b> Changes affect future quotes only. Existing quotes preserve their saved settings.</span></p>
         </div>
       ) : activeTab === 'material' ? (
-        <div className="pbc-formsection pbc-formsection--center">
-          <div className="pbc-panelhead mb-4">
-            <div className="pbc-panelhead__copy">
-              <h2 className="pbc-paneltitle">Paint Materials</h2>
-              <p className="pbc-panelsub">{filteredProducts.length} materials</p>
-            </div>
-            <div className="pbc-panelhead__actions w-full sm:w-auto">
-              <input
-                value={materialQuery}
-                onChange={(event) => {
-                  setMaterialQuery(event.target.value)
-                  setMaterialPage(1)
-                }}
-                className="pbc-input sm:max-w-xs"
-                placeholder="Search material..."
-              />
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept=".csv,text/csv"
-                onChange={(event) => {
-                  void importMaterials(event.target.files?.[0] ?? null)
-                }}
-                className="hidden"
-              />
-              <div className="pbc-panelhead__actions">
-                <button
-                  type="button"
-                  onClick={() => fileInputRef.current?.click()}
-                  disabled={isPending}
-                  className="pbc-btn pbc-btn--ghost pbc-btn--sm"
-                >
-                  Import CSV
-                </button>
-                <button
-                  type="button"
-                  onClick={exportMaterials}
-                  disabled={isPending || materialProducts.filter((product) => product.active !== false).length === 0}
-                  className="pbc-btn pbc-btn--ghost pbc-btn--sm"
-                >
-                  Export CSV
-                </button>
-                <button
-                  type="button"
-                  onClick={exportMaterialTemplate}
-                  className="pbc-btn pbc-btn--ghost pbc-btn--sm"
-                >
-                  CSV Template
-                </button>
-              </div>
-            </div>
-          </div>
-          <MaterialAddItemForm
-            form={newMaterialForm}
-            onFieldChange={setNewMaterialField}
-            onAdd={addMaterialProduct}
-            disabled={isPending}
-          />
-          <MaterialProductsTable
-            products={pagedProducts}
-            editingProductId={editingProductId}
-            editForm={editForm}
-            onEdit={startEdit}
-            onCancel={cancelEdit}
-            onSave={saveMaterial}
-            onDelete={deleteMaterial}
-            onFieldChange={setEditField}
-            disabled={isPending}
-          />
-          <SettingsTablePager page={safeMaterialPage} total={filteredProducts.length} onPageChange={setMaterialPage} />
-          {materialMessage ? <p className="pbc-alert pbc-alert--success mt-3">{materialMessage}</p> : null}
-          {materialImportError ? <p className="pbc-alert pbc-alert--danger mt-3">{materialImportError}</p> : null}
-        </div>
+        <MaterialSettingsTab
+          products={pagedProducts}
+          total={filteredProducts.length}
+          activeProductCount={materialProducts.filter((product) => product.active !== false).length}
+          query={materialQuery}
+          page={safeMaterialPage}
+          newMaterialForm={newMaterialForm}
+          editingProductId={editingProductId}
+          editForm={editForm}
+          disabled={isPending}
+          message={materialMessage}
+          importError={materialImportError}
+          onQueryChange={changeMaterialQuery}
+          onPageChange={setMaterialPage}
+          onImport={importMaterials}
+          onExport={exportMaterials}
+          onExportTemplate={exportMaterialTemplate}
+          onNewFieldChange={setNewMaterialField}
+          onAdd={addMaterialProduct}
+          onEdit={startEdit}
+          onCancelEdit={cancelEdit}
+          onSave={saveMaterial}
+          onDelete={deleteMaterial}
+          onEditFieldChange={setEditField}
+        />
       ) : activeTab === 'productService' ? (
-        <div className="pbc-formsection pbc-formsection--center">
-          <div className="pbc-panelhead mb-4">
-            <div className="pbc-panelhead__copy">
-              <h2 className="pbc-paneltitle">Product & Service</h2>
-              <p className="pbc-panelsub">{filteredProductServices.length} Product & Service items</p>
-            </div>
-            <div className="pbc-panelhead__actions w-full sm:w-auto">
-              <input
-                value={productServiceQuery}
-                onChange={(event) => {
-                  setProductServiceQuery(event.target.value)
-                  setProductServicePage(1)
-                }}
-                className="pbc-input sm:max-w-xs"
-                placeholder="Search product or service..."
-              />
-              <input
-                ref={productServiceFileInputRef}
-                type="file"
-                accept=".csv,text/csv"
-                onChange={(event) => {
-                  void importProductServices(event.target.files?.[0] ?? null)
-                }}
-                className="hidden"
-              />
-              <div className="pbc-panelhead__actions">
-                <button type="button" onClick={() => productServiceFileInputRef.current?.click()} disabled={isPending} className="pbc-btn pbc-btn--ghost pbc-btn--sm">
-                  Import CSV
-                </button>
-                <button type="button" onClick={exportProductServices} disabled={isPending || productServices.filter((item) => item.active !== false).length === 0} className="pbc-btn pbc-btn--ghost pbc-btn--sm">
-                  Export CSV
-                </button>
-                <button type="button" onClick={exportProductServiceTemplate} className="pbc-btn pbc-btn--ghost pbc-btn--sm">
-                  CSV Template
-                </button>
-              </div>
-            </div>
-          </div>
-          <ProductServiceAddItemForm
-            form={newProductServiceForm}
-            onFieldChange={setNewProductServiceField}
-            onAdd={addProductService}
-            disabled={isPending}
-          />
-          <ProductServicesTable
-            productServices={pagedProductServices}
-            editingProductServiceId={editingProductServiceId}
-            editForm={productServiceEditForm}
-            onEdit={startProductServiceEdit}
-            onCancel={cancelProductServiceEdit}
-            onSave={saveProductService}
-            onDelete={removeProductService}
-            onFieldChange={setProductServiceEditField}
-            disabled={isPending}
-          />
-          <SettingsTablePager page={safeProductServicePage} total={filteredProductServices.length} onPageChange={setProductServicePage} />
-          {productServiceMessage ? <p className="pbc-alert pbc-alert--success mt-3">{productServiceMessage}</p> : null}
-          {productServiceImportError ? <p className="pbc-alert pbc-alert--danger mt-3">{productServiceImportError}</p> : null}
-        </div>
+        <ProductServiceSettingsTab
+          productServices={pagedProductServices}
+          total={filteredProductServices.length}
+          activeItemCount={productServices.filter((item) => item.active !== false).length}
+          query={productServiceQuery}
+          page={safeProductServicePage}
+          newForm={newProductServiceForm}
+          editingId={editingProductServiceId}
+          editForm={productServiceEditForm}
+          disabled={isPending}
+          message={productServiceMessage}
+          importError={productServiceImportError}
+          onQueryChange={changeProductServiceQuery}
+          onPageChange={setProductServicePage}
+          onImport={importProductServices}
+          onExport={exportProductServices}
+          onExportTemplate={exportProductServiceTemplate}
+          onNewFieldChange={setNewProductServiceField}
+          onAdd={addProductService}
+          onEdit={startProductServiceEdit}
+          onCancelEdit={cancelProductServiceEdit}
+          onSave={saveProductService}
+          onDelete={removeProductService}
+          onEditFieldChange={setProductServiceEditField}
+        />
       ) : activeTab === 'template' ? (
-        <div className="pbc-formsection pbc-formsection--center">
-          <QuoteLineTemplateEditor
-            templates={quoteLineTemplates}
-            productServices={productServices}
-            disabled={isPending}
-            onTemplatesChange={setQuoteLineTemplates}
-          />
-        </div>
+        <TemplateSettingsTab
+          templates={quoteLineTemplates}
+          productServices={productServices}
+          editingTemplateId={editingTemplateId}
+          templateName={templateName}
+          templateLines={templateLines}
+          message={templateMessage}
+          disabled={isPending}
+          onTemplateNameChange={setTemplateName}
+          onTemplateLinesChange={setTemplateLines}
+          onSave={saveTemplate}
+          onCancel={resetTemplateForm}
+          onEdit={editTemplate}
+          onDelete={removeTemplate}
+        />
       ) : (
-        <div className="pbc-formsection pbc-formsection--center">
-          <div className="pbc-panelhead mb-4">
-            <div className="pbc-panelhead__copy">
-              <h2 className="pbc-paneltitle">Areas</h2>
-              <p className="pbc-panelsub">Manage reusable interior, exterior, and roof area labels for quote items.</p>
-            </div>
-          </div>
-          <form
-            onSubmit={(event) => {
-              event.preventDefault()
-              if (!isPending && areaName.trim()) addArea()
-            }}
-            className="pbc-formgroup grid gap-3 sm:grid-cols-[180px_minmax(0,1fr)_auto]"
-          >
-            <label className="pbc-field">
-              <span className="pbc-field__label">Scope</span>
-              <select value={areaScope} onChange={(event) => setAreaScope(event.target.value as AreaScope)} className="pbc-input">
-                {AREA_SCOPES.map((scope) => (
-                  <option key={scope} value={scope}>{AREA_SCOPE_LABELS[scope]}</option>
-                ))}
-              </select>
-            </label>
-            <label className="pbc-field">
-              <span className="pbc-field__label">Area name</span>
-              <input value={areaName} onChange={(event) => setAreaName(event.target.value)} className="pbc-input" placeholder="e.g. eaves, fascia" />
-            </label>
-            <button type="submit" disabled={isPending || !areaName.trim()} className="pbc-btn pbc-btn--primary self-end">
-              Add Area
-            </button>
-          </form>
-          {areaMessage ? <p className="pbc-alert pbc-alert--success mt-3">{areaMessage}</p> : null}
-
-          <div className="mt-6 grid gap-6 lg:grid-cols-3">
-            {AREA_SCOPES.map((scope) => (
-              <section key={scope}>
-                <div className="pbc-panelhead mb-3">
-                  <div className="pbc-panelhead__copy">
-                    <h3 className="pbc-paneltitle">{AREA_SCOPE_LABELS[scope]}</h3>
-                    <p className="pbc-panelsub">{areas.filter((area) => area.scope === scope).length} areas</p>
-                  </div>
-                </div>
-                <div className="pbc-list">
-                  {areas.filter((area) => area.scope === scope).length === 0 ? (
-                    <p className="pbc-empty">No areas yet.</p>
-                  ) : null}
-                  {areas
-                    .filter((area) => area.scope === scope)
-                    .sort((a, b) => a.position - b.position || a.name.localeCompare(b.name))
-                    .map((area) => {
-                      const isEditing = editingAreaId === area.id
-
-                      return (
-                        <div key={area.id} className={`pbc-listitem pbc-areaitem${isEditing ? ' pbc-areaitem--editing' : ''}`}>
-                          {isEditing ? (
-                            <div className="pbc-areaedit">
-                              <div className="pbc-areaedit__fields">
-                                <label className="pbc-field">
-                                  <span className="pbc-field__label">Scope</span>
-                                  <select
-                                    value={areaEditForm.scope}
-                                    onChange={(event) => setAreaEditForm((current) => ({ ...current, scope: event.target.value as AreaScope }))}
-                                    className="pbc-input"
-                                  >
-                                    {AREA_SCOPES.map((scopeOption) => (
-                                      <option key={scopeOption} value={scopeOption}>{AREA_SCOPE_LABELS[scopeOption]}</option>
-                                    ))}
-                                  </select>
-                                </label>
-                                <label className="pbc-field">
-                                  <span className="pbc-field__label">Area name</span>
-                                  <input
-                                    value={areaEditForm.name}
-                                    onChange={(event) => setAreaEditForm((current) => ({ ...current, name: event.target.value }))}
-                                    className="pbc-input"
-                                    placeholder="Area name"
-                                  />
-                                </label>
-                              </div>
-                              <div className="pbc-areaedit__actions">
-                                <button
-                                  type="button"
-                                  onClick={saveArea}
-                                  disabled={isPending || !areaEditForm.name.trim()}
-                                  className="pbc-btn pbc-btn--primary pbc-btn--sm"
-                                >
-                                  Save
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={cancelAreaEdit}
-                                  disabled={isPending}
-                                  className="pbc-btn pbc-btn--ghost pbc-btn--sm"
-                                >
-                                  Cancel
-                                </button>
-                              </div>
-                            </div>
-                          ) : (
-                            <div className="pbc-listitem__main">
-                              <p className="pbc-listitem__title">{area.name}</p>
-                              <p className="pbc-listitem__meta">{AREA_SCOPE_LABELS[scope]}</p>
-                            </div>
-                          )}
-                          {!isEditing ? (
-                            <div className="pbc-tableactions">
-                              <button
-                                type="button"
-                                onClick={() => startAreaEdit(area)}
-                                disabled={isPending}
-                                className="pbc-btn pbc-btn--ghost pbc-btn--sm"
-                                aria-label={`Edit area ${area.name}`}
-                              >
-                                Edit
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => removeArea(area.id)}
-                                disabled={isPending}
-                                className="pbc-btn pbc-btn--danger pbc-btn--sm"
-                                aria-label={`Delete area ${area.name}`}
-                              >
-                                Delete
-                              </button>
-                            </div>
-                          ) : null}
-                        </div>
-                      )
-                    })}
-                </div>
-              </section>
-            ))}
-          </div>
-        </div>
+        <AreaSettingsTab
+          areas={areas}
+          areaScope={areaScope}
+          areaName={areaName}
+          editingAreaId={editingAreaId}
+          areaEditForm={areaEditForm}
+          message={areaMessage}
+          disabled={isPending}
+          onAreaScopeChange={setAreaScope}
+          onAreaNameChange={setAreaName}
+          onAdd={addArea}
+          onStartEdit={startAreaEdit}
+          onEditFormChange={setAreaEditForm}
+          onSave={saveArea}
+          onCancel={cancelAreaEdit}
+          onDelete={removeArea}
+        />
       )}
       </div>
     </div>

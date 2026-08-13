@@ -6,15 +6,13 @@ import { describe, expect, it, vi } from 'vitest'
 import {
   buildMaterialUpdateInput,
   formatAreaMutationError,
-  MaterialAddItemForm,
   MaterialCsvTemplate,
-  MaterialProductsTable,
-  ProductServiceAddItemForm,
-  ProductServicesTable,
-  QuoteLineTemplateEditor,
   savePricingSettingsForm,
   SettingsForm,
 } from '@/components/settings/settings-form'
+import { MaterialAddItemForm, MaterialProductsTable } from '@/components/settings/tabs/material-settings-tab'
+import { ProductServiceAddItemForm, ProductServicesTable } from '@/components/settings/tabs/product-service-settings-tab'
+import { QuoteLineTemplateEditor } from '@/components/settings/tabs/template-settings-tab'
 import type { ProductRecord } from '@/lib/products/types'
 import type { ProductServiceRecord } from '@/lib/product-services/types'
 import { DEFAULT_PRICING_SETTINGS } from '@/lib/calculator'
@@ -27,6 +25,40 @@ const settingsDataMocks = vi.hoisted(() => ({
   listProductServices: vi.fn(),
   listQuoteLineTemplates: vi.fn(),
 }))
+
+const dynamicTabMocks = vi.hoisted(() => ({
+  registrations: 0,
+  requested: [0, 0, 0, 0],
+  mounted: [0, 0, 0, 0],
+  pending: [null, null, null, null] as Array<Promise<unknown> | null>,
+}))
+
+vi.mock('next/dynamic', async () => {
+  const React = await import('react')
+
+  return {
+  default: (loader: () => Promise<unknown>) => {
+    const tabIndex = dynamicTabMocks.registrations++
+
+    return function DeferredSettingsTab(props: Record<string, unknown>) {
+      const [Loaded, setLoaded] = React.useState<React.ComponentType<Record<string, unknown>> | null>(null)
+
+      React.useEffect(() => {
+        dynamicTabMocks.requested[tabIndex] += 1
+        const request = loader()
+        dynamicTabMocks.pending[tabIndex] = request
+        void request.then((module) => {
+          setLoaded(() => (module as { default: React.ComponentType<Record<string, unknown>> }).default)
+        })
+      }, [])
+
+      if (!Loaded) return null
+      dynamicTabMocks.mounted[tabIndex] += 1
+      return createElement(Loaded, props)
+    }
+  },
+  }
+})
 
 vi.mock('@/lib/actions/areas', async (importOriginal) => ({
   ...await importOriginal<typeof import('@/lib/actions/areas')>(),
@@ -71,6 +103,59 @@ function pricingSettingsFormState(
 }
 
 describe('settings material UI', () => {
+  it.each([
+    ['Material', 0, 'listProducts'],
+    ['Product & Service', 1, 'listProductServices'],
+    ['Template', 2, 'listQuoteLineTemplates'],
+    ['Area', 3, 'listAreas'],
+  ] as const)('defers inactive modules and mounts only the %s module after its data is ready', async (tabLabel, moduleIndex, resourceMock) => {
+    dynamicTabMocks.requested.fill(0)
+    dynamicTabMocks.mounted.fill(0)
+    dynamicTabMocks.pending.fill(null)
+    settingsDataMocks.listProducts.mockReset().mockResolvedValue({ ok: true, data: [] })
+    settingsDataMocks.listProductServices.mockReset().mockResolvedValue({ ok: true, data: [] })
+    settingsDataMocks.listQuoteLineTemplates.mockReset().mockResolvedValue({ ok: true, data: [] })
+    settingsDataMocks.listAreas.mockReset().mockResolvedValue({ ok: true, data: [] })
+    const { cleanup } = installTestDom()
+    let root: Root | null = null
+
+    try {
+      const { createRoot } = await import('react-dom/client')
+      const container = document.createElement('div')
+      root = createRoot(container)
+
+      await act(async () => {
+        root!.render(createElement(SettingsForm, { initialSettings: DEFAULT_PRICING_SETTINGS }))
+      })
+
+      expect(dynamicTabMocks.requested).toEqual([0, 0, 0, 0])
+      expect(dynamicTabMocks.mounted).toEqual([0, 0, 0, 0])
+
+      const tab = Array.from(container.querySelectorAll('button')).find((button) => button.textContent.includes(tabLabel))
+      expect(tab).toBeDefined()
+
+      await act(async () => {
+        tab!.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+        await Promise.resolve()
+      })
+      await act(async () => {
+        await dynamicTabMocks.pending[moduleIndex]
+      })
+
+      expect(settingsDataMocks[resourceMock]).toHaveBeenCalledTimes(1)
+      expect(dynamicTabMocks.requested[moduleIndex]).toBe(1)
+      expect(dynamicTabMocks.mounted[moduleIndex]).toBeGreaterThan(0)
+      expect(dynamicTabMocks.requested.filter(Boolean)).toHaveLength(1)
+      expect(dynamicTabMocks.mounted.filter(Boolean)).toHaveLength(1)
+    } finally {
+      try {
+        if (root) await act(async () => root?.unmount())
+      } finally {
+        cleanup()
+      }
+    }
+  })
+
   it('shows paint kind without the full product name subtitle', () => {
     const products: ProductRecord[] = [
       {
@@ -317,7 +402,13 @@ describe('settings material UI', () => {
       initialQuoteLineTemplates: [],
       initialSettings: DEFAULT_PRICING_SETTINGS,
     }))
-    const source = readFileSync('components/settings/settings-form.tsx', 'utf8')
+    const source = [
+      'components/settings/settings-form.tsx',
+      'components/settings/tabs/material-settings-tab.tsx',
+      'components/settings/tabs/product-service-settings-tab.tsx',
+      'components/settings/tabs/template-settings-tab.tsx',
+      'components/settings/tabs/area-settings-tab.tsx',
+    ].map((path) => readFileSync(path, 'utf8')).join('\n')
 
     expect(settingsMarkup).toContain('pbc-formsection pbc-formsection--center')
     expect(source.match(/pbc-formsection pbc-formsection--center/g)?.length).toBeGreaterThanOrEqual(5)
@@ -570,7 +661,7 @@ const { cleanup } = installTestDom()
   })
 
   it('uses the latest shared UI for the area section', () => {
-    const source = readFileSync('components/settings/settings-form.tsx', 'utf8')
+    const source = readFileSync('components/settings/tabs/area-settings-tab.tsx', 'utf8')
     const areaStart = source.indexOf('<h2 className="pbc-paneltitle">Areas</h2>')
     const areaBranch = source.slice(areaStart)
 
@@ -590,13 +681,14 @@ const { cleanup } = installTestDom()
   })
 
   it('provides edit and delete controls for settings areas', () => {
-    const source = readFileSync('components/settings/settings-form.tsx', 'utf8')
+    const controllerSource = readFileSync('components/settings/settings-form.tsx', 'utf8')
+    const source = readFileSync('components/settings/tabs/area-settings-tab.tsx', 'utf8')
     const areaStart = source.indexOf('<h2 className="pbc-paneltitle">Areas</h2>')
     const areaBranch = source.slice(areaStart)
 
     expect(areaStart).toBeGreaterThan(-1)
-    expect(source).toContain('updateArea')
-    expect(source).toContain('deleteArea')
+    expect(controllerSource).toContain('updateArea')
+    expect(controllerSource).toContain('deleteArea')
     expect(areaBranch).toContain('editingAreaId')
     expect(areaBranch).toContain('Edit area')
     expect(areaBranch).toContain('Delete area')
