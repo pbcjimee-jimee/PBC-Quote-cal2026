@@ -2,6 +2,7 @@ import { act, createElement } from 'react'
 import type { Root } from 'react-dom/client'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { readFileSync } from 'node:fs'
+import ts from 'typescript'
 import { describe, expect, it, vi } from 'vitest'
 import {
   buildMaterialUpdateInput,
@@ -130,6 +131,137 @@ function productFixture(index: number): ProductRecord {
     volumeLitres: '15',
     rrpPrice: '100.00',
   }
+}
+
+interface StaticModuleGraphResult {
+  valuePathsToTargets: string[][]
+  dynamicTargetSpecifiers: string[]
+}
+
+function inspectStaticModuleGraph(_options: {
+  entry: string
+  targets: ReadonlySet<string>
+  readSource: (path: string) => string | undefined
+}): StaticModuleGraphResult {
+  const options = _options
+  const sourceCache = new Map<string, string | undefined>()
+  const visited = new Set<string>()
+  const valuePathsToTargets: string[][] = []
+  const dynamicTargetSpecifiers: string[] = []
+
+  function normalizePath(path: string): string {
+    const segments: string[] = []
+    for (const segment of path.replaceAll('\\', '/').split('/')) {
+      if (!segment || segment === '.') continue
+      if (segment === '..') segments.pop()
+      else segments.push(segment)
+    }
+    return segments.join('/')
+  }
+
+  function getSource(path: string): string | undefined {
+    if (!sourceCache.has(path)) sourceCache.set(path, options.readSource(path))
+    return sourceCache.get(path)
+  }
+
+  function resolveLocalModule(from: string, specifier: string): string | null {
+    let base: string
+    if (specifier.startsWith('@/')) {
+      base = specifier.slice(2)
+    } else if (specifier.startsWith('.')) {
+      const separator = from.lastIndexOf('/')
+      base = `${separator === -1 ? '' : from.slice(0, separator + 1)}${specifier}`
+    } else {
+      return null
+    }
+
+    const normalized = normalizePath(base)
+    const hasExtension = /\.[cm]?[jt]sx?$/.test(normalized)
+    const candidates = hasExtension
+      ? [normalized]
+      : [normalized, `${normalized}.ts`, `${normalized}.tsx`, `${normalized}/index.ts`, `${normalized}/index.tsx`]
+
+    return candidates.find((candidate) => options.targets.has(candidate))
+      ?? candidates.find((candidate) => getSource(candidate) !== undefined)
+      ?? null
+  }
+
+  function stringModuleSpecifier(node: ts.Expression | undefined): string | null {
+    return node && ts.isStringLiteralLike(node) ? node.text : null
+  }
+
+  function importDeclarationHasValueEdge(node: ts.ImportDeclaration): boolean {
+    const clause = node.importClause
+    if (!clause) return true
+    if (clause.isTypeOnly) return false
+    if (clause.name) return true
+    if (!clause.namedBindings) return true
+    if (ts.isNamespaceImport(clause.namedBindings)) return true
+    return clause.namedBindings.elements.length === 0
+      || clause.namedBindings.elements.some((element) => !element.isTypeOnly)
+  }
+
+  function exportDeclarationHasValueEdge(node: ts.ExportDeclaration): boolean {
+    if (node.isTypeOnly) return false
+    if (!node.exportClause) return true
+    if (ts.isNamespaceExport(node.exportClause)) return true
+    return node.exportClause.elements.length === 0
+      || node.exportClause.elements.some((element) => !element.isTypeOnly)
+  }
+
+  function staticValueSpecifiers(sourceFile: ts.SourceFile): string[] {
+    const specifiers: string[] = []
+    for (const statement of sourceFile.statements) {
+      if (ts.isImportDeclaration(statement) && importDeclarationHasValueEdge(statement)) {
+        const specifier = stringModuleSpecifier(statement.moduleSpecifier)
+        if (specifier) specifiers.push(specifier)
+      } else if (ts.isImportEqualsDeclaration(statement)) {
+        const isTypeOnly = (statement as ts.ImportEqualsDeclaration & { isTypeOnly?: boolean }).isTypeOnly === true
+        if (!isTypeOnly && ts.isExternalModuleReference(statement.moduleReference)) {
+          const specifier = stringModuleSpecifier(statement.moduleReference.expression)
+          if (specifier) specifiers.push(specifier)
+        }
+      } else if (ts.isExportDeclaration(statement) && exportDeclarationHasValueEdge(statement)) {
+        const specifier = stringModuleSpecifier(statement.moduleSpecifier)
+        if (specifier) specifiers.push(specifier)
+      }
+    }
+    return specifiers
+  }
+
+  function collectEntryDynamicTargets(sourceFile: ts.SourceFile, from: string): void {
+    function visit(node: ts.Node): void {
+      if (ts.isCallExpression(node) && node.expression.kind === ts.SyntaxKind.ImportKeyword) {
+        const specifier = stringModuleSpecifier(node.arguments[0])
+        if (specifier) {
+          const resolved = resolveLocalModule(from, specifier)
+          if (resolved && options.targets.has(resolved)) dynamicTargetSpecifiers.push(specifier)
+        }
+      }
+      ts.forEachChild(node, visit)
+    }
+    visit(sourceFile)
+  }
+
+  function visitModule(path: string, ancestry: string[]): void {
+    if (visited.has(path)) return
+    visited.add(path)
+    const source = getSource(path)
+    if (source === undefined) return
+    const sourceFile = ts.createSourceFile(path, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX)
+    if (path === options.entry) collectEntryDynamicTargets(sourceFile, path)
+
+    for (const specifier of staticValueSpecifiers(sourceFile)) {
+      const resolved = resolveLocalModule(path, specifier)
+      if (!resolved) continue
+      const nextPath = [...ancestry, resolved]
+      if (options.targets.has(resolved)) valuePathsToTargets.push(nextPath)
+      else visitModule(resolved, nextPath)
+    }
+  }
+
+  visitModule(options.entry, [options.entry])
+  return { valuePathsToTargets, dynamicTargetSpecifiers }
 }
 
 describe('settings material UI', () => {
@@ -308,21 +440,85 @@ describe('settings material UI', () => {
   })
 
   it('keeps the four inactive tab modules behind dynamic-only value boundaries', () => {
-    const controller = readFileSync('components/settings/settings-form.tsx', 'utf8')
-    const modules = [
-      'material-settings-tab',
-      'product-service-settings-tab',
-      'template-settings-tab',
-      'area-settings-tab',
+    const entry = 'components/settings/settings-form.tsx'
+    const targets = new Set([
+      'components/settings/tabs/material-settings-tab.tsx',
+      'components/settings/tabs/product-service-settings-tab.tsx',
+      'components/settings/tabs/template-settings-tab.tsx',
+      'components/settings/tabs/area-settings-tab.tsx',
+    ])
+    const result = inspectStaticModuleGraph({
+      entry,
+      targets,
+      readSource: (path) => {
+        try {
+          return readFileSync(path, 'utf8')
+        } catch {
+          return undefined
+        }
+      },
+    })
+
+    expect(result.valuePathsToTargets).toEqual([])
+    expect(result.dynamicTargetSpecifiers.sort()).toEqual([
+      '@/components/settings/tabs/area-settings-tab',
+      '@/components/settings/tabs/material-settings-tab',
+      '@/components/settings/tabs/product-service-settings-tab',
+      '@/components/settings/tabs/template-settings-tab',
+    ])
+  })
+
+  it('detects multiline, side-effect, import-equals, direct re-export, and barrel value edges', () => {
+    const targets = new Set(['components/settings/tabs/material-settings-tab.tsx'])
+    const cases = [
+      `import {\n  default as MaterialTab\n} from '@/components/settings/tabs/material-settings-tab'`,
+      `import '@/components/settings/tabs/material-settings-tab'`,
+      `import MaterialTab = require('@/components/settings/tabs/material-settings-tab')`,
+      `export { default as MaterialTab } from '@/components/settings/tabs/material-settings-tab'`,
     ]
 
-    for (const tabModule of modules) {
-      const path = `@/components/settings/tabs/${tabModule}`
-      expect(controller).toContain(`() => import('${path}')`)
-      expect(controller).not.toMatch(new RegExp(`import\\s+(?!type\\s)[^\\n]+from ['\"]${path}['\"]`))
-      expect(controller).not.toMatch(new RegExp(`export\\s+[^\\n]+from ['\"]${path}['\"]`))
+    for (const source of cases) {
+      const result = inspectStaticModuleGraph({
+        entry: 'components/settings/settings-form.tsx',
+        targets,
+        readSource: (path) => path === 'components/settings/settings-form.tsx' ? source : undefined,
+      })
+      expect(result.valuePathsToTargets).toHaveLength(1)
     }
-    expect(controller.match(/const \w+SettingsTab = dynamic\(/g)).toHaveLength(4)
+
+    const barrelResult = inspectStaticModuleGraph({
+      entry: 'components/settings/settings-form.tsx',
+      targets,
+      readSource: (path) => ({
+        'components/settings/settings-form.tsx': `import { MaterialTab } from './tabs'`,
+        'components/settings/tabs/index.ts': `export { default as MaterialTab } from './material-settings-tab'`,
+        'components/settings/tabs/material-settings-tab.tsx': `export default function MaterialTab() { return null }`,
+      })[path],
+    })
+    expect(barrelResult.valuePathsToTargets).toEqual([[
+      'components/settings/settings-form.tsx',
+      'components/settings/tabs/index.ts',
+      'components/settings/tabs/material-settings-tab.tsx',
+    ]])
+  })
+
+  it('allows declaration-level and specifier-level type-only imports and re-exports', () => {
+    const targets = new Set(['components/settings/tabs/material-settings-tab.tsx'])
+    const sources = [
+      `import type { MaterialSettingsTabProps } from '@/components/settings/tabs/material-settings-tab'`,
+      `import { type MaterialSettingsTabProps } from '@/components/settings/tabs/material-settings-tab'`,
+      `export type { MaterialSettingsTabProps } from '@/components/settings/tabs/material-settings-tab'`,
+      `export { type MaterialSettingsTabProps } from '@/components/settings/tabs/material-settings-tab'`,
+    ]
+
+    for (const source of sources) {
+      const result = inspectStaticModuleGraph({
+        entry: 'components/settings/settings-form.tsx',
+        targets,
+        readSource: (path) => path === 'components/settings/settings-form.tsx' ? source : undefined,
+      })
+      expect(result.valuePathsToTargets).toEqual([])
+    }
   })
 
   it('shows paint kind without the full product name subtitle', () => {
