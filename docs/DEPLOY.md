@@ -15,6 +15,7 @@
 | **Deploy workflow** | main 브랜치 push 시 자동 배포 |
 | **Merge method** | merge |
 | **Project type** | web app (Next.js 16) |
+| **Function region** | `syd1` (`vercel.json`; preview artifact에서 재확인) |
 | **Local Git remote** | `git@github-pbc-quote-cal:pbcjimee-jimee/PBC-Quote-cal2026.git` |
 
 ---
@@ -87,6 +88,26 @@ git ls-remote origin main
 https://pbc-quote-cal2026-v2.vercel.app
 ```
 200 OK 응답 확인.
+
+### App performance preview gate
+
+App performance optimization은 local branch build만으로 live latency 개선을 확정하지 않는다. push 후 생성된 preview URL에 아래 명령을 실행한다.
+
+```cmd
+npx.cmd vercel inspect <preview-url>
+```
+
+Promotion 전 확인:
+
+- Function outputs의 region이 `[syd1]`인지 확인한다.
+- preview runtime/auth logs에 새 error가 0건인지 확인한다.
+- 2026-08-12 baseline과 같은 Australian profile에서 cold/warm Login과 PWA launch를 측정한다. PWA는 useful content 전 protected document request가 하나인지 확인한다.
+- authenticated Settings, quote detail, Jobs list/detail을 cold/warm으로 측정하고 route click→loading feedback와 complete content를 분리해 기록한다.
+- Inventory search는 server response와 client commit, Quote Form은 50 materials/5 options 상태의 input commit을 측정한다.
+- service worker가 인증 HTML·RSC·API·session·profile·quote·job·customer payload를 캐시하지 않는지 재확인한다.
+- auth behavior, quote calculation, Jobber supervisor authorization, runtime error가 동일할 때만 production promotion을 검토한다.
+
+`auth.getClaims()` 전환과 DB index/RLS/RPC 최적화는 이 배포의 일부가 아니다. 각각 운영 보안 결정과 별도 migration review·production DB 명시 승인이 필요하다.
 
 ### PWA 배포 확인
 

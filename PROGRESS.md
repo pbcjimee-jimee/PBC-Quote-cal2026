@@ -12,7 +12,7 @@
 |---|---|
 | **앱** | PBC 견적 계산기 — 페인팅 회사 PBC 사내 도구 |
 | **스택** | Next.js 16 (App Router) + React 19 + TypeScript + Tailwind CSS 4 + Supabase + Vercel |
-| **현재 버전** | v1.0 핵심 플로우 + v1.1 보완 완료 + 2026-07-04 project hardening + 2026-07-07 quote save conflict hardening + 2026-07-08 warehouse inventory repo/production 적용 + 2026-07-09 inventory category/status UI 보완 + 2026-07-13 PWA·모바일 + 2026-07-14 핵심 navigation performance production 배포·카나리 완료. Production Supabase `0019`/`0020`/`20260705221912`/`20260707003130`/`20260708101550` 적용 확인 완료 |
+| **현재 버전** | v1.0 핵심 플로우 + v1.1 보완 완료 + 2026-07-04 project hardening + 2026-07-07 quote save conflict hardening + 2026-07-08 warehouse inventory repo/production 적용 + 2026-07-09 inventory category/status UI 보완 + 2026-07-13 PWA·모바일 + 2026-07-14 핵심 navigation performance production 배포·카나리 완료 + 2026-08-13 app performance optimization 브랜치 검증 완료·preview 측정 대기. Production Supabase `0019`/`0020`/`20260705221912`/`20260707003130`/`20260708101550` 적용 확인 완료 |
 | **배포 URL** | https://pbc-quote-cal2026-v2.vercel.app |
 | **GitHub Repo** | pbcjimee-jimee/PBC-Quote-cal2026 (branch: main) |
 | **CLI 접근 기준** | Git remote `git@github-pbc-quote-cal:pbcjimee-jimee/PBC-Quote-cal2026.git`, Vercel `jimee-s-projects/pbc-quote-cal2026-v2`, Supabase `ojcrfgguhbxhtlgdflzp` |
@@ -121,10 +121,21 @@
 - 최종 리뷰 수정 `4fa517f`는 collapsed editor의 안정적인 `aria-controls` target을 hidden·empty 상태로 계속 mount하고, Save pending 동안 summary를 disable한다. 실패한 Save 후에도 editor와 입력값을 유지해 재시도할 수 있다. 수화된 `375x812`에서 동일 target의 collapsed→expanded→Cancel 전환, overflow `0`, console `0/0`, 무변경을 확인했다.
 - 구현/수정 커밋은 `e8087e4`, `25e3bc9`, `667f39c`, `eab0551`, `8467ead`, `11a1ca9`, `41c28f0`, `ea3cf64`, `b93c132`, `4fa517f`이다. LAN 개발 접속의 Next HMR origin 차단은 `allowedDevOrigins`에 정확한 local host를 추가해 해결했으며 production 접근 정책은 변경하지 않았다.
 
+### App performance optimization (2026-08-13, 브랜치 구현·검증 완료)
+
+- Vercel Function region을 `syd1`로 고정하고 PWA `start_url`을 역할 공통 보호 route `/jobs`로 변경했다. `auth.getUser()`와 active `user_profiles` 역할 확인은 유지하며 인증 HTML·RSC·API·세션·고객 데이터의 service-worker/public cache 범위는 늘리지 않았다.
+- Quote detail explicit select·profile batch/fallback·thin refresh DTO, 요청 단위 Jobber gateway와 visible-ID snapshot 조회, Inventory 50-row server pagination/search, Quote Form draft 300ms trailing persistence, Settings inactive-tab dynamic import와 route-shaped loading을 반영했다. 계산·가격 snapshot·Jobber write-back·supervisor live authorization·RLS·DB schema는 변경하지 않았다.
+- 최종 focused 보안/동작 suite는 8 files/135 tests, 전체 Vitest와 coverage는 92 files/781 tests 통과(환경 조건 1 file/9 tests skip)했다. coverage는 statements 84.41%, branches 70.89%, functions 94.35%, lines 89.83%이고, `git diff --check`·strict TypeScript·ESLint·Next production build는 exit 0이다. build 전후 `next-env.d.ts`는 `./.next/types/routes.d.ts` import와 SHA-256이 동일했다.
+- baseline main build `7GGZvnV9XHYRkWgZpzvCX`와 branch build `fP8u_Dm3P3pnCyvmRcr6P`의 manifest asset을 response별 gzip으로 계산했다. Settings route-owned JS는 12,181→7,741 bytes(-36.450%), initial JS는 166,572→162,172 bytes(-2.642%)이고, 네 lazy chunk 8,982 bytes는 initial에서 제외된다. Inventory route-owned JS는 +9.209%, initial JS는 +0.411%이며 전체 route의 initial JS/CSS 증가가 10%를 넘지 않았다. New/Edit Quote와 Jobs list/detail은 각각 동일 client asset 구성을 유지했다.
+- `npm.cmd run audit:production`은 기존 `nanoid <3.3.17` high advisory `GHSA-2v37-7h3g-55p8`(`npm audit fix` 가능)로 exit 1이었다. 이 브랜치에서는 dependency·lockfile을 변경하지 않았다.
+- 위 수치는 branch build 증거이며 live latency 개선을 뜻하지 않는다. push 후 Sydney preview에서 `[syd1]`, auth/runtime error 0, Login·PWA·Settings·quote detail·Jobs·Inventory search·Quote Form input의 동일 cold/warm 측정을 통과해야 promotion을 검토한다.
+
 ---
 
 ## 🔲 남은 작업
 
+- **App performance preview gate**: branch push 후 preview artifact에서 `vercel inspect`로 Function output `[syd1]`를 확인하고 auth/runtime error 0을 검증한다. Login·PWA launch·Settings·quote detail·Jobs·Inventory search·Quote Form input의 cold/warm 표본을 2026-08-12 baseline과 동일 조건으로 측정하기 전에는 live latency 개선을 주장하거나 production으로 승격하지 않는다.
+- **승인 필요 performance 후속**: `auth.getClaims()` 전환은 session revocation 정책·expiry 테스트 계획 승인 후에만 검토한다. DB index, RLS, revision/RPC 변경은 별도 설계·migration review와 production DB 명시 승인 전에는 구현하지 않는다.
 - **역할/Jobs G3 실계정 QA**: 기존 admin 2명이 운영 로그인을 직접 확인한다. admin이 `/settings/users`에서 supervisor 실제 이메일·표시 이름·임시 비밀번호를 입력하고 Jobber 팀원을 매핑한 뒤, 역할별 nav·직접 URL 차단·배정 job·expense·profit %를 실데이터로 QA한다. 비밀번호와 기존 admin 자격 증명은 채팅에서 취급하지 않는다.
 - **감사 발견 이슈** (2026-07-06): 우선순위별로 `docs/BACKLOG.md`에 등록. 2026-07-04 hardening으로 마진 CHECK·서버 액션 allowlist 해결, 2026-07-07 quote save conflict hardening으로 견적 저장 트랜잭션·동시 편집 충돌·product 스냅샷 재고정·Jobber 부분 성공 line id 보존을 반영. 남은 항목은 `docs/BACKLOG.md`의 미체크 항목 기준으로 처리.
 - **Supabase 실제 데이터 백업**: 운영 결정 대기(`TODOS.md` #2). Pro/PITR 우선, cron export는 restore 검증 포함 시만.
@@ -145,6 +156,7 @@
 
 | 날짜 | 작업 | 담당 |
 |---|---|---|
+| 2026-08-13 | App performance optimization 브랜치의 Sydney Function/PWA direct landing, quote detail·Jobber·Inventory data bounding, draft debounce, Settings code split, route loading을 최종 검증했다. focused 8 files/135 tests, full/coverage 92 files/781 tests(1 file/9 tests skip), coverage 84.41/70.89/94.35/89.83%, diff/typecheck/lint/build exit 0을 기록했다. deterministic gzip에서 Settings owned JS -36.450%, initial JS -2.642%, lazy 4 chunks 8,982 bytes, Inventory initial JS +0.411%, 모든 route initial JS/CSS growth <10%였다. audit는 기존 `nanoid <3.3.17` high `GHSA-2v37-7h3g-55p8`로 exit 1이며 dependency/lockfile을 변경하지 않았다. live latency는 Sydney preview cold/warm gate 전까지 미검증이다. | Codex 5.6-Sol high |
 | 2026-08-06 | App-wide mobile interaction token/shell과 Inventory disclosure card를 적용했다. 375×812·390×844에서 9개 인증 route overflow 0을 확인했고, 375×812의 검색 `112→1→112`, card open/editor top `453.5px`/Cancel, Settings active, 360px full-width route progress와 1280×900의 정확한 12개 header, Edit→Save/Cancel→Cancel, Stock/Delete를 재검증했다. 최종 `4fa517f`는 stable hidden+empty `aria-controls` target과 pending Save summary lock으로 실패 시 editor/입력값을 보존하며 375×812 focused QA에서 overflow/console `0/0`과 무변경을 확인했다. Task 5 focused 9 files/176 tests와 최종 full verify 88 files/720 tests(1 file/9 tests skip), coverage 83.89/70.37/93.90/89.45%, Next production build, production audit 0 vulnerabilities를 통과했다. supervisor-only editor는 `b93c132`에서 허용/금지 field 전체를 자동 검증했고 iPhone 실기기 QA는 수행하지 않았다. 커밋 `e8087e4`, `25e3bc9`, `667f39c`, `eab0551`, `8467ead`, `11a1ca9`, `41c28f0`, `ea3cf64`, `b93c132`, `4fa517f`. | Codex 5.6-Sol high |
 | 2026-08-05 | Job Expenses 상세에 `Estimate profit = Job revenue - Estimate labour`와 revenue 기준 이익률을 추가하고, 일반 Profit %를 초록색 Profit 금액 옆으로 옮겼다. Decimal 계산·0 revenue·음수 회귀와 상세/compact UI를 TDD로 검증했고 full verify 85 files/705 tests, coverage/build/audit 0 vulnerabilities를 통과했다. Job #3103의 desktop·390×844·375×812 및 Refresh에서 `$6,137.02 · 49.3%`, 일반 Profit `$7,066.17 · 56.8%`, overflow/console 오류 0을 확인했다. main 로컬 병합만 수행했으며 DB/snapshot/dependency/Jobber mutation/scope 변경과 push·Vercel 배포는 없다. | Codex 5.6-Sol high |
 | 2026-08-05 | Job Expenses 상세 `Estimate labour` 계획을 순차 구현했다. Jobber read-only G1에서 #3103의 14건/AUD 6,300을 확인하고, 고유 visit/user 집계·`Connor`/`Admin` 제외·AUD 450 Decimal 계산, 전용 visit pagination, snapshot 역호환/backfill, 상세 Refresh 원자적 저장, 모바일 행을 반영했다. focused 6 files/66 tests와 full verify 85 files/702 tests(1 file/9 tests skip), coverage/build/audit 0 vulnerabilities를 통과했다. desktop·390×844·375×812에서 실제 Refresh 후 14건/$6,300, overflow 0, console error 0을 확인했다. DB migration·새 의존성·Jobber mutation/scope 변경과 Vercel 배포는 없다. | Codex 5.6-Sol high |
