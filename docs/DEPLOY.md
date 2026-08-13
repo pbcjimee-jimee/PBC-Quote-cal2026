@@ -103,7 +103,7 @@ Promotion 전 확인:
 - preview runtime/auth logs에 새 error가 0건인지 확인한다.
 - 2026-08-12 baseline과 같은 Australian profile에서 cold/warm Login과 PWA launch를 측정한다. PWA는 useful content 전 protected document request가 하나인지 확인한다.
 - authenticated Settings, quote detail, Jobs list/detail을 cold/warm으로 측정하고 route click→loading feedback와 complete content를 분리해 기록한다.
-- Inventory search는 server response와 client commit, Quote Form은 50 materials/5 options 상태의 input commit을 측정한다.
+- Inventory search의 server response/client commit과 50 materials/5 options 상태 Quote Form input commit은 2026-08-12 baseline과 같은 Australian profile에서 변경 전·후를 각각 cold와 warm으로 모두 측정한다.
 - service worker가 인증 HTML·RSC·API·session·profile·quote·job·customer payload를 캐시하지 않는지 재확인한다.
 - auth behavior, quote calculation, Jobber supervisor authorization, runtime error가 동일할 때만 production promotion을 검토한다.
 

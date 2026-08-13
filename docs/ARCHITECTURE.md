@@ -147,7 +147,7 @@
 | 견적 저장 | <500ms |
 | 견적 목록 페이지 | <500ms, 현재 최신 100건 제한. 전체 페이지네이션은 후속 |
 | Settings 초기 화면 | Labour Rates 필수 데이터만 로드, 비활성 탭 데이터는 첫 진입 시 로드 |
-| 견적 상세 사용자 표시 | 현재 인증 사용자는 Auth 결과 재사용, 다른 사용자만 Auth Admin 조회 |
+| 견적 상세 사용자 표시 | 현재 인증 profile을 재사용하고 나머지 작성자는 active `user_profiles`에서 한 번에 조회한다. 여기서도 해결되지 않은 bounded legacy ID만 Auth Admin으로 조회한다. |
 | 홈 화면 앱 시작 피드백 | 루트 loading UI를 route stream에서 즉시 표시하며 인증 사용자 데이터는 포함하지 않음 |
 | 연결된 supervisor Jobs 목록 | 공식 팀 사용자 검증과 월간 배정 job 조회를 병렬 시작하되 검증 성공 후에만 결과 사용 |
 | Job Expenses 상세 labour 갱신 | 권한 확인 후 expense와 assignment visit을 병렬 조회하고 둘 다 성공한 경우에만 snapshot 교체 |
@@ -160,7 +160,7 @@ Jobs의 speculative 월간 조회는 저장된 Jobber 사용자 ID가 있을 때
 
 - Vercel Function은 Supabase Sydney region과 가까운 `syd1`을 사용하며 PWA는 `/jobs`에서 직접 시작한다. `/`의 일반 브라우저 role redirect는 유지한다.
 - 보호 route는 매 요청 `auth.getUser()`와 active `user_profiles`를 계속 확인한다. `getClaims()`는 session revocation/expiry 운영 정책 승인이 필요한 후속이며 이 branch에는 포함하지 않는다.
-- Quote detail은 mapper가 소비하는 explicit relation columns만 읽고, 현재 profile 외 revision 사용자들을 `user_profiles` 한 번으로 batch 조회한 뒤 누락된 legacy ID만 Auth Admin fallback으로 보완한다. Jobber refresh client에는 전체 quote 대신 refresh 전용 DTO만 전달한다.
+- Quote detail은 mapper가 소비하는 explicit relation columns만 읽고, 현재 profile 외 revision 사용자들을 active `user_profiles` 한 번으로 batch 조회한 뒤 여기서도 해결되지 않은 bounded legacy ID만 Auth Admin fallback으로 보완한다. Jobber refresh client에는 전체 quote 대신 refresh 전용 DTO만 전달한다.
 - Jobs top-level action은 요청 단위 gateway에서 shared token을 한 번 획득하고 동시 401 refresh를 하나로 합친다. 목록 snapshot은 live result의 visible Jobber ID로만 조회하며 supervisor 권한은 계속 live assignment로 검증한다.
 - Inventory initial/search page는 최대 50 rows이고 server filter와 offset pagination을 사용한다. Quote Form draft는 최신 in-memory state를 300ms trailing debounce로 저장하되 `pagehide`/unmount에서 flush한다. Settings Labour Rates만 initial chunk에 남고 네 inactive editor는 선택 시 별도 chunk로 로드한다.
 - branch production build manifest gzip 비교에서 모든 route initial JS/CSS growth는 10% 미만이었다. Settings initial JS는 166,572→162,172 bytes(-2.642%), route-owned JS는 12,181→7,741 bytes(-36.450%)이고 네 deferred chunk 합계 8,982 bytes는 initial response에서 제외된다. 이 결과는 build artifact 증거이며 live latency는 Sydney preview에서 별도로 측정한다.
