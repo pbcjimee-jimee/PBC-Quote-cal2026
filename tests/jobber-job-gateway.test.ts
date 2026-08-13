@@ -176,4 +176,54 @@ describe('Jobber job gateway', () => {
       null, expect.any(Object), expect.objectContaining({ accessToken: 'access-2' }), null,
     )
   })
+
+  it('shares a rejected refresh across concurrent callers', async () => {
+    const unauthorized = new JobberJobApiError('unauthorized', 401)
+    const refreshError = new Error('refresh rejected')
+    mocks.refreshToken.mockRejectedValueOnce(refreshError)
+    mocks.teamPage.mockRejectedValueOnce(unauthorized)
+    mocks.jobsPage.mockRejectedValueOnce(unauthorized)
+
+    const gateway = await createJobberGateway()
+    const results = await Promise.allSettled([
+      gateway.listTeamUsers(),
+      gateway.listJobs(null),
+    ])
+
+    expect(results).toEqual([
+      { status: 'rejected', reason: refreshError },
+      { status: 'rejected', reason: refreshError },
+    ])
+    expect(mocks.refreshToken).toHaveBeenCalledTimes(1)
+    expect(mocks.teamPage).toHaveBeenCalledTimes(1)
+    expect(mocks.teamPage).toHaveBeenCalledWith(
+      expect.any(Object), expect.objectContaining({ accessToken: 'access-1' }),
+    )
+    expect(mocks.jobsPage).toHaveBeenCalledTimes(1)
+    expect(mocks.jobsPage).toHaveBeenCalledWith(
+      null, expect.any(Object), expect.objectContaining({ accessToken: 'access-1' }), null,
+    )
+  })
+
+  it.each([401, 503])(
+    'propagates a %i retry failure after refresh without another refresh or retry',
+    async (status) => {
+      const retryError = new JobberJobApiError('retry failed', status)
+      mocks.jobsPage
+        .mockRejectedValueOnce(new JobberJobApiError('unauthorized', 401))
+        .mockRejectedValueOnce(retryError)
+
+      const gateway = await createJobberGateway()
+      await expect(gateway.listJobs(null)).rejects.toBe(retryError)
+
+      expect(mocks.refreshToken).toHaveBeenCalledTimes(1)
+      expect(mocks.jobsPage).toHaveBeenCalledTimes(2)
+      expect(mocks.jobsPage).toHaveBeenNthCalledWith(
+        1, null, expect.any(Object), expect.objectContaining({ accessToken: 'access-1' }), null,
+      )
+      expect(mocks.jobsPage).toHaveBeenNthCalledWith(
+        2, null, expect.any(Object), expect.objectContaining({ accessToken: 'access-2' }), null,
+      )
+    },
+  )
 })

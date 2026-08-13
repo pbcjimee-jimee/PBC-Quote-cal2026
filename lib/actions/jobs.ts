@@ -68,6 +68,14 @@ interface ResolvedJobberFilter {
   readonly assignedJobs?: Promise<readonly JobberJobSummary[]>
 }
 
+interface JobberFilterPreflight {
+  readonly supervisorCandidate: {
+    readonly jobberUserId: string | null
+    readonly displayName: string | null
+  } | null
+  readonly assignmentLinked: boolean
+}
+
 interface SupervisorIdentity {
   readonly jobberUserId: string
   readonly normalizedName: string
@@ -92,12 +100,15 @@ export async function listMyJobs(input: unknown = {}): Promise<ActionResult<JobL
   if (!appUser.ok) return appUser
 
   try {
-    const gateway = await createJobberGateway()
     const visitRange = resolveJobCalendarRange(parsed.data.month)
+    const preflight = await preflightJobberFilter(appUser.profile, parsed.data.supervisorProfileId)
+    if (!preflight.assignmentLinked) {
+      return { ok: true, data: { jobs: [], assignmentLinked: false, filteredJobberUserId: null } }
+    }
+    const gateway = await createJobberGateway()
     const resolvedFilter = await resolveJobberFilter(
       gateway,
-      appUser.profile,
-      parsed.data.supervisorProfileId,
+      preflight,
       visitRange,
     )
     if (!resolvedFilter.assignmentLinked) {
@@ -138,11 +149,14 @@ export async function refreshJobs(input: unknown = {}): Promise<ActionResult<Job
   if (!appUser.ok) return appUser
 
   try {
+    const preflight = await preflightJobberFilter(appUser.profile, parsed.data.supervisorProfileId)
+    if (!preflight.assignmentLinked) {
+      return { ok: true, data: { jobs: [], assignmentLinked: false, filteredJobberUserId: null } }
+    }
     const gateway = await createJobberGateway()
     const resolvedFilter = await resolveJobberFilter(
       gateway,
-      appUser.profile,
-      parsed.data.supervisorProfileId,
+      preflight,
     )
     if (!resolvedFilter.assignmentLinked) {
       return { ok: true, data: { jobs: [], assignmentLinked: false, filteredJobberUserId: null } }
@@ -231,14 +245,30 @@ export async function refreshJobDetail(input: unknown): Promise<ActionResult<Job
 
 async function resolveJobberFilter(
   gateway: JobberGateway,
-  profile: AppUserProfile,
-  supervisorProfileId?: string | null,
+  preflight: JobberFilterPreflight,
   visitRange?: JobberVisitRange,
 ): Promise<ResolvedJobberFilter> {
-  if (profile.role === 'supervisor') {
-    return resolveSupervisorListIdentity(gateway, profile.jobberUserId, profile.displayName, visitRange)
+  if (!preflight.supervisorCandidate) {
+    return { supervisorIdentity: null, assignmentLinked: true }
   }
-  if (!supervisorProfileId) return { supervisorIdentity: null, assignmentLinked: true }
+  return resolveSupervisorListIdentity(
+    gateway,
+    preflight.supervisorCandidate.jobberUserId,
+    preflight.supervisorCandidate.displayName,
+    visitRange,
+  )
+}
+
+async function preflightJobberFilter(
+  profile: AppUserProfile,
+  supervisorProfileId?: string | null,
+): Promise<JobberFilterPreflight> {
+  if (profile.role === 'supervisor') {
+    return toJobberFilterPreflight(profile.jobberUserId, profile.displayName)
+  }
+  if (!supervisorProfileId) {
+    return { supervisorCandidate: null, assignmentLinked: true }
+  }
 
   const service = await createServiceClient()
   const { data, error } = await service
@@ -249,12 +279,21 @@ async function resolveJobberFilter(
     .eq('is_active', true)
     .maybeSingle()
   if (error) throw new Error('Unable to read supervisor profile')
-  return resolveSupervisorListIdentity(
-    gateway,
-    data?.jobber_user_id ?? null,
-    data?.display_name ?? null,
-    visitRange,
-  )
+  if (!data) return { supervisorCandidate: null, assignmentLinked: false }
+  return toJobberFilterPreflight(data.jobber_user_id, data.display_name)
+}
+
+function toJobberFilterPreflight(
+  jobberUserId: string | null,
+  displayName: string | null,
+): JobberFilterPreflight {
+  if (!displayName || !OFFICIAL_SUPERVISOR_NAMES.has(normalizePersonName(displayName))) {
+    return { supervisorCandidate: null, assignmentLinked: false }
+  }
+  return {
+    supervisorCandidate: { jobberUserId, displayName },
+    assignmentLinked: true,
+  }
 }
 
 async function loadAdminJobList(

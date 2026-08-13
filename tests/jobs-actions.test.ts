@@ -202,22 +202,18 @@ describe('job actions', () => {
     })
   })
 
-  it('shows no jobs for supervisor names outside Eric, Edgar, and Steve', async () => {
-    const unofficialJob = {
-      ...job,
-      visits: [{
-        ...job.visits[0],
-        assignedUsers: [{ id: 'jobber-user-1', fullName: 'Fred' }],
-      }],
-    }
+  it.each([
+    ['listMyJobs', listMyJobs],
+    ['refreshJobs', refreshJobs],
+  ])('returns no jobs from %s without creating a gateway for an unofficial supervisor', async (_name, action) => {
     mocks.requireRole.mockResolvedValueOnce(appUser('supervisor', 'jobber-user-1', 'Fred'))
-    mocks.listJobberJobs.mockResolvedValueOnce([unofficialJob])
+    mocks.createJobberGateway.mockRejectedValueOnce(new Error('Jobber is unavailable'))
 
-    await expect(listMyJobs({})).resolves.toEqual({
+    await expect(action({})).resolves.toEqual({
       ok: true,
       data: { jobs: [], assignmentLinked: false, filteredJobberUserId: null },
     })
-    expect(mocks.listJobberJobs).not.toHaveBeenCalled()
+    expect(mocks.createJobberGateway).not.toHaveBeenCalled()
   })
 
   it.each(['Eric', 'Edgar', 'Steve'])('recognizes official supervisor %s by matching team name', async (name) => {
@@ -420,6 +416,37 @@ describe('job actions', () => {
     await listMyJobs({ supervisorProfileId: '00000000-0000-4000-8000-000000000102' })
 
     expect(mocks.listJobberJobs).toHaveBeenCalledWith('jobber-user-2', expect.any(Object))
+  })
+
+  it.each([
+    ['listMyJobs', listMyJobs],
+    ['refreshJobs', refreshJobs],
+  ])('returns no jobs from %s without creating a gateway for a missing or inactive admin filter', async (_name, action) => {
+    mocks.requireRole.mockResolvedValueOnce(appUser('admin', null))
+    mocks.createJobberGateway.mockRejectedValueOnce(new Error('Jobber is unavailable'))
+    const maybeSingle = vi.fn(async () => ({ data: null, error: null }))
+    const builder = { eq: vi.fn(() => builder), maybeSingle }
+    mocks.createServiceClient.mockResolvedValue({
+      from: vi.fn(() => ({ select: vi.fn(() => builder) })),
+    })
+
+    await expect(action({ supervisorProfileId: '00000000-0000-4000-8000-000000000102' }))
+      .resolves.toEqual({
+        ok: true,
+        data: { jobs: [], assignmentLinked: false, filteredJobberUserId: null },
+      })
+    expect(mocks.createJobberGateway).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    ['listMyJobs', listMyJobs],
+    ['refreshJobs', refreshJobs],
+  ])('creates one gateway for a valid official supervisor in %s', async (_name, action) => {
+    await expect(action({ month: '2026-08' })).resolves.toMatchObject({
+      ok: true,
+      data: { assignmentLinked: true, filteredJobberUserId: 'jobber-user-1' },
+    })
+    expect(mocks.createJobberGateway).toHaveBeenCalledTimes(1)
   })
 
   it('does not turn an unlinked admin supervisor filter into all jobs', async () => {
