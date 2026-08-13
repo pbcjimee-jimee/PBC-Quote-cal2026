@@ -14,6 +14,12 @@ interface UseQuoteDraftPersistenceInput {
   sanitize: (draft: QuoteFormDraft) => unknown
 }
 
+interface PendingDraftWrite {
+  storageKey: string
+  draft: QuoteFormDraft
+  sanitize: (draft: QuoteFormDraft) => unknown
+}
+
 export interface QuoteDraftPersistenceControls {
   flushDraft(): void
   clearDraft(): void
@@ -27,31 +33,28 @@ export function useQuoteDraftPersistence({
   delayMs,
   sanitize,
 }: UseQuoteDraftPersistenceInput): QuoteDraftPersistenceControls {
-  const latestDraftRef = useRef(draft)
   const storageKeyRef = useRef(storageKey)
-  const sanitizeRef = useRef(sanitize)
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const hasPendingWriteRef = useRef(false)
+  const pendingWriteRef = useRef<PendingDraftWrite | null>(null)
   const lastObservedRef = useRef({ draft, enabled, storageKey, delayMs })
 
   useEffect(() => {
-    latestDraftRef.current = draft
     storageKeyRef.current = storageKey
-    sanitizeRef.current = sanitize
-  }, [draft, sanitize, storageKey])
+  }, [storageKey])
 
   const cancelPendingWrite = useCallback(() => {
     if (timerRef.current !== null) {
       clearTimeout(timerRef.current)
       timerRef.current = null
     }
-    hasPendingWriteRef.current = false
+    pendingWriteRef.current = null
   }, [])
 
   const flushDraft = useCallback(() => {
-    if (!hasPendingWriteRef.current) return
+    const pendingWrite = pendingWriteRef.current
+    if (pendingWrite === null) return
 
-    hasPendingWriteRef.current = false
+    pendingWriteRef.current = null
     if (timerRef.current !== null) {
       clearTimeout(timerRef.current)
       timerRef.current = null
@@ -60,12 +63,12 @@ export function useQuoteDraftPersistence({
 
     try {
       const draftToStore = {
-        ...latestDraftRef.current,
+        ...pendingWrite.draft,
         updatedAt: new Date().toISOString(),
       }
       window.localStorage.setItem(
-        storageKeyRef.current,
-        JSON.stringify(sanitizeRef.current(draftToStore))
+        pendingWrite.storageKey,
+        JSON.stringify(pendingWrite.sanitize(draftToStore))
       )
     } catch {
       return
@@ -95,11 +98,13 @@ export function useQuoteDraftPersistence({
 
   useEffect(() => {
     const previous = lastObservedRef.current
-    const draftChanged = previous.draft !== draft || previous.storageKey !== storageKey
+    const storageKeyChanged = previous.storageKey !== storageKey
+    const draftChanged = previous.draft !== draft || storageKeyChanged
     const becameEnabled = enabled && !previous.enabled
-    const delayChangedWhilePending = previous.delayMs !== delayMs && hasPendingWriteRef.current
+    const delayChangedWhilePending = previous.delayMs !== delayMs && pendingWriteRef.current !== null
     lastObservedRef.current = { draft, enabled, storageKey, delayMs }
 
+    if (storageKeyChanged) flushDraft()
     if (!enabled) {
       cancelPendingWrite()
       return
@@ -107,9 +112,9 @@ export function useQuoteDraftPersistence({
     if (!draftChanged && !becameEnabled && !delayChangedWhilePending) return
 
     cancelPendingWrite()
-    hasPendingWriteRef.current = true
+    pendingWriteRef.current = { storageKey, draft, sanitize }
     timerRef.current = setTimeout(flushDraft, delayMs)
-  }, [cancelPendingWrite, delayMs, draft, enabled, flushDraft, storageKey])
+  }, [cancelPendingWrite, delayMs, draft, enabled, flushDraft, sanitize, storageKey])
 
   useEffect(() => {
     if (typeof window === 'undefined') return

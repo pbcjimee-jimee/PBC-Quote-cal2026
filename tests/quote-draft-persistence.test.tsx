@@ -3,6 +3,7 @@ import type { Root } from 'react-dom/client'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   createEmptyQuoteFormDraft,
+  sanitizeQuoteFormDraftForStorage,
   type QuoteFormDraft,
 } from '@/components/quote-form/quote-draft'
 import {
@@ -37,28 +38,43 @@ function createDraft(customerName: string): QuoteFormDraft {
   }
 }
 
+function compactSanitize(value: QuoteFormDraft): unknown {
+  return {
+    customerName: value.customerName,
+    updatedAt: value.updatedAt,
+  }
+}
+
 function PersistenceHarness({
   draft,
   enabled,
+  storageKey = 'pbc-quote-draft:new',
+  sanitize = compactSanitize,
   clearRequested = false,
+  readRequested = false,
+  onRead,
 }: {
   draft: QuoteFormDraft
   enabled: boolean
+  storageKey?: string
+  sanitize?: (draft: QuoteFormDraft) => unknown
   clearRequested?: boolean
+  readRequested?: boolean
+  onRead?: (draft: QuoteFormDraft | null) => void
 }) {
-  const { clearDraft } = useQuoteDraftPersistence({
-    storageKey: 'pbc-quote-draft:new',
+  const { clearDraft, readDraft } = useQuoteDraftPersistence({
+    storageKey,
     draft,
     enabled,
     delayMs: 300,
-    sanitize: (value) => ({
-      customerName: value.customerName,
-      updatedAt: value.updatedAt,
-    }),
+    sanitize,
   })
   useEffect(() => {
     if (clearRequested) clearDraft()
   }, [clearDraft, clearRequested])
+  useEffect(() => {
+    if (readRequested) onRead?.(readDraft())
+  }, [onRead, readDraft, readRequested])
   return null
 }
 
@@ -245,6 +261,114 @@ describe('useQuoteDraftPersistence', () => {
       root = null
 
       expect(storage.setCalls).toEqual([])
+    } finally {
+      if (root) await act(async () => root?.unmount())
+      restoreStorage()
+      cleanup()
+    }
+  })
+
+  it('flushes the old key snapshot before debouncing the new key and keeps controls on the current key', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-08-13T03:00:00.000Z'))
+    const { cleanup } = installTestDom()
+    const storage = new DraftStorage()
+    const restoreStorage = installStorage(storage)
+    const keyA = 'pbc-quote-draft:quote-a'
+    const keyB = 'pbc-quote-draft:quote-b'
+    const draftA = createDraft('Customer A latest')
+    const draftB = createDraft('Customer B')
+    const readState: { value: QuoteFormDraft | null } = { value: null }
+    let root: Root | null = null
+
+    try {
+      const { createRoot } = await import('react-dom/client')
+      root = createRoot(document.createElement('div'))
+      await act(async () => {
+        root!.render(createElement(PersistenceHarness, {
+          draft: createDraft(''),
+          enabled: false,
+          storageKey: keyA,
+          sanitize: sanitizeQuoteFormDraftForStorage,
+        }))
+      })
+      await act(async () => {
+        root!.render(createElement(PersistenceHarness, {
+          draft: draftA,
+          enabled: true,
+          storageKey: keyA,
+          sanitize: sanitizeQuoteFormDraftForStorage,
+        }))
+      })
+      await act(async () => vi.advanceTimersByTime(100))
+      await act(async () => {
+        root!.render(createElement(PersistenceHarness, {
+          draft: draftB,
+          enabled: true,
+          storageKey: keyB,
+          sanitize: sanitizeQuoteFormDraftForStorage,
+        }))
+      })
+
+      expect(storage.setCalls).toHaveLength(1)
+      expect(storage.setCalls[0]?.[0]).toBe(keyA)
+      expect(JSON.parse(storage.setCalls[0]?.[1] ?? '{}')).toMatchObject({
+        customerName: 'Customer A latest',
+        updatedAt: '2026-08-13T03:00:00.100Z',
+      })
+      expect(storage.entries.has(keyB)).toBe(false)
+
+      await act(async () => vi.advanceTimersByTime(299))
+      expect(storage.setCalls).toHaveLength(1)
+      await act(async () => vi.advanceTimersByTime(1))
+      expect(storage.setCalls).toHaveLength(2)
+      expect(storage.setCalls[1]?.[0]).toBe(keyB)
+      expect(JSON.parse(storage.setCalls[1]?.[1] ?? '{}')).toMatchObject({
+        customerName: 'Customer B',
+        updatedAt: '2026-08-13T03:00:00.400Z',
+      })
+
+      await act(async () => {
+        root!.render(createElement(PersistenceHarness, {
+          draft: draftB,
+          enabled: true,
+          storageKey: keyB,
+          sanitize: sanitizeQuoteFormDraftForStorage,
+          readRequested: true,
+          onRead: (value) => {
+            readState.value = value
+          },
+        }))
+      })
+      expect(readState.value?.customerName).toBe('Customer B')
+
+      const pendingDraftB = createDraft('Customer B pending clear')
+      await act(async () => {
+        root!.render(createElement(PersistenceHarness, {
+          draft: pendingDraftB,
+          enabled: true,
+          storageKey: keyB,
+          sanitize: sanitizeQuoteFormDraftForStorage,
+        }))
+      })
+      await act(async () => {
+        root!.render(createElement(PersistenceHarness, {
+          draft: pendingDraftB,
+          enabled: true,
+          storageKey: keyB,
+          sanitize: sanitizeQuoteFormDraftForStorage,
+          clearRequested: true,
+        }))
+      })
+      expect(storage.removeCalls).toEqual([keyB])
+      expect(storage.entries.get(keyA)).toBe(storage.setCalls[0]?.[1])
+      expect(storage.entries.has(keyB)).toBe(false)
+
+      await act(async () => vi.advanceTimersByTime(300))
+      await act(async () => root?.unmount())
+      root = null
+      expect(storage.setCalls).toHaveLength(2)
+      expect(storage.entries.has(keyB)).toBe(false)
     } finally {
       if (root) await act(async () => root?.unmount())
       restoreStorage()
