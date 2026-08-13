@@ -138,6 +138,18 @@ interface StaticModuleGraphResult {
   dynamicTargetSpecifiers: string[]
 }
 
+const PROJECT_COMPILER_OPTIONS = (() => {
+  const configFile = ts.readConfigFile('tsconfig.json', ts.sys.readFile)
+  if (configFile.error) {
+    throw new Error(ts.flattenDiagnosticMessageText(configFile.error.messageText, '\n'))
+  }
+  const parsed = ts.parseJsonConfigFileContent(configFile.config, ts.sys, process.cwd())
+  if (parsed.errors.length > 0) {
+    throw new Error(parsed.errors.map((error) => ts.flattenDiagnosticMessageText(error.messageText, '\n')).join('\n'))
+  }
+  return parsed.options
+})()
+
 function inspectStaticModuleGraph(_options: {
   entry: string
   targets: ReadonlySet<string>
@@ -148,15 +160,12 @@ function inspectStaticModuleGraph(_options: {
   const visited = new Set<string>()
   const valuePathsToTargets: string[][] = []
   const dynamicTargetSpecifiers: string[] = []
+  const projectRoot = ts.sys.resolvePath(process.cwd()).replaceAll('\\', '/').replace(/\/$/, '')
 
-  function normalizePath(path: string): string {
-    const segments: string[] = []
-    for (const segment of path.replaceAll('\\', '/').split('/')) {
-      if (!segment || segment === '.') continue
-      if (segment === '..') segments.pop()
-      else segments.push(segment)
-    }
-    return segments.join('/')
+  function toGraphPath(fileName: string): string | null {
+    const absolute = ts.sys.resolvePath(fileName).replaceAll('\\', '/')
+    if (absolute === projectRoot) return ''
+    return absolute.startsWith(`${projectRoot}/`) ? absolute.slice(projectRoot.length + 1) : null
   }
 
   function getSource(path: string): string | undefined {
@@ -165,25 +174,28 @@ function inspectStaticModuleGraph(_options: {
   }
 
   function resolveLocalModule(from: string, specifier: string): string | null {
-    let base: string
-    if (specifier.startsWith('@/')) {
-      base = specifier.slice(2)
-    } else if (specifier.startsWith('.')) {
-      const separator = from.lastIndexOf('/')
-      base = `${separator === -1 ? '' : from.slice(0, separator + 1)}${specifier}`
-    } else {
-      return null
+    if (!specifier.startsWith('@/') && !specifier.startsWith('.')) return null
+
+    const host: ts.ModuleResolutionHost = {
+      fileExists: (fileName) => {
+        const path = toGraphPath(fileName)
+        return path !== null && (options.targets.has(path) || getSource(path) !== undefined)
+      },
+      readFile: (fileName) => {
+        const path = toGraphPath(fileName)
+        if (path === null) return undefined
+        return getSource(path) ?? (options.targets.has(path) ? '' : undefined)
+      },
     }
+    const containingFile = `${projectRoot}/${from}`
+    const resolved = ts.resolveModuleName(
+      specifier,
+      containingFile,
+      PROJECT_COMPILER_OPTIONS,
+      host
+    ).resolvedModule?.resolvedFileName
 
-    const normalized = normalizePath(base)
-    const hasExtension = /\.[cm]?[jt]sx?$/.test(normalized)
-    const candidates = hasExtension
-      ? [normalized]
-      : [normalized, `${normalized}.ts`, `${normalized}.tsx`, `${normalized}/index.ts`, `${normalized}/index.tsx`]
-
-    return candidates.find((candidate) => options.targets.has(candidate))
-      ?? candidates.find((candidate) => getSource(candidate) !== undefined)
-      ?? null
+    return resolved ? toGraphPath(resolved) : null
   }
 
   function stringModuleSpecifier(node: ts.Expression | undefined): string | null {
@@ -248,7 +260,14 @@ function inspectStaticModuleGraph(_options: {
     visited.add(path)
     const source = getSource(path)
     if (source === undefined) return
-    const sourceFile = ts.createSourceFile(path, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX)
+    const scriptKind = path.endsWith('.tsx')
+      ? ts.ScriptKind.TSX
+      : path.endsWith('.jsx')
+        ? ts.ScriptKind.JSX
+        : path.endsWith('.js')
+          ? ts.ScriptKind.JS
+          : ts.ScriptKind.TS
+    const sourceFile = ts.createSourceFile(path, source, ts.ScriptTarget.Latest, true, scriptKind)
     if (path === options.entry) collectEntryDynamicTargets(sourceFile, path)
 
     for (const specifier of staticValueSpecifiers(sourceFile)) {
@@ -500,6 +519,83 @@ describe('settings material UI', () => {
       'components/settings/tabs/index.ts',
       'components/settings/tabs/material-settings-tab.tsx',
     ]])
+  })
+
+  it('detects star and namespace re-exports and remains cycle-safe', () => {
+    const entry = 'components/settings/settings-form.tsx'
+    const target = 'components/settings/tabs/material-settings-tab.tsx'
+    const targets = new Set([target])
+
+    for (const source of [
+      `export * from '@/components/settings/tabs/material-settings-tab'`,
+      `export * as MaterialTab from '@/components/settings/tabs/material-settings-tab'`,
+    ]) {
+      const result = inspectStaticModuleGraph({
+        entry,
+        targets,
+        readSource: (path) => path === entry ? source : undefined,
+      })
+      expect(result.valuePathsToTargets).toEqual([[entry, target]])
+    }
+
+    const cyclicSources: Record<string, string> = {
+      [entry]: `export * from './cycle-a'`,
+      'components/settings/cycle-a.ts': `export * from './cycle-b'`,
+      'components/settings/cycle-b.ts': `export * from './cycle-a'; export * from './tabs/material-settings-tab'`,
+      [target]: `export default function MaterialTab() { return null }`,
+    }
+    const cyclicResult = inspectStaticModuleGraph({
+      entry,
+      targets,
+      readSource: (path) => cyclicSources[path],
+    })
+    expect(cyclicResult.valuePathsToTargets).toEqual([[
+      entry,
+      'components/settings/cycle-a.ts',
+      'components/settings/cycle-b.ts',
+      target,
+    ]])
+  })
+
+  it('uses TypeScript extension substitution and JS/JSX index resolution', () => {
+    const entry = 'components/settings/settings-form.tsx'
+    const target = 'components/settings/tabs/material-settings-tab.tsx'
+    const targets = new Set([target])
+    const fixtures = [
+      {
+        sources: {
+          [entry]: `export * from './bridge.js'`,
+          'components/settings/bridge.tsx': `export * from './tabs/material-settings-tab'`,
+          [target]: `export default function MaterialTab() { return null }`,
+        },
+        path: [entry, 'components/settings/bridge.tsx', target],
+      },
+      {
+        sources: {
+          [entry]: `export * from './barrel'`,
+          'components/settings/barrel.js': `export * from './tabs/material-settings-tab'`,
+          [target]: `export default function MaterialTab() { return null }`,
+        },
+        path: [entry, 'components/settings/barrel.js', target],
+      },
+      {
+        sources: {
+          [entry]: `export * from './lazy-tabs'`,
+          'components/settings/lazy-tabs/index.jsx': `export * from '../tabs/material-settings-tab'`,
+          [target]: `export default function MaterialTab() { return null }`,
+        },
+        path: [entry, 'components/settings/lazy-tabs/index.jsx', target],
+      },
+    ]
+
+    for (const fixture of fixtures) {
+      const result = inspectStaticModuleGraph({
+        entry,
+        targets,
+        readSource: (path) => fixture.sources[path as keyof typeof fixture.sources],
+      })
+      expect(result.valuePathsToTargets).toEqual([fixture.path])
+    }
   })
 
   it('allows declaration-level and specifier-level type-only imports and re-exports', () => {
