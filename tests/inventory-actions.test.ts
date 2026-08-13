@@ -7,7 +7,8 @@ import {
   listInventoryCategories,
   updateInventoryItem,
 } from '@/lib/actions/inventory'
-import { resetDevData } from '@/lib/dev-data'
+import { createDevInventoryItem, resetDevData } from '@/lib/dev-data'
+import { inventorySearchSchema } from '@/lib/validators'
 
 describe('inventory actions', () => {
   beforeEach(() => {
@@ -136,7 +137,7 @@ describe('inventory actions', () => {
     }
   })
 
-  it('keeps exact case variants available and queryable in dev inventory categories', async () => {
+  it('keeps exact case and whitespace variants available and queryable in dev inventory categories', async () => {
     await createInventoryItem({
       name: 'Category source 1',
       category: 'Paint',
@@ -149,20 +150,48 @@ describe('inventory actions', () => {
       quantity: 1,
       status: 'in_stock',
     })
+    createDevInventoryItem({
+      name: 'Category source 3',
+      category: ' Paint ',
+      brand: null,
+      model_specification: null,
+      colour: null,
+      size_or_serial: null,
+      quantity: '1.00',
+      purchase_date: null,
+      used_date: null,
+      used_location_text: null,
+      status: 'in_stock',
+      notes: null,
+      active: true,
+      source_year: null,
+    })
 
     const result = await listInventoryCategories()
     const upper = await listInventory({ category: 'Paint', limit: 10 })
     const lower = await listInventory({ category: 'paint', limit: 10 })
+    const spaced = await listInventory({ category: ' Paint ', limit: 10 })
 
     expect(result).toEqual(expect.objectContaining({ ok: true }))
     if (result.ok) {
-      expect(result.data).toEqual(expect.arrayContaining(['Paint', 'paint']))
+      expect(result.data).toEqual(expect.arrayContaining([' Paint ', 'Paint', 'paint']))
     }
-    if (!upper.ok || !lower.ok) throw new Error('Expected exact dev category queries to succeed')
+    if (!upper.ok || !lower.ok || !spaced.ok) throw new Error('Expected exact dev category queries to succeed')
     expect(upper.data.items.map((item) => item.name)).toContain('Category source 1')
     expect(upper.data.items.map((item) => item.name)).not.toContain('Category source 2')
+    expect(upper.data.items.map((item) => item.name)).not.toContain('Category source 3')
     expect(lower.data.items.map((item) => item.name)).toContain('Category source 2')
     expect(lower.data.items.map((item) => item.name)).not.toContain('Category source 1')
+    expect(lower.data.items.map((item) => item.name)).not.toContain('Category source 3')
+    expect(spaced.data.items.map((item) => item.name)).toEqual(['Category source 3'])
+  })
+
+  it('rejects a whitespace-only category in both the search validator and dev action', async () => {
+    expect(inventorySearchSchema.safeParse({ category: '   ' }).success).toBe(false)
+
+    const result = await listInventory({ category: '   ' })
+
+    expect(result.ok).toBe(false)
   })
 
   it('creates, updates, and soft deletes manual inventory records', async () => {

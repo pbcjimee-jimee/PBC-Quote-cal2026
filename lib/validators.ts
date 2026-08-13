@@ -316,7 +316,9 @@ export const inventoryStatusSchema = z.enum(['in_stock', 'out', 'unknown'])
 export const inventorySearchSchema = z.object({
   query: z.string().max(100).default(''),
   status: inventoryStatusSchema.optional(),
-  category: z.string().max(120).optional(),
+  category: z.string().max(120).refine((value) => value.trim().length > 0, {
+    message: 'Category must not be blank',
+  }).optional(),
   offset: z.number().int().min(0).default(0),
   limit: z.number().int().positive().max(50).default(50),
 })

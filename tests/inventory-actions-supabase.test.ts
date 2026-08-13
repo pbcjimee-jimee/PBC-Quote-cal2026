@@ -169,6 +169,14 @@ describe('inventory actions against Supabase', () => {
     expect(request.eq).toHaveBeenCalledWith('category', category)
   })
 
+  it('rejects a whitespace-only category before querying Supabase', async () => {
+    const result = await listInventory({ category: '   ' })
+
+    expect(result.ok).toBe(false)
+    expect(mocks.requireAllowedUser).not.toHaveBeenCalled()
+    expect(mocks.createClient).not.toHaveBeenCalled()
+  })
+
   it('reads every category batch beyond the Supabase row cap', async () => {
     const firstRequest = createThenableRequest({
       data: Array.from({ length: 1000 }, () => ({ category: 'Common' })),
