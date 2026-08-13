@@ -213,9 +213,12 @@ describe('quote form draft persistence', () => {
     expect(entries.has(key)).toBe(false)
   })
 
-  it('sanitizes Jobber fetch-only expense and financial data before local storage persistence', () => {
+  it('preserves the public draft schema while sanitizing Jobber fetch-only data', () => {
     const draft = {
       ...createEmptyQuoteFormDraft(),
+      customerName: 'Jane Customer',
+      customerAddress: '10 Main St',
+      workType: 'Exterior repaint',
       jobberQuoteDraft: {
         jobberQuoteId: 'encoded-quote-id',
         sourceType: 'quote' as const,
@@ -275,6 +278,16 @@ describe('quote form draft persistence', () => {
     const storedDraft = sanitizeQuoteFormDraftForStorage(draft)
     const storedJson = JSON.stringify(storedDraft)
 
+    expect(storedDraft).toMatchObject({
+      version: 1,
+      customerName: 'Jane Customer',
+      customerAddress: '10 Main St',
+      workType: 'Exterior repaint',
+      workingDays: '0',
+      labourPerDay: '0',
+      selectedMin: 4,
+      selectedMax: 1,
+    })
     expect(storedJson).toContain('Exterior repaint')
     expect(storedJson).toContain('Jane Customer')
     expect(storedJson).not.toContain('jobExpenses')

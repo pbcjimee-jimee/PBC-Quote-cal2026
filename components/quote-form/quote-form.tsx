@@ -14,10 +14,10 @@ import {
   createEmptyQuoteFormDraft,
   getQuoteDraftStorageKey,
   hasMeaningfulQuoteDraft,
-  readQuoteFormDraftFromStorage,
   sanitizeQuoteFormDraftForStorage,
   type QuoteFormDraft,
 } from './quote-draft'
+import { useQuoteDraftPersistence } from './use-quote-draft-persistence'
 import { QuoteOptionsPanel } from './quote-options-panel'
 import { OptionTotalsSummary } from './option-totals-summary'
 import { calculateMainQuoteTotals } from './quote-calculation-totals'
@@ -394,29 +394,41 @@ export function QuoteForm({ settings, areas, productServices = [], quoteLineTemp
     currentComparableDraft !== initialComparableDraft &&
     hasMeaningfulQuoteDraft(currentDraft)
 
-  const writeDraftToStorage = useCallback(() => {
-    if (typeof window === 'undefined') return
-    const draft = { ...currentDraft, updatedAt: new Date().toISOString() }
-    window.localStorage.setItem(draftStorageKey, JSON.stringify(sanitizeQuoteFormDraftForStorage(draft)))
-  }, [currentDraft, draftStorageKey])
+  const {
+    flushDraft,
+    clearDraft: clearPersistedDraft,
+    readDraft,
+  } = useQuoteDraftPersistence({
+    storageKey: draftStorageKey,
+    draft: currentDraft,
+    enabled: isDirty,
+    delayMs: 300,
+    sanitize: sanitizeQuoteFormDraftForStorage,
+  })
 
   const persistDraft = useCallback(() => {
-    writeDraftToStorage()
+    flushDraft()
     setDraftMessage('Draft saved locally.')
-  }, [writeDraftToStorage])
+  }, [flushDraft])
 
   const clearDraft = useCallback(() => {
-    if (typeof window === 'undefined') return
-    window.localStorage.removeItem(draftStorageKey)
+    clearPersistedDraft()
     setDraftMessage(null)
-  }, [draftStorageKey])
+  }, [clearPersistedDraft])
 
   const clearAllLocalDrafts = useCallback(() => {
     if (typeof window === 'undefined') return
-    const removedCount = clearLocalQuoteDrafts(window.localStorage)
+    let hadCurrentDraft = false
+    try {
+      hadCurrentDraft = window.localStorage.getItem(draftStorageKey) !== null
+    } catch {
+      hadCurrentDraft = false
+    }
+    clearPersistedDraft()
+    const removedCount = clearLocalQuoteDrafts(window.localStorage) + (hadCurrentDraft ? 1 : 0)
     setAvailableDraft(null)
     setDraftMessage(removedCount > 0 ? 'Local drafts cleared.' : 'No local drafts to clear.')
-  }, [])
+  }, [clearPersistedDraft, draftStorageKey])
 
   const totals = useMemo(() => {
     return calculateMainQuoteTotals({
@@ -429,7 +441,7 @@ export function QuoteForm({ settings, areas, productServices = [], quoteLineTemp
   }, [areaFormulaSelections, materials, selectedMax, selectedMin, settings])
 
   useEffect(() => {
-    const storedDraft = readQuoteFormDraftFromStorage(window.localStorage, draftStorageKey)
+    const storedDraft = readDraft()
     const timeoutId = window.setTimeout(() => {
       if (storedDraft && hasMeaningfulQuoteDraft(storedDraft)) {
         setAvailableDraft(storedDraft)
@@ -437,25 +449,20 @@ export function QuoteForm({ settings, areas, productServices = [], quoteLineTemp
       setHasCheckedStoredDraft(true)
     }, 0)
     return () => window.clearTimeout(timeoutId)
-  }, [draftStorageKey])
-
-  useEffect(() => {
-    if (!shouldRunDraftGuard(isDirty, isNavigatingRef.current)) return
-    writeDraftToStorage()
-  }, [isDirty, writeDraftToStorage])
+  }, [draftStorageKey, readDraft])
 
   useEffect(() => {
     if (!shouldRunDraftGuard(isDirty, isNavigatingRef.current)) return
 
     function handleBeforeUnload(event: BeforeUnloadEvent) {
-      writeDraftToStorage()
+      flushDraft()
       event.preventDefault()
       event.returnValue = ''
     }
 
     window.addEventListener('beforeunload', handleBeforeUnload)
     return () => window.removeEventListener('beforeunload', handleBeforeUnload)
-  }, [isDirty, writeDraftToStorage])
+  }, [flushDraft, isDirty])
 
   useEffect(() => {
     if (!shouldRunDraftGuard(isDirty, isNavigatingRef.current)) return
