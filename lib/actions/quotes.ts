@@ -251,14 +251,19 @@ type QuoteSavePayload = {
 
 type ExistingQuoteItemSnapshotRow = Pick<
   QuoteItemRow,
-  'product_id' | 'product_name_snapshot' | 'market_price_snapshot' | 'actual_price_snapshot' | 'position'
+  'id' | 'product_id' | 'actual_price_snapshot'
 >
-type ExistingQuoteOptionSnapshotRow = Pick<QuoteOptionRow, 'position'> & {
+type ExistingQuoteOptionItemSnapshotRow = Pick<
+  QuoteOptionItemRow,
+  'id' | 'product_id' | 'actual_price_snapshot'
+>
+type ExistingQuoteOptionSnapshotRow = {
   quote_option_items?: Array<Pick<
     QuoteOptionItemRow,
-    'product_id' | 'product_name_snapshot' | 'market_price_snapshot' | 'actual_price_snapshot' | 'position'
+    'id' | 'product_id' | 'actual_price_snapshot'
   >>
 }
+type ExistingItemSnapshot = ExistingQuoteItemSnapshotRow | ExistingQuoteOptionItemSnapshotRow
 
 function decimalNumber(value: string | null | undefined): number {
   return Number(new Decimal(value ?? '0').toFixed(2))
@@ -297,6 +302,7 @@ function duplicateQuoteItem(
   return {
     productId: item.productId ?? undefined,
     productNameSnapshot: currentProduct?.name ?? item.productNameSnapshot,
+    memo: item.memo ?? '',
     marketPriceSnapshot: decimalNumber(price ?? item.marketPriceSnapshot),
     actualPriceSnapshot: decimalNumber(price ?? item.actualPriceSnapshot),
     quantity: decimalNumber(item.quantity),
@@ -320,6 +326,7 @@ function duplicateQuoteOptionItem(
   return {
     productId: item.productId ?? undefined,
     productNameSnapshot: currentProduct?.name ?? item.productNameSnapshot,
+    memo: item.memo ?? '',
     marketPriceSnapshot: decimalNumber(price ?? item.marketPriceSnapshot),
     actualPriceSnapshot: decimalNumber(price ?? item.actualPriceSnapshot),
     quantity: decimalNumber(item.quantity),
@@ -546,6 +553,7 @@ function toQuoteRecord(row: QuoteWithItemsRow, userProfiles: Map<string, UserPro
       quoteId: item.quote_id,
       productId: item.product_id,
       productNameSnapshot: item.product_name_snapshot,
+      memo: item.memo,
       marketPriceSnapshot: decimalText(item.market_price_snapshot),
       actualPriceSnapshot: decimalText(item.actual_price_snapshot),
       quantity: decimalText(item.quantity),
@@ -605,6 +613,7 @@ function toQuoteRecord(row: QuoteWithItemsRow, userProfiles: Map<string, UserPro
           optionId: item.option_id,
           productId: item.product_id,
           productNameSnapshot: item.product_name_snapshot,
+          memo: item.memo,
           marketPriceSnapshot: decimalText(item.market_price_snapshot),
           actualPriceSnapshot: decimalText(item.actual_price_snapshot),
           quantity: decimalText(item.quantity),
@@ -738,21 +747,15 @@ function calculateOption(option: QuoteInput['options'][number], settings: Pricin
   }
 }
 
-function itemSnapshotKey(productId: string | null | undefined, position: number | undefined): string | null {
-  if (!productId) return null
-  return `${productId}:${position ?? 0}`
-}
-
 function applySnapshotToItem<T extends QuoteInput['items'][number]>(
   item: T,
-  snapshot: CurrentProductSnapshot | ExistingQuoteItemSnapshotRow | undefined
+  snapshot: CurrentProductSnapshot | ExistingItemSnapshot | undefined
 ): T {
-  if (!item.productId || item.isCustom || !snapshot) return item
+  if (!item.productId || !snapshot) return item
 
   if (!('price' in snapshot)) {
     return {
       ...item,
-      productNameSnapshot: snapshot.product_name_snapshot,
       actualPriceSnapshot: decimalNumber(snapshot.actual_price_snapshot),
       isCustom: false,
     }
@@ -760,11 +763,29 @@ function applySnapshotToItem<T extends QuoteInput['items'][number]>(
 
   return {
     ...item,
-    productNameSnapshot: snapshot.name,
-    marketPriceSnapshot: decimalNumber(snapshot.price),
     actualPriceSnapshot: decimalNumber(snapshot.price),
     isCustom: false,
   }
+}
+
+function getTrustedItemSnapshot(
+  item: QuoteInput['items'][number],
+  existingSnapshots: Map<string, ExistingItemSnapshot>,
+  allExistingSnapshots: Map<string, ExistingItemSnapshot>,
+  currentProducts: Map<string, CurrentProductSnapshot>
+): CurrentProductSnapshot | ExistingItemSnapshot | null | undefined {
+  const existingSnapshot = item.sourceItemId
+    ? existingSnapshots.get(item.sourceItemId)
+    : undefined
+  if (existingSnapshot) {
+    if (existingSnapshot.product_id !== (item.productId ?? null)) return null
+    return existingSnapshot.product_id ? existingSnapshot : undefined
+  }
+
+  if (item.sourceItemId && allExistingSnapshots.has(item.sourceItemId)) return null
+  if (!item.productId) return undefined
+
+  return currentProducts.get(item.productId) ?? null
 }
 
 async function resolveQuoteInputSnapshots(
@@ -772,19 +793,26 @@ async function resolveQuoteInputSnapshots(
   input: QuoteInput,
   quoteId?: string
 ): Promise<ActionResult<QuoteInput>> {
-  const existingMainSnapshots = new Map<string, ExistingQuoteItemSnapshotRow>()
-  const existingOptionSnapshots = new Map<string, ExistingQuoteItemSnapshotRow>()
+  const existingMainSnapshots = new Map<string, ExistingItemSnapshot>()
+  const existingOptionSnapshots = new Map<string, ExistingItemSnapshot>()
+  const allExistingSnapshots = new Map<string, ExistingItemSnapshot>()
+  const sourceItemIds = Array.from(new Set([
+    ...input.items,
+    ...input.options.flatMap((option) => option.items),
+  ]
+    .map((item) => item.sourceItemId)
+    .filter((id): id is string => typeof id === 'string' && id.length > 0)))
   const productIds = Array.from(new Set([
     ...input.items,
     ...input.options.flatMap((option) => option.items),
   ]
-    .filter((item) => item.productId && !item.isCustom)
+    .filter((item) => item.productId)
     .map((item) => item.productId as string)))
 
-  if (quoteId && productIds.length > 0) {
+  if (quoteId && (productIds.length > 0 || sourceItemIds.length > 0)) {
     const { data, error } = await supabase
       .from('quotes')
-      .select('quote_items(product_id, product_name_snapshot, market_price_snapshot, actual_price_snapshot, position), quote_options(position, quote_option_items(product_id, product_name_snapshot, market_price_snapshot, actual_price_snapshot, position))')
+      .select('quote_items(id, product_id, actual_price_snapshot), quote_options(quote_option_items(id, product_id, actual_price_snapshot))')
       .eq('id', quoteId)
       .single()
 
@@ -795,14 +823,14 @@ async function resolveQuoteInputSnapshots(
     } | null
 
     for (const item of existing?.quote_items ?? []) {
-      const key = itemSnapshotKey(item.product_id, item.position)
-      if (key) existingMainSnapshots.set(key, item)
+      existingMainSnapshots.set(item.id, item)
+      allExistingSnapshots.set(item.id, item)
     }
 
     for (const option of existing?.quote_options ?? []) {
       for (const item of option.quote_option_items ?? []) {
-        const key = itemSnapshotKey(item.product_id, item.position)
-        if (key) existingOptionSnapshots.set(`${option.position}:${key}`, item)
+        existingOptionSnapshots.set(item.id, item)
+        allExistingSnapshots.set(item.id, item)
       }
     }
   }
@@ -821,18 +849,38 @@ async function resolveQuoteInputSnapshots(
     }
   }
 
-  const items = input.items.map((item, index) => {
-    const key = itemSnapshotKey(item.productId, item.position ?? index)
-    return applySnapshotToItem(item, key ? existingMainSnapshots.get(key) ?? currentProducts.get(item.productId ?? '') : undefined)
-  })
-  const options = input.options.map((option, optionIndex) => ({
-    ...option,
-    items: option.items.map((item, itemIndex) => {
-      const key = itemSnapshotKey(item.productId, item.position ?? itemIndex)
-      const optionPosition = option.position ?? optionIndex
-      return applySnapshotToItem(item, key ? existingOptionSnapshots.get(`${optionPosition}:${key}`) ?? currentProducts.get(item.productId ?? '') : undefined)
-    }),
-  }))
+  const items: QuoteInput['items'] = []
+  const usedSourceItemIds = new Set<string>()
+  for (const item of input.items) {
+    if (item.sourceItemId && usedSourceItemIds.has(item.sourceItemId)) {
+      return { ok: false, error: 'Duplicate material item identity. Refresh the quote and try again.' }
+    }
+    if (item.sourceItemId) usedSourceItemIds.add(item.sourceItemId)
+
+    const snapshot = getTrustedItemSnapshot(item, existingMainSnapshots, allExistingSnapshots, currentProducts)
+    if (snapshot === null) {
+      return { ok: false, error: 'Unable to verify linked material pricing. Refresh the quote and try again.' }
+    }
+    items.push(applySnapshotToItem(item, snapshot))
+  }
+
+  const options: QuoteInput['options'] = []
+  for (const option of input.options) {
+    const optionItems: QuoteInput['items'] = []
+    for (const item of option.items) {
+      if (item.sourceItemId && usedSourceItemIds.has(item.sourceItemId)) {
+        return { ok: false, error: 'Duplicate material item identity. Refresh the quote and try again.' }
+      }
+      if (item.sourceItemId) usedSourceItemIds.add(item.sourceItemId)
+
+      const snapshot = getTrustedItemSnapshot(item, existingOptionSnapshots, allExistingSnapshots, currentProducts)
+      if (snapshot === null) {
+        return { ok: false, error: 'Unable to verify linked material pricing. Refresh the quote and try again.' }
+      }
+      optionItems.push(applySnapshotToItem(item, snapshot))
+    }
+    options.push({ ...option, items: optionItems })
+  }
 
   return {
     ok: true,
@@ -850,6 +898,7 @@ function buildQuoteItemRows(items: QuoteInput['items']): QuoteSaveItemRow[] {
   return items.map((item, index) => ({
     product_id: item.productId ?? null,
     product_name_snapshot: item.productNameSnapshot,
+    memo: (item.memo ?? '').trim(),
     market_price_snapshot: item.marketPriceSnapshot.toFixed(2),
     actual_price_snapshot: item.actualPriceSnapshot.toFixed(2),
     quantity: item.quantity.toFixed(2),
@@ -1029,6 +1078,7 @@ async function insertQuoteOptions(
       option_id: optionRow.id,
       product_id: item.productId ?? null,
       product_name_snapshot: item.productNameSnapshot,
+      memo: (item.memo ?? '').trim(),
       market_price_snapshot: item.marketPriceSnapshot.toFixed(2),
       actual_price_snapshot: item.actualPriceSnapshot.toFixed(2),
       quantity: item.quantity.toFixed(2),

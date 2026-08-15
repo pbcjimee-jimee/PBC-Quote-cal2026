@@ -29,6 +29,11 @@ describe('quote query shape', () => {
     expect(QUOTE_DETAIL_SELECT).toContain('quote_option_items')
   })
 
+  it('loads quote-local memos for main and option material items', () => {
+    expect(QUOTE_DETAIL_SELECT).toMatch(/quote_items\([^)]*\bmemo\b[^)]*\)/)
+    expect(QUOTE_DETAIL_SELECT).toMatch(/quote_option_items\([^)]*\bmemo\b[^)]*\)/)
+  })
+
   it('loads public Jobber quote lines only for quote detail reads', () => {
     expect(QUOTE_DETAIL_SELECT).toContain('jobber_quote_lines')
   })

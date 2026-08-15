@@ -226,7 +226,11 @@ function PriceRevisionDetail({ revision }: { revision: QuoteRecord['priceRevisio
   )
 }
 
-function MaterialDetail({ item }: { item: QuoteRecord['items'][number] }) {
+function MaterialDetail({
+  item,
+}: {
+  item: QuoteRecord['items'][number] | QuoteRecord['options'][number]['items'][number]
+}) {
   return (
     <div className="pbc-dmat" key={item.id}>
       <span className="pbc-swatch pbc-swatch--sm" data-base={item.productNameSnapshot} />
@@ -236,6 +240,7 @@ function MaterialDetail({ item }: { item: QuoteRecord['items'][number] }) {
           {item.areaNameSnapshot ?? 'No area'}
           {item.workingDays && item.labourPerDay ? ` - ${item.workingDays} days x ${item.labourPerDay} labour` : ''}
         </span>
+        {item.memo?.trim() ? <span className="pbc-dmat__memo">{item.memo}</span> : null}
       </span>
       <span className="pbc-dmat__qty mono">{item.quantity} x ${item.marketPriceSnapshot}</span>
       <span className="pbc-dmat__line mono">${new Decimal(item.marketPriceSnapshot).mul(item.quantity).toFixed(2)}</span>
@@ -603,6 +608,24 @@ export function QuoteDetailView({ quote }: QuoteDetailViewProps) {
           {optionSummaries.length ? (
             <Card className="pbc-dspan">
               <OptionTotalsSummary options={optionSummaries} />
+              {quote.options.some((option) => option.items.some((item) => item.memo?.trim())) ? (
+                <div className="pbc-option-material-notes">
+                  <h3>Option material notes</h3>
+                  {quote.options.map((option, optionIndex) => {
+                    const notedItems = option.items.filter((item) => item.memo?.trim())
+                    if (notedItems.length === 0) return null
+
+                    return (
+                      <section key={option.id} className="pbc-option-material-notes__group">
+                        <h4>{option.title.trim() || `Option ${optionIndex + 1}`}</h4>
+                        <div className="pbc-dmats">
+                          {notedItems.map((item) => <MaterialDetail key={item.id} item={item} />)}
+                        </div>
+                      </section>
+                    )
+                  })}
+                </div>
+              ) : null}
             </Card>
           ) : null}
         </div>

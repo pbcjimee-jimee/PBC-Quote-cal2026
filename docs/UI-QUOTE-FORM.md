@@ -28,15 +28,15 @@
 │  [Paint search... ]   │  F1  L500+Market(0%)         │
 │  ─ search results ─   │       $2,842.50   ○ min ○ max│
 │                       │                              │
-│  Dulux Ext White      │  F2  L460+Labour 30%         │
-│  2 gal  $68.00   [×]  │       $3,332.50   ○ min ○ max│
+│  [Dulux Ext White]    │  F2  L460+Labour 30%         │
+│  2 gal  RRP $68  [×]  │       $3,332.50   ○ min ○ max│
 │                       │                              │
 │  Primer               │  F3  L460+Total 30%          │
 │  1 gal  $32.00   [×]  │       $3,435.25   ○ min ○ max│
 │                       │                              │
 │  ─────────────────    │  F4  L380 Act.+25%           │
-│  Market total: $100   │       $2,681.25   ○ min ○ max│
-│  Actual total: $72    │                              │
+│  RRP total: $100      │       $2,681.25   ○ min ○ max│
+│                       │                              │
 │                       │  F5  L380 Act.+30%           │
 │                       │       $2,788.50   ○ min ○ max│
 │                       │                              │
@@ -85,7 +85,7 @@ interface QuoteFormState {
   customerName: string
   customerAddress: string
 
-  materials: MaterialItem[]  // { id, productId?, name, marketPrice, actualPrice, quantity, isCustom }
+  materials: MaterialItem[]  // { id, productId?, name, memo?, marketPrice, actualPrice, quantity, isCustom }
 
   workingDays: string        // 문자열로 보관 (입력 UX)
   travelFee: string
@@ -116,10 +116,10 @@ interface QuoteFormState {
 1. 사용자 입력 (debounce 200ms)
 2. Server Action searchProducts(query) 호출
 3. 결과 드롭다운 표시 (최대 8개)
-   - 각 항목: 이름, 제조사, market_price / actual_price
+   - 각 항목: 이름, 제조사, RRP
 4. 선택 → MaterialList에 추가
 5. 검색 결과 없음 → '+ Add "xxx" as custom item' 표시
-   - 클릭 → 이름만 채워진 MaterialRow 추가 (market/actual 직접 입력)
+   - 클릭 → 이름만 채워진 MaterialRow 추가 (이름/RRP 직접 입력)
 
 검색 없음 상태:
 [ brush          ×]
@@ -127,6 +127,16 @@ interface QuoteFormState {
 No results for "brush"
 + Add "brush" as custom item
 ```
+
+---
+
+## 자재 행의 견적별 편집값
+
+- 메인 자재와 옵션 자재 모두 이름, 표시 RRP, item memo를 편집할 수 있다. item memo는 최대 4,000자다.
+- 이름/RRP/memo는 현재 견적에만 저장하며 연결된 `products` 마스터를 수정하지 않는다.
+- 표시 RRP를 바꾸면 현재 견적 공식과 합계가 즉시 다시 계산되고, 저장 시 해당 값이 `market_price_snapshot`이 된다.
+- `actual_price_snapshot`은 편집 UI에 노출하지 않는다. 연결된 새 행은 폼과 서버 모두 기존 소비자가 기준 정책에 따라 현재 제품의 신뢰 가능한 RRP/소비자가 기준값으로 초기화해 저장 전후 계산을 일치시키고, 기존 연결 행은 이전에 저장된 스냅샷을 보존한다. 별도 실제 원가 편집은 없다.
+- 자재 item memo는 app-only이며 Jobber에서 가져오거나 Jobber로 보내지 않는다.
 
 ---
 
@@ -178,6 +188,7 @@ Qty [1.00]   Unit price [$0.00]   Taxable [✓]
 - notes
 - attachments
 - 내부 material 가격 필드/상세 가격의 Jobber 전송
+- 메인·옵션 material item memo의 Jobber fetch/write-back
 
 ---
 
@@ -204,7 +215,6 @@ F2  L460 + Labour 30%
 | 조건 | 위치 | 메시지 |
 |---|---|---|
 | 자재 없음 | 자재 패널 상단 | "No materials added — formula uses $0 material cost" |
-| material_actual > material_market | 자재 소계 옆 | "⚠ Actual > Market" |
 | working_days > 365 | 일수 인풋 옆 | "Over 365 days — double check" |
 
 ---

@@ -986,7 +986,134 @@ describe('quote actions against Supabase', () => {
     expect(mocks.revalidatePath).toHaveBeenCalledWith(`/quotes/${quoteId}`)
   })
 
-  it('persists an edited RRP for an existing catalog item and recalculates formulas from it', async () => {
+  it('stores linked material name and RRP edits as quote-local snapshots while pinning actual price', async () => {
+    const productId = '00000000-0000-4000-8000-000000000901'
+    const productQuery = createThenableBuilder({
+      data: [{
+        id: productId,
+        name: 'Current catalog paint',
+        market_price: '150.00',
+        actual_price: '80.00',
+        price: '80.00',
+        rrp_price: '150.00',
+      }],
+      error: null,
+    })
+    const quoteInsert = createInsertSingleBuilder({ data: { id: quoteId }, error: null })
+    const itemInsert = createInsertOnlyBuilder({ error: null })
+    const priceRevisionInsert = createInsertOnlyBuilder({ error: null })
+    const from = vi.fn((table: string) => {
+      if (table === 'products') return productQuery
+      if (table === 'quotes') return quoteInsert
+      if (table === 'quote_items') return itemInsert
+      if (table === 'quote_price_revisions') return priceRevisionInsert
+      throw new Error(`unexpected table ${table}`)
+    })
+    mocks.createClient.mockResolvedValueOnce({ auth: createAuthUser(), from })
+
+    const result = await createQuote({
+      ...quoteInput,
+      materialMarket: 125,
+      materialActual: 999,
+      items: [{
+        productId,
+        productNameSnapshot: 'Quote-local paint label',
+        marketPriceSnapshot: 125,
+        actualPriceSnapshot: 999,
+        quantity: 1,
+        isCustom: false,
+        memo: 'Use tinted primer.',
+        position: 0,
+      }],
+    })
+
+    expect(result).toEqual({ ok: true, data: { id: quoteId } })
+    expect(itemInsert.insert).toHaveBeenCalledWith([
+      expect.objectContaining({
+        quote_id: quoteId,
+        product_id: productId,
+        product_name_snapshot: 'Quote-local paint label',
+        market_price_snapshot: '125.00',
+        actual_price_snapshot: '150.00',
+        memo: 'Use tinted primer.',
+      }),
+    ])
+    expect(productQuery.select).toHaveBeenCalledTimes(1)
+  })
+
+  it('treats product-linked main and option items as non-custom and pins trusted actual prices on create', async () => {
+    const productId = '00000000-0000-4000-8000-000000000902'
+    const productQuery = createThenableBuilder({
+      data: [{
+        id: productId,
+        name: 'Catalog paint name',
+        market_price: '150.00',
+        actual_price: '80.00',
+        price: '80.00',
+        rrp_price: '150.00',
+      }],
+      error: null,
+    })
+    const from = vi.fn((table: string) => {
+      if (table === 'products') return productQuery
+      throw new Error(`unexpected table ${table}`)
+    })
+    const rpc = vi.fn(async () => ({ data: quoteId, error: null }))
+    mocks.createClient.mockResolvedValueOnce({ auth: createAuthUser(), from, rpc })
+
+    const result = await createQuote({
+      ...quoteInput,
+      items: [{
+        productId,
+        productNameSnapshot: 'Quote-local paint label',
+        marketPriceSnapshot: 125,
+        actualPriceSnapshot: 999,
+        quantity: 1,
+        isCustom: true,
+        position: 0,
+      }],
+      options: [{
+        title: 'Option 1',
+        selectedMin: 1,
+        selectedMax: 1,
+        position: 0,
+        items: [{
+          productId,
+          productNameSnapshot: 'Quote-local option paint',
+          marketPriceSnapshot: 75,
+          actualPriceSnapshot: 777,
+          quantity: 1,
+          isCustom: true,
+          position: 0,
+        }],
+      }],
+    })
+
+    expect(result).toEqual({ ok: true, data: { id: quoteId } })
+    expect(rpc).toHaveBeenCalledWith('create_quote_with_children', {
+      payload: expect.objectContaining({
+        items: [expect.objectContaining({
+          product_id: productId,
+          product_name_snapshot: 'Quote-local paint label',
+          market_price_snapshot: '125.00',
+          actual_price_snapshot: '150.00',
+          is_custom: false,
+        })],
+        options: [expect.objectContaining({
+          items: [expect.objectContaining({
+            product_id: productId,
+            product_name_snapshot: 'Quote-local option paint',
+            market_price_snapshot: '75.00',
+            actual_price_snapshot: '150.00',
+            is_custom: false,
+          })],
+        })],
+      }),
+    })
+  })
+
+  it('persists edited name, RRP, and memo for an existing catalog item while retaining its saved actual price', async () => {
+    const sourceItemId = '00000000-0000-4000-8000-000000000201'
     const productId = '00000000-0000-4000-8000-000000000901'
     const existingQuote = createSelectSingleBuilder({
       data: {
@@ -999,6 +1126,7 @@ describe('quote actions against Supabase', () => {
     const existingSnapshots = createSelectSingleBuilder({
       data: {
         quote_items: [{
+          id: sourceItemId,
           product_id: productId,
           product_name_snapshot: 'Saved paint',
           market_price_snapshot: '100.00',
@@ -1040,15 +1168,17 @@ describe('quote actions against Supabase', () => {
       materialMarket: 125,
       materialActual: 80,
       items: [{
+        sourceItemId,
         productId,
-        productNameSnapshot: 'Saved paint',
+        productNameSnapshot: 'Edited quote-local paint',
         marketPriceSnapshot: 125,
-        actualPriceSnapshot: 80,
+        actualPriceSnapshot: 999,
         quantity: 1,
         workingDays: 1,
         labourPerDay: 1,
         areaScopeSnapshot: 'interior',
         isCustom: false,
+        memo: 'Protect the timber trim.',
         position: 0,
       }],
     })
@@ -1062,12 +1192,521 @@ describe('quote actions against Supabase', () => {
         }),
         items: [
           expect.objectContaining({
+            product_name_snapshot: 'Edited quote-local paint',
             market_price_snapshot: '125.00',
             actual_price_snapshot: '80.00',
+            memo: 'Protect the timber trim.',
           }),
         ],
       }),
     })
+  })
+
+  it('retains a main item actual snapshot by sourceItemId after an earlier row is deleted and positions are reindexed', async () => {
+    const removedItemId = '00000000-0000-4000-8000-000000000211'
+    const retainedItemId = '00000000-0000-4000-8000-000000000212'
+    const removedProductId = '00000000-0000-4000-8000-000000000911'
+    const retainedProductId = '00000000-0000-4000-8000-000000000912'
+    const existingQuote = createSelectSingleBuilder({
+      data: {
+        pricing_settings_snapshot: DEFAULT_PRICING_SETTINGS,
+        subtotal: '510.00',
+        final_total: '561.00',
+        quote_options: [],
+      },
+      error: null,
+    })
+    const existingSnapshots = createSelectSingleBuilder({
+      data: {
+        quote_items: [
+          {
+            id: removedItemId,
+            product_id: removedProductId,
+            product_name_snapshot: 'Removed paint',
+            market_price_snapshot: '40.00',
+            actual_price_snapshot: '11.00',
+            position: 0,
+          },
+          {
+            id: retainedItemId,
+            product_id: retainedProductId,
+            product_name_snapshot: 'Retained paint',
+            market_price_snapshot: '50.00',
+            actual_price_snapshot: '22.00',
+            position: 1,
+          },
+        ],
+        quote_options: [],
+      },
+      error: null,
+    })
+    const productQuery = createThenableBuilder({
+      data: [{
+        id: retainedProductId,
+        name: 'Current retained paint',
+        market_price: '900.00',
+        actual_price: '700.00',
+        price: '700.00',
+        rrp_price: '900.00',
+      }],
+      error: null,
+    })
+    const latestRevision = createThenableBuilder({ data: [], error: null })
+    const builders: Record<string, unknown[]> = {
+      quotes: [existingQuote, existingSnapshots],
+      products: [productQuery],
+      quote_price_revisions: [latestRevision],
+    }
+    const from = vi.fn((table: string) => {
+      const builder = builders[table]?.shift()
+      if (!builder) throw new Error(`unexpected table ${table}`)
+      return builder
+    })
+    const rpc = vi.fn(async () => ({ data: null, error: null }))
+    mocks.createClient.mockResolvedValueOnce({ auth: createAuthUser(), from, rpc })
+
+    const result = await updateQuote({
+      id: quoteId,
+      ...quoteInput,
+      items: [{
+        sourceItemId: retainedItemId,
+        productId: retainedProductId,
+        productNameSnapshot: 'Edited retained paint',
+        marketPriceSnapshot: 55,
+        actualPriceSnapshot: 999,
+        quantity: 1,
+        isCustom: false,
+        position: 0,
+      }],
+    })
+
+    expect(result).toEqual({ ok: true, data: { id: quoteId } })
+    expect(rpc).toHaveBeenCalledWith('update_quote_with_children', {
+      payload: expect.objectContaining({
+        items: [expect.objectContaining({
+          product_id: retainedProductId,
+          actual_price_snapshot: '22.00',
+          position: 0,
+        })],
+      }),
+    })
+  })
+
+  it('retains each duplicate-product main snapshot by sourceItemId when rows are reordered', async () => {
+    const firstItemId = '00000000-0000-4000-8000-000000000221'
+    const secondItemId = '00000000-0000-4000-8000-000000000222'
+    const productId = '00000000-0000-4000-8000-000000000921'
+    const existingQuote = createSelectSingleBuilder({
+      data: {
+        pricing_settings_snapshot: DEFAULT_PRICING_SETTINGS,
+        subtotal: '510.00',
+        final_total: '561.00',
+        quote_options: [],
+      },
+      error: null,
+    })
+    const existingSnapshots = createSelectSingleBuilder({
+      data: {
+        quote_items: [
+          {
+            id: firstItemId,
+            product_id: productId,
+            product_name_snapshot: 'First coat',
+            market_price_snapshot: '40.00',
+            actual_price_snapshot: '11.00',
+            position: 0,
+          },
+          {
+            id: secondItemId,
+            product_id: productId,
+            product_name_snapshot: 'Second coat',
+            market_price_snapshot: '50.00',
+            actual_price_snapshot: '22.00',
+            position: 1,
+          },
+        ],
+        quote_options: [],
+      },
+      error: null,
+    })
+    const productQuery = createThenableBuilder({
+      data: [{
+        id: productId,
+        name: 'Current catalog paint',
+        market_price: '300.00',
+        actual_price: '200.00',
+        price: '200.00',
+        rrp_price: '300.00',
+      }],
+      error: null,
+    })
+    const latestRevision = createThenableBuilder({ data: [], error: null })
+    const builders: Record<string, unknown[]> = {
+      quotes: [existingQuote, existingSnapshots],
+      products: [productQuery],
+      quote_price_revisions: [latestRevision],
+    }
+    const from = vi.fn((table: string) => {
+      const builder = builders[table]?.shift()
+      if (!builder) throw new Error(`unexpected table ${table}`)
+      return builder
+    })
+    const rpc = vi.fn(async () => ({ data: null, error: null }))
+    mocks.createClient.mockResolvedValueOnce({ auth: createAuthUser(), from, rpc })
+
+    const result = await updateQuote({
+      id: quoteId,
+      ...quoteInput,
+      items: [
+        {
+          sourceItemId: secondItemId,
+          productId,
+          productNameSnapshot: 'Second coat moved first',
+          marketPriceSnapshot: 55,
+          actualPriceSnapshot: 999,
+          quantity: 1,
+          isCustom: false,
+          position: 0,
+        },
+        {
+          sourceItemId: firstItemId,
+          productId,
+          productNameSnapshot: 'First coat moved second',
+          marketPriceSnapshot: 45,
+          actualPriceSnapshot: 888,
+          quantity: 1,
+          isCustom: false,
+          position: 1,
+        },
+      ],
+    })
+
+    expect(result).toEqual({ ok: true, data: { id: quoteId } })
+    expect(rpc).toHaveBeenCalledWith('update_quote_with_children', {
+      payload: expect.objectContaining({
+        items: [
+          expect.objectContaining({ actual_price_snapshot: '22.00', position: 0 }),
+          expect.objectContaining({ actual_price_snapshot: '11.00', position: 1 }),
+        ],
+      }),
+    })
+  })
+
+  it('rejects duplicate reuse of one owned sourceItemId across linked rows', async () => {
+    const sourceItemId = '00000000-0000-4000-8000-000000000223'
+    const productId = '00000000-0000-4000-8000-000000000922'
+    const existingQuote = createSelectSingleBuilder({
+      data: {
+        pricing_settings_snapshot: DEFAULT_PRICING_SETTINGS,
+        subtotal: '510.00',
+        final_total: '561.00',
+        quote_options: [],
+      },
+      error: null,
+    })
+    const existingSnapshots = createSelectSingleBuilder({
+      data: {
+        quote_items: [{
+          id: sourceItemId,
+          product_id: productId,
+          actual_price_snapshot: '22.00',
+        }],
+        quote_options: [],
+      },
+      error: null,
+    })
+    const productQuery = createThenableBuilder({
+      data: [{
+        id: productId,
+        name: 'Current catalog paint',
+        market_price: '300.00',
+        actual_price: '200.00',
+        price: '200.00',
+        rrp_price: '300.00',
+      }],
+      error: null,
+    })
+    const latestRevision = createThenableBuilder({ data: [], error: null })
+    const builders: Record<string, unknown[]> = {
+      quotes: [existingQuote, existingSnapshots],
+      products: [productQuery],
+      quote_price_revisions: [latestRevision],
+    }
+    const from = vi.fn((table: string) => {
+      const builder = builders[table]?.shift()
+      if (!builder) throw new Error(`unexpected table ${table}`)
+      return builder
+    })
+    const rpc = vi.fn(async () => ({ data: null, error: null }))
+    mocks.createClient.mockResolvedValueOnce({ auth: createAuthUser(), from, rpc })
+
+    const result = await updateQuote({
+      id: quoteId,
+      ...quoteInput,
+      items: [
+        {
+          sourceItemId,
+          productId,
+          productNameSnapshot: 'First row',
+          marketPriceSnapshot: 55,
+          actualPriceSnapshot: 999,
+          quantity: 1,
+          isCustom: false,
+          position: 0,
+        },
+        {
+          sourceItemId,
+          productId,
+          productNameSnapshot: 'Duplicated identity',
+          marketPriceSnapshot: 65,
+          actualPriceSnapshot: 888,
+          quantity: 1,
+          isCustom: false,
+          position: 1,
+        },
+      ],
+    })
+
+    expect(result.ok).toBe(false)
+    expect(rpc).not.toHaveBeenCalled()
+  })
+
+  it.each(['main', 'option'] as const)(
+    'rejects removing productId from an owned linked %s source item',
+    async (kind) => {
+      const sourceItemId = kind === 'main'
+        ? '00000000-0000-4000-8000-000000000224'
+        : '00000000-0000-4000-8000-000000000234'
+      const productId = kind === 'main'
+        ? '00000000-0000-4000-8000-000000000923'
+        : '00000000-0000-4000-8000-000000000933'
+      const existingQuote = createSelectSingleBuilder({
+        data: {
+          pricing_settings_snapshot: DEFAULT_PRICING_SETTINGS,
+          subtotal: '510.00',
+          final_total: '561.00',
+          quote_options: kind === 'option' ? [{ subtotal: '300.00', final_total: '330.00' }] : [],
+        },
+        error: null,
+      })
+      const linkedSnapshot = {
+        id: sourceItemId,
+        product_id: productId,
+        actual_price_snapshot: '22.00',
+      }
+      const existingSnapshots = createSelectSingleBuilder({
+        data: {
+          quote_items: kind === 'main' ? [linkedSnapshot] : [],
+          quote_options: kind === 'option'
+            ? [{ quote_option_items: [linkedSnapshot] }]
+            : [],
+        },
+        error: null,
+      })
+      const latestRevision = createThenableBuilder({ data: [], error: null })
+      const builders: Record<string, unknown[]> = {
+        quotes: [existingQuote, existingSnapshots],
+        quote_price_revisions: [latestRevision],
+      }
+      const from = vi.fn((table: string) => {
+        const builder = builders[table]?.shift()
+        if (!builder) throw new Error(`unexpected table ${table}`)
+        return builder
+      })
+      const rpc = vi.fn(async () => ({ data: null, error: null }))
+      mocks.createClient.mockResolvedValueOnce({ auth: createAuthUser(), from, rpc })
+      const tamperedItem = {
+        sourceItemId,
+        productNameSnapshot: 'Tampered custom row',
+        marketPriceSnapshot: 999,
+        actualPriceSnapshot: 888,
+        quantity: 1,
+        isCustom: true,
+        position: 0,
+      }
+
+      const result = await updateQuote({
+        id: quoteId,
+        ...quoteInput,
+        items: kind === 'main' ? [tamperedItem] : [],
+        options: kind === 'option'
+          ? [{
+              title: 'Option 1',
+              selectedMin: 1,
+              selectedMax: 1,
+              position: 0,
+              items: [tamperedItem],
+            }]
+          : [],
+      })
+
+      expect(result.ok).toBe(false)
+      expect(rpc).not.toHaveBeenCalled()
+    }
+  )
+
+  it('retains each option item actual snapshot by sourceItemId when duplicate-product rows are reordered', async () => {
+    const optionId = '00000000-0000-4000-8000-000000000431'
+    const firstItemId = '00000000-0000-4000-8000-000000000231'
+    const secondItemId = '00000000-0000-4000-8000-000000000232'
+    const productId = '00000000-0000-4000-8000-000000000931'
+    const existingQuote = createSelectSingleBuilder({
+      data: {
+        pricing_settings_snapshot: DEFAULT_PRICING_SETTINGS,
+        subtotal: '510.00',
+        final_total: '561.00',
+        quote_options: [{ subtotal: '300.00', final_total: '330.00' }],
+      },
+      error: null,
+    })
+    const existingSnapshots = createSelectSingleBuilder({
+      data: {
+        quote_items: [],
+        quote_options: [{
+          id: optionId,
+          position: 0,
+          quote_option_items: [
+            {
+              id: firstItemId,
+              product_id: productId,
+              product_name_snapshot: 'Option first coat',
+              market_price_snapshot: '60.00',
+              actual_price_snapshot: '33.00',
+              position: 0,
+            },
+            {
+              id: secondItemId,
+              product_id: productId,
+              product_name_snapshot: 'Option second coat',
+              market_price_snapshot: '70.00',
+              actual_price_snapshot: '44.00',
+              position: 1,
+            },
+          ],
+        }],
+      },
+      error: null,
+    })
+    const productQuery = createThenableBuilder({
+      data: [{
+        id: productId,
+        name: 'Current option paint',
+        market_price: '300.00',
+        actual_price: '200.00',
+        price: '200.00',
+        rrp_price: '300.00',
+      }],
+      error: null,
+    })
+    const latestRevision = createThenableBuilder({ data: [], error: null })
+    const builders: Record<string, unknown[]> = {
+      quotes: [existingQuote, existingSnapshots],
+      products: [productQuery],
+      quote_price_revisions: [latestRevision],
+    }
+    const from = vi.fn((table: string) => {
+      const builder = builders[table]?.shift()
+      if (!builder) throw new Error(`unexpected table ${table}`)
+      return builder
+    })
+    const rpc = vi.fn(async () => ({ data: null, error: null }))
+    mocks.createClient.mockResolvedValueOnce({ auth: createAuthUser(), from, rpc })
+
+    const result = await updateQuote({
+      id: quoteId,
+      ...quoteInput,
+      items: [],
+      options: [{
+        title: 'Option 1',
+        selectedMin: 1,
+        selectedMax: 1,
+        position: 0,
+        items: [
+          {
+            sourceItemId: secondItemId,
+            productId,
+            productNameSnapshot: 'Option second coat moved first',
+            marketPriceSnapshot: 75,
+            actualPriceSnapshot: 999,
+            quantity: 1,
+            isCustom: false,
+            position: 0,
+          },
+          {
+            sourceItemId: firstItemId,
+            productId,
+            productNameSnapshot: 'Option first coat moved second',
+            marketPriceSnapshot: 65,
+            actualPriceSnapshot: 888,
+            quantity: 1,
+            isCustom: false,
+            position: 1,
+          },
+        ],
+      }],
+    })
+
+    expect(result).toEqual({ ok: true, data: { id: quoteId } })
+    expect(rpc).toHaveBeenCalledWith('update_quote_with_children', {
+      payload: expect.objectContaining({
+        options: [expect.objectContaining({
+          items: [
+            expect.objectContaining({ actual_price_snapshot: '44.00', position: 0 }),
+            expect.objectContaining({ actual_price_snapshot: '33.00', position: 1 }),
+          ],
+        })],
+      }),
+    })
+  })
+
+  it('rejects an unresolved linked product when sourceItemId is not owned by the quote', async () => {
+    const productId = '00000000-0000-4000-8000-000000000941'
+    const unownedItemId = '00000000-0000-4000-8000-000000000241'
+    const existingQuote = createSelectSingleBuilder({
+      data: {
+        pricing_settings_snapshot: DEFAULT_PRICING_SETTINGS,
+        subtotal: '510.00',
+        final_total: '561.00',
+        quote_options: [],
+      },
+      error: null,
+    })
+    const existingSnapshots = createSelectSingleBuilder({
+      data: { quote_items: [], quote_options: [] },
+      error: null,
+    })
+    const productQuery = createThenableBuilder({ data: [], error: null })
+    const latestRevision = createThenableBuilder({ data: [], error: null })
+    const builders: Record<string, unknown[]> = {
+      quotes: [existingQuote, existingSnapshots],
+      products: [productQuery],
+      quote_price_revisions: [latestRevision],
+    }
+    const from = vi.fn((table: string) => {
+      const builder = builders[table]?.shift()
+      if (!builder) throw new Error(`unexpected table ${table}`)
+      return builder
+    })
+    const rpc = vi.fn(async () => ({ data: null, error: null }))
+    mocks.createClient.mockResolvedValueOnce({ auth: createAuthUser(), from, rpc })
+
+    const result = await updateQuote({
+      id: quoteId,
+      ...quoteInput,
+      items: [{
+        sourceItemId: unownedItemId,
+        productId,
+        productNameSnapshot: 'Tampered missing paint',
+        marketPriceSnapshot: 999,
+        actualPriceSnapshot: 888,
+        quantity: 1,
+        isCustom: false,
+        position: 0,
+      }],
+    })
+
+    expect(result.ok).toBe(false)
+    expect(rpc).not.toHaveBeenCalled()
   })
 
   it('returns a conflict error when the update RPC detects a stale quote version', async () => {
@@ -1832,7 +2471,17 @@ describe('quote actions against Supabase', () => {
       },
       error: null,
     })
-    const productQuery = createThenableBuilder({ data: [], error: null })
+    const productQuery = createThenableBuilder({
+      data: [{
+        id: duplicateProductId,
+        name: 'Current catalog paint',
+        market_price: '150.00',
+        actual_price: '80.00',
+        price: '80.00',
+        rrp_price: '150.00',
+      }],
+      error: null,
+    })
     const quoteInsert = createInsertSingleBuilder({ data: null, error: new Error('duplicate insert failed') })
     mocks.createClient
       .mockResolvedValueOnce({
@@ -1851,6 +2500,7 @@ describe('quote actions against Supabase', () => {
       .mockResolvedValueOnce({
         auth: createAuthUser(),
         from: vi.fn((table: string) => {
+          if (table === 'products') return productQuery
           if (table === 'quotes') return quoteInsert
           throw new Error(`unexpected create quote table ${table}`)
         }),
@@ -2200,8 +2850,8 @@ describe('quote actions against Supabase', () => {
       'pricing_settings_snapshot',
       'created_by',
       'created_at',
-      'quote_items(id, quote_id, product_id, product_name_snapshot, market_price_snapshot, actual_price_snapshot, quantity, working_days, labour_per_day, area_id, area_name_snapshot, area_scope_snapshot, is_custom, position)',
-      'quote_options(id, quote_id, title, working_days, labour_per_day, material_market, material_actual, formula1_total, formula2_total, formula3_total, formula4_total, formula5_total, selected_min, selected_max, subtotal, final_total, position, quote_option_items(id, option_id, product_id, product_name_snapshot, market_price_snapshot, actual_price_snapshot, quantity, working_days, labour_per_day, area_id, area_name_snapshot, area_scope_snapshot, is_custom, position))',
+      'quote_items(id, quote_id, product_id, product_name_snapshot, memo, market_price_snapshot, actual_price_snapshot, quantity, working_days, labour_per_day, area_id, area_name_snapshot, area_scope_snapshot, is_custom, position)',
+      'quote_options(id, quote_id, title, working_days, labour_per_day, material_market, material_actual, formula1_total, formula2_total, formula3_total, formula4_total, formula5_total, selected_min, selected_max, subtotal, final_total, position, quote_option_items(id, option_id, product_id, product_name_snapshot, memo, market_price_snapshot, actual_price_snapshot, quantity, working_days, labour_per_day, area_id, area_name_snapshot, area_scope_snapshot, is_custom, position))',
       'jobber_quote_lines(id, quote_id, kind, name, description, quantity, unit_price, total_price, taxable, client_visible, jobber_line_item_id, linked_product_or_service_id, position, created_at, updated_at)',
       'quote_memos(id, quote_id, body, position, created_by, created_at, updated_at)',
       'quote_price_revisions(id, quote_id, revision_number, event_type, previous_subtotal, previous_final_total, new_subtotal, new_final_total, previous_jobber_lines_total, new_jobber_lines_total, previous_options_subtotal, new_options_subtotal, previous_options_final_total, new_options_final_total, changed_by, changed_at)',
@@ -2431,6 +3081,53 @@ describe('quote actions against Supabase', () => {
       expect(result.data.jobberQuoteLines[0].unitPrice).toBe('1281.88')
       expect(result.data.options[0].items[0].marketPriceSnapshot).toBe('50.00')
       expect(result.data.options[0].items[0].labourPerDay).toBe('2.00')
+    }
+  })
+
+  it('loads main and option material memos from saved quote item snapshots', async () => {
+    const optionId = '00000000-0000-4000-8000-000000000401'
+    const detailBuilder = createSelectSingleBuilder({
+      data: {
+        ...quoteRow,
+        quote_items: [{
+          ...quoteRow.quote_items[0],
+          memo: 'Main material memo',
+        }],
+        quote_options: [{
+          id: optionId,
+          quote_id: quoteId,
+          title: 'Option 1',
+          working_days: '1.00',
+          labour_per_day: '1.00',
+          material_market: '50.00',
+          material_actual: '45.00',
+          formula1_total: '550.00',
+          formula2_total: '650.00',
+          formula3_total: '700.00',
+          formula4_total: '500.00',
+          formula5_total: '525.00',
+          selected_min: 1,
+          selected_max: 1,
+          subtotal: '550.00',
+          final_total: '605.00',
+          position: 0,
+          quote_option_items: [{
+            ...quoteRow.quote_items[0],
+            option_id: optionId,
+            memo: 'Option material memo',
+          }],
+        }],
+      },
+      error: null,
+    })
+    mocks.createClient.mockResolvedValueOnce({ from: vi.fn(() => detailBuilder) })
+
+    const result = await getQuote(quoteId)
+
+    expect(result.ok).toBe(true)
+    if (result.ok && result.data) {
+      expect(result.data.items[0].memo).toBe('Main material memo')
+      expect(result.data.options[0].items[0].memo).toBe('Option material memo')
     }
   })
 

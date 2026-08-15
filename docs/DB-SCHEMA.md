@@ -72,6 +72,7 @@ warehouse_inventory(Settings Inventory page, app-only stock list)
 | `20260731010000_add_user_profiles_and_roles.sql` | `user_profiles`, `app_auth.current_role()` 역할 판정 함수, 기존 Auth 사용자 admin 부트스트랩 |
 | `20260731011000_tighten_role_rls.sql` | 기존 견적 앱 테이블을 admin 전용과 admin+supervisor Inventory로 분리 |
 | `20260731012000_add_jobber_job_snapshots.sql` | read-only Jobber job/expense 응답 캐시(`jobber_job_snapshots`, service-role only) |
+| `20260815000648_add_quote_item_memos.sql` | `quote_items`·`quote_option_items`에 견적별 app-only `memo`(최대 4,000자) 추가 + 견적 저장 RPC 갱신·`search_path` 고정 |
 
 `20260731` role 마이그레이션은 위 세 개가 전부다. Progress Invoice 마이그레이션은 이 브랜치와 릴리스에 없으며 별도 소유된다.
 
@@ -95,13 +96,13 @@ warehouse_inventory(Settings Inventory page, app-only stock list)
 > 인덱스: `created_at DESC`, 고객명 gin 검색, `jobber_quote_id` 부분 인덱스.
 
 ### quote_items (자재 라인)
-`quote_id`(CASCADE), `product_id`, `product_name_snapshot`, `market/actual_price_snapshot`, `quantity`, `working_days`/`labour_per_day`(0006), `area_id`/`area_name_snapshot`/`area_scope_snapshot`(interior/exterior/roof, 0005), `is_custom`, `position`.
+`quote_id`(CASCADE), `product_id`, `product_name_snapshot`, `market/actual_price_snapshot`, `quantity`, `working_days`/`labour_per_day`(0006), `area_id`/`area_name_snapshot`/`area_scope_snapshot`(interior/exterior/roof, 0005), `is_custom`, `memo`(app-only, 최대 4,000자), `position`. 이름과 표시 RRP(`market_price_snapshot`)는 견적별 편집값이며 `products` 마스터를 변경하지 않는다.
 
 ### quote_areas (작업 영역 마스터)
 `scope`(interior/exterior/roof), `name`, `active`, `position`, `UNIQUE(scope, name)`.
 
 ### quote_options / quote_option_items (옵션 견적)
-옵션은 자체 공식 계산 + 자체 subtotal/final을 갖고 **메인 `quotes.final_total`에 합산하지 않는다**. `quote_option_items`는 `quote_items`와 동일 스냅샷 컬럼셋. 규칙: `docs/superpowers/specs/2026-05-15-quote-options-design.md`.
+옵션은 자체 공식 계산 + 자체 subtotal/final을 갖고 **메인 `quotes.final_total`에 합산하지 않는다**. `quote_option_items`는 `quote_items`와 동일 스냅샷 컬럼셋 및 `memo`(app-only, 최대 4,000자)를 가지며, 이름과 표시 RRP도 옵션 견적에만 저장한다. 규칙: `docs/superpowers/specs/2026-05-15-quote-options-design.md`.
 
 ### jobber_tokens (회사 공유 커넥션, 암호화)
 `user_id` PK, `access_token`/`refresh_token`(AES-256-GCM 암호화), `scope`, `expires_at`. RLS enabled + 정책 없음(service-role only 접근). 실제 접근은 `lib/jobber/tokens.ts`의 `createServiceClient` 경유.
@@ -140,10 +141,11 @@ quote/option totals의 price-change 스냅샷을 보관해 이후 편집이 sell
 
 ## 스냅샷 컬럼 규칙 (`docs/DECISIONS.md` #6)
 
-- `quote_items.market_price_snapshot`, `actual_price_snapshot`: 저장 시 `products` 가격 복사.
+- 메인·옵션 자재의 `product_name_snapshot`과 `market_price_snapshot`은 견적별 편집값이다. 표시 RRP 변경은 현재 견적 계산에 즉시 반영되고 그대로 저장되며 `products` 마스터를 변경하지 않는다.
+- 연결된 새 자재 행의 숨겨진 `actual_price_snapshot`은 기존 소비자가 기준 정책에 따라 폼과 서버가 현재 `products`의 신뢰 가능한 RRP/소비자가 기준값으로 고정해 저장 전후 계산을 일치시킨다. 기존 연결 행은 서버가 이전 저장값을 보존하며 별도 실제 원가 편집은 없다.
+- 메인·옵션 자재의 `memo`는 최대 4,000자의 견적 전용 app-only 값이며 Jobber 미fetch·미write-back이다.
 - `quotes.pricing_settings_snapshot`(JSONB): 저장 시 `pricing_settings` 전체 복사.
 - **목적:** 가격·설정 변경이 과거 견적 재조회 결과를 바꾸지 않게 함.
-- Repo fix: create/update Server Action은 product line 스냅샷을 서버에서 재확정한다. 기존 quote의 product line은 기존 스냅샷을 보존하고, 새 product line은 현재 `products` 가격을 조회한다.
 
 ---
 

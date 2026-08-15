@@ -56,8 +56,10 @@ export const jobberQuoteSnapshotSchema = z.object({
 })
 
 const quoteItemSchema = z.object({
+  sourceItemId: z.string().min(1).max(100).optional(),
   productId: z.string().uuid().optional(),
   productNameSnapshot: z.string().min(1),
+  memo: z.string().max(4000).optional(),
   marketPriceSnapshot: z.number().nonnegative(),
   actualPriceSnapshot: z.number().nonnegative(),
   quantity: z.number().positive(),

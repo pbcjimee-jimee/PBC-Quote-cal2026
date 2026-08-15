@@ -134,8 +134,10 @@ export function buildQuoteSavePayload({
     selectedMax,
     areaFormulaSelections: normalizedAreaFormulaSelections,
     items: materials.map((item, index) => ({
+      sourceItemId: item.id,
       productId: item.productId,
       productNameSnapshot: item.name,
+      memo: item.memo ?? '',
       marketPriceSnapshot: Number(decimalFromInput(item.marketPrice).toString()),
       actualPriceSnapshot: Number(decimalFromInput(item.actualPrice).toString()),
       quantity: Number(decimalFromInput(item.quantity).toString()),
@@ -153,8 +155,10 @@ export function buildQuoteSavePayload({
       selectedMax: option.selectedMax,
       position: optionIndex,
       items: option.materials.map((item, itemIndex) => ({
+        sourceItemId: item.id,
         productId: item.productId,
         productNameSnapshot: item.name,
+        memo: item.memo ?? '',
         marketPriceSnapshot: Number(decimalFromInput(item.marketPrice).toString()),
         actualPriceSnapshot: Number(decimalFromInput(item.actualPrice).toString()),
         quantity: Number(decimalFromInput(item.quantity).toString()),

@@ -178,6 +178,7 @@ function parseMaterial(value: unknown): MaterialItem | null {
     sheen: readOptionalString(value, 'sheen'),
     volumeLitres: readOptionalString(value, 'volumeLitres'),
     productCode: readOptionalString(value, 'productCode'),
+    memo: readOptionalString(value, 'memo') ?? '',
     marketPrice,
     actualPrice,
     quantity,

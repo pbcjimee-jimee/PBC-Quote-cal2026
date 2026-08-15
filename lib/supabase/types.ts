@@ -208,6 +208,7 @@ export type Database = {
           quote_id: string
           product_id: string | null
           product_name_snapshot: string
+          memo: string
           market_price_snapshot: string
           actual_price_snapshot: string
           quantity: string
@@ -327,6 +328,7 @@ export type Database = {
           option_id: string
           product_id: string | null
           product_name_snapshot: string
+          memo: string
           market_price_snapshot: string
           actual_price_snapshot: string
           quantity: string

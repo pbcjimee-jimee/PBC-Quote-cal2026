@@ -88,6 +88,39 @@ describe('Jobber quote line validators', () => {
     expect(parsed.jobberQuoteLines).toHaveLength(1)
   })
 
+  it('accepts material memos up to 4000 characters and rejects longer memos', () => {
+    const quote = {
+      customerName: 'Memo Customer',
+      workingDays: 1,
+      labourPerDay: 1,
+      materialMarket: 10,
+      materialActual: 8,
+      selectedMin: 1,
+      selectedMax: 1,
+      items: [{
+        productNameSnapshot: 'Paint',
+        marketPriceSnapshot: 10,
+        actualPriceSnapshot: 8,
+        quantity: 1,
+        isCustom: true,
+        position: 0,
+      }],
+    }
+
+    const accepted = quoteSchema.safeParse({
+      ...quote,
+      items: [{ ...quote.items[0], memo: 'a'.repeat(4000) }],
+    })
+    const rejected = quoteSchema.safeParse({
+      ...quote,
+      items: [{ ...quote.items[0], memo: 'a'.repeat(4001) }],
+    })
+
+    expect(accepted).toMatchObject({ success: true })
+    if (accepted.success) expect(accepted.data.items[0]).toHaveProperty('memo', 'a'.repeat(4000))
+    expect(rejected).toMatchObject({ success: false })
+  })
+
   it('accepts Supabase offset timestamps for saved Jobber refresh metadata', () => {
     const parsed = quoteSchema.parse({
       customerName: 'Jobber Customer',

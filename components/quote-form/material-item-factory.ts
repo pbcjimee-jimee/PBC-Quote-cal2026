@@ -2,6 +2,8 @@ import type { ProductRecord } from '@/lib/products/types'
 import type { MaterialItem } from './types'
 
 export function createProductMaterialItem(product: ProductRecord): MaterialItem {
+  const trustedPrice = product.rrpPrice ?? product.marketPrice ?? product.price ?? product.actualPrice
+
   return {
     id: crypto.randomUUID(),
     productId: product.id,
@@ -15,8 +17,9 @@ export function createProductMaterialItem(product: ProductRecord): MaterialItem 
     sheen: product.sheen,
     volumeLitres: product.volumeLitres,
     productCode: product.productCode,
-    marketPrice: product.marketPrice,
-    actualPrice: product.actualPrice,
+    memo: '',
+    marketPrice: trustedPrice,
+    actualPrice: trustedPrice,
     quantity: '1',
     workingDays: '0',
     labourPerDay: '0',
@@ -28,6 +31,7 @@ export function createCustomMaterialItem(name: string): MaterialItem {
   return {
     id: crypto.randomUUID(),
     name,
+    memo: '',
     marketPrice: '0',
     actualPrice: '0',
     quantity: '1',

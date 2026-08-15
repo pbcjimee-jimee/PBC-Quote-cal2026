@@ -24,7 +24,7 @@ describe('material item factory', () => {
     expect(item.workingDays).toBe('0')
     expect(item.labourPerDay).toBe('0')
     expect(item.marketPrice).toBe('99.50')
-    expect(item.actualPrice).toBe('80.00')
+    expect(item.actualPrice).toBe('99.50')
   })
 
   it('starts new custom material labour fields at zero', () => {

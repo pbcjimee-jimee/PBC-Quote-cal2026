@@ -20,7 +20,9 @@ import {
 import { JobberOptionImport } from '@/components/quote-form/jobber-option-import'
 import { buildQuoteSavePayload, calculateJobberSyncPreview, saveQuoteFormPayload } from '@/components/quote-form/quote-save-payload'
 import { createEmptyQuoteFormDraft, parseQuoteFormDraft, sanitizeQuoteFormDraftForStorage } from '@/components/quote-form/quote-draft'
-import type { AreaSubtotalBreakdown } from '@/components/quote-form/quote-calculation-totals'
+import { calculateMainQuoteTotals, type AreaSubtotalBreakdown } from '@/components/quote-form/quote-calculation-totals'
+import { calculateQuoteOptionTotals } from '@/components/quote-form/quote-option-totals'
+import { createProductMaterialItem } from '@/components/quote-form/material-item-factory'
 import type { QuoteOptionItem } from '@/components/quote-form/types'
 import type { JobberOptionImportCandidate } from '@/components/quote-form/jobber-option-mapping'
 import { QuoteDetailView } from '@/components/quote-detail/quote-detail-view'
@@ -1055,8 +1057,10 @@ describe('quote form pricing UI', () => {
         position: 0,
         items: [
           {
+            sourceItemId: 'option-item-1',
             productId: undefined,
             productNameSnapshot: 'Garage repaint',
+            memo: '',
             marketPriceSnapshot: 450.25,
             actualPriceSnapshot: 450.25,
             quantity: 1,
@@ -1305,7 +1309,7 @@ describe('quote form pricing UI', () => {
     expect(source).not.toContain('router.push(quoteTargetPath)')
   })
 
-  it('saves material actual price snapshots from actual price, not RRP', async () => {
+  it('saves custom material actual price snapshots separately from RRP', async () => {
     const createQuoteMock = vi.mocked(createQuote)
     createQuoteMock.mockResolvedValueOnce({ ok: true, data: { id: 'created-quote-id' } })
 
@@ -1346,6 +1350,123 @@ describe('quote form pricing UI', () => {
         }),
       ],
     }))
+  })
+
+  it('keeps new linked main and option formula inputs aligned with the trusted save basis', () => {
+    const product = {
+      id: '00000000-0000-4000-8000-000000000951',
+      name: 'Catalog paint',
+      manufacturer: 'Dulux',
+      type: 'Paint',
+      unit: '4L',
+      marketPrice: '150.00',
+      actualPrice: '80.00',
+      colorCode: null,
+      active: true,
+      price: '80.00',
+      rrpPrice: '150.00',
+    }
+    const mainMaterial = createProductMaterialItem(product)
+    const optionMaterial = createProductMaterialItem(product)
+    const option: QuoteOptionItem = {
+      id: 'option-1',
+      title: 'Option 1',
+      materials: [optionMaterial],
+      selectedMin: 3,
+      selectedMax: 3,
+      isExpanded: true,
+    }
+    const mainTotals = calculateMainQuoteTotals({
+      materials: [mainMaterial],
+      selectedMin: 3,
+      selectedMax: 3,
+      settings: quoteRecord.pricingSettingsSnapshot,
+    })
+    const optionTotals = calculateQuoteOptionTotals([option], quoteRecord.pricingSettingsSnapshot)
+    const payload = buildQuoteSavePayload({
+      settings: quoteRecord.pricingSettingsSnapshot,
+      customerName: 'Parity Customer',
+      customerAddress: '',
+      jobberQuoteId: '',
+      jobberQuoteLookup: '',
+      jobberQuoteDraft: null,
+      deletedJobberLineItemIds: [],
+      jobberQuoteLines: [],
+      workType: 'Interior',
+      selectedMin: 3,
+      selectedMax: 3,
+      materials: [mainMaterial],
+      options: [option],
+      memos: [],
+    })
+
+    expect(mainMaterial.actualPrice).toBe('150.00')
+    expect(mainTotals.materialActual.toNumber()).toBe(payload.items[0].actualPriceSnapshot)
+    expect(optionTotals['option-1'].materialActual.toNumber()).toBe(payload.options[0].items[0].actualPriceSnapshot)
+    expect(payload.items[0].actualPriceSnapshot).toBe(150)
+    expect(payload.options[0].items[0].actualPriceSnapshot).toBe(150)
+  })
+
+  it('includes main and option material memos in the quote save payload without adding Jobber lines', () => {
+    const payload = buildQuoteSavePayload({
+      settings: quoteRecord.pricingSettingsSnapshot,
+      customerName: 'Memo Customer',
+      customerAddress: '10 Main St',
+      jobberQuoteId: '',
+      jobberQuoteLookup: '',
+      jobberQuoteDraft: null,
+      deletedJobberLineItemIds: [],
+      jobberQuoteLines: [{
+        id: 'jobber-line-1',
+        kind: 'line_item',
+        name: 'Painting service',
+        description: 'Public scope only',
+        quantity: '1',
+        unitPrice: '500',
+        taxable: true,
+        clientVisible: true,
+      }],
+      workType: 'Interior',
+      selectedMin: 4,
+      selectedMax: 3,
+      materials: [{
+        id: 'material-1',
+        name: 'Main paint',
+        memo: 'Main material memo',
+        marketPrice: '100.00',
+        actualPrice: '80.00',
+        quantity: '1',
+        workingDays: '1',
+        labourPerDay: '1',
+        isCustom: true,
+      }],
+      options: [{
+        id: 'option-1',
+        title: 'Option 1',
+        selectedMin: 4,
+        selectedMax: 3,
+        isExpanded: true,
+        materials: [{
+          id: 'option-material-1',
+          name: 'Option paint',
+          memo: 'Option material memo',
+          marketPrice: '50.00',
+          actualPrice: '40.00',
+          quantity: '1',
+          workingDays: '0',
+          labourPerDay: '0',
+          isCustom: true,
+        }],
+      }],
+      memos: [],
+    })
+
+    expect(payload.items[0].memo).toBe('Main material memo')
+    expect(payload.items[0].sourceItemId).toBe('material-1')
+    expect(payload.options[0].items[0].memo).toBe('Option material memo')
+    expect(payload.options[0].items[0].sourceItemId).toBe('option-material-1')
+    expect(payload.jobberQuoteLines).toHaveLength(1)
+    expect(JSON.stringify(payload.jobberQuoteLines)).not.toContain('material memo')
   })
 
   it('passes explicit Jobber sync intent when saving an edited quote', async () => {
@@ -2084,6 +2205,41 @@ describe('quote form pricing UI', () => {
 
     expect(markup).toContain('aria-label="Material name"')
     expect(markup).toContain('value="Custom material"')
+  })
+
+  it('restores a saved material memo into the editable quote form', () => {
+    const markup = renderToStaticMarkup(
+      createElement(QuoteForm, {
+        settings: quoteRecord.pricingSettingsSnapshot,
+        areas: [],
+        productServices: [],
+        quoteLineTemplates: [],
+        initialQuote: {
+          ...quoteRecord,
+          items: [{
+            id: 'item-1',
+            quoteId: quoteRecord.id,
+            productId: null,
+            productNameSnapshot: 'Custom material',
+            marketPriceSnapshot: '10.00',
+            actualPriceSnapshot: '8.00',
+            quantity: '1.00',
+            workingDays: '1.00',
+            labourPerDay: '1.00',
+            areaId: null,
+            areaNameSnapshot: null,
+            areaScopeSnapshot: 'interior',
+            isCustom: true,
+            memo: 'Mask the sandstone edge.',
+            position: 0,
+          }],
+        },
+      })
+    )
+
+    expect(markup).toContain('aria-label="Material memo"')
+    expect(markup).toContain('maxLength="4000"')
+    expect(markup).toContain('Mask the sandstone edge.')
   })
 
   it('shows Jobber customer type without the area sqft field', () => {
@@ -2986,6 +3142,72 @@ describe('quote form pricing UI', () => {
     expect(markup).toContain('Memo 1')
     expect(markup).toContain('Call before arriving.')
     expect(markup).toContain('Use the side gate.')
+  })
+
+  it('shows quote-local material memos on quote detail pages', () => {
+    const markup = renderToStaticMarkup(
+      createElement(QuoteDetailView, {
+        quote: {
+          ...quoteRecord,
+          items: [{
+            id: 'item-1',
+            quoteId: quoteRecord.id,
+            productId: null,
+            productNameSnapshot: 'Custom paint',
+            marketPriceSnapshot: '100.00',
+            actualPriceSnapshot: '80.00',
+            quantity: '1.00',
+            workingDays: '1.00',
+            labourPerDay: '1.00',
+            areaId: null,
+            areaNameSnapshot: null,
+            areaScopeSnapshot: 'interior',
+            isCustom: true,
+            memo: 'Detail material memo',
+            position: 0,
+          }],
+          options: [{
+            id: 'option-1',
+            quoteId: quoteRecord.id,
+            title: 'Optional garage',
+            workingDays: '0.00',
+            labourPerDay: '0.00',
+            materialMarket: '50.00',
+            materialActual: '40.00',
+            formula1Total: '50.00',
+            formula2Total: '50.00',
+            formula3Total: '71.43',
+            formula4Total: '50.00',
+            formula5Total: '71.43',
+            selectedMin: 1,
+            selectedMax: 1,
+            subtotal: '50.00',
+            finalTotal: '55.00',
+            position: 0,
+            items: [{
+              id: 'option-item-1',
+              optionId: 'option-1',
+              productId: null,
+              productNameSnapshot: 'Option paint',
+              marketPriceSnapshot: '50.00',
+              actualPriceSnapshot: '40.00',
+              quantity: '1.00',
+              workingDays: '0.00',
+              labourPerDay: '0.00',
+              areaId: null,
+              areaNameSnapshot: null,
+              areaScopeSnapshot: 'interior',
+              isCustom: true,
+              memo: 'Option detail material memo',
+              position: 0,
+            }],
+          }],
+        },
+      })
+    )
+
+    expect(markup).toContain('Detail material memo')
+    expect(markup).toContain('Option detail material memo')
   })
 
   it('shows price history on quote detail pages when revisions exist', () => {

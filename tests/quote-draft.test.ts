@@ -58,6 +58,7 @@ describe('quote form draft persistence', () => {
         {
           id: 'item-1',
           name: 'Primer',
+          memo: 'Main material memo',
           marketPrice: '55.50',
           actualPrice: '55.50',
           quantity: '2',
@@ -78,6 +79,7 @@ describe('quote form draft persistence', () => {
             {
               id: 'option-item-1',
               name: 'Door paint',
+              memo: 'Option material memo',
               marketPrice: '88.00',
               actualPrice: '88.00',
               quantity: '1',
@@ -107,6 +109,48 @@ describe('quote form draft persistence', () => {
       ...draft,
       memos: [{ id: 'memo-1', body: 123 }],
     }))).toBeNull()
+  })
+
+  it('defaults missing material memos in legacy drafts to empty strings', () => {
+    const legacyDraft = {
+      ...createEmptyQuoteFormDraft(),
+      materials: [{
+        id: 'legacy-item-1',
+        name: 'Legacy paint',
+        marketPrice: '45.00',
+        actualPrice: '40.00',
+        quantity: '1',
+        workingDays: '0',
+        labourPerDay: '0',
+        isCustom: true,
+      }],
+      options: [{
+        id: 'legacy-option-1',
+        title: 'Legacy option',
+        selectedMin: 4 as const,
+        selectedMax: 1 as const,
+        isExpanded: false,
+        materials: [{
+          id: 'legacy-option-item-1',
+          name: 'Legacy option paint',
+          marketPrice: '60.00',
+          actualPrice: '50.00',
+          quantity: '1',
+          workingDays: '0',
+          labourPerDay: '0',
+          isCustom: true,
+        }],
+      }],
+      updatedAt: '2026-05-15T00:00:00.000Z',
+    }
+
+    const restored = parseQuoteFormDraft(
+      JSON.stringify(legacyDraft),
+      new Date('2026-05-16T00:00:00.000Z')
+    )
+
+    expect(restored?.materials[0].memo).toBe('')
+    expect(restored?.options[0].materials[0].memo).toBe('')
   })
 
   it('preserves Jobber public line editor state', () => {

@@ -5,6 +5,7 @@ type SavedMaterialItem = {
   id: string
   productId: string | null
   productNameSnapshot: string
+  memo?: string
   marketPriceSnapshot: string
   actualPriceSnapshot: string
   quantity: string
@@ -21,6 +22,7 @@ export function mapSavedItemsToMaterials(items: SavedMaterialItem[]): MaterialIt
     id: item.id,
     productId: item.productId ?? undefined,
     name: item.productNameSnapshot,
+    memo: item.memo ?? '',
     marketPrice: item.marketPriceSnapshot,
     actualPrice: item.actualPriceSnapshot,
     quantity: item.quantity,

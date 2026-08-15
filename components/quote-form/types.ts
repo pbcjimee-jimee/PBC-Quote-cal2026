@@ -43,6 +43,7 @@ export interface MaterialItem {
   sheen?: string | null
   volumeLitres?: string | null
   productCode?: string | null
+  memo?: string
   marketPrice: string
   actualPrice: string
   quantity: string

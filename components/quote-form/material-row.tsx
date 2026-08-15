@@ -312,6 +312,19 @@ export function MaterialRow({ item, areas, areaScope, onCreateArea, onChange, on
           warningClassName="block text-[11px] font-normal text-amber-600"
         />
       </div>
+      <label className="pbc-field pbc-materialrow__memo">
+        <span className="pbc-field__label">Item memo</span>
+        <textarea
+          value={item.memo ?? ''}
+          onChange={(event) => onChange({ ...item, memo: event.target.value })}
+          className="pbc-textarea"
+          rows={2}
+          maxLength={4000}
+          aria-label="Material memo"
+          placeholder="Add a note for this item"
+        />
+        <span className="pbc-field__hint">Name, RRP and memo apply to this quote only.</span>
+      </label>
     </div>
   )
 }

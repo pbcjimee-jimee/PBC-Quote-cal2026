@@ -85,6 +85,7 @@ export interface QuoteItemRecord {
   quoteId: string
   productId: string | null
   productNameSnapshot: string
+  memo?: string
   marketPriceSnapshot: string
   actualPriceSnapshot: string
   quantity: string
@@ -886,6 +887,7 @@ function buildDevQuoteRecord(id: string, createdAt: string, input: DevQuoteInput
       quoteId: id,
       productId: item.productId ?? null,
       productNameSnapshot: item.productNameSnapshot,
+      memo: item.memo,
       marketPriceSnapshot: money(item.marketPriceSnapshot),
       actualPriceSnapshot: money(item.actualPriceSnapshot),
       quantity: money(item.quantity),
@@ -1056,6 +1058,7 @@ function buildDevQuoteOptionRecord(
       optionId: id,
       productId: item.productId ?? null,
       productNameSnapshot: item.productNameSnapshot,
+      memo: item.memo,
       marketPriceSnapshot: money(item.marketPriceSnapshot),
       actualPriceSnapshot: money(item.actualPriceSnapshot),
       quantity: money(item.quantity),

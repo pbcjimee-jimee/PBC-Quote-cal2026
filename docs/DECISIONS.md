@@ -38,7 +38,7 @@
 **2026-06-26 업데이트 결과:**
 - Roof 계산은 이미 도입되었고, main quote의 Roof min/max 공식 선택값은 `quotes.roof_selected_min`, `quotes.roof_selected_max`에 저장한다.
 - 2026-07-30 사용자 요청으로 관리자 2명 고정 결정을 폐기하고 `admin`/`supervisor` 2역할을 도입한다. admin은 기존 견적·Settings 기능과 사용자 관리·Jobs·Inventory를 사용하고, supervisor는 Inventory와 자기 Jobber job의 expense/profit 조회만 가능하다.
-- material 가격은 일반 소비자가 기준으로 계산한다. 별도 실제 원가/RRP 분리, 추가 현장 난이도 정보 패널, quote-level 가격작성 보강 필드는 이번 업그레이드 범위에서 제외한다.
+- material 계산은 견적 행에 표시되는 RRP를 기준으로 한다. 메인·옵션 자재 행의 이름과 RRP는 해당 견적에서만 편집·저장하며 `products` 마스터를 변경하지 않는다. 실제 가격은 UI에서 숨기고 서버가 신뢰 가능한 값으로 고정한다.
 - 2026-06-26 보완 범위였던 Roof 공식 선택값 저장, local draft 민감 fetch 결과 저장 방지/7일 만료, Jobber sync preview/retry, duplicate quote는 구현 완료했다. 코드/마이그레이션 변경 이력은 Git으로 보존한다.
 
 ---
@@ -51,6 +51,7 @@
 - 우리 앱은 내부 견적·material 계산을 저장하고, 공개용 Product / Service line item만 같은 Jobber quote에 write-back한다.
 - material 이름, material 가격 필드, material 상세 가격은 Jobber에 저장하지 않는다.
 - Internal quote memos are app-only. They are stored in our DB and are not fetched from Jobber or written back to Jobber notes/line items.
+- Main/option material item memos are also app-only and are neither fetched from nor sent to Jobber.
 - Jobber write는 기존 quote update에 한정한다. 앱에서 새 Jobber quote/client/job 생성·삭제는 하지 않는다.
 - Jobber 사진, notes, attachments, Build Option Set 동기화는 제외한다.
 - Quote detail에서는 사용자가 명시적으로 Jobber snapshot을 refresh할 수 있고, 앱은 이전 snapshot과 새 snapshot의 compact diff를 보여준다. 이 refresh 시간은 write-back 성공 시간(`jobber_last_synced_at`)과 별도로 관리한다.
@@ -101,7 +102,10 @@ formula_5 = (380 × D + material_market) / 0.70      (총액 30%)
 
 ## 6. 가격 스냅샷
 
-- `quote_items.market_price_snapshot`, `actual_price_snapshot` 저장
+- 메인 `quote_items`와 옵션 `quote_option_items`는 견적별 `product_name_snapshot`, `market_price_snapshot`(표시 RRP), 숨겨진 `actual_price_snapshot`을 저장한다.
+- 이름과 표시 RRP는 견적 행에서 편집할 수 있다. 수정값은 해당 견적에만 저장되고 `products` 마스터를 변경하지 않으며, 표시 RRP 변경은 즉시 현재 견적 계산과 저장되는 `market_price_snapshot`에 반영된다.
+- 연결된 새 자재 행의 숨겨진 `actual_price_snapshot`은 기존 소비자가 기준 정책에 따라 폼과 서버가 현재 `products`의 신뢰 가능한 RRP/소비자가 기준값으로 고정해 저장 전후 계산을 일치시킨다. 기존 연결 행은 서버가 이전에 저장된 `actual_price_snapshot`을 보존한다. 별도 실제 원가 편집은 도입하지 않는다.
+- 메인·옵션 자재 행의 `memo`는 최대 4,000자인 app-only 값이며 해당 견적에만 저장하고 Jobber에서 가져오거나 Jobber로 보내지 않는다.
 - `quotes.pricing_settings_snapshot` (JSONB) 저장
 - **목적:** 페인트 가격·설정 변경이 과거 견적에 영향 주지 않도록
 
