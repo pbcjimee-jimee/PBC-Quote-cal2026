@@ -18,6 +18,7 @@ import type { JobberQuoteLineInput, JobberSaveModeInput, QuoteInput, QuoteLineTe
 import type { AreaRecord } from './areas/types'
 import type { Database } from './supabase/types'
 import type { JobberQuoteDraft } from './jobber/mapper'
+import { normalizeQuoteSearchQuery } from './quote-search'
 
 export type { ProductRecord }
 
@@ -810,16 +811,19 @@ export function deleteDevProduct(id: string): ProductRecord | null {
 }
 
 export function listDevQuotes(query = ''): QuoteRecord[] {
-  const needle = query.trim().toLowerCase()
-  const filtered = needle
+  const hasQuery = query.trim().length > 0
+  const needle = normalizeQuoteSearchQuery(query).toLowerCase()
+  const filtered = hasQuery && needle
     ? store.quotes.filter((quote) =>
-        [quote.customerName, quote.customerAddress, quote.jobberQuoteId]
+        [quote.customerName, quote.customerAddress, quote.jobberQuoteId, quote.jobberSnapshot?.quoteNumber]
           .filter(Boolean)
           .join(' ')
           .toLowerCase()
           .includes(needle)
       )
-    : store.quotes
+    : hasQuery
+      ? []
+      : store.quotes
 
   return [...filtered].sort((a, b) => b.createdAt.localeCompare(a.createdAt))
 }

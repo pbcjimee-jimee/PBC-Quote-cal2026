@@ -347,6 +347,7 @@ function createThenableBuilder(response: unknown) {
     in: vi.fn(() => builder),
     order: vi.fn(() => builder),
     limit: vi.fn(() => builder),
+    or: vi.fn(() => builder),
     ilike: vi.fn(() => builder),
     then: (resolve: (value: unknown) => unknown) => resolve(response),
   }
@@ -2745,13 +2746,13 @@ describe('quote actions against Supabase', () => {
     expect(mocks.createClient).not.toHaveBeenCalled()
   })
 
-  it('searches quotes using the lightweight overview shape', async () => {
+  it('searches the lightweight overview by human-readable Jobber quote number', async () => {
     const searchBuilder = createThenableBuilder({ data: [quoteRow], error: null })
     mocks.createClient.mockResolvedValueOnce({
       from: vi.fn(() => searchBuilder),
     })
 
-    const result = await searchQuotes('Supabase')
+    const result = await searchQuotes('# 3535')
 
     expect(result.ok).toBe(true)
     if (result.ok) {
@@ -2762,9 +2763,46 @@ describe('quote actions against Supabase', () => {
       expect(result.data[0].createdByName).toBeNull()
       expect(result.data[0].createdByEmail).toBeNull()
     }
-    expect(searchBuilder.ilike).toHaveBeenCalledWith('customer_name', '%Supabase%')
+    expect(searchBuilder.or).toHaveBeenCalledWith(
+      'customer_name.ilike."%3535%",customer_address.ilike."%3535%",jobber_quote_id.ilike."%3535%",jobber_snapshot->>quoteNumber.ilike."%3535%"'
+    )
+    expect(searchBuilder.ilike).not.toHaveBeenCalled()
     expect(searchBuilder.limit).toHaveBeenCalledWith(100)
     expect(mocks.createServiceClient).not.toHaveBeenCalled()
+  })
+
+  it('preserves punctuation when building the overview search filter', async () => {
+    const searchBuilder = createThenableBuilder({ data: [quoteRow], error: null })
+    mocks.createClient.mockResolvedValueOnce({
+      from: vi.fn(() => searchBuilder),
+    })
+
+    await searchQuotes('Unit #5, 12.5 Main St')
+
+    expect(searchBuilder.or).toHaveBeenCalledWith(
+      'customer_name.ilike."%Unit #5, 12.5 Main St%",customer_address.ilike."%Unit #5, 12.5 Main St%",jobber_quote_id.ilike."%Unit #5, 12.5 Main St%",jobber_snapshot->>quoteNumber.ilike."%Unit #5, 12.5 Main St%"'
+    )
+  })
+
+  it('treats Postgres ILIKE metacharacters as literal search text', async () => {
+    const cases = [
+      { query: '100% Painting', escaped: '100\\\\% Painting' },
+      { query: 'A_B', escaped: 'A\\\\_B' },
+      { query: 'A\\B', escaped: 'A\\\\\\\\B' },
+    ]
+
+    for (const testCase of cases) {
+      const searchBuilder = createThenableBuilder({ data: [quoteRow], error: null })
+      mocks.createClient.mockResolvedValueOnce({
+        from: vi.fn(() => searchBuilder),
+      })
+
+      await searchQuotes(testCase.query)
+
+      expect(searchBuilder.or).toHaveBeenCalledWith(
+        expect.stringContaining(`customer_name.ilike."%${testCase.escaped}%"`)
+      )
+    }
   })
 
   it('returns Supabase errors when quote search fails', async () => {
@@ -2776,7 +2814,7 @@ describe('quote actions against Supabase', () => {
     const result = await searchQuotes()
 
     expect(result).toEqual({ ok: false, error: 'quote search failed' })
-    expect(searchBuilder.ilike).not.toHaveBeenCalled()
+    expect(searchBuilder.or).not.toHaveBeenCalled()
   })
 
   it('falls back to the list query shape when quote options are not migrated yet', async () => {
