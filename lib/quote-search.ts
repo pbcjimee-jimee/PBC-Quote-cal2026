@@ -8,11 +8,31 @@ export function normalizeQuoteSearchQuery(query: string): string {
     .slice(0, 384)
 }
 
-export function buildQuoteSearchIlikePattern(query: string): string {
-  const escapedLikeQuery = query.replace(/[\\%_]/g, (character) => `\\${character}`)
-  const escapedQuery = escapedLikeQuery
+type QuoteSearchPostgrestFilter = {
+  operator: 'ilike' | 'imatch'
+  pattern: string
+}
+
+function quotePostgrestFilterValue(value: string): string {
+  const escapedValue = value
     .replace(/\\/g, '\\\\')
     .replace(/"/g, '\\"')
 
-  return `"%${escapedQuery}%"`
+  return `"${escapedValue}"`
+}
+
+export function buildQuoteSearchPostgrestFilter(query: string): QuoteSearchPostgrestFilter {
+  if (query.includes('*')) {
+    const escapedRegexQuery = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    return {
+      operator: 'imatch',
+      pattern: quotePostgrestFilterValue(`.*${escapedRegexQuery}.*`),
+    }
+  }
+
+  const escapedLikeQuery = query.replace(/[\\%_]/g, (character) => `\\${character}`)
+  return {
+    operator: 'ilike',
+    pattern: quotePostgrestFilterValue(`%${escapedLikeQuery}%`),
+  }
 }

@@ -2805,6 +2805,19 @@ describe('quote actions against Supabase', () => {
     }
   })
 
+  it('treats the PostgREST asterisk wildcard alias as literal search text', async () => {
+    const searchBuilder = createThenableBuilder({ data: [quoteRow], error: null })
+    mocks.createClient.mockResolvedValueOnce({
+      from: vi.fn(() => searchBuilder),
+    })
+
+    await searchQuotes('A*B')
+
+    expect(searchBuilder.or).toHaveBeenCalledWith(
+      'customer_name.imatch.".*A\\\\*B.*",customer_address.imatch.".*A\\\\*B.*",jobber_quote_id.imatch.".*A\\\\*B.*",jobber_snapshot->>quoteNumber.imatch.".*A\\\\*B.*"'
+    )
+  })
+
   it('returns Supabase errors when quote search fails', async () => {
     const searchBuilder = createThenableBuilder({ data: null, error: new Error('quote search failed') })
     mocks.createClient.mockResolvedValueOnce({

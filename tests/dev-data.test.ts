@@ -279,6 +279,33 @@ describe('dev data store', () => {
     expect(listDevQuotes('A\\B')[0].id).toBe(quote.id)
   })
 
+  it('treats an asterisk as literal dev search text', () => {
+    const literal = createDevQuote({
+      customerName: 'A*B Painting',
+      customerAddress: '1 First St',
+      workingDays: 1,
+      labourPerDay: 1,
+      materialMarket: 0,
+      materialActual: 0,
+      selectedMin: 1,
+      selectedMax: 1,
+      items: [],
+    })
+    createDevQuote({
+      customerName: 'AxxB Painting',
+      customerAddress: '2 Second St',
+      workingDays: 1,
+      labourPerDay: 1,
+      materialMarket: 0,
+      materialActual: 0,
+      selectedMin: 1,
+      selectedMax: 1,
+      items: [],
+    })
+
+    expect(listDevQuotes('A*B').map((quote) => quote.id)).toEqual([literal.id])
+  })
+
   it('uses updated pricing settings for future quotes only', () => {
     updateDevPricingSettings({
       ...DEFAULT_PRICING_SETTINGS,

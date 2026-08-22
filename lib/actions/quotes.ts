@@ -28,7 +28,7 @@ import { fetchJobberQuote, JobberApiError, JobberLineSyncPartialError, syncJobbe
 import { getJobberConfig, getMissingGraphqlConfigKeys } from '@/lib/jobber/config'
 import { getUsableSharedJobberConnectionToken, refreshSharedJobberConnectionToken, requireSharedJobberConnectionOwnerId, type StoredJobberToken } from '@/lib/jobber/tokens'
 import { QUOTE_DETAIL_SELECT, QUOTE_DETAIL_WITHOUT_MEMOS_SELECT, QUOTES_LIST_SELECT } from '@/lib/quote-query-shape'
-import { buildQuoteSearchIlikePattern, normalizeQuoteSearchQuery } from '@/lib/quote-search'
+import { buildQuoteSearchPostgrestFilter, normalizeQuoteSearchQuery } from '@/lib/quote-search'
 import { getAuthUserProfile, getAuthUserProfilesById, getUserProfilesById, type UserProfile } from '@/lib/user-profiles'
 import { getPricingSettings } from './settings'
 import type { ActionResult } from './types'
@@ -1684,12 +1684,12 @@ export async function searchQuotes(query = '', limit = 100): Promise<ActionResul
     .limit(limit)
 
   if (searchQuery) {
-    const pattern = buildQuoteSearchIlikePattern(searchQuery)
+    const { operator, pattern } = buildQuoteSearchPostgrestFilter(searchQuery)
     request = request.or([
-      `customer_name.ilike.${pattern}`,
-      `customer_address.ilike.${pattern}`,
-      `jobber_quote_id.ilike.${pattern}`,
-      `jobber_snapshot->>quoteNumber.ilike.${pattern}`,
+      `customer_name.${operator}.${pattern}`,
+      `customer_address.${operator}.${pattern}`,
+      `jobber_quote_id.${operator}.${pattern}`,
+      `jobber_snapshot->>quoteNumber.${operator}.${pattern}`,
     ].join(','))
   }
 
