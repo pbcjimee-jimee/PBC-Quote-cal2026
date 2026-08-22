@@ -28,6 +28,7 @@ import { fetchJobberQuote, JobberApiError, JobberLineSyncPartialError, syncJobbe
 import { getJobberConfig, getMissingGraphqlConfigKeys } from '@/lib/jobber/config'
 import { getUsableSharedJobberConnectionToken, refreshSharedJobberConnectionToken, requireSharedJobberConnectionOwnerId, type StoredJobberToken } from '@/lib/jobber/tokens'
 import { QUOTE_DETAIL_SELECT, QUOTE_DETAIL_WITHOUT_MEMOS_SELECT, QUOTES_LIST_SELECT } from '@/lib/quote-query-shape'
+import { buildQuoteSearchPostgrestFilter, normalizeQuoteSearchQuery } from '@/lib/quote-search'
 import { getAuthUserProfile, getAuthUserProfilesById, getUserProfilesById, type UserProfile } from '@/lib/user-profiles'
 import { getPricingSettings } from './settings'
 import type { ActionResult } from './types'
@@ -1672,6 +1673,9 @@ export async function searchQuotes(query = '', limit = 100): Promise<ActionResul
   const allowedUser = await requireRole('admin')
   if (!allowedUser.ok) return allowedUser
 
+  const searchQuery = normalizeQuoteSearchQuery(query)
+  if (query.trim() && !searchQuery) return { ok: true, data: [] }
+
   const supabase = await createClient()
   let request = supabase
     .from('quotes')
@@ -1679,8 +1683,14 @@ export async function searchQuotes(query = '', limit = 100): Promise<ActionResul
     .order('created_at', { ascending: false })
     .limit(limit)
 
-  if (query.trim()) {
-    request = request.ilike('customer_name', `%${query.trim()}%`)
+  if (searchQuery) {
+    const { operator, pattern } = buildQuoteSearchPostgrestFilter(searchQuery)
+    request = request.or([
+      `customer_name.${operator}.${pattern}`,
+      `customer_address.${operator}.${pattern}`,
+      `jobber_quote_id.${operator}.${pattern}`,
+      `jobber_snapshot->>quoteNumber.${operator}.${pattern}`,
+    ].join(','))
   }
 
   const { data, error } = await request

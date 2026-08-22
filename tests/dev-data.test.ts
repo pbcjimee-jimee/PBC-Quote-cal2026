@@ -13,6 +13,31 @@ import {
   updateDevPricingSettings,
 } from '@/lib/dev-data'
 import { DEFAULT_PRICING_SETTINGS } from '@/lib/calculator'
+import type { JobberQuoteDraft } from '@/lib/jobber/mapper'
+
+function jobberSnapshot(quoteNumber: string): JobberQuoteDraft {
+  return {
+    jobberQuoteId: 'opaque-jobber-id',
+    sourceType: 'quote',
+    quoteNumber,
+    createdAt: '2026-05-13T01:23:45Z',
+    customerName: 'Unrelated customer',
+    customerAddress: '99 Unrelated Rd',
+    workType: 'Interior',
+    areaSqft: null,
+    customerType: 'Residential',
+    sourceUrl: `https://secure.getjobber.com/quotes/${quoteNumber}`,
+    productsAndServices: [],
+    jobExpenses: [],
+    jobExpensesError: null,
+    financialSummary: {
+      quoteTotal: 0,
+      expensesTotal: 0,
+      profit: 0,
+      profitMarginPercent: null,
+    },
+  }
+}
 
 beforeEach(() => {
   resetDevData()
@@ -190,8 +215,8 @@ describe('dev data store', () => {
 
   it('lists newest quotes first and filters by customer or address', () => {
     const first = createDevQuote({
-      customerName: 'Alpha',
-      customerAddress: '1 First St',
+      customerName: 'Doe, Jane',
+      customerAddress: 'Unit #5, 12.5 Main St',
       workingDays: 1,
       labourPerDay: 1,
       materialMarket: 0,
@@ -213,8 +238,72 @@ describe('dev data store', () => {
     })
 
     expect(listDevQuotes().map((quote) => quote.id)).toEqual([second.id, first.id])
-    expect(listDevQuotes('first')).toHaveLength(1)
+    expect(listDevQuotes('Doe, Jane')[0].id).toBe(first.id)
+    expect(listDevQuotes('Unit #5, 12.5 Main St')[0].id).toBe(first.id)
     expect(listDevQuotes('beta')[0].customerName).toBe('Beta')
+  })
+
+  it('finds a quote by its human-readable Jobber quote number', () => {
+    const quote = createDevQuote({
+      customerName: 'Alpha',
+      customerAddress: '1 First St',
+      jobberQuoteId: 'opaque-jobber-id',
+      jobberSnapshot: jobberSnapshot('3535'),
+      workingDays: 1,
+      labourPerDay: 1,
+      materialMarket: 0,
+      materialActual: 0,
+      selectedMin: 1,
+      selectedMax: 1,
+      items: [],
+    })
+
+    expect(listDevQuotes('# 3535').map((item) => item.id)).toEqual([quote.id])
+  })
+
+  it('treats ILIKE metacharacters as literal dev search text', () => {
+    const quote = createDevQuote({
+      customerName: '100% Painting_A\\B',
+      customerAddress: '1 First St',
+      workingDays: 1,
+      labourPerDay: 1,
+      materialMarket: 0,
+      materialActual: 0,
+      selectedMin: 1,
+      selectedMax: 1,
+      items: [],
+    })
+
+    expect(listDevQuotes('100% Painting')[0].id).toBe(quote.id)
+    expect(listDevQuotes('Painting_A')[0].id).toBe(quote.id)
+    expect(listDevQuotes('A\\B')[0].id).toBe(quote.id)
+  })
+
+  it('treats an asterisk as literal dev search text', () => {
+    const literal = createDevQuote({
+      customerName: 'A*B Painting',
+      customerAddress: '1 First St',
+      workingDays: 1,
+      labourPerDay: 1,
+      materialMarket: 0,
+      materialActual: 0,
+      selectedMin: 1,
+      selectedMax: 1,
+      items: [],
+    })
+    createDevQuote({
+      customerName: 'AxxB Painting',
+      customerAddress: '2 Second St',
+      workingDays: 1,
+      labourPerDay: 1,
+      materialMarket: 0,
+      materialActual: 0,
+      selectedMin: 1,
+      selectedMax: 1,
+      items: [],
+    })
+
+    expect(listDevQuotes('A*B').map((quote) => quote.id)).toEqual([literal.id])
   })
 
   it('uses updated pricing settings for future quotes only', () => {
