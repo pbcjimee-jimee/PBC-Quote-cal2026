@@ -1,5 +1,5 @@
 import Decimal from 'decimal.js'
-import { useMemo, useState } from 'react'
+import { type DragEvent, useEffect, useMemo, useRef, useState } from 'react'
 import { calculateLabourTotals, type LabourTotals } from '@/lib/quote-labour'
 import { FormulaResults } from './formula-results'
 import { MaterialRow } from './material-row'
@@ -18,8 +18,67 @@ interface MaterialsPanelProps {
   onAdd: (item: MaterialItem) => void
   onChange: (item: MaterialItem) => void
   onRemove: (id: string) => void
+  onReorder?: (update: MaterialReorderUpdater) => void
   onCreateArea?: (scope: AreaScope, name: string) => Promise<AreaCreateResult>
   onAreaFormulaSelectionChange?: (scope: keyof AreaFormulaSelections, field: 'selectedMin' | 'selectedMax', value: FormulaNumber) => void
+}
+
+export type MaterialDropPlacement = 'before' | 'after'
+export type MaterialReorderUpdater = (materials: MaterialItem[]) => MaterialItem[]
+
+const MATERIAL_DRAG_SCROLL_EDGE_PX = 72
+const MATERIAL_DRAG_SCROLL_MAX_STEP_PX = 18
+
+export function getMaterialDragScrollStep(viewportHeight: number, pointerY: number): number {
+  const edgeSize = Math.min(MATERIAL_DRAG_SCROLL_EDGE_PX, viewportHeight / 3)
+  if (edgeSize <= 0) return 0
+
+  if (pointerY < edgeSize) {
+    return -Math.ceil(((edgeSize - pointerY) / edgeSize) * MATERIAL_DRAG_SCROLL_MAX_STEP_PX)
+  }
+
+  const bottomEdge = viewportHeight - edgeSize
+  if (pointerY > bottomEdge) {
+    return Math.ceil(((pointerY - bottomEdge) / edgeSize) * MATERIAL_DRAG_SCROLL_MAX_STEP_PX)
+  }
+
+  return 0
+}
+
+export function reorderVisibleMaterials(
+  materials: MaterialItem[],
+  visibleMaterialIds: string[],
+  draggedId: string,
+  targetId: string,
+  placement: MaterialDropPlacement = 'before'
+): MaterialItem[] {
+  if (draggedId === targetId) return materials
+
+  const visibleIdSet = new Set(visibleMaterialIds)
+  if (!visibleIdSet.has(draggedId) || !visibleIdSet.has(targetId)) return materials
+
+  const visibleMaterials = materials.filter((item) => visibleIdSet.has(item.id))
+  const draggedIndex = visibleMaterials.findIndex((item) => item.id === draggedId)
+  const targetIndex = visibleMaterials.findIndex((item) => item.id === targetId)
+  if (draggedIndex < 0 || targetIndex < 0) return materials
+
+  const reorderedVisibleMaterials = [...visibleMaterials]
+  const [draggedMaterial] = reorderedVisibleMaterials.splice(draggedIndex, 1)
+  const nextTargetIndex = reorderedVisibleMaterials.findIndex((item) => item.id === targetId)
+  const insertIndex = placement === 'after' ? nextTargetIndex + 1 : nextTargetIndex
+  reorderedVisibleMaterials.splice(insertIndex, 0, draggedMaterial)
+
+  if (visibleMaterials.every((item, index) => item.id === reorderedVisibleMaterials[index]?.id)) {
+    return materials
+  }
+
+  let visibleIndex = 0
+  return materials.map((item) => {
+    if (!visibleIdSet.has(item.id)) return item
+    const reorderedItem = reorderedVisibleMaterials[visibleIndex]
+    visibleIndex += 1
+    return reorderedItem
+  })
 }
 
 function lineTotal(price: string, quantity: string): Decimal {
@@ -122,17 +181,25 @@ export function MaterialsPanel({
   onAdd,
   onChange,
   onRemove,
+  onReorder,
   onCreateArea,
   onAreaFormulaSelectionChange,
 }: MaterialsPanelProps) {
   const [areaScope, setAreaScope] = useState<AreaScope>(() => getInitialAreaScope(materials, areas))
   const [isExpanded, setIsExpanded] = useState(true)
+  const [draggedMaterialId, setDraggedMaterialId] = useState<string | null>(null)
+  const [dropTarget, setDropTarget] = useState<{ id: string; placement: MaterialDropPlacement } | null>(null)
+  const [reorderAnnouncement, setReorderAnnouncement] = useState('')
+  const dragScrollFrameRef = useRef<number | null>(null)
+  const dragScrollStepRef = useRef(0)
+  const reorderAnnouncementTimerRef = useRef<number | null>(null)
   const hasAreaSections = areas.length > 0 || materials.some((item) => item.areaScope && AREA_SCOPES.includes(item.areaScope))
   const filteredAreas = useMemo(() => areas.filter((area) => area.scope === areaScope), [areaScope, areas])
   const visibleMaterials = useMemo(
     () => hasAreaSections ? materials.filter((item) => item.areaScope === areaScope) : materials,
     [areaScope, hasAreaSections, materials]
   )
+  const latestVisibleMaterialsRef = useRef(visibleMaterials)
   const hiddenMaterials = useMemo(
     () => hasAreaSections ? materials.filter((item) => item.areaScope !== areaScope) : [],
     [areaScope, hasAreaSections, materials]
@@ -149,6 +216,10 @@ export function MaterialsPanel({
   const activeAreaSubtotal = areaBreakdown?.[areaScope].subtotal
   const hasVisibleMaterials = visibleMaterials.length > 0
 
+  useEffect(() => {
+    latestVisibleMaterialsRef.current = visibleMaterials
+  }, [visibleMaterials])
+
   function changeAreaScope(nextScope: AreaScope) {
     setAreaScope(nextScope)
   }
@@ -157,8 +228,168 @@ export function MaterialsPanel({
     onAdd(hasAreaSections ? assignMaterialToActiveArea(item, areaScope, areas) : item)
   }
 
+  function stopMaterialDragScroll() {
+    dragScrollStepRef.current = 0
+    if (dragScrollFrameRef.current !== null) {
+      window.cancelAnimationFrame(dragScrollFrameRef.current)
+      dragScrollFrameRef.current = null
+    }
+  }
+
+  function runMaterialDragScroll() {
+    const scrollStep = dragScrollStepRef.current
+    if (scrollStep === 0) {
+      dragScrollFrameRef.current = null
+      return
+    }
+
+    window.scrollBy(0, scrollStep)
+    dragScrollFrameRef.current = window.requestAnimationFrame(runMaterialDragScroll)
+  }
+
+  function updateMaterialDragScroll(pointerY: number) {
+    if (!draggedMaterialId) return
+
+    const scrollStep = getMaterialDragScrollStep(window.innerHeight, pointerY)
+    dragScrollStepRef.current = scrollStep
+    if (scrollStep === 0) {
+      stopMaterialDragScroll()
+      return
+    }
+
+    if (dragScrollFrameRef.current === null) {
+      dragScrollFrameRef.current = window.requestAnimationFrame(runMaterialDragScroll)
+    }
+  }
+
+  useEffect(() => () => {
+    stopMaterialDragScroll()
+    if (reorderAnnouncementTimerRef.current !== null) {
+      window.clearTimeout(reorderAnnouncementTimerRef.current)
+    }
+  }, [])
+
+  function getDropPlacement(event: DragEvent<HTMLDivElement>): MaterialDropPlacement {
+    const rect = event.currentTarget.getBoundingClientRect()
+    return event.clientY > rect.top + rect.height / 2 ? 'after' : 'before'
+  }
+
+  function handleDragStart(materialId: string, event: DragEvent<HTMLButtonElement>) {
+    setDraggedMaterialId(materialId)
+    setDropTarget(null)
+    event.dataTransfer.effectAllowed = 'move'
+    event.dataTransfer.setData('text/plain', materialId)
+  }
+
+  function getCurrentVisibleMaterialIds(currentMaterials: MaterialItem[]): string[] {
+    const currentHasAreaSections = areas.length > 0 || currentMaterials.some(
+      (item) => item.areaScope && AREA_SCOPES.includes(item.areaScope)
+    )
+    return currentMaterials
+      .filter((item) => !currentHasAreaSections || item.areaScope === areaScope)
+      .map((item) => item.id)
+  }
+
+  function scheduleMaterialPositionAnnouncement(materialId: string) {
+    if (reorderAnnouncementTimerRef.current !== null) {
+      window.clearTimeout(reorderAnnouncementTimerRef.current)
+    }
+    reorderAnnouncementTimerRef.current = window.setTimeout(() => {
+      const currentVisibleMaterials = latestVisibleMaterialsRef.current
+      const position = currentVisibleMaterials.findIndex((item) => item.id === materialId)
+      const item = currentVisibleMaterials[position]
+      if (position >= 0 && item) {
+        setReorderAnnouncement(`${item.name || 'Material'} moved to position ${position + 1} of ${currentVisibleMaterials.length}.`)
+      }
+      reorderAnnouncementTimerRef.current = null
+    }, 0)
+  }
+
+  function reorderMaterial(materialId: string, targetId: string, placement: MaterialDropPlacement) {
+    if (!onReorder || materialId === targetId) return
+
+    const preview = reorderVisibleMaterials(
+      visibleMaterials,
+      visibleMaterials.map((item) => item.id),
+      materialId,
+      targetId,
+      placement
+    )
+
+    onReorder((currentMaterials) => reorderVisibleMaterials(
+      currentMaterials,
+      getCurrentVisibleMaterialIds(currentMaterials),
+      materialId,
+      targetId,
+      placement
+    ))
+    if (preview !== visibleMaterials) {
+      scheduleMaterialPositionAnnouncement(materialId)
+    }
+  }
+
+  function moveMaterial(materialId: string, direction: 'up' | 'down') {
+    const currentIndex = visibleMaterials.findIndex((item) => item.id === materialId)
+    const targetIndex = direction === 'up' ? currentIndex - 1 : currentIndex + 1
+    const target = visibleMaterials[targetIndex]
+    if (currentIndex < 0 || !target) return
+
+    reorderMaterial(materialId, target.id, direction === 'up' ? 'before' : 'after')
+  }
+
+  function handleDragOver(materialId: string, event: DragEvent<HTMLDivElement>) {
+    event.preventDefault()
+    if (!draggedMaterialId) return
+    updateMaterialDragScroll(event.clientY)
+    if (draggedMaterialId === materialId || !onReorder) {
+      setDropTarget(null)
+      return
+    }
+
+    const placement = getDropPlacement(event)
+    setDropTarget({ id: materialId, placement })
+  }
+
+  function handleDrop(materialId: string, event: DragEvent<HTMLDivElement>) {
+    event.preventDefault()
+    stopMaterialDragScroll()
+    const droppedMaterialId = draggedMaterialId ?? event.dataTransfer.getData('text/plain')
+    if (droppedMaterialId) {
+      reorderMaterial(droppedMaterialId, materialId, getDropPlacement(event))
+    }
+    setDraggedMaterialId(null)
+    setDropTarget(null)
+  }
+
+  function handleDragEnd() {
+    stopMaterialDragScroll()
+    setDraggedMaterialId(null)
+    setDropTarget(null)
+  }
+
+  function handleListDragOver(event: DragEvent<HTMLDivElement>) {
+    if (!draggedMaterialId) return
+    event.preventDefault()
+    updateMaterialDragScroll(event.clientY)
+    if (event.target === event.currentTarget) {
+      setDropTarget(null)
+    }
+  }
+
+  function handleListDrop(event: DragEvent<HTMLDivElement>) {
+    event.preventDefault()
+    stopMaterialDragScroll()
+    setDraggedMaterialId(null)
+    setDropTarget(null)
+  }
+
   return (
     <section>
+      {onReorder ? (
+        <p className="sr-only" role="status" aria-live="polite" aria-atomic="true">
+          {reorderAnnouncement}
+        </p>
+      ) : null}
       <div className="pbc-panelhead">
         <div className="pbc-panelhead__copy">
           <h2 className="pbc-paneltitle">Materials</h2>
@@ -220,8 +451,17 @@ export function MaterialsPanel({
               No {areaScope} materials in this section.
             </p>
           ) : (
-            <div className="pbc-materiallist">
-              {visibleMaterials.map((item) => (
+            <div
+              className="pbc-materiallist"
+              onDragOver={handleListDragOver}
+              onDrop={handleListDrop}
+              onDragLeave={(event) => {
+                if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+                  stopMaterialDragScroll()
+                }
+              }}
+            >
+              {visibleMaterials.map((item, index) => (
                 <MaterialRow
                   key={item.id}
                   item={item}
@@ -230,6 +470,16 @@ export function MaterialsPanel({
                   onCreateArea={onCreateArea}
                   onChange={onChange}
                   onRemove={() => onRemove(item.id)}
+                  isDragging={draggedMaterialId === item.id}
+                  dropPlacement={dropTarget?.id === item.id ? dropTarget.placement : null}
+                  onDragStart={onReorder ? (event) => handleDragStart(item.id, event) : undefined}
+                  onDragOver={onReorder ? (event) => handleDragOver(item.id, event) : undefined}
+                  onDrop={onReorder ? (event) => handleDrop(item.id, event) : undefined}
+                  onDragEnd={handleDragEnd}
+                  canMoveUp={index > 0}
+                  canMoveDown={index < visibleMaterials.length - 1}
+                  onMoveUp={onReorder ? () => moveMaterial(item.id, 'up') : undefined}
+                  onMoveDown={onReorder ? () => moveMaterial(item.id, 'down') : undefined}
                 />
               ))}
             </div>

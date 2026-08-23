@@ -140,6 +140,17 @@ No results for "brush"
 
 ---
 
+## 자재 행 순서 변경
+
+- `/quotes/new`와 `/quotes/[id]/edit`의 Main Materials 및 Option Materials에서 현재 화면에 보이는 area의 행끼리만 순서를 바꿀 수 있다.
+- 데스크톱에서는 각 행의 drag handle로 드래그하며, 실제 배열 순서 변경은 drop 시점에 한 번만 반영한다.
+- 키보드와 touch 사용자는 접근 가능한 `Move up` / `Move down` 버튼으로 현재 보이는 목록에서 한 칸씩 이동한다. 첫 행의 `Move up`과 마지막 행의 `Move down`은 비활성화한다.
+- 다른 area로 필터링되어 보이지 않는 행은 기존 배열 슬롯을 그대로 유지한다. 보이는 행의 순서만 해당 슬롯들 사이에서 교체하므로 area 전환 뒤에도 숨겨졌던 행의 상대 위치가 임의로 이동하지 않는다.
+- viewport 상·하단 가까이 드래그하면 페이지가 자동 스크롤되어 긴 material 목록도 연속해서 이동할 수 있다.
+- 저장은 재정렬된 배열에 기존 `position` 매핑을 그대로 적용한다. DB schema, 저장 RPC, 외부 dependency는 변경하지 않는다.
+
+---
+
 ## Jobber Product / Service Editor (v1.1)
 
 Jobber write-back용 공개 견적 line item을 작성하는 섹션. 내부 material 계산과 분리한다.

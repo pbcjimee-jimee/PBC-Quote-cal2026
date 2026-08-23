@@ -7,7 +7,7 @@ import type { QuoteRecord } from '@/lib/dev-data'
 import { createArea } from '@/lib/actions/areas'
 import { Icons } from '@/components/ui/icons'
 import { CustomerPanel, type JobberRefreshPreview } from './customer-panel'
-import { MaterialsPanel } from './materials-panel'
+import { MaterialsPanel, type MaterialReorderUpdater } from './materials-panel'
 import { FinalSummary } from './final-summary'
 import {
   clearLocalQuoteDrafts,
@@ -18,7 +18,7 @@ import {
   type QuoteFormDraft,
 } from './quote-draft'
 import { useQuoteDraftPersistence } from './use-quote-draft-persistence'
-import { QuoteOptionsPanel } from './quote-options-panel'
+import { applyOptionMaterialReorder, QuoteOptionsPanel } from './quote-options-panel'
 import { OptionTotalsSummary } from './option-totals-summary'
 import { calculateMainQuoteTotals } from './quote-calculation-totals'
 import type { AreaCreateResult, AreaFormulaSelections, AreaScope, FormulaNumber, JobberQuoteLineItemDraft, MaterialItem, QuoteMemoItem, QuoteOptionItem } from './types'
@@ -655,6 +655,10 @@ export function QuoteForm({ settings, areas, productServices = [], quoteLineTemp
     setOptions((current) => current.map((existing) => existing.id === option.id ? option : existing))
   }
 
+  function reorderOptionMaterials(optionId: string, update: MaterialReorderUpdater) {
+    setOptions((current) => applyOptionMaterialReorder(current, optionId, update))
+  }
+
   function removeOption(id: string) {
     setOptions((current) => current.filter((option) => option.id !== id))
   }
@@ -928,6 +932,7 @@ export function QuoteForm({ settings, areas, productServices = [], quoteLineTemp
             onAdd={addMaterial}
             onChange={changeMaterial}
             onRemove={removeMaterial}
+            onReorder={setMaterials}
             onCreateArea={createQuoteArea}
             onAreaFormulaSelectionChange={changeAreaFormulaSelection}
           />
@@ -937,6 +942,7 @@ export function QuoteForm({ settings, areas, productServices = [], quoteLineTemp
             areas={quoteAreas}
             onAddOption={addOption}
             onChangeOption={changeOption}
+            onReorderOptionMaterials={reorderOptionMaterials}
             onRemoveOption={removeOption}
             onCreateArea={createQuoteArea}
           />

@@ -2242,6 +2242,40 @@ describe('quote form pricing UI', () => {
     expect(markup).toContain('Mask the sandstone edge.')
   })
 
+  it('enables drag reordering for materials in the quote form', () => {
+    const markup = renderToStaticMarkup(
+      createElement(QuoteForm, {
+        settings: quoteRecord.pricingSettingsSnapshot,
+        areas: [],
+        productServices: [],
+        quoteLineTemplates: [],
+        initialQuote: {
+          ...quoteRecord,
+          items: [{
+            id: 'item-drag-1',
+            quoteId: quoteRecord.id,
+            productId: null,
+            productNameSnapshot: 'Main quote paint',
+            marketPriceSnapshot: '10.00',
+            actualPriceSnapshot: '8.00',
+            quantity: '1.00',
+            workingDays: '1.00',
+            labourPerDay: '1.00',
+            areaId: null,
+            areaNameSnapshot: null,
+            areaScopeSnapshot: 'interior',
+            isCustom: true,
+            memo: '',
+            position: 0,
+          }],
+        },
+      })
+    )
+
+    expect(markup).toContain('aria-label="Drag Main quote paint"')
+    expect(markup).toContain('draggable="true"')
+  })
+
   it('shows Jobber customer type without the area sqft field', () => {
     const markup = renderToStaticMarkup(
       createElement(CustomerPanel, {
