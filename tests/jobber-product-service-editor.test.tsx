@@ -130,7 +130,7 @@ describe('JobberProductServiceEditor', () => {
     expect(markup).toContain('These are the public Jobber-facing lines that will be updated from this quote.')
   })
 
-  it('renders drag handles for reordering line items', () => {
+  it('renders accessible drag handles for priced and text lines', () => {
     const markup = renderToStaticMarkup(createElement(JobberProductServiceEditor, {
       value: lines,
       onChange: () => undefined,
@@ -139,11 +139,14 @@ describe('JobberProductServiceEditor', () => {
     expect(markup).toContain('draggable="true"')
     expect(markup).toContain('aria-label="Drag Exterior repaint"')
     expect(markup).toContain('aria-label="Drag Access notes"')
-    expect(markup).toContain('touch-none')
+    expect(markup).toContain('title="Drag to reorder. Use arrow keys to move."')
+    expect(markup).toContain('aria-keyshortcuts="ArrowUp ArrowDown"')
+    expect(markup).toContain('aria-live="polite"')
+    expect(markup).not.toContain('touch-none')
     expect(markup).toContain('cursor-grab')
   })
 
-  it('keeps drag sorting and renders compact delete buttons without move controls', () => {
+  it('renders compact delete buttons and one-step move controls for both line types', () => {
     const markup = renderToStaticMarkup(createElement(JobberProductServiceEditor, {
       value: lines,
       onChange: () => undefined,
@@ -155,8 +158,10 @@ describe('JobberProductServiceEditor', () => {
     expect(markup).toContain('pbc-iconbtn--compact')
     expect(markup).toContain('d="M4.5 5.5h11')
     expect(markup).not.toContain('>X</button>')
-    expect(markup).not.toContain('aria-label="Move Exterior repaint')
-    expect(markup).not.toContain('aria-label="Move Access notes')
+    expect(markup).toContain('aria-label="Move Exterior repaint up"')
+    expect(markup).toContain('aria-label="Move Exterior repaint down"')
+    expect(markup).toContain('aria-label="Move Access notes up"')
+    expect(markup).toContain('aria-label="Move Access notes down"')
     expect(markup).not.toContain('>Delete</button>')
   })
 
@@ -421,10 +426,15 @@ describe('JobberProductServiceEditor', () => {
     })
   })
 
-  it('reorders line items by dragged and dropped ids', () => {
-    const reordered = reorderJobberQuoteLines(lines, 'text-1', 'line-1')
+  it('reorders line items before or after a target without replacing no-op arrays', () => {
+    const reorderedBefore = reorderJobberQuoteLines(lines, 'text-1', 'line-1')
+    const reorderedAfter = reorderJobberQuoteLines(lines, 'line-1', 'text-1', 'after')
 
-    expect(reordered.map((line) => line.id)).toEqual(['text-1', 'line-1'])
+    expect(reorderedBefore.map((line) => line.id)).toEqual(['text-1', 'line-1'])
+    expect(reorderedAfter.map((line) => line.id)).toEqual(['text-1', 'line-1'])
+    expect(reorderJobberQuoteLines(lines, 'line-1', 'text-1', 'before')).toBe(lines)
+    expect(reorderJobberQuoteLines(lines, 'text-1', 'line-1', 'after')).toBe(lines)
+    expect(reorderJobberQuoteLines(lines, 'missing', 'line-1')).toBe(lines)
     expect(lines.map((line) => line.id)).toEqual(['line-1', 'text-1'])
   })
 

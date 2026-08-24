@@ -22,7 +22,7 @@ import { applyOptionMaterialReorder, QuoteOptionsPanel } from './quote-options-p
 import { OptionTotalsSummary } from './option-totals-summary'
 import { calculateMainQuoteTotals } from './quote-calculation-totals'
 import type { AreaCreateResult, AreaFormulaSelections, AreaScope, FormulaNumber, JobberQuoteLineItemDraft, MaterialItem, QuoteMemoItem, QuoteOptionItem } from './types'
-import { JobberProductServiceEditor } from './jobber-product-service-editor'
+import { JobberProductServiceEditor, type JobberQuoteLinesChange } from './jobber-product-service-editor'
 import { JobberOptionImport } from './jobber-option-import'
 import {
   buildJobberOptionImportCandidates,
@@ -689,8 +689,9 @@ export function QuoteForm({ settings, areas, productServices = [], quoteLineTemp
     }))
   }
 
-  function changeJobberQuoteLines(nextLines: JobberQuoteLineItemDraft[]) {
+  function changeJobberQuoteLines(update: JobberQuoteLinesChange) {
     setJobberQuoteLines((currentLines) => {
+      const nextLines = typeof update === 'function' ? update(currentLines) : update
       setDeletedJobberLineItemIds((currentDeletedIds) => getNextDeletedJobberLineItemIds(
         currentDeletedIds,
         currentLines,

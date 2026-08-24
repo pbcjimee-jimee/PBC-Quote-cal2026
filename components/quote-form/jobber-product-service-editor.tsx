@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState, type ChangeEvent, type DragEvent } from 'react'
+import { useEffect, useRef, useState, type ChangeEvent, type DragEvent, type KeyboardEvent } from 'react'
 import { Icons } from '@/components/ui/icons'
 import type { JobberQuoteLineItemDraft } from './types'
 import type { ProductServiceRecord } from '@/lib/product-services/types'
@@ -11,8 +11,11 @@ interface JobberProductServiceEditorProps {
   value: JobberQuoteLineItemDraft[]
   productServices?: ProductServiceRecord[]
   templates?: QuoteLineTemplateRecord[]
-  onChange: (lines: JobberQuoteLineItemDraft[]) => void
+  onChange: (update: JobberQuoteLinesChange) => void
 }
+
+export type JobberQuoteLinesUpdater = (lines: JobberQuoteLineItemDraft[]) => JobberQuoteLineItemDraft[]
+export type JobberQuoteLinesChange = JobberQuoteLineItemDraft[] | JobberQuoteLinesUpdater
 
 function createLineId(prefix: string) {
   return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
@@ -130,6 +133,7 @@ export function reorderJobberQuoteLines(
   const nextTargetIndex = nextLines.findIndex((line) => line.id === targetId)
   const insertIndex = placement === 'after' ? nextTargetIndex + 1 : nextTargetIndex
   nextLines.splice(insertIndex, 0, draggedLine)
+  if (nextLines.every((line, index) => line.id === lines[index]?.id)) return lines
   return nextLines
 }
 
@@ -165,9 +169,11 @@ export function JobberProductServiceEditor({
   const [selectedTemplateId, setSelectedTemplateId] = useState('')
   const [activeLookupLineId, setActiveLookupLineId] = useState<string | null>(null)
   const [catalogMatches, setCatalogMatches] = useState<ProductServiceRecord[]>([])
+  const [reorderAnnouncement, setReorderAnnouncement] = useState('')
   const scrollListRef = useRef<HTMLDivElement | null>(null)
   const dragScrollFrameRef = useRef<number | null>(null)
   const dragScrollStepRef = useRef(0)
+  const pendingAnnouncementLineIdRef = useRef<string | null>(null)
 
   function stopProductServiceDragScroll() {
     dragScrollStepRef.current = 0
@@ -208,6 +214,18 @@ export function JobberProductServiceEditor({
   }
 
   useEffect(() => stopProductServiceDragScroll, [])
+
+  useEffect(() => {
+    const movedLineId = pendingAnnouncementLineIdRef.current
+    if (!movedLineId) return
+
+    const position = value.findIndex((line) => line.id === movedLineId)
+    const line = value[position]
+    if (position >= 0 && line) {
+      setReorderAnnouncement(`${line.name || 'Service line'} moved to position ${position + 1} of ${value.length}.`)
+    }
+    pendingAnnouncementLineIdRef.current = null
+  }, [value])
 
   const activeLookupQuery = value.find((line) => line.id === activeLookupLineId)?.name.trim() ?? ''
   const availableProductServices = productServices.length > 0
@@ -264,14 +282,13 @@ export function JobberProductServiceEditor({
     event.preventDefault()
     if (!draggedLineId) return
     updateProductServiceDragScroll(event.clientY)
-    if (draggedLineId === lineId) return
+    if (draggedLineId === lineId) {
+      setDropTarget(null)
+      return
+    }
 
     const placement = getDropPlacement(event)
     setDropTarget({ id: lineId, placement })
-    const reordered = reorderJobberQuoteLines(value, draggedLineId, lineId, placement)
-    if (reordered !== value && reordered.map((line) => line.id).join('|') !== value.map((line) => line.id).join('|')) {
-      onChange(reordered)
-    }
   }
 
   function handleDrop(lineId: string, event: DragEvent<HTMLDivElement>) {
@@ -281,7 +298,11 @@ export function JobberProductServiceEditor({
     if (!droppedLineId) return
 
     const placement = getDropPlacement(event)
-    onChange(reorderJobberQuoteLines(value, droppedLineId, lineId, placement))
+    onChange((currentLines) => {
+      const nextLines = reorderJobberQuoteLines(currentLines, droppedLineId, lineId, placement)
+      pendingAnnouncementLineIdRef.current = nextLines === currentLines ? null : droppedLineId
+      return nextLines
+    })
     setDraggedLineId(null)
     setDropTarget(null)
   }
@@ -296,6 +317,41 @@ export function JobberProductServiceEditor({
     if (!draggedLineId) return
     event.preventDefault()
     updateProductServiceDragScroll(event.clientY)
+    if (event.target === event.currentTarget) {
+      setDropTarget(null)
+    }
+  }
+
+  function handleListDrop(event: DragEvent<HTMLDivElement>) {
+    event.preventDefault()
+    stopProductServiceDragScroll()
+    setDraggedLineId(null)
+    setDropTarget(null)
+  }
+
+  function moveLine(lineId: string, direction: 'up' | 'down') {
+    const currentIndex = value.findIndex((line) => line.id === lineId)
+    const targetIndex = direction === 'up' ? currentIndex - 1 : currentIndex + 1
+    if (currentIndex < 0 || !value[targetIndex]) return
+
+    onChange((currentLines) => {
+      const latestIndex = currentLines.findIndex((line) => line.id === lineId)
+      const latestTargetIndex = direction === 'up' ? latestIndex - 1 : latestIndex + 1
+      const target = currentLines[latestTargetIndex]
+      if (latestIndex < 0 || !target) {
+        pendingAnnouncementLineIdRef.current = null
+        return currentLines
+      }
+
+      const nextLines = reorderJobberQuoteLines(
+        currentLines,
+        lineId,
+        target.id,
+        direction === 'up' ? 'before' : 'after'
+      )
+      pendingAnnouncementLineIdRef.current = nextLines === currentLines ? null : lineId
+      return nextLines
+    })
   }
 
   function applyTemplate(templateId: string) {
@@ -316,6 +372,9 @@ export function JobberProductServiceEditor({
 
   return (
     <section className="space-y-4">
+      <p className="sr-only" role="status" aria-live="polite" aria-atomic="true">
+        {reorderAnnouncement}
+      </p>
       <div className="pbc-panelhead">
         <div className="pbc-panelhead__copy">
           <h2 className="pbc-paneltitle">Public Product / Service Lines</h2>
@@ -363,7 +422,7 @@ export function JobberProductServiceEditor({
       <div
         ref={scrollListRef}
         onDragOver={handleListDragOver}
-        onDrop={() => stopProductServiceDragScroll()}
+        onDrop={handleListDrop}
         onDragLeave={(event) => {
           if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
             stopProductServiceDragScroll()
@@ -371,7 +430,7 @@ export function JobberProductServiceEditor({
         }}
         className="product-service-scroll-list pbc-product-service-scroll space-y-3 overflow-y-auto pr-2"
       >
-        {value.map((line) => {
+        {value.map((line, index) => {
           const isDropTarget = dropTarget?.id === line.id
           if (line.kind === 'line_item') {
             return (
@@ -384,6 +443,10 @@ export function JobberProductServiceEditor({
                 onDragOver={(event) => handleDragOver(line.id, event)}
                 onDrop={(event) => handleDrop(line.id, event)}
                 onDragEnd={handleDragEnd}
+                canMoveUp={index > 0}
+                canMoveDown={index < value.length - 1}
+                onMoveUp={() => moveLine(line.id, 'up')}
+                onMoveDown={() => moveLine(line.id, 'down')}
                 isLookupActive={activeLookupLineId === line.id}
                 onLookupFocus={() => setActiveLookupLineId(line.id)}
                 onLookupBlur={() => setActiveLookupLineId(null)}
@@ -405,6 +468,10 @@ export function JobberProductServiceEditor({
               onDragOver={(event) => handleDragOver(line.id, event)}
               onDrop={(event) => handleDrop(line.id, event)}
               onDragEnd={handleDragEnd}
+              canMoveUp={index > 0}
+              canMoveDown={index < value.length - 1}
+              onMoveUp={() => moveLine(line.id, 'up')}
+              onMoveDown={() => moveLine(line.id, 'down')}
               isLookupActive={activeLookupLineId === line.id}
               onLookupFocus={() => setActiveLookupLineId(line.id)}
               onLookupBlur={() => setActiveLookupLineId(null)}
@@ -429,6 +496,10 @@ interface PricedLineRowProps {
   onDragOver: (event: DragEvent<HTMLDivElement>) => void
   onDrop: (event: DragEvent<HTMLDivElement>) => void
   onDragEnd: () => void
+  canMoveUp: boolean
+  canMoveDown: boolean
+  onMoveUp: () => void
+  onMoveDown: () => void
   isLookupActive: boolean
   onLookupFocus: () => void
   onLookupBlur: () => void
@@ -439,9 +510,75 @@ interface PricedLineRowProps {
 }
 
 function getDropTargetClass(dropPlacement: DropPlacement | null) {
-  if (dropPlacement === 'before') return 'ring-2 ring-blue-300 ring-offset-2'
-  if (dropPlacement === 'after') return 'ring-2 ring-green-300 ring-offset-2'
+  if (dropPlacement) return 'ring-1 ring-[var(--primary)] ring-offset-2'
   return ''
+}
+
+function DropInsertionMarker({ placement }: { placement: DropPlacement }) {
+  return (
+    <span
+      aria-hidden="true"
+      className={[
+        'pointer-events-none absolute inset-x-3 z-10 h-1 rounded-full bg-[var(--primary)]',
+        placement === 'before' ? '-top-0.5' : '-bottom-0.5',
+      ].join(' ')}
+    />
+  )
+}
+
+interface LineReorderControlsProps {
+  label: string
+  canMoveUp: boolean
+  canMoveDown: boolean
+  onMoveUp: () => void
+  onMoveDown: () => void
+}
+
+function handleLineReorderKeyDown(event: KeyboardEvent<HTMLButtonElement>, props: LineReorderControlsProps) {
+  if (event.key === 'ArrowUp' && props.canMoveUp) {
+    event.preventDefault()
+    props.onMoveUp()
+  }
+  if (event.key === 'ArrowDown' && props.canMoveDown) {
+    event.preventDefault()
+    props.onMoveDown()
+  }
+}
+
+function LineReorderControls({
+  label,
+  canMoveUp,
+  canMoveDown,
+  onMoveUp,
+  onMoveDown,
+}: LineReorderControlsProps) {
+  return (
+    <div className="pbc-service-line__reorder mt-2 flex items-center justify-end gap-2">
+      <span className="text-[11px] font-semibold text-[var(--muted)]">Move item</span>
+      <div className="flex items-center gap-1" role="group" aria-label={`Move ${label}`}>
+        <button
+          type="button"
+          onClick={onMoveUp}
+          disabled={!canMoveUp}
+          aria-label={`Move ${label} up`}
+          title="Move up"
+          className="pbc-iconbtn pbc-iconbtn--compact disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          <span aria-hidden="true">↑</span>
+        </button>
+        <button
+          type="button"
+          onClick={onMoveDown}
+          disabled={!canMoveDown}
+          aria-label={`Move ${label} down`}
+          title="Move down"
+          className="pbc-iconbtn pbc-iconbtn--compact disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          <span aria-hidden="true">↓</span>
+        </button>
+      </div>
+    </div>
+  )
 }
 
 function PricedLineRow({
@@ -452,6 +589,10 @@ function PricedLineRow({
   onDragOver,
   onDrop,
   onDragEnd,
+  canMoveUp,
+  canMoveDown,
+  onMoveUp,
+  onMoveDown,
   isLookupActive,
   onLookupFocus,
   onLookupBlur,
@@ -461,26 +602,30 @@ function PricedLineRow({
   onRemove,
 }: PricedLineRowProps) {
   const filteredProductServices = getProductServiceMatches(line.name, productServices)
+  const reorderControls = { label: line.name || 'line item', canMoveUp, canMoveDown, onMoveUp, onMoveDown }
 
   return (
     <div
       onDragOver={onDragOver}
       onDrop={onDrop}
       className={[
-        'pbc-inlinepanel transition-shadow',
+        'pbc-inlinepanel relative transition-shadow',
         isDragging ? 'opacity-60' : '',
         getDropTargetClass(dropPlacement),
       ].join(' ')}
     >
+      {dropPlacement ? <DropInsertionMarker placement={dropPlacement} /> : null}
       <div className="flex items-start gap-2">
         <button
           type="button"
           draggable
           onDragStart={onDragStart}
           onDragEnd={onDragEnd}
+          onKeyDown={(event) => handleLineReorderKeyDown(event, reorderControls)}
+          aria-keyshortcuts="ArrowUp ArrowDown"
           aria-label={`Drag ${line.name || 'line item'}`}
-          title="Drag to reorder"
-          className="pbc-iconbtn mt-1 cursor-grab touch-none select-none active:cursor-grabbing"
+          title="Drag to reorder. Use arrow keys to move."
+          className="pbc-iconbtn mt-1 cursor-grab select-none active:cursor-grabbing"
         >
           ::
         </button>
@@ -578,6 +723,7 @@ function PricedLineRow({
           {Icons.trash({ size: 13 })}
         </button>
       </div>
+      <LineReorderControls {...reorderControls} />
     </div>
   )
 }
@@ -590,6 +736,10 @@ interface TextLineRowProps {
   onDragOver: (event: DragEvent<HTMLDivElement>) => void
   onDrop: (event: DragEvent<HTMLDivElement>) => void
   onDragEnd: () => void
+  canMoveUp: boolean
+  canMoveDown: boolean
+  onMoveUp: () => void
+  onMoveDown: () => void
   isLookupActive: boolean
   onLookupFocus: () => void
   onLookupBlur: () => void
@@ -607,6 +757,10 @@ function TextLineRow({
   onDragOver,
   onDrop,
   onDragEnd,
+  canMoveUp,
+  canMoveDown,
+  onMoveUp,
+  onMoveDown,
   isLookupActive,
   onLookupFocus,
   onLookupBlur,
@@ -616,26 +770,30 @@ function TextLineRow({
   onRemove,
 }: TextLineRowProps) {
   const filteredProductServices = getProductServiceMatches(line.name, productServices)
+  const reorderControls = { label: line.name || 'text line', canMoveUp, canMoveDown, onMoveUp, onMoveDown }
 
   return (
     <div
       onDragOver={onDragOver}
       onDrop={onDrop}
       className={[
-        'pbc-softpanel transition-shadow',
+        'pbc-softpanel relative transition-shadow',
         isDragging ? 'opacity-60' : '',
         getDropTargetClass(dropPlacement),
       ].join(' ')}
     >
+      {dropPlacement ? <DropInsertionMarker placement={dropPlacement} /> : null}
       <div className="flex items-start gap-2">
         <button
           type="button"
           draggable
           onDragStart={onDragStart}
           onDragEnd={onDragEnd}
+          onKeyDown={(event) => handleLineReorderKeyDown(event, reorderControls)}
+          aria-keyshortcuts="ArrowUp ArrowDown"
           aria-label={`Drag ${line.name || 'text line'}`}
-          title="Drag to reorder"
-          className="pbc-iconbtn mt-1 cursor-grab touch-none select-none active:cursor-grabbing"
+          title="Drag to reorder. Use arrow keys to move."
+          className="pbc-iconbtn mt-1 cursor-grab select-none active:cursor-grabbing"
         >
           ::
         </button>
@@ -702,6 +860,7 @@ function TextLineRow({
           {Icons.trash({ size: 13 })}
         </button>
       </div>
+      <LineReorderControls {...reorderControls} />
     </div>
   )
 }
