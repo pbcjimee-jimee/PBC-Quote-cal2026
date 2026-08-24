@@ -192,6 +192,14 @@ Qty [1.00]   Unit price [$0.00]   Taxable [✓]
 - catalog item을 선택하면 title과 body만 채우며 unit price/tax는 text-only 상태로 유지한다.
 - Jobber API가 text block을 지원하지 않으면 구현에서 zero-price line item으로 변환한다.
 
+### 서비스 행 순서 변경
+
+- `/quotes/new`와 `/quotes/[id]/edit`의 Product / Service Line Item·Text 행은 같은 목록 안에서 순서를 바꿀 수 있다. 공유 editor를 사용하는 Settings > Template에도 동일한 동작을 적용한다.
+- 데스크톱 drag handle은 hover 중 삽입 위치만 표시하며 실제 배열 변경은 drop 시점에 한 번만 반영한다. drop은 최신 행 배열을 기준으로 처리해 드래그 도중 갱신된 이름·설명·가격 등 행 값을 보존한다.
+- 키보드 사용자는 drag handle의 `ArrowUp` / `ArrowDown`, touch 사용자는 별도 `Move up` / `Move down` 버튼으로 한 칸씩 이동한다. 첫 행의 위쪽 이동과 마지막 행의 아래쪽 이동은 비활성화하고 변경 위치는 접근성 status로 안내한다.
+- 긴 목록은 기존 Product / Service 전용 스크롤 영역을 유지하며 pointer가 목록 상·하단에 가까워지면 requestAnimationFrame 기반으로 자동 스크롤한다. drag 취소 또는 목록 빈 공간 drop은 순서를 바꾸지 않고 preview와 자동 스크롤을 정리한다.
+- 저장은 재정렬된 배열 index를 기존 `position`과 Jobber `sortOrder` 흐름에 그대로 사용한다. DB schema, Server Action, Jobber API, 외부 dependency는 변경하지 않는다.
+
 ### 제외
 
 - Build Option Set
@@ -287,7 +295,7 @@ F2  L460 + Labour 30%
 - 미배정 material 행은 허용되나 grouped subtotal에서 제외되고 경고로 표시.
   > ⚠️ 상세 페이지 'Final subtotal'이 미배정 행을 제외해 목록/저장값과 어긋날 수 있음. `docs/BACKLOG.md` P1 참조.
 - Optional add-ons는 ex GST subtotal 표시, 메인 total과 분리.
-- Product / Service line item은 drag sorting + Top/Up/Down/Bottom 컨트롤, 드래그 시 자동 스크롤.
+- Product / Service Line Item·Text는 hover 중 순서를 바꾸지 않는 drop-only drag sorting, 한 칸 Move up/down·방향키, 전용 목록 자동 스크롤을 제공한다.
 
 ## 2026-05-28 Internal Memos
 

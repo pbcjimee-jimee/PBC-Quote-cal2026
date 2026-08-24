@@ -1,6 +1,6 @@
 'use client'
 
-import { JobberProductServiceEditor } from '@/components/quote-form/jobber-product-service-editor'
+import { JobberProductServiceEditor, type JobberQuoteLinesChange } from '@/components/quote-form/jobber-product-service-editor'
 import type { JobberQuoteLineItemDraft } from '@/components/quote-form/types'
 import type { ProductServiceRecord } from '@/lib/product-services/types'
 import type { QuoteLineTemplateRecord } from '@/lib/quote-line-templates/types'
@@ -14,7 +14,7 @@ export interface TemplateSettingsTabProps {
   message: string | null
   disabled: boolean
   onTemplateNameChange: (value: string) => void
-  onTemplateLinesChange: (value: JobberQuoteLineItemDraft[]) => void
+  onTemplateLinesChange: (update: JobberQuoteLinesChange) => void
   onSave: () => void
   onCancel: () => void
   onEdit: (template: QuoteLineTemplateRecord) => void
