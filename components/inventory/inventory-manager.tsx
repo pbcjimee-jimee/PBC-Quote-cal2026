@@ -224,10 +224,12 @@ type InventoryFilters = {
   query: string
   status: InventoryStatus | undefined
   category: string | undefined
+  excludeOut: boolean
 }
 
 function inventoryItemMatchesFilters(item: InventoryItemRecord, filters: InventoryFilters): boolean {
   if (filters.status && item.status !== filters.status) return false
+  if (!filters.status && filters.excludeOut && item.status === 'out') return false
   if (filters.category && item.category !== filters.category) return false
   const tokens = filters.query.trim().toLowerCase().split(/\s+/).filter(Boolean)
   if (tokens.length === 0) return true
@@ -707,10 +709,8 @@ export function InventoryManager({
   const canAdminister = role === 'admin'
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const [items, setItems] = useState(() => initialPage.items.map(displayInventoryItem))
-  const [hasMore, setHasMore] = useState(initialPage.hasMore)
-  const [nextOffset, setNextOffset] = useState(initialPage.nextOffset)
   const [query, setQuery] = useState('')
-  const [statusFilter, setStatusFilter] = useState<'all' | InventoryStatus>('all')
+  const [statusFilter, setStatusFilter] = useState<'current' | 'all' | InventoryStatus>('current')
   const [categoryFilter, setCategoryFilter] = useState('all')
   const [customCategories, setCustomCategories] = useState(() => initialCategories.reduce(
     (categories, category) => addInventoryCategoryOption(categories, category),
@@ -722,19 +722,14 @@ export function InventoryManager({
   const [message, setMessage] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [isPending, startTransition] = useTransition()
-  const [committedFilters, setCommittedFilters] = useState({
-    query: '',
-    status: undefined as InventoryStatus | undefined,
-    category: undefined as string | undefined,
-  })
   const requestSequenceRef = useRef(0)
-  const desiredFiltersRef = useRef<InventoryFilters>({ query: '', status: undefined, category: undefined })
+  const desiredFiltersRef = useRef<InventoryFilters>({
+    query: '',
+    status: undefined,
+    category: undefined,
+    excludeOut: true,
+  })
   const isInitialFilterEffect = useRef(true)
-  const selectedStatus = statusFilter === 'all' ? undefined : statusFilter
-  const selectedCategory = categoryFilter === 'all' ? undefined : categoryFilter
-  const filtersArePending = query !== committedFilters.query
-    || selectedStatus !== committedFilters.status
-    || selectedCategory !== committedFilters.category
 
   const categories = useMemo(() => {
     return Array.from(new Set([
@@ -754,14 +749,15 @@ export function InventoryManager({
 
     const filters = {
       query,
-      status: statusFilter === 'all' ? undefined : statusFilter,
+      status: statusFilter === 'all' || statusFilter === 'current' ? undefined : statusFilter,
       category: categoryFilter === 'all' ? undefined : categoryFilter,
+      excludeOut: statusFilter === 'current',
     }
     const timer = globalThis.setTimeout(() => {
       const requestSequence = ++requestSequenceRef.current
       setError(null)
       startTransition(async () => {
-        const result = await listInventory({ ...filters, offset: 0, limit: 50 })
+        const result = await listInventory({ ...filters, fetchAll: true })
         if (requestSequence !== requestSequenceRef.current) return
         if (!result.ok) {
           setError(result.error)
@@ -769,9 +765,6 @@ export function InventoryManager({
         }
 
         setItems(result.data.items.map(displayInventoryItem))
-        setHasMore(result.data.hasMore)
-        setNextOffset(result.data.nextOffset)
-        setCommittedFilters(filters)
         resetRowEdit()
       })
     }, 300)
@@ -805,10 +798,11 @@ export function InventoryManager({
     setQuery(value)
   }
 
-  function setDesiredStatus(value: 'all' | InventoryStatus) {
+  function setDesiredStatus(value: 'current' | 'all' | InventoryStatus) {
     desiredFiltersRef.current = {
       ...desiredFiltersRef.current,
-      status: value === 'all' ? undefined : value,
+      status: value === 'all' || value === 'current' ? undefined : value,
+      excludeOut: value === 'current',
     }
     requestSequenceRef.current += 1
     setStatusFilter(value)
@@ -832,7 +826,7 @@ export function InventoryManager({
   async function reconcileCommittedInventoryPage() {
     const filters = { ...desiredFiltersRef.current }
     const requestSequence = ++requestSequenceRef.current
-    const result = await listInventory({ ...filters, offset: 0, limit: 50 })
+    const result = await listInventory({ ...filters, fetchAll: true })
     if (requestSequence !== requestSequenceRef.current) return
     if (!result.ok) {
       setError(result.error)
@@ -840,9 +834,6 @@ export function InventoryManager({
     }
 
     setItems(result.data.items.map(displayInventoryItem))
-    setHasMore(result.data.hasMore)
-    setNextOffset(result.data.nextOffset)
-    setCommittedFilters(filters)
   }
 
   function resetForm() {
@@ -874,7 +865,7 @@ export function InventoryManager({
         setItems((current) => {
           const savedItem = displayInventoryItem(result.data)
           if (!inventoryItemMatchesFilters(result.data, desiredFiltersRef.current)) return current
-          return [savedItem, ...current.filter((item) => item.id !== savedItem.id)].slice(0, 50)
+          return [savedItem, ...current.filter((item) => item.id !== savedItem.id)]
         })
         setMessage('Inventory item added.')
         resetForm()
@@ -955,25 +946,6 @@ export function InventoryManager({
     })
   }
 
-  function loadMore() {
-    if (nextOffset === null || filtersArePending) return
-    setError(null)
-    const requestSequence = ++requestSequenceRef.current
-    startTransition(async () => {
-      const result = await listInventory({ ...committedFilters, offset: nextOffset, limit: 50 })
-      if (requestSequence !== requestSequenceRef.current) return
-      if (!result.ok) {
-        setError(result.error)
-        return
-      }
-
-      const incoming = result.data.items.map(displayInventoryItem)
-      setItems((current) => mergeInventoryItemsById(current, incoming))
-      setHasMore(result.data.hasMore)
-      setNextOffset(result.data.nextOffset)
-    })
-  }
-
   async function importCsv(file: File | null) {
     if (!file) return
     setMessage(null)
@@ -986,7 +958,7 @@ export function InventoryManager({
         const importedItems = result.data.items
           .filter((item) => inventoryItemMatchesFilters(item, desiredFiltersRef.current))
           .map(displayInventoryItem)
-        setItems((current) => mergeInventoryItemsById(importedItems, current).slice(0, 50))
+        setItems((current) => mergeInventoryItemsById(importedItems, current))
         setMessage(`Imported ${result.data.imported} inventory items.`)
         await reconcileCommittedInventoryPage()
       } else {
@@ -1020,7 +992,8 @@ export function InventoryManager({
             className="pbc-input sm:max-w-xs"
             placeholder="Search inventory..."
           />
-          <select value={statusFilter} onChange={(event) => setDesiredStatus(event.target.value as 'all' | InventoryStatus)} className="pbc-input sm:max-w-[160px]">
+          <select value={statusFilter} onChange={(event) => setDesiredStatus(event.target.value as 'current' | 'all' | InventoryStatus)} className="pbc-input sm:max-w-[160px]">
+            <option value="current">Current stock</option>
             <option value="all">All status</option>
             <option value="in_stock">In stock</option>
             <option value="out">Out</option>
@@ -1178,11 +1151,6 @@ export function InventoryManager({
             </section>
           )
         })}
-        {hasMore ? (
-          <button type="button" onClick={loadMore} disabled={isPending || filtersArePending} className="pbc-btn pbc-btn--ghost">
-            Load more
-          </button>
-        ) : null}
       </div>
     </div>
   )

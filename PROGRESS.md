@@ -132,6 +132,13 @@
 - `npm.cmd run audit:production`은 기존 `nanoid <3.3.17` high advisory `GHSA-2v37-7h3g-55p8`(`npm audit fix` 가능)로 exit 1이었다. 이 브랜치에서는 dependency·lockfile을 변경하지 않았다.
 - 위 수치는 branch build 증거이며 live latency 개선을 뜻하지 않는다. push 후 Sydney preview에서 `[syd1]`, auth/runtime error 0, Login·PWA·Settings·quote detail·Jobs·Inventory search·Quote Form input의 동일 cold/warm 측정을 통과해야 promotion을 검토한다.
 
+### Inventory 전체 초기 표시와 Current stock 기본 필터 (2026-08-25, 로컬 구현)
+
+- `/inventory` 최초 진입과 검색·카테고리·상태 필터 재조회는 현재 조건에 맞는 활성 재고를 `created_at DESC, id DESC` 순서로 1,000행씩 반복 조회해 전부 표시한다. 수동 `Load more`와 클라이언트 50행 절단을 제거했다.
+- 기본 상태는 `Current stock`이며 `out`만 제외한다. 따라서 `in_stock`과 `unknown`은 모든 카테고리에서 처음부터 보이고, `Out`을 선택하면 반출 항목 전체가 표시된다. `All status`, `In stock`, `Unknown` 필터도 유지한다.
+- 생성·수정·삭제·CSV import 뒤에도 현재 필터의 전체 결과로 재조정하며 기존 요청 순서 가드와 admin/supervisor 권한 경계는 유지한다. DB schema·RLS·환경 변수·외부 의존성·배포 변경은 없다.
+- route 초기 계약, Supabase 1,000행 초과 배치, 기본 out 제외, Out 필터, 필터 race와 mutation reconciliation 회귀 테스트를 추가·갱신했다.
+
 ---
 
 ## 🔲 남은 작업

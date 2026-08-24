@@ -440,13 +440,15 @@ export function listDevInventory(
   offset = 0,
   limit = 50,
   status?: InventoryStatus,
-  category?: string
+  category?: string,
+  excludeOut = false
 ): { items: InventoryItemRecord[]; nextOffset: number | null; hasMore: boolean } {
   const tokens = searchTokens(query)
   const rows = [...store.inventoryItems]
     .filter((item) => {
       if (!item.active) return false
       if (status && item.status !== status) return false
+      if (!status && excludeOut && item.status === 'out') return false
       if (category !== undefined && item.category !== category) return false
       if (tokens.length === 0) return true
 

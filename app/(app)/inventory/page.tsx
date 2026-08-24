@@ -10,7 +10,7 @@ export default async function InventoryPage() {
   if (!appUser.ok) redirect('/login')
 
   const [inventory, inventoryCategories] = await Promise.all([
-    listInventory({ limit: 50, offset: 0 }),
+    listInventory({ excludeOut: true, fetchAll: true }),
     listInventoryCategories(),
   ])
   const isAdmin = appUser.profile.role === 'admin'

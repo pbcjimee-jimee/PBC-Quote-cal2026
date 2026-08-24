@@ -67,6 +67,8 @@ const INVENTORY_COLUMNS = [
   'updated_at',
 ].join(', ')
 
+const INVENTORY_FETCH_ALL_BATCH_SIZE = 1000
+
 const MONTHS: Record<string, string> = {
   jan: '01',
   january: '01',
@@ -494,11 +496,30 @@ export async function listInventory(input: unknown = {}): Promise<ActionResult<I
     return { ok: false, error: parsed.error.message }
   }
 
-  const { query, offset, limit, status, category } = parsed.data
+  const { query, offset, limit, status, category, fetchAll, excludeOut } = parsed.data
 
   if (isDevNoAuthMode()) {
     const { listDevInventory } = await import('@/lib/dev-data')
-    return { ok: true, data: listDevInventory(query, offset, limit, status, category) }
+    if (!fetchAll) {
+      return { ok: true, data: listDevInventory(query, offset, limit, status, category, excludeOut) }
+    }
+
+    const items: InventoryItemRecord[] = []
+    let batchOffset = 0
+    while (true) {
+      const batch = listDevInventory(
+        query,
+        batchOffset,
+        INVENTORY_FETCH_ALL_BATCH_SIZE,
+        status,
+        category,
+        excludeOut
+      )
+      items.push(...batch.items)
+      if (batch.nextOffset === null) break
+      batchOffset = batch.nextOffset
+    }
+    return { ok: true, data: { items, hasMore: false, nextOffset: null } }
   }
 
   const allowedUser = await requireRole('any')
@@ -506,32 +527,58 @@ export async function listInventory(input: unknown = {}): Promise<ActionResult<I
 
   const supabase = await createClient()
   const tokens = searchTokens(query)
-  let request = supabase
-    .from('warehouse_inventory')
-    .select(INVENTORY_COLUMNS)
-    .eq('active', true)
-    .order('created_at', { ascending: false })
-    .order('id', { ascending: false })
+  const allRows: InventoryRow[] = []
+  let batchOffset = fetchAll ? 0 : offset
 
-  if (status) request = request.eq('status', status)
-  if (category !== undefined && category.trim()) request = request.eq('category', category)
+  while (true) {
+    let request = supabase
+      .from('warehouse_inventory')
+      .select(INVENTORY_COLUMNS)
+      .eq('active', true)
+      .order('created_at', { ascending: false })
+      .order('id', { ascending: false })
 
-  for (const token of tokens) {
-    request = request.or(inventorySearchOr(token))
+    if (status) request = request.eq('status', status)
+    else if (excludeOut) request = request.neq('status', 'out')
+    if (category !== undefined && category.trim()) request = request.eq('category', category)
+
+    for (const token of tokens) {
+      request = request.or(inventorySearchOr(token))
+    }
+
+    request = request.range(
+      batchOffset,
+      fetchAll ? batchOffset + INVENTORY_FETCH_ALL_BATCH_SIZE - 1 : offset + limit
+    )
+
+    const { data, error } = await request
+    if (error) return { ok: false, error: error.message }
+    const batch = data as unknown as InventoryRow[]
+
+    if (!fetchAll) {
+      const rows = batch.map(rowToInventory)
+      const hasMore = rows.length > limit
+      return {
+        ok: true,
+        data: {
+          items: rows.slice(0, limit),
+          hasMore,
+          nextOffset: hasMore ? offset + limit : null,
+        },
+      }
+    }
+
+    allRows.push(...batch)
+    if (batch.length < INVENTORY_FETCH_ALL_BATCH_SIZE) break
+    batchOffset += INVENTORY_FETCH_ALL_BATCH_SIZE
   }
 
-  request = request.range(offset, offset + limit)
-
-  const { data, error } = await request
-  if (error) return { ok: false, error: error.message }
-  const rows = (data as unknown as InventoryRow[]).map(rowToInventory)
-  const hasMore = rows.length > limit
   return {
     ok: true,
     data: {
-      items: rows.slice(0, limit),
-      hasMore,
-      nextOffset: hasMore ? offset + limit : null,
+      items: allRows.map(rowToInventory),
+      hasMore: false,
+      nextOffset: null,
     },
   }
 }
