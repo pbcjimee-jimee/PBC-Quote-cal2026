@@ -295,6 +295,25 @@ describe('inventory UI', () => {
     expect(markup).not.toContain('Add Item')
     expect(markup).not.toContain('Import CSV')
     expect(markup).not.toContain('aria-label="Delete Drop sheet"')
+    expect(markup).not.toContain('pbc-inventoryaddtrigger')
+    expect(markup).not.toContain('id="inventory-mobile-add-form"')
+    expect(markup).not.toContain('placeholder="e.g. Weathershield"')
+  })
+
+  it('renders one stable admin Add disclosure target', () => {
+    const markup = renderToStaticMarkup(createElement(InventoryManager, {
+      initialPage: { items: [], hasMore: false, nextOffset: null },
+      initialCategories: [],
+      role: 'admin',
+    }))
+
+    expect(markup).toContain('pbc-inventoryaddtrigger')
+    expect(markup).toContain('aria-expanded="false"')
+    expect(markup).toContain('aria-controls="inventory-mobile-add-form"')
+    expect(markup).toContain('id="inventory-mobile-add-form"')
+    expect(markup).toContain('class="pbc-formgroup pbc-inventoryaddform"')
+    expect(markup).toContain('data-mobile-open="false"')
+    expect(markup.match(/id="inventory-mobile-add-form"/g) ?? []).toHaveLength(1)
   })
 
   it('defines a table-cell background treatment for out inventory rows', () => {

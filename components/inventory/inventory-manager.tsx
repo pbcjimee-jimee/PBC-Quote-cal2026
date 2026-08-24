@@ -47,6 +47,8 @@ const EMPTY_FORM: InventoryFormState = {
   notes: '',
 }
 
+const INVENTORY_MOBILE_ADD_FORM_ID = 'inventory-mobile-add-form'
+
 const INVENTORY_CSV_HEADER = [
   'Name',
   'Category',
@@ -708,6 +710,7 @@ export function InventoryManager({
 }) {
   const canAdminister = role === 'admin'
   const fileInputRef = useRef<HTMLInputElement | null>(null)
+  const mobileAddTriggerRef = useRef<HTMLButtonElement | null>(null)
   const [items, setItems] = useState(() => initialPage.items.map(displayInventoryItem))
   const [query, setQuery] = useState('')
   const [statusFilter, setStatusFilter] = useState<'current' | 'all' | InventoryStatus>('current')
@@ -717,6 +720,7 @@ export function InventoryManager({
     [] as string[]
   ))
   const [form, setForm] = useState<InventoryFormState>(EMPTY_FORM)
+  const [isMobileAddFormOpen, setIsMobileAddFormOpen] = useState(false)
   const [editingRowId, setEditingRowId] = useState<string | null>(null)
   const [rowEditForm, setRowEditForm] = useState<InventoryFormState>(EMPTY_FORM)
   const [message, setMessage] = useState<string | null>(null)
@@ -840,6 +844,16 @@ export function InventoryManager({
     setForm(EMPTY_FORM)
   }
 
+  function closeMobileAddForm() {
+    setIsMobileAddFormOpen(false)
+    if (isMobileAddFormOpen) mobileAddTriggerRef.current?.focus()
+  }
+
+  function cancelMobileAddForm() {
+    resetForm()
+    closeMobileAddForm()
+  }
+
   function resetRowEdit() {
     setEditingRowId(null)
     setRowEditForm(EMPTY_FORM)
@@ -869,6 +883,7 @@ export function InventoryManager({
         })
         setMessage('Inventory item added.')
         resetForm()
+        closeMobileAddForm()
         await reconcileCommittedInventoryPage()
       } else {
         setError(result.error)
@@ -985,6 +1000,20 @@ export function InventoryManager({
           <h2 className="pbc-paneltitle">Warehouse Inventory</h2>
           <p className="pbc-panelsub">{items.length} loaded filtered items</p>
         </div>
+        {canAdminister ? (
+          <button
+            ref={mobileAddTriggerRef}
+            type="button"
+            className="pbc-btn pbc-btn--primary pbc-inventoryaddtrigger"
+            aria-label="Add inventory item"
+            aria-expanded={isMobileAddFormOpen}
+            aria-controls={INVENTORY_MOBILE_ADD_FORM_ID}
+            disabled={isPending}
+            onClick={() => setIsMobileAddFormOpen((current) => !current)}
+          >
+            {Icons.plus({ size: 14 })} Add item
+          </button>
+        ) : null}
         <div className="pbc-panelhead__actions w-full sm:w-auto">
           <input
             value={query}
@@ -1008,9 +1037,13 @@ export function InventoryManager({
         </div>
       </div>
 
-      {canAdminister ? <section className="pbc-formgroup">
+      {canAdminister ? <section
+        id={INVENTORY_MOBILE_ADD_FORM_ID}
+        className="pbc-formgroup pbc-inventoryaddform"
+        data-mobile-open={isMobileAddFormOpen ? 'true' : 'false'}
+      >
         <h3 className="pbc-paneltitle">Add Item</h3>
-        <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="pbc-inventoryaddform__fields mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <label className="pbc-field">
             <span className="pbc-field__label">Name</span>
             <input value={form.name} onChange={(event) => setField('name', event.target.value)} className="pbc-input" placeholder="e.g. Weathershield" />
@@ -1075,9 +1108,18 @@ export function InventoryManager({
             <textarea value={form.notes} onChange={(event) => setField('notes', event.target.value)} className="pbc-textarea min-h-20" placeholder="Optional warehouse note" />
           </label>
         </div>
-        <div className="mt-3 flex flex-wrap gap-2">
-          <button type="button" onClick={saveItem} disabled={isPending || !canSave} className="pbc-btn pbc-btn--primary">
+        <div className="pbc-inventoryaddform__actions mt-3 flex flex-wrap gap-2">
+          <button type="button" onClick={saveItem} disabled={isPending || !canSave} aria-label="Save new inventory item" className="pbc-btn pbc-btn--primary">
             Add Item
+          </button>
+          <button
+            type="button"
+            onClick={cancelMobileAddForm}
+            disabled={isPending}
+            aria-label="Cancel adding inventory item"
+            className="pbc-btn pbc-btn--ghost pbc-inventoryaddcancel"
+          >
+            Cancel
           </button>
         </div>
       </section> : null}
