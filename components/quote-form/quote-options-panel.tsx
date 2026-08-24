@@ -3,7 +3,7 @@ import type { AreaRecord } from '@/lib/areas/types'
 import { Button } from '@/components/ui/card'
 import { Icons } from '@/components/ui/icons'
 import { FormulaResults } from './formula-results'
-import { MaterialsPanel } from './materials-panel'
+import { MaterialsPanel, type MaterialReorderUpdater } from './materials-panel'
 import type { AreaSubtotalBreakdown } from './quote-calculation-totals'
 import type { AreaCreateResult, AreaScope, FormulaNumber, MaterialItem, QuoteOptionItem } from './types'
 
@@ -23,8 +23,19 @@ interface QuoteOptionsPanelProps {
   areas: AreaRecord[]
   onAddOption: () => void
   onChangeOption: (option: QuoteOptionItem) => void
+  onReorderOptionMaterials?: (optionId: string, update: MaterialReorderUpdater) => void
   onRemoveOption: (id: string) => void
   onCreateArea?: (scope: AreaScope, name: string) => Promise<AreaCreateResult>
+}
+
+export function applyOptionMaterialReorder(
+  options: QuoteOptionItem[],
+  optionId: string,
+  update: MaterialReorderUpdater
+): QuoteOptionItem[] {
+  return options.map((option) => option.id === optionId
+    ? { ...option, materials: update(option.materials) }
+    : option)
 }
 
 export function QuoteOptionsPanel({
@@ -33,6 +44,7 @@ export function QuoteOptionsPanel({
   areas,
   onAddOption,
   onChangeOption,
+  onReorderOptionMaterials,
   onRemoveOption,
   onCreateArea,
 }: QuoteOptionsPanelProps) {
@@ -114,6 +126,9 @@ export function QuoteOptionsPanel({
                       ...option,
                       materials: option.materials.filter((item) => item.id !== id),
                     })}
+                    onReorder={onReorderOptionMaterials
+                      ? (update) => onReorderOptionMaterials(option.id, update)
+                      : undefined}
                   />
                   {totals ? (
                     <div className="grid gap-3 sm:grid-cols-3">

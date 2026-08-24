@@ -1,4 +1,4 @@
-import { type FocusEvent, type KeyboardEvent, useEffect, useRef, useState } from 'react'
+import { type DragEvent, type FocusEvent, type KeyboardEvent, useEffect, useRef, useState } from 'react'
 import type { AreaCreateResult, AreaScope, MaterialItem } from './types'
 import type { AreaRecord } from '@/lib/areas/types'
 import { AREA_SCOPE_LABELS } from '@/lib/areas/constants'
@@ -11,6 +11,21 @@ interface MaterialRowProps {
   onCreateArea?: (scope: AreaScope, name: string) => Promise<AreaCreateResult>
   onChange: (item: MaterialItem) => void
   onRemove: () => void
+  isDragging?: boolean
+  dropPlacement?: 'before' | 'after' | null
+  onDragStart?: (event: DragEvent<HTMLButtonElement>) => void
+  onDragOver?: (event: DragEvent<HTMLDivElement>) => void
+  onDrop?: (event: DragEvent<HTMLDivElement>) => void
+  onDragEnd?: () => void
+  canMoveUp?: boolean
+  canMoveDown?: boolean
+  onMoveUp?: () => void
+  onMoveDown?: () => void
+}
+
+function getMaterialDropTargetClass(dropPlacement: MaterialRowProps['dropPlacement']): string {
+  if (dropPlacement) return 'ring-1 ring-[var(--primary)] ring-offset-2'
+  return ''
 }
 
 function getScopeLabel(scope: AreaScope): string {
@@ -113,7 +128,24 @@ export function updateMaterialRrp(item: MaterialItem, value: string): MaterialIt
   return { ...item, marketPrice: value }
 }
 
-export function MaterialRow({ item, areas, areaScope, onCreateArea, onChange, onRemove }: MaterialRowProps) {
+export function MaterialRow({
+  item,
+  areas,
+  areaScope,
+  onCreateArea,
+  onChange,
+  onRemove,
+  isDragging = false,
+  dropPlacement = null,
+  onDragStart,
+  onDragOver,
+  onDrop,
+  onDragEnd,
+  canMoveUp = false,
+  canMoveDown = false,
+  onMoveUp,
+  onMoveDown,
+}: MaterialRowProps) {
   const [isAddingArea, setIsAddingArea] = useState(false)
   const [areaQuery, setAreaQuery] = useState('')
   const [areaError, setAreaError] = useState<string | null>(null)
@@ -223,9 +255,52 @@ export function MaterialRow({ item, areas, areaScope, onCreateArea, onChange, on
     }
   }
 
+  function handleReorderKeyDown(event: KeyboardEvent<HTMLButtonElement>) {
+    if (event.key === 'ArrowUp' && canMoveUp && onMoveUp) {
+      event.preventDefault()
+      onMoveUp()
+    }
+    if (event.key === 'ArrowDown' && canMoveDown && onMoveDown) {
+      event.preventDefault()
+      onMoveDown()
+    }
+  }
+
   return (
-    <div className="pbc-softpanel pbc-materialrow">
+    <div
+      onDragOver={onDragOver}
+      onDrop={onDrop}
+      className={[
+        'pbc-softpanel pbc-materialrow relative transition-shadow',
+        isDragging ? 'opacity-60' : '',
+        getMaterialDropTargetClass(dropPlacement),
+      ].join(' ')}
+    >
+      {dropPlacement ? (
+        <span
+          aria-hidden="true"
+          className={[
+            'pointer-events-none absolute inset-x-3 z-10 h-1 rounded-full bg-[var(--primary)]',
+            dropPlacement === 'before' ? '-top-0.5' : '-bottom-0.5',
+          ].join(' ')}
+        />
+      ) : null}
       <div className="pbc-materialrow__head">
+        {onDragStart ? (
+          <button
+            type="button"
+            draggable
+            onDragStart={onDragStart}
+            onDragEnd={onDragEnd}
+            onKeyDown={handleReorderKeyDown}
+            aria-keyshortcuts="ArrowUp ArrowDown"
+            aria-label={`Drag ${item.name || 'material'}`}
+            title="Drag to reorder. Use arrow keys to move."
+            className="pbc-iconbtn shrink-0 cursor-grab select-none active:cursor-grabbing"
+          >
+            ::
+          </button>
+        ) : null}
         <input
           type="text"
           value={item.name}
@@ -244,6 +319,33 @@ export function MaterialRow({ item, areas, areaScope, onCreateArea, onChange, on
           </svg>
         </button>
       </div>
+      {onDragStart ? (
+        <div className="pbc-materialrow__reorder mt-2 flex items-center justify-end gap-2">
+          <span className="text-[11px] font-semibold text-[var(--muted)]">Move item</span>
+          <div className="flex items-center gap-1" role="group" aria-label={`Move ${item.name || 'material'}`}>
+            <button
+              type="button"
+              onClick={onMoveUp}
+              disabled={!canMoveUp}
+              aria-label={`Move ${item.name || 'material'} up`}
+              title="Move up"
+              className="pbc-iconbtn pbc-iconbtn--compact disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              <span aria-hidden="true">↑</span>
+            </button>
+            <button
+              type="button"
+              onClick={onMoveDown}
+              disabled={!canMoveDown}
+              aria-label={`Move ${item.name || 'material'} down`}
+              title="Move down"
+              className="pbc-iconbtn pbc-iconbtn--compact disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              <span aria-hidden="true">↓</span>
+            </button>
+          </div>
+        </div>
+      ) : null}
       <div className="pbc-materialrow__fields pbc-materialrow__fields--pricing">
         <DecimalInput
           label="Qty"
