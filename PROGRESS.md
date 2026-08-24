@@ -139,6 +139,13 @@
 - 생성·수정·삭제·CSV import 뒤에도 현재 필터의 전체 결과로 재조정하며 기존 요청 순서 가드와 admin/supervisor 권한 경계는 유지한다. DB schema·RLS·환경 변수·외부 의존성·배포 변경은 없다.
 - route 초기 계약, Supabase 1,000행 초과 배치, 기본 out 제외, Out 필터, 필터 race와 mutation reconciliation 회귀 테스트를 추가·갱신했다.
 
+### Inventory 모바일 Add Item 토글 복구 (2026-08-25, 로컬 구현)
+
+- 후속 pagination 통합 과정에서 빠졌던 승인 설계를 복구해 `max-width: 720px`의 admin Inventory에서 Add Item 폼을 기본 접힌 disclosure로 표시한다. 데스크톱은 기존처럼 폼이 항상 보이고 supervisor에는 trigger와 폼이 모두 노출되지 않는다.
+- 단순 접기/다시 열기는 입력값을 유지한다. Cancel과 성공 저장은 폼을 초기화하고 닫은 뒤 Add trigger로 포커스를 되돌리며, 저장 실패는 열린 상태와 입력값을 유지한다. 저장 pending 동안 trigger·Save·Cancel을 잠가 중복 제출이나 상태 손실을 막는다.
+- DB schema·RLS·Server Action·CSV·Inventory 전체 조회/필터 동작·외부 의존성은 변경하지 않았다.
+- TDD focused 3 files/35 tests와 전체 `npm.cmd run verify`를 통과했다. 전체 결과는 96 files/841 tests 통과(환경 조건 1 file/9 tests skip), coverage 84.63/71.55/94.40/90.00%, Next production build 18/18 routes, production audit 0 vulnerabilities다.
+
 ---
 
 ## 🔲 남은 작업
@@ -165,6 +172,7 @@
 
 | 날짜 | 작업 | 담당 |
 |---|---|---|
+| 2026-08-25 | Inventory의 승인된 모바일 Add Item disclosure를 복구했다. 720px 이하 admin은 기본 접힌 `Add item` trigger로 기존 단일 폼을 열며, 단순 toggle은 입력값 유지, Cancel·성공은 초기화/닫기/trigger 포커스 복귀, 실패는 값 보존, pending은 trigger·Save·Cancel 잠금을 적용한다. desktop 폼 상시 표시와 supervisor 비노출을 유지했다. TDD focused 3 files/35 tests와 전체 verify(96 files/841 tests, 1 file/9 tests skip, coverage 84.63/71.55/94.40/90.00%, build 18 routes, audit 0 vulnerabilities)를 통과했다. DB·RLS·Server Action·의존성·배포 변경은 없다. | Codex 5.6-Sol high |
 | 2026-08-24 | New/Edit Quote와 Settings Template의 Product / Service Line Item·Text 순서 변경을 material과 같은 drop-only 방식으로 통일했다. hover 중에는 삽입 위치만 표시하고 drop 시 최신 배열을 한 번만 재정렬하며, 키보드 방향키·touch용 한 칸 Move up/down·접근성 위치 안내·기존 내부 목록 auto-scroll을 제공한다. 취소와 빈 공간 drop은 순서를 변경하지 않으며 기존 `position`/Jobber `sortOrder` 저장 흐름을 유지한다. TDD focused 2 files/22 tests와 전체 verify(95 files/834 tests, 1 file/9 tests skip, coverage 84.79/71.53/94.40/90.17%, production build 18 routes, audit 0 vulnerabilities)를 통과했고 독립 재리뷰 finding 0건이다. DB·Server Action·Jobber API·의존성·배포 변경은 없다. | Codex 5.6-Sol high |
 | 2026-08-24 | New/Edit Quote의 Main Materials·Option Materials에 현재 보이는 area 범위의 순서 변경 동작을 확정했다. 데스크톱 drag handle은 drop 때만 순서를 반영하고, 키보드·touch용 한 칸 Move up/down과 viewport 가장자리 page auto-scroll을 제공한다. 숨겨진 area 행은 기존 배열 슬롯을 유지하며 저장은 기존 `position` 매핑을 사용한다. DB·의존성·배포 변경은 없다. | Codex 5.6-Terra high |
 | 2026-08-22 | Overview 견적 검색을 고객명·주소뿐 아니라 Jobber ID와 `jobber_snapshot.quoteNumber`까지 확장했다. `#3535`·`# 3535` 입력을 지원하고, PostgREST 인용 및 PostgreSQL `ILIKE` 메타문자 escaping을 적용했다. PostgREST가 `*`를 `%` 별칭으로 치환하는 경로는 literal-safe `imatch`로 분리해 기존 구두점·literal wildcard 검색과 운영/dev 동작을 보존했다. TDD focused 2 files/77 tests와 최종 전체 verify를 통과했다: Vitest 93 files/815 tests(1 file/9 tests skip), coverage 84.79/71.53/94.40/90.17%, strict TypeScript, ESLint, production build 18 routes, production audit 0 vulnerabilities. 최종 독립 재리뷰의 Critical/Important finding은 0건이다. DB migration과 새 의존성 추가는 수행하지 않았다. | Codex 5.6-Sol high |

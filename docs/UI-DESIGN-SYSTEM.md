@@ -111,6 +111,7 @@ Prefer these primitives before recreating card/header markup in page components.
 - Page topbars are non-sticky on the mobile shell and their action groups wrap; the app header remains the only sticky top navigation surface.
 - Dense Settings/Users/expense tables may scroll inside `.pbc-tablewrap`, but the document must never scroll horizontally.
 - At `max-width: 720px`, Inventory uses disclosure cards; collapsed cards show only Name, Category, and Size / Serial. Desktop retains the twelve-column table.
+- At `max-width: 720px`, the admin Inventory Add Item form is initially collapsed behind an inline `Add item` disclosure before search and filters. Cancel and successful save reset and close it, failure preserves it for retry, and pending save locks the trigger and actions. Desktop keeps the form visible; supervisors receive neither the trigger nor the form.
 - The application switches between its desktop shell/sidebar and mobile header/total bar at the Tailwind `lg` boundary. CSS max-width queries for that transition must use `1023.98px`; component-specific layout breakpoints may remain independent.
 - At `max-width: 1023.98px`, form inputs, textareas, table inputs, search inputs, status controls, pricing inputs, and month selects must use a minimum `16px` font size to prevent iOS focus zoom. Preserve compact desktop type above this boundary.
 - Standalone-safe surfaces must add `env(safe-area-inset-*)` to their existing padding. This applies to the mobile sticky header top, mobile total bar bottom, and the auth layout left, right, and bottom edges.

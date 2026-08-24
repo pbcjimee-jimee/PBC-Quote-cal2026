@@ -17,6 +17,8 @@ const inventoryActions = vi.hoisted(() => ({
 
 vi.mock('@/lib/actions/inventory', () => inventoryActions)
 
+const MOBILE_ADD_FORM_ID = 'inventory-mobile-add-form'
+
 const item: InventoryItemRecord = {
   id: '00000000-0000-4000-8000-000000000071',
   name: 'Mobile interaction item',
@@ -94,9 +96,239 @@ function findMobileEditor(container: TestElement): TestElement | undefined {
   ))
 }
 
+function findAddTrigger(container: TestElement): TestElement | undefined {
+  return Array.from(container.querySelectorAll('button')).find((button) => (
+    button.getAttribute('aria-controls') === MOBILE_ADD_FORM_ID
+  ))
+}
+
+function findAddForm(container: TestElement): TestElement | undefined {
+  return Array.from(container.querySelectorAll('section')).find((section) => (
+    section.getAttribute('id') === MOBILE_ADD_FORM_ID
+  ))
+}
+
+function findInputByPlaceholder(container: TestElement, placeholder: string): TestElement | undefined {
+  return Array.from(container.querySelectorAll('input')).find((input) => (
+    input.getAttribute('placeholder') === placeholder
+  ))
+}
+
+function findButtonByLabel(container: TestElement, label: string): TestElement | undefined {
+  return Array.from(container.querySelectorAll('button')).find((button) => (
+    button.getAttribute('aria-label') === label
+  ))
+}
+
 describe('InventoryManager client interaction', () => {
   beforeEach(() => {
     for (const action of Object.values(inventoryActions)) action.mockReset()
+  })
+
+  it('toggles the Add form and Cancel clears it without creating an item', async () => {
+    const { cleanup, document: testDocument } = installTestDom()
+    let root: Root | null = null
+
+    try {
+      const { createRoot } = await import('react-dom/client')
+      const container = testDocument.createElement('div')
+      root = createRoot(container as unknown as Element)
+
+      await act(async () => {
+        root!.render(createElement(InventoryManager, {
+          initialPage: { items: [item], hasMore: false, nextOffset: null },
+          initialCategories: ['Tools'],
+        }))
+      })
+
+      const trigger = findAddTrigger(container)
+      const addForm = findAddForm(container)
+      const nameInput = findInputByPlaceholder(container, 'e.g. Weathershield')
+      const colourInput = findInputByPlaceholder(container, 'Monument')
+      const quantityInput = findInputByPlaceholder(container, '1')
+      const focusTrigger = vi.fn()
+      Object.defineProperty(trigger, 'focus', { configurable: true, value: focusTrigger })
+
+      expect(trigger?.getAttribute('aria-expanded')).toBe('false')
+      expect(addForm?.getAttribute('data-mobile-open')).toBe('false')
+
+      await act(async () => {
+        trigger!.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      })
+      expect(trigger?.getAttribute('aria-expanded')).toBe('true')
+      expect(findAddForm(container)).toBe(addForm)
+
+      await act(async () => {
+        nameInput!.value = 'Unsaved mobile item'
+        nameInput!.dispatchEvent(new Event('input', { bubbles: true }))
+        nameInput!.dispatchEvent(new Event('change', { bubbles: true }))
+        colourInput!.value = 'Deep Ocean Blue'
+        colourInput!.dispatchEvent(new Event('input', { bubbles: true }))
+        colourInput!.dispatchEvent(new Event('change', { bubbles: true }))
+      })
+
+      await act(async () => {
+        trigger!.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      })
+      expect(trigger?.getAttribute('aria-expanded')).toBe('false')
+
+      await act(async () => {
+        trigger!.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      })
+      expect(trigger?.getAttribute('aria-expanded')).toBe('true')
+      expect(nameInput?.value).toBe('Unsaved mobile item')
+      expect(colourInput?.value).toBe('Deep Ocean Blue')
+
+      const cancel = findButtonByLabel(container, 'Cancel adding inventory item')
+      await act(async () => {
+        cancel!.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      })
+
+      expect(trigger?.getAttribute('aria-expanded')).toBe('false')
+      expect(addForm?.getAttribute('data-mobile-open')).toBe('false')
+      expect(nameInput?.value).toBe('')
+      expect(colourInput?.value).toBe('')
+      expect(quantityInput?.value).toBe('1')
+      expect(focusTrigger).toHaveBeenCalledOnce()
+      expect(inventoryActions.createInventoryItem).not.toHaveBeenCalled()
+    } finally {
+      if (root) await act(async () => root?.unmount())
+      cleanup()
+    }
+  })
+
+  it('keeps the Add form open with entered values when creation fails', async () => {
+    const pendingCreate = deferred<{ ok: false; error: string }>()
+    inventoryActions.createInventoryItem.mockReturnValueOnce(pendingCreate.promise)
+    const { cleanup, document: testDocument } = installTestDom()
+    let root: Root | null = null
+
+    try {
+      const { createRoot } = await import('react-dom/client')
+      const container = testDocument.createElement('div')
+      root = createRoot(container as unknown as Element)
+
+      await act(async () => {
+        root!.render(createElement(InventoryManager, {
+          initialPage: { items: [item], hasMore: false, nextOffset: null },
+          initialCategories: ['Tools'],
+        }))
+      })
+
+      const trigger = findAddTrigger(container)
+      await act(async () => {
+        trigger!.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      })
+
+      const nameInput = findInputByPlaceholder(container, 'e.g. Weathershield')
+      const colourInput = findInputByPlaceholder(container, 'Monument')
+      await act(async () => {
+        nameInput!.value = 'Preserved new item'
+        nameInput!.dispatchEvent(new Event('input', { bubbles: true }))
+        nameInput!.dispatchEvent(new Event('change', { bubbles: true }))
+        colourInput!.value = 'Deep Ocean Blue'
+        colourInput!.dispatchEvent(new Event('input', { bubbles: true }))
+        colourInput!.dispatchEvent(new Event('change', { bubbles: true }))
+      })
+
+      const save = findButtonByLabel(container, 'Save new inventory item')
+      const cancel = findButtonByLabel(container, 'Cancel adding inventory item')
+      await act(async () => {
+        save!.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+        await Promise.resolve()
+      })
+
+      expect(trigger?.disabled).toBe(true)
+      expect(save?.disabled).toBe(true)
+      expect(cancel?.disabled).toBe(true)
+      expect(trigger?.getAttribute('aria-expanded')).toBe('true')
+      expect(nameInput?.value).toBe('Preserved new item')
+      expect(colourInput?.value).toBe('Deep Ocean Blue')
+
+      pendingCreate.resolve({ ok: false, error: 'Create failed.' })
+      await act(async () => {
+        await pendingCreate.promise
+      })
+
+      expect(trigger?.disabled).toBe(false)
+      expect(findAddForm(container)?.getAttribute('data-mobile-open')).toBe('true')
+      expect(nameInput?.value).toBe('Preserved new item')
+      expect(colourInput?.value).toBe('Deep Ocean Blue')
+      expect(container.textContent).toContain('Create failed.')
+    } finally {
+      try {
+        pendingCreate.resolve({ ok: false, error: 'Test cleanup.' })
+        if (root) await act(async () => root?.unmount())
+      } finally {
+        cleanup()
+      }
+    }
+  })
+
+  it('closes and resets the Add form after a successful creation', async () => {
+    const createdItem: InventoryItemRecord = {
+      ...item,
+      id: '00000000-0000-4000-8000-000000000075',
+      name: 'Created mobile item',
+      colour: 'Deep Ocean Blue',
+    }
+    inventoryActions.createInventoryItem.mockResolvedValueOnce({ ok: true, data: createdItem })
+    inventoryActions.listInventory.mockResolvedValueOnce({
+      ok: true,
+      data: { items: [createdItem, item], hasMore: false, nextOffset: null },
+    })
+    const { cleanup, document: testDocument } = installTestDom()
+    let root: Root | null = null
+
+    try {
+      const { createRoot } = await import('react-dom/client')
+      const container = testDocument.createElement('div')
+      root = createRoot(container as unknown as Element)
+
+      await act(async () => {
+        root!.render(createElement(InventoryManager, {
+          initialPage: { items: [item], hasMore: false, nextOffset: null },
+          initialCategories: ['Tools'],
+        }))
+      })
+
+      const trigger = findAddTrigger(container)
+      const focusTrigger = vi.fn()
+      Object.defineProperty(trigger, 'focus', { configurable: true, value: focusTrigger })
+      await act(async () => {
+        trigger!.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      })
+
+      const nameInput = findInputByPlaceholder(container, 'e.g. Weathershield')
+      const colourInput = findInputByPlaceholder(container, 'Monument')
+      const quantityInput = findInputByPlaceholder(container, '1')
+      await act(async () => {
+        nameInput!.value = createdItem.name
+        nameInput!.dispatchEvent(new Event('input', { bubbles: true }))
+        nameInput!.dispatchEvent(new Event('change', { bubbles: true }))
+        colourInput!.value = createdItem.colour ?? ''
+        colourInput!.dispatchEvent(new Event('input', { bubbles: true }))
+        colourInput!.dispatchEvent(new Event('change', { bubbles: true }))
+      })
+
+      const save = findButtonByLabel(container, 'Save new inventory item')
+      await act(async () => {
+        save!.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+        await Promise.resolve()
+      })
+
+      expect(trigger?.getAttribute('aria-expanded')).toBe('false')
+      expect(findAddForm(container)?.getAttribute('data-mobile-open')).toBe('false')
+      expect(nameInput?.value).toBe('')
+      expect(colourInput?.value).toBe('')
+      expect(quantityInput?.value).toBe('1')
+      expect(focusTrigger).toHaveBeenCalledOnce()
+      expect(container.textContent).toContain('Inventory item added.')
+      expect(container.textContent).toContain(createdItem.name)
+    } finally {
+      if (root) await act(async () => root?.unmount())
+      cleanup()
+    }
   })
 
   it('debounces exhaustive server search and shows all Out results only when that filter is selected', async () => {

@@ -68,6 +68,20 @@ describe('PWA mobile UX', () => {
     expect(narrow).toContain('min-height: var(--mobile-tap-target)')
   })
 
+  it('collapses the Inventory Add form only at the mobile breakpoint', () => {
+    const css = readFileSync('app/styles/components.css', 'utf8')
+    const beforeNarrow = css.slice(0, css.indexOf('@media (max-width: 720px)'))
+    const narrow = getMediaBlock(css, 'max-width: 720px')
+
+    expect(css).toMatch(/\.pbc-inventoryaddtrigger\s*{[^}]*display:\s*none/)
+    expect(css).toMatch(/\.pbc-inventoryaddcancel\s*{[^}]*display:\s*none/)
+    expect(beforeNarrow).not.toMatch(/\.pbc-inventoryaddform[^}]*display:\s*none/)
+    expect(narrow).toMatch(/\.pbc-inventoryaddtrigger\s*{[^}]*display:\s*inline-flex/)
+    expect(narrow).toMatch(/\.pbc-inventoryaddcancel\s*{[^}]*display:\s*inline-flex/)
+    expect(narrow).toMatch(/\.pbc-inventoryaddform\[data-mobile-open="false"\]\s*{[^}]*display:\s*none/)
+    expect(narrow).toMatch(/\.pbc-inventoryaddform__fields\s*{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)/)
+  })
+
   it('renders an explicit, active Overview entry in the mobile navigation', () => {
     const markup = renderToStaticMarkup(createElement(AppHeader, { userProfile }))
     const mobileHeader = markup.slice(markup.indexOf('<header'), markup.indexOf('</header>'))
