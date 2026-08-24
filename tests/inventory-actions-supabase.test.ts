@@ -56,6 +56,7 @@ function createThenableRequest(response: unknown) {
   const request = {
     select: vi.fn(() => request),
     eq: vi.fn(() => request),
+    neq: vi.fn(() => request),
     order: vi.fn(() => request),
     limit: vi.fn(() => request),
     range: vi.fn(() => request),
@@ -193,6 +194,47 @@ describe('inventory actions against Supabase', () => {
     expect(result).toEqual({ ok: true, data: ['Common', 'Rare'] })
     expect(firstRequest.range).toHaveBeenCalledWith(0, 999)
     expect(secondRequest.range).toHaveBeenCalledWith(1000, 1999)
+  })
+
+  it('reads every filtered inventory batch when the caller requests the complete result', async () => {
+    const firstRows = Array.from({ length: 1000 }, (_, index) => ({
+      ...inventoryRow,
+      id: `00000000-0000-4000-8000-${String(index).padStart(12, '0')}`,
+    }))
+    const finalRow = {
+      ...inventoryRow,
+      id: '00000000-0000-4000-8000-000000001000',
+      name: 'Older category item',
+    }
+    const firstRequest = createThenableRequest({ data: firstRows, error: null })
+    const secondRequest = createThenableRequest({ data: [finalRow], error: null })
+    const from = vi.fn()
+      .mockReturnValueOnce(firstRequest)
+      .mockReturnValueOnce(secondRequest)
+    mocks.createClient.mockResolvedValueOnce({ from })
+
+    const result = await listInventory({ query: 'paint', fetchAll: true })
+
+    expect(result.ok).toBe(true)
+    if (result.ok) {
+      expect(result.data.items).toHaveLength(1001)
+      expect(result.data.items.at(-1)?.name).toBe('Older category item')
+      expect(result.data.hasMore).toBe(false)
+      expect(result.data.nextOffset).toBeNull()
+    }
+    expect(firstRequest.range).toHaveBeenCalledWith(0, 999)
+    expect(secondRequest.range).toHaveBeenCalledWith(1000, 1999)
+  })
+
+  it('excludes only out rows from the default complete inventory result', async () => {
+    const request = createThenableRequest({ data: [inventoryRow], error: null })
+    mocks.createClient.mockResolvedValueOnce({ from: vi.fn(() => request) })
+
+    const result = await listInventory({ excludeOut: true, fetchAll: true })
+
+    expect(result.ok).toBe(true)
+    expect(request.neq).toHaveBeenCalledWith('status', 'out')
+    expect(request.eq).not.toHaveBeenCalledWith('status', 'in_stock')
   })
 
   it('fetches one extra row and returns a full inventory page with the next offset', async () => {

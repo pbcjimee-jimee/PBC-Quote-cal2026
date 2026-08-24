@@ -10,6 +10,8 @@
 
 **Spec:** `docs/superpowers/specs/2026-08-13-app-performance-optimization-design.md`
 
+> **Inventory update (2026-08-25):** The user explicitly superseded this plan's 50-row pagination and `Load more` task. Inventory now batch-loads the complete matching result, defaults to excluding only `out`, and exposes all out rows through the `Out` filter. The Inventory steps below are retained as historical implementation context; follow `docs/ARCHITECTURE.md` and `docs/UI-PAGES.md` for the current contract.
+
 ## Global Constraints
 
 - No new external dependency.

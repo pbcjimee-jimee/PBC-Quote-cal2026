@@ -323,6 +323,8 @@ export const inventorySearchSchema = z.object({
   }).optional(),
   offset: z.number().int().min(0).default(0),
   limit: z.number().int().positive().max(50).default(50),
+  fetchAll: z.boolean().default(false),
+  excludeOut: z.boolean().default(false),
 })
 
 export const inventoryCreateSchema = z.object({

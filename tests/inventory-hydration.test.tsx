@@ -99,20 +99,17 @@ describe('InventoryManager client interaction', () => {
     for (const action of Object.values(inventoryActions)) action.mockReset()
   })
 
-  it('debounces server search, replaces results, resets filters, and merges load-more rows by ID', async () => {
+  it('debounces exhaustive server search and shows all Out results only when that filter is selected', async () => {
     vi.useFakeTimers()
+    const outItem = { ...moreItem, name: 'Out inventory item', status: 'out' as const }
     inventoryActions.listInventory
       .mockResolvedValueOnce({
         ok: true,
-        data: { items: [searchItem], hasMore: true, nextOffset: 50 },
+        data: { items: [searchItem, moreItem], hasMore: false, nextOffset: null },
       })
       .mockResolvedValueOnce({
         ok: true,
-        data: { items: [searchItem, searchItem, moreItem], hasMore: false, nextOffset: null },
-      })
-      .mockResolvedValueOnce({
-        ok: true,
-        data: { items: [moreItem], hasMore: false, nextOffset: null },
+        data: { items: [outItem], hasMore: false, nextOffset: null },
       })
     const { cleanup, document: testDocument } = installTestDom()
     let root: Root | null = null
@@ -152,29 +149,13 @@ describe('InventoryManager client interaction', () => {
         query: 'server result',
         status: undefined,
         category: undefined,
-        offset: 0,
-        limit: 50,
+        excludeOut: true,
+        fetchAll: true,
       })
       expect(container.textContent).toContain(searchItem.name)
-      expect(container.textContent).not.toContain(item.name)
-
-      const loadMore = Array.from(container.querySelectorAll('button')).find((button) => button.textContent === 'Load more')
-      expect(loadMore).toBeDefined()
-      await act(async () => {
-        loadMore!.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-        await Promise.resolve()
-      })
-      expect(inventoryActions.listInventory).toHaveBeenNthCalledWith(2, {
-        query: 'server result',
-        status: undefined,
-        category: undefined,
-        offset: 50,
-        limit: 50,
-      })
-      expect(Array.from(container.querySelectorAll('button')).filter((button) => (
-        button.getAttribute('aria-controls') === `inventory-mobile-editor-${searchItem.id}`
-      ))).toHaveLength(1)
       expect(container.textContent).toContain(moreItem.name)
+      expect(container.textContent).not.toContain(item.name)
+      expect(container.textContent).not.toContain('Load more')
 
       const status = container.querySelectorAll('select')[0]
       await act(async () => {
@@ -183,65 +164,15 @@ describe('InventoryManager client interaction', () => {
         vi.advanceTimersByTime(300)
         await Promise.resolve()
       })
-      expect(inventoryActions.listInventory).toHaveBeenNthCalledWith(3, {
+      expect(inventoryActions.listInventory).toHaveBeenNthCalledWith(2, {
         query: 'server result',
         status: 'out',
         category: undefined,
-        offset: 0,
-        limit: 50,
+        excludeOut: false,
+        fetchAll: true,
       })
       expect(container.textContent).not.toContain(searchItem.name)
-      expect(container.textContent).toContain(moreItem.name)
-    } finally {
-      try {
-        if (root) await act(async () => root?.unmount())
-      } finally {
-        vi.useRealTimers()
-        cleanup()
-      }
-    }
-  })
-
-  it('does not load the previous page while a new filter is waiting for debounce', async () => {
-    vi.useFakeTimers()
-    inventoryActions.listInventory.mockResolvedValueOnce({
-      ok: true,
-      data: { items: [searchItem], hasMore: false, nextOffset: null },
-    })
-    const { cleanup, document: testDocument } = installTestDom()
-    let root: Root | null = null
-
-    try {
-      const { createRoot } = await import('react-dom/client')
-      const container = testDocument.createElement('div')
-      root = createRoot(container as unknown as Element)
-      await act(async () => {
-        root!.render(createElement(InventoryManager, {
-          initialPage: { items: [item], hasMore: true, nextOffset: 50 },
-          initialCategories: ['Tools'],
-        }))
-      })
-      const search = Array.from(container.querySelectorAll('input')).find((input) => (
-        input.getAttribute('placeholder') === 'Search inventory...'
-      ))!
-      const loadMore = Array.from(container.querySelectorAll('button')).find((button) => button.textContent === 'Load more')!
-
-      await act(async () => {
-        search.value = 'server result'
-        search.dispatchEvent(new Event('input', { bubbles: true }))
-      })
-      expect(loadMore.disabled).toBe(true)
-      await act(async () => {
-        loadMore.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-        vi.advanceTimersByTime(300)
-        await Promise.resolve()
-      })
-
-      expect(inventoryActions.listInventory).toHaveBeenCalledTimes(1)
-      expect(inventoryActions.listInventory).toHaveBeenCalledWith(expect.objectContaining({
-        query: 'server result',
-        offset: 0,
-      }))
+      expect(container.textContent).toContain(outItem.name)
     } finally {
       try {
         if (root) await act(async () => root?.unmount())
@@ -358,8 +289,8 @@ describe('InventoryManager client interaction', () => {
         query: 'Filter B',
         status: undefined,
         category: undefined,
-        offset: 0,
-        limit: 50,
+        excludeOut: true,
+        fetchAll: true,
       })
       expect(container.textContent).toContain(filterBItem.name)
       expect(container.textContent).not.toContain(filterAItem.name)
@@ -378,7 +309,7 @@ describe('InventoryManager client interaction', () => {
     vi.useFakeTimers()
     const mutation = deferred<{ ok: true; data: InventoryItemRecord }>()
     const reconciliationB = deferred<{ ok: true; data: { items: InventoryItemRecord[]; hasMore: false; nextOffset: null } }>()
-    const filterC = deferred<{ ok: true; data: { items: InventoryItemRecord[]; hasMore: true; nextOffset: 50 } }>()
+    const filterC = deferred<{ ok: true; data: { items: InventoryItemRecord[]; hasMore: false; nextOffset: null } }>()
     inventoryActions.updateInventoryItem.mockReturnValueOnce(mutation.promise)
     inventoryActions.listInventory
       .mockResolvedValueOnce({ ok: true, data: { items: [filterAItem], hasMore: false, nextOffset: null } })
@@ -421,7 +352,11 @@ describe('InventoryManager client interaction', () => {
         await mutation.promise
         await Promise.resolve()
       })
-      expect(inventoryActions.listInventory).toHaveBeenNthCalledWith(2, expect.objectContaining({ query: 'Filter B', offset: 0 }))
+      expect(inventoryActions.listInventory).toHaveBeenNthCalledWith(2, expect.objectContaining({
+        query: 'Filter B',
+        excludeOut: true,
+        fetchAll: true,
+      }))
 
       await act(async () => {
         search.value = 'Filter C'
@@ -430,9 +365,13 @@ describe('InventoryManager client interaction', () => {
       await act(async () => {
         vi.advanceTimersByTime(300)
       })
-      expect(inventoryActions.listInventory).toHaveBeenNthCalledWith(3, expect.objectContaining({ query: 'Filter C', offset: 0 }))
+      expect(inventoryActions.listInventory).toHaveBeenNthCalledWith(3, expect.objectContaining({
+        query: 'Filter C',
+        excludeOut: true,
+        fetchAll: true,
+      }))
       await act(async () => {
-        filterC.resolve({ ok: true, data: { items: [filterCItem], hasMore: true, nextOffset: 50 } })
+        filterC.resolve({ ok: true, data: { items: [filterCItem], hasMore: false, nextOffset: null } })
         await filterC.promise
       })
       await act(async () => {
@@ -443,13 +382,12 @@ describe('InventoryManager client interaction', () => {
       expect(container.textContent).toContain(filterCItem.name)
       expect(container.textContent).not.toContain(filterAItem.name)
       expect(container.textContent).not.toContain(filterBItem.name)
-      const loadMore = Array.from(container.querySelectorAll('button')).find((button) => button.textContent === 'Load more')
-      expect(loadMore?.disabled).toBe(false)
+      expect(container.textContent).not.toContain('Load more')
     } finally {
       try {
         mutation.resolve({ ok: true, data: filterAItem })
         reconciliationB.resolve({ ok: true, data: { items: [], hasMore: false, nextOffset: null } })
-        filterC.resolve({ ok: true, data: { items: [], hasMore: true, nextOffset: 50 } })
+        filterC.resolve({ ok: true, data: { items: [], hasMore: false, nextOffset: null } })
         if (root) await act(async () => root?.unmount())
       } finally {
         vi.useRealTimers()
@@ -458,17 +396,12 @@ describe('InventoryManager client interaction', () => {
     }
   })
 
-  it('reconciles the first page after deletion so Load more does not skip the former next row', async () => {
+  it('reconciles the complete inventory after deletion without omitting older rows', async () => {
     inventoryActions.deleteInventoryItem.mockResolvedValueOnce({ ok: true, data: { ...item, active: false } })
-    inventoryActions.listInventory
-      .mockResolvedValueOnce({
-        ok: true,
-        data: { items: [moreItem], hasMore: true, nextOffset: 50 },
-      })
-      .mockResolvedValueOnce({
-        ok: true,
-        data: { items: [searchItem], hasMore: false, nextOffset: null },
-      })
+    inventoryActions.listInventory.mockResolvedValueOnce({
+      ok: true,
+      data: { items: [moreItem, searchItem], hasMore: false, nextOffset: null },
+    })
     const { cleanup, document: testDocument } = installTestDom()
     let root: Root | null = null
 
@@ -495,16 +428,11 @@ describe('InventoryManager client interaction', () => {
         query: '',
         status: undefined,
         category: undefined,
-        offset: 0,
-        limit: 50,
+        excludeOut: true,
+        fetchAll: true,
       })
-      const loadMore = Array.from(container.querySelectorAll('button')).find((button) => button.textContent === 'Load more')!
-      await act(async () => {
-        loadMore.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-        await Promise.resolve()
-      })
-
-      expect(inventoryActions.listInventory).toHaveBeenNthCalledWith(2, expect.objectContaining({ offset: 50 }))
+      expect(inventoryActions.listInventory).toHaveBeenCalledTimes(1)
+      expect(container.textContent).toContain(moreItem.name)
       expect(container.textContent).toContain(searchItem.name)
     } finally {
       try {
@@ -515,7 +443,7 @@ describe('InventoryManager client interaction', () => {
     }
   })
 
-  it('keeps a filtered create bounded and hides its nonmatching local result after reconciliation', async () => {
+  it('keeps a filtered create exhaustive and hides its nonmatching local result after reconciliation', async () => {
     vi.useFakeTimers()
     inventoryActions.listInventory
       .mockResolvedValueOnce({ ok: true, data: { items: [searchItem], hasMore: false, nextOffset: null } })
@@ -556,8 +484,8 @@ describe('InventoryManager client interaction', () => {
 
       expect(inventoryActions.listInventory).toHaveBeenNthCalledWith(2, expect.objectContaining({
         query: 'Server search',
-        offset: 0,
-        limit: 50,
+        excludeOut: true,
+        fetchAll: true,
       }))
       expect(container.textContent).not.toContain(nonmatchingItem.name)
       expect(container.textContent).toContain('Created Category')
@@ -609,7 +537,11 @@ describe('InventoryManager client interaction', () => {
         await Promise.resolve()
       })
 
-      expect(inventoryActions.listInventory).toHaveBeenNthCalledWith(2, expect.objectContaining({ query: 'Server search', offset: 0 }))
+      expect(inventoryActions.listInventory).toHaveBeenNthCalledWith(2, expect.objectContaining({
+        query: 'Server search',
+        excludeOut: true,
+        fetchAll: true,
+      }))
       expect(container.textContent).not.toContain(updatedOutsideFilter.name)
       expect(container.textContent).toContain('Updated Category')
       expect(container.textContent).toContain('0 loaded filtered items')
@@ -623,7 +555,7 @@ describe('InventoryManager client interaction', () => {
     }
   })
 
-  it('reconciles filtered imports to a bounded page and retains imported categories', async () => {
+  it('reconciles filtered imports to the complete result and retains imported categories', async () => {
     vi.useFakeTimers()
     const importedItems = Array.from({ length: 60 }, (_, index) => ({
       ...nonmatchingItem,
@@ -671,7 +603,11 @@ describe('InventoryManager client interaction', () => {
         await Promise.resolve()
       })
 
-      expect(inventoryActions.listInventory).toHaveBeenNthCalledWith(2, expect.objectContaining({ query: 'Server search', offset: 0 }))
+      expect(inventoryActions.listInventory).toHaveBeenNthCalledWith(2, expect.objectContaining({
+        query: 'Server search',
+        excludeOut: true,
+        fetchAll: true,
+      }))
       expect(container.textContent).not.toContain('Imported outside filter')
       expect(container.textContent).toContain('Imported Category')
       expect(container.textContent).toContain('1 loaded filtered items')

@@ -164,12 +164,14 @@ describe('inventory UI', () => {
     }]
 
     const markup = renderToStaticMarkup(createElement(InventoryManager, {
-      initialPage: { items, hasMore: false, nextOffset: null },
+      initialPage: { items, hasMore: true, nextOffset: 50 },
       initialCategories: ['Paint', 'paint', ' Paint ', 'Paint'],
     }))
 
     expect(markup).toContain('Warehouse Inventory')
     expect(markup).toContain('Search inventory')
+    expect(markup).toContain('<option value="current" selected="">Current stock</option>')
+    expect(markup).not.toContain('Load more')
     expect(markup).toContain('Add Item')
     expect(markup).toContain('Import CSV')
     expect(markup).toContain('Export loaded filtered rows')

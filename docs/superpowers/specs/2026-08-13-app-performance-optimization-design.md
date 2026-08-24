@@ -4,6 +4,8 @@
 **Status:** Approved
 **Scope:** Login completion, PWA startup, authenticated navigation, quote detail, Jobs, Inventory, Quote Form, Settings, and loading feedback
 
+> **Inventory update (2026-08-25):** The user explicitly superseded this document's 50-row bounded Inventory loading requirement. Current behavior batch-loads the complete matching Inventory result, defaults to excluding only `out` rows, exposes all out rows through the `Out` filter, and removes manual `Load more`. See `docs/ARCHITECTURE.md` and `docs/UI-PAGES.md` for the current contract; the original sections below remain as historical design context.
+
 ## Problem
 
 The public login document is already CDN-served and reasonably small, but work after login and most authenticated navigations remain slow. Production and source analysis found several independent costs that stack on the critical path:
