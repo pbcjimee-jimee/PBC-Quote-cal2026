@@ -19,7 +19,7 @@ git log --oneline -3   # d820fcb(G1 증거) 커밋이 보여야 정상
 
 ## 1. 모델 라우팅 (AGENTS.md 기준)
 
-- 코드 구현·마이그레이션·UI·git: `gpt-5.6-terra` + high
+- 코드 구현·마이그레이션·UI·git: `gpt-5.6-sol` + medium
 - 테스트·RLS·보안·오류 수정·대규모 수정: `gpt-5.6-sol` + high
 - 서브에이전트 스폰 시: 전부 `gpt-5.6-sol` + high
 

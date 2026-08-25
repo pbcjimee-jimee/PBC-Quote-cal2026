@@ -7,7 +7,7 @@
 
 ## Phase별 작업 (담당 모델)
 
-### Phase 1: 설계 — Opus 4.8
+### Phase 1: 설계 — Codex 5.6-Sol max
 
 | 작업 | 사용 스킬 | 산출물 |
 |---|---|---|
@@ -17,7 +17,7 @@
 | 시스템 아키텍처 명세 | 일반 | `docs/ARCHITECTURE.md`, `docs/DB-SCHEMA.md` |
 | 워크플로우 갱신 | 일반 | `docs/WORKFLOW.md`, `docs/AGENT-MAP.md` |
 
-### Phase 2: 구현 전 추가 검증 — Opus 4.8 설계 리뷰
+### Phase 2: 구현 전 추가 검증 — Codex 5.6-Sol max 설계 리뷰
 
 | 작업 | 사용 스킬 | 시점 |
 |---|---|---|
@@ -26,7 +26,7 @@
 | 복잡한 리스크·스코프 판단 | `superpowers:brainstorming`, `superpowers:writing-plans` | 범위가 큰 기능 전 |
 | 보안 영향 사전 판단 | 일반 | DB/RLS/OAuth/민감 데이터 변경 전 |
 
-### Phase 3: 구현 — Codex 5.6 (구현=Terra high / 테스트·버그 수정·리팩토링=Sol high)
+### Phase 3: 구현 — Codex 5.6-Sol (일반 구현=medium / 테스트·버그 수정·리팩토링=high)
 
 | 작업 | 입력 | 출력 |
 |---|---|---|
@@ -40,15 +40,15 @@
 | 버그 수정 | 버그 리포트 + 재현 단계 | 수정 diff + 회귀 테스트 |
 | 리팩토링 | 명확한 목표 | 동일 동작·더 나은 구조 |
 
-### Phase 4: 구현 후 검증 — Codex 5.6 (+ QA 설계는 Opus 4.8)
+### Phase 4: 구현 후 검증 — Codex 5.6-Sol (QA 설계=max)
 
 | 작업 | 담당 | 사용 스킬/명령 | 시점 |
 |---|---|---|---|
-| 코드 리뷰·보안 검토 | Codex 5.6-Sol | 자체 diff review, `review`/`gstack-review` | 변경 완료 후 |
-| QA 시나리오 설계 | Opus 4.8 | `gstack-qa` 계획 수립 | 사용자 흐름 변경 시 |
-| QA 실행 | Codex 5.6-Sol | `qa`, 브라우저 smoke | QA 설계 확정 후 |
-| 완료 전 검증 | 작업 수행 모델 (Terra/Sol) | `superpowers:verification-before-completion` | 완료 보고 전 |
-| 문서 업데이트 | Codex 5.6-Terra | 일반 | 사용자·운영 기준 변경 시 |
+| 코드 리뷰·보안 검토 | Codex 5.6-Sol high | 자체 diff review, `review`/`gstack-review` | 변경 완료 후 |
+| QA 시나리오 설계 | Codex 5.6-Sol max | `gstack-qa` 계획 수립 | 사용자 흐름 변경 시 |
+| QA 실행 | Codex 5.6-Sol high | `qa`, 브라우저 smoke | QA 설계 확정 후 |
+| 완료 전 검증 | 작업 수행 effort (medium/high/max) | `superpowers:verification-before-completion` | 완료 보고 전 |
+| 문서 업데이트 | Codex 5.6-Sol medium | 일반 | 사용자·운영 기준 변경 시 |
 
 ---
 
@@ -66,9 +66,9 @@
 
 ## 모델 기준
 
-- **설계·기획·QA 설계·디자인** → `Claude Opus 4.8 extra`
-- **코드 구현·간단한 변경·git·배포** → `Codex 5.6-Terra high`
-- **테스트·오류 수정·대규모 수정·리뷰·보안 등 복잡한 작업** → `Codex 5.6-Sol high`
+- **설계·기획·QA 설계·디자인·아키텍처·스코프/보안 리스크 판단** → `Codex 5.6-Sol max`
+- **코드 구현·간단한 변경·git·배포** → `Codex 5.6-Sol medium`
+- **테스트·오류 수정·대규모 수정·리뷰·보안 점검/수정 등 복잡한 작업** → `Codex 5.6-Sol high`
 - **Codex 서브에이전트** → 전부 `gpt-5.6-sol` + `high` (`~/.codex/agents/` 오버라이드)
 
 런타임에서 모델 전환이 불가능하면 프롬프트 첫 줄에 `Model: <모델>`을 표시한다.
@@ -80,7 +80,7 @@
 ```md
 [작업 #X] {짧은 제목}
 
-**Model:** Opus 4.8 extra (설계) / Codex 5.6-Terra high (구현·간단한 변경) / Codex 5.6-Sol high (테스트·오류 수정·대규모)
+**Model:** Codex 5.6-Sol max (설계) / Codex 5.6-Sol medium (구현·간단한 변경) / Codex 5.6-Sol high (테스트·오류 수정·대규모)
 
 **Input docs to read first:**
 - docs/ARCHITECTURE.md

@@ -1,7 +1,7 @@
 # CODEX-TASKS.md — 구현 태스크 명세 (보관)
 
 > v1.0 태스크의 입력·작업·완료 기준 상세 명세. **대부분 완료된 보관 기록이다.**
-> 구현 담당은 Codex 5.6(구현=Terra high / 테스트·오류 수정·대규모=Sol high), 설계·스코프 판단은 Opus 4.8(`AGENTS.md`·`docs/AGENT-MAP.md`).
+> 모든 작업은 Codex 5.6-Sol이 담당한다(일반 구현=medium / 테스트·오류 수정·대규모=high / 설계·스코프 판단=max, `AGENTS.md`·`docs/AGENT-MAP.md`).
 > 신규 이슈는 `docs/BACKLOG.md`, 전체 진행 현황은 `PROGRESS.md` 참조.
 
 ---
@@ -26,7 +26,7 @@
 5. **단순 문서/테스트 fixture 정리**
    - 모델 등급: `Codex 5.6-Terra high` (구현)
 
-계획·스코프 재조정이 필요하면 설계는 `Opus 4.8 extra`가 사용자와 확인해 문서화하고, 구현은 `Codex 5.6-Terra high`(코드 구현·간단한 변경) 또는 `Codex 5.6-Sol high`(테스트·오류 수정·대규모)가 그 문서를 기준으로 수행한다.
+계획·스코프 재조정이 필요하면 `Codex 5.6-Sol max`가 사용자와 확인해 문서화하고, 구현은 `Codex 5.6-Sol medium`(코드 구현·간단한 변경) 또는 `Codex 5.6-Sol high`(테스트·오류 수정·대규모)가 그 문서를 기준으로 수행한다.
 
 검증 결과(2026-06-26):
 - `npm.cmd run typecheck` 통과

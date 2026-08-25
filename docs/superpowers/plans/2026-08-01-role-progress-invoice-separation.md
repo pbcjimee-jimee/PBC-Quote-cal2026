@@ -714,7 +714,7 @@ git push origin role
 
 ### Task 5: Align documentation with strict branch separation
 
-**Model:** Codex 5.6-Terra high
+**Model:** Codex 5.6-Sol medium
 
 **Files:**
 - Delete: `.superpowers/sdd/task-5-report.md`

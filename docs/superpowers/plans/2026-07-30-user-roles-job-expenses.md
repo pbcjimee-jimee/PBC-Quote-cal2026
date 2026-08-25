@@ -62,7 +62,7 @@
 ## Global Constraints
 
 - 승인된 결정의 진실의 원천은 이 문서 + 개정된 `docs/DECISIONS.md`. 구현 중 결정 변경은 사용자 승인 필요.
-- 구현 서브에이전트 모델: 코드 구현 = `Codex 5.6-Terra high`, 테스트·RLS·보안 = `Codex 5.6-Sol high`, 서브에이전트 = `gpt-5.6-sol high` (`AGENTS.md`).
+- 구현 역할 모델: 코드 구현 = `Codex 5.6-Sol medium`, 테스트·RLS·보안 = `Codex 5.6-Sol high`; 서브에이전트는 역할과 무관하게 `gpt-5.6-sol high` (`AGENTS.md`).
 - 이 계획은 프로덕션 마이그레이션, Jobber OAuth scope 변경·재연결, Vercel env 변경, 배포를 **자동 승인하지 않는다** — 각각 G3 게이트.
 - Jobber 접근은 read-only 유지. 기존 quote line write-back 외 mutation 추가 금지. `assertJobberReadOnlyScopes` 가드 유지.
 - 신규 Jobber 조회는 전용 모듈(`lib/jobber/job-client.ts`)로 분리. 기존 quote 모듈·라우트·테스트는 변경 최소화.

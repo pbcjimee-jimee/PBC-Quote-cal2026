@@ -1,6 +1,6 @@
 # PWA & Mobile Optimization Implementation Plan
 
-> **2026-07-13 설계 확정 전 초안.** 설계·승인 판단은 Opus 4.8(이번 계획은 Claude Fable 5 작성), 구현·검증은 Codex 5.6(구현=Terra high / 테스트·QA·리뷰=Sol high).
+> **2026-07-13 설계 확정 전 초안.** 현재 설계·승인 판단은 Codex 5.6-Sol max(이번 계획은 Claude Fable 5 작성), 구현·검증은 Codex 5.6-Sol(일반 구현=medium / 테스트·QA·리뷰=high).
 > 관련 문서: `docs/UI-DESIGN-SYSTEM.md`(토큰·반응형 규칙), `docs/ARCHITECTURE.md`, `docs/SECURITY.md`(CSP), `docs/DEPLOY.md`.
 
 **Goal:** 팀원이 iPhone·Android 홈 화면에 이 앱을 설치해 네이티브 앱처럼 전체 화면으로 실행하고, 폰에서 견적 작성·조회가 불편하지 않도록 모바일 UX를 다듬는다.
@@ -63,7 +63,7 @@
 
 ## Release 1 — 설치 가능 기반 (Installability)
 
-담당: 구현 **Codex 5.6-Terra high**, proxy 회귀 테스트 **Codex 5.6-Sol high**
+담당: 구현 **Codex 5.6-Sol medium**, proxy 회귀 테스트 **Codex 5.6-Sol high**
 
 - 1.1 ✅ `app/layout.tsx`에 `viewport` export 추가 — `width: 'device-width'`, `initialScale: 1`, `viewportFit: 'cover'`(safe-area 전제), `themeColor: '#0b66d8'`(`--primary`). `maximum-scale=1` 같은 줌 차단은 접근성 훼손이므로 **금지**(줌 문제는 R3의 16px로 해결).
 - 1.2 ✅ 앱 아이콘 자산 제작 — `.pbc-brand__mark` 디자인 기반 마스터 SVG 1개 → `public/icons/icon-192.png`, `icon-512.png`, `icon-512-maskable.png`(중앙 80% safe zone), `app/apple-icon.png`(180×180, Next 파일 컨벤션으로 apple-touch-icon 자동 링크). PNG 생성은 일회성 도구(npx 등)로 처리하고 **산출물 PNG만 커밋**(저장소 의존성 미추가).
@@ -77,7 +77,7 @@
 
 ## Release 2 — 최소 서비스 워커 + 오프라인 폴백
 
-담당: 구현 **Codex 5.6-Terra high**, 보안·캐시 정책 리뷰 **Codex 5.6-Sol high**
+담당: 구현 **Codex 5.6-Sol medium**, 보안·캐시 정책 리뷰 **Codex 5.6-Sol high**
 
 - 2.1 ✅ `/offline` 정적 페이지(공개 경로, 브랜드 마크 + "오프라인 상태" 안내 + 재시도 버튼).
 - 2.2 ✅ `public/sw.js` 수동 작성 — 원칙: **navigation 요청은 항상 network-first, 실패 시에만 `/offline` 폴백. HTML·API·Supabase 응답은 캐시하지 않는다**(stale 금액 방지). install 시 `/offline`과 그 정적 자산만 프리캐시, activate 시 구버전 캐시 삭제(캐시 이름 버저닝) + `clients.claim()`.
@@ -88,7 +88,7 @@
 
 ## Release 3 — 모바일 UX 필수 수정
 
-담당: 구현 **Codex 5.6-Terra high** (`docs/UI-DESIGN-SYSTEM.md` 규칙 준수, 완료 시 해당 문서에 규칙 추가)
+담당: 구현 **Codex 5.6-Sol medium** (`docs/UI-DESIGN-SYSTEM.md` 규칙 준수, 완료 시 해당 문서에 규칙 추가)
 
 - 3.1 ✅ **입력 폰트 16px(iOS 줌 방지)** — 모바일 미디어쿼리(`max-width: 1023px`)에서 `.pbc-input`/`.pbc-textarea`/`.pbc-tableinput`/`.pbc-search__input`/`.pbc-statuscontrol`/`.pbc-rate__money input`/`.pbc-ptable__money input`/`.pbc-monthselect select` → `font-size: 16px`. 데스크톱 밀도(13~13.5px)는 유지.
 - 3.2 ✅ **safe-area 패딩** — 하단 토탈바 `.pbc-mobile-totalbar`에 `padding-bottom: calc(기존 + env(safe-area-inset-bottom))`, 모바일 sticky 헤더에 `padding-top: env(safe-area-inset-top)`, `.pbc-auth`에 좌우·하단 inset 반영(1.1의 `viewportFit: 'cover'` 전제).
@@ -101,7 +101,7 @@
 
 ## Release 4 — 설치 경험 + QA
 
-담당: 구현 **Codex 5.6-Terra high**, QA 실행 **Codex 5.6-Sol high** + 실기기 확인 사용자
+담당: 구현 **Codex 5.6-Sol medium**, QA 실행 **Codex 5.6-Sol high** + 실기기 확인 사용자
 
 - 4.1 ✅ 설치 안내 UI — `beforeinstallprompt` 캡처해 Android용 "앱 설치" 버튼(예: Settings 페이지 또는 헤더 배너), iOS는 감지(`navigator.standalone`/UA) 후 "공유 → 홈 화면에 추가" 안내 문구. `display-mode: standalone`에서는 숨김. localStorage로 dismiss 기억.
 - 4.2 ✅ 로컬 자동 QA + `npm.cmd run verify` 통과. 배포·실기기 체크리스트는 `docs/PWA-QA.md`에 미실행으로 남김.

@@ -1,8 +1,8 @@
 # AGENT-MAP.md — 모델 라우팅 & 필독 파일 매트릭스
 
 > 세션 시작·작업 시 참조해야 할 모델 라우팅과 파일 매핑.
-> 이 프로젝트는 **설계는 Claude Opus 4.8 extra, 구현·실행은 Codex 5.6**으로 역할을 나눈다.
-> Codex는 작업 성격에 따라 **5.6-Terra high**(코드 구현·간단한 변경)와 **5.6-Sol high**(테스트·오류 수정·대규모·장시간 작업)를 쓴다.
+> 이 프로젝트는 모든 작업에 **Codex 5.6-Sol**을 사용하고 역할별 reasoning effort를 조정한다.
+> **max**는 설계·기획·QA 설계·디자인·아키텍처·스코프/보안 리스크 판단, **medium**은 코드 구현·간단한 변경·git·배포, **high**는 테스트·오류 수정·대규모·장시간 작업·리뷰·보안 점검/수정에 쓴다.
 
 ---
 
@@ -22,13 +22,13 @@
 
 | 작업 유형 | 담당 모델 |
 |---|---|
-| 계획·아키텍처 설계, 스코프·리스크 판단 | **Claude Opus 4.8 extra** |
-| 아이디어·브레인스토밍, 기능 구상 | **Claude Opus 4.8 extra** |
-| QA 시나리오 설계, 테스트 전략 | **Claude Opus 4.8 extra** |
-| UI/UX 디자인, plan/design 리뷰 | **Claude Opus 4.8 extra** |
-| 코드 구현 (마이그레이션·Server Action·Route·UI) | **Codex 5.6-Terra high** |
-| 간단한 변경, 단순 문구 수정·기계적 반복 작업 | **Codex 5.6-Terra high** |
-| git 작업, 배포 실행 | **Codex 5.6-Terra high** |
+| 계획·아키텍처 설계, 스코프·리스크 판단 | **Codex 5.6-Sol max** |
+| 아이디어·브레인스토밍, 기능 구상 | **Codex 5.6-Sol max** |
+| QA 시나리오 설계, 테스트 전략 | **Codex 5.6-Sol max** |
+| UI/UX 디자인, plan/design 리뷰 | **Codex 5.6-Sol max** |
+| 코드 구현 (마이그레이션·Server Action·Route·UI) | **Codex 5.6-Sol medium** |
+| 간단한 변경, 단순 문구 수정·기계적 반복 작업 | **Codex 5.6-Sol medium** |
+| git 작업, 배포 실행 | **Codex 5.6-Sol medium** |
 | 테스트 작성, QA 실행 | **Codex 5.6-Sol high** |
 | 버그·오류 수정 | **Codex 5.6-Sol high** |
 | 대규모 수정·리팩토링, 오래 걸리는 작업 | **Codex 5.6-Sol high** |
@@ -36,7 +36,7 @@
 
 **서브에이전트 원칙:** Codex가 서브에이전트를 스폰할 때 서브에이전트 모델은 전부 **`gpt-5.6-sol` + reasoning effort `high`**로 실행한다. `~/.codex/agents/`의 `default.toml`/`worker.toml`/`explorer.toml` 오버라이드로 고정되어 있다.
 
-**핸드오프 원칙:** 설계 작업(Opus 4.8)의 산출물은 `docs/superpowers/specs/`(설계) 또는 `docs/superpowers/plans/`(구현 계획)에 남기고, Codex 5.6은 그 문서를 입력으로 구현한다. 이 라우팅은 비용·품질 기준일 뿐 시스템·사용자 지시, 보안·의존성 승인 규칙을 대체하지 않는다.
+**핸드오프 원칙:** 설계 작업(Codex 5.6-Sol max)의 산출물은 `docs/superpowers/specs/`(설계) 또는 `docs/superpowers/plans/`(구현 계획)에 남기고, Codex 5.6-Sol medium/high는 그 문서를 입력으로 구현·검증한다. 이 라우팅은 비용·품질 기준일 뿐 시스템·사용자 지시, 보안·의존성 승인 규칙을 대체하지 않는다.
 
 ---
 
@@ -110,16 +110,16 @@ superpowers 아래 개별 spec/plan 파일 목록은 해당 디렉터리에서 �
 
 | 작업 유형 | 담당 모델 | 필독 파일 |
 |---|---|---|
-| **신규 기능 설계** | Opus 4.8 | `AGENTS.md` → `PROGRESS.md` → `docs/DECISIONS.md` → `docs/ARCHITECTURE.md` → `docs/SECURITY.md` |
-| **UI/UX 디자인 설계** | Opus 4.8 | `AGENTS.md` → `docs/UI-DESIGN-SYSTEM.md` → `docs/UI-DESIGN.md` → `docs/UI-UX-REVIEW.md` |
-| **DB 마이그레이션** | Codex 5.6-Terra | `AGENTS.md` → `docs/DB-SCHEMA.md` → `docs/SECURITY.md` |
-| **계산 로직** | Codex 5.6-Terra | `AGENTS.md` → `docs/CALCULATION.md` → `docs/CALCULATION-API.md` → `docs/CODING-STYLE.md` |
-| **Server Actions** | Codex 5.6-Terra | `AGENTS.md` → `docs/ARCHITECTURE.md` → `docs/DB-SCHEMA.md` → `docs/CODING-STYLE.md` |
-| **UI 컴포넌트 구현** | Codex 5.6-Terra | `AGENTS.md` → `docs/UI-DESIGN-SYSTEM.md` → 페이지별(`UI-QUOTE-FORM.md`/`UI-PAGES.md`) → `docs/CODING-STYLE.md` |
-| **테스트 작성** | Codex 5.6-Sol | `AGENTS.md` → `docs/CALCULATION.md` → `docs/CALCULATION-API.md` → `PROGRESS.md` |
-| **버그·오류 수정, 대규모 수정** | Codex 5.6-Sol | `AGENTS.md` → 재현 경로 → 관련 명세 → `docs/CODING-STYLE.md` |
-| **코드 리뷰·보안** | Codex 5.6-Sol | `AGENTS.md` → `docs/DECISIONS.md` → `docs/CODING-STYLE.md` → `docs/SECURITY.md` |
-| **배포** | Codex 5.6-Terra | `AGENTS.md` → `docs/DEPLOY.md` → `docs/CLI-ACCESS.md` → `docs/SECURITY.md` |
+| **신규 기능 설계** | Codex 5.6-Sol max | `AGENTS.md` → `PROGRESS.md` → `docs/DECISIONS.md` → `docs/ARCHITECTURE.md` → `docs/SECURITY.md` |
+| **UI/UX 디자인 설계** | Codex 5.6-Sol max | `AGENTS.md` → `docs/UI-DESIGN-SYSTEM.md` → `docs/UI-DESIGN.md` → `docs/UI-UX-REVIEW.md` |
+| **DB 마이그레이션** | Codex 5.6-Sol medium | `AGENTS.md` → `docs/DB-SCHEMA.md` → `docs/SECURITY.md` |
+| **계산 로직** | Codex 5.6-Sol medium | `AGENTS.md` → `docs/CALCULATION.md` → `docs/CALCULATION-API.md` → `docs/CODING-STYLE.md` |
+| **Server Actions** | Codex 5.6-Sol medium | `AGENTS.md` → `docs/ARCHITECTURE.md` → `docs/DB-SCHEMA.md` → `docs/CODING-STYLE.md` |
+| **UI 컴포넌트 구현** | Codex 5.6-Sol medium | `AGENTS.md` → `docs/UI-DESIGN-SYSTEM.md` → 페이지별(`UI-QUOTE-FORM.md`/`UI-PAGES.md`) → `docs/CODING-STYLE.md` |
+| **테스트 작성** | Codex 5.6-Sol high | `AGENTS.md` → `docs/CALCULATION.md` → `docs/CALCULATION-API.md` → `PROGRESS.md` |
+| **버그·오류 수정, 대규모 수정** | Codex 5.6-Sol high | `AGENTS.md` → 재현 경로 → 관련 명세 → `docs/CODING-STYLE.md` |
+| **코드 리뷰·보안** | Codex 5.6-Sol high | `AGENTS.md` → `docs/DECISIONS.md` → `docs/CODING-STYLE.md` → `docs/SECURITY.md` |
+| **배포** | Codex 5.6-Sol medium | `AGENTS.md` → `docs/DEPLOY.md` → `docs/CLI-ACCESS.md` → `docs/SECURITY.md` |
 
 ---
 

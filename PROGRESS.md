@@ -1,8 +1,8 @@
 # PROGRESS.md — PBC 견적 계산기 진행 현황
 
 > **공용 진행 현황 문서.** 새 세션 시작 시 먼저 읽고 "이미 된 것"과 "남은 것"을 파악한다.
-> 설계는 Opus 4.8, 구현·검증·문서 반영은 Codex 5.6이 담당한다(`AGENTS.md`).
-> Codex는 코드 구현·간단한 변경=**5.6-Terra high**, 테스트·오류 수정·대규모 수정=**5.6-Sol high**로 나눠 쓴다.
+> 모든 작업은 Codex 5.6-Sol이 담당한다(`AGENTS.md`).
+> 설계·기획·QA 설계·디자인·아키텍처·스코프/보안 리스크 판단=**max**, 코드 구현·간단한 변경·git·배포=**medium**, 테스트·오류 수정·대규모 수정·리뷰·보안 점검/수정=**high**로 나눠 쓴다.
 
 ---
 
@@ -179,6 +179,7 @@
 
 | 날짜 | 작업 | 담당 |
 |---|---|---|
+| 2026-08-26 | 현재 Markdown의 모델 라우팅을 Codex 5.6-Sol 단일 모델로 통합했다. 설계·기획·QA 설계·디자인·아키텍처·스코프/보안 리스크 판단은 max, 코드 구현·간단한 변경·git·배포는 medium, 테스트·오류 수정·대규모 수정·리뷰·보안 점검/수정은 high로 구분했다. 과거 변경 이력의 담당자 표기와 미구현 제품 기능의 Anthropic 런타임 제안은 당시 사실·별도 아키텍처 후보로 보존했다. | Codex 5.6-Sol medium |
 | 2026-08-25 | 모바일 Inventory disclosure 카드에 Name·Category·Size / Serial·Colour를 함께 표시했다. null·empty·whitespace Colour는 `-`, 긴 값은 full-width wrapping으로 처리하고 supervisor의 movement-only 편집 권한과 desktop 12-column 표를 유지했다. TDD RED 6건 확인 후 focused 9 files/70 tests와 전체 verify(96 files/844 tests, 1 file/9 tests skip, coverage 84.63/71.55/94.40/90.00%, build 18 routes, audit 0 vulnerabilities)를 통과했으며 독립 리뷰 Critical/Important finding은 0건이다. 375×812·390×844 browser smoke에서 document와 Colour overflow 0, console error/warning 0을 확인했다. DB·RLS·Server Action·의존성·배포 변경은 없다. | Codex 5.6-Sol high |
 | 2026-08-25 | Inventory의 승인된 모바일 Add Item disclosure를 복구했다. 720px 이하 admin은 기본 접힌 `Add item` trigger로 기존 단일 폼을 열며, 단순 toggle은 입력값 유지, Cancel·성공은 초기화/닫기/trigger 포커스 복귀, 실패는 값 보존, pending은 trigger·Save·Cancel 잠금을 적용한다. desktop 폼 상시 표시와 supervisor 비노출을 유지했다. TDD focused 3 files/35 tests와 전체 verify(96 files/841 tests, 1 file/9 tests skip, coverage 84.63/71.55/94.40/90.00%, build 18 routes, audit 0 vulnerabilities)를 통과했다. DB·RLS·Server Action·의존성·배포 변경은 없다. | Codex 5.6-Sol high |
 | 2026-08-24 | New/Edit Quote와 Settings Template의 Product / Service Line Item·Text 순서 변경을 material과 같은 drop-only 방식으로 통일했다. hover 중에는 삽입 위치만 표시하고 drop 시 최신 배열을 한 번만 재정렬하며, 키보드 방향키·touch용 한 칸 Move up/down·접근성 위치 안내·기존 내부 목록 auto-scroll을 제공한다. 취소와 빈 공간 drop은 순서를 변경하지 않으며 기존 `position`/Jobber `sortOrder` 저장 흐름을 유지한다. TDD focused 2 files/22 tests와 전체 verify(95 files/834 tests, 1 file/9 tests skip, coverage 84.79/71.53/94.40/90.17%, production build 18 routes, audit 0 vulnerabilities)를 통과했고 독립 재리뷰 finding 0건이다. DB·Server Action·Jobber API·의존성·배포 변경은 없다. | Codex 5.6-Sol high |
