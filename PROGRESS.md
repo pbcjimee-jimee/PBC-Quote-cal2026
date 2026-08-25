@@ -146,6 +146,13 @@
 - DB schema·RLS·Server Action·CSV·Inventory 전체 조회/필터 동작·외부 의존성은 변경하지 않았다.
 - TDD focused 3 files/35 tests와 전체 `npm.cmd run verify`를 통과했다. 전체 결과는 96 files/841 tests 통과(환경 조건 1 file/9 tests skip), coverage 84.63/71.55/94.40/90.00%, Next production build 18/18 routes, production audit 0 vulnerabilities다.
 
+### Inventory 모바일 Paint 핵심정보 요약 (2026-08-25, 로컬 구현)
+
+- `max-width: 720px`의 접힌 Inventory 카드에서 Name, Category, Size / Serial, Colour를 모두 바로 표시한다. null·빈 문자열·공백뿐인 Colour는 `-`로 표시하고 긴 색상명은 카드 전체 너비에서 줄바꿈해 document overflow를 만들지 않는다.
+- admin과 supervisor 모두 저장된 Colour를 읽을 수 있지만 supervisor의 확장 편집기는 기존 movement-only 필드만 유지한다. 데스크톱 12열 표, DB·RLS·Server Action·검색·필터·CSV 동작은 변경하지 않았다.
+- TDD에서 Colour 마크업과 overflow-safe CSS 부재로 6개 실패를 확인한 뒤 Inventory focused 9 files/70 tests를 통과했다. 전체 `npm.cmd run verify`는 96 files/844 tests 통과(환경 조건 1 file/9 tests skip), coverage 84.63/71.55/94.40/90.00%, Next production build 18/18 routes, production audit 0 vulnerabilities를 기록했다. 독립 리뷰의 Critical/Important finding은 0건이다.
+- 실제 shared CSS를 사용한 browser smoke에서 `375x812`는 document/client `375/375`, Colour client/scroll `302/302`, `390x844`는 `390/390`, `317/317`을 기록했다. 긴 공백 없는 색상명이 카드 안에서 줄바꿈됐고 console error/warning은 0건이었다.
+
 ---
 
 ## 🔲 남은 작업
@@ -172,6 +179,7 @@
 
 | 날짜 | 작업 | 담당 |
 |---|---|---|
+| 2026-08-25 | 모바일 Inventory disclosure 카드에 Name·Category·Size / Serial·Colour를 함께 표시했다. null·empty·whitespace Colour는 `-`, 긴 값은 full-width wrapping으로 처리하고 supervisor의 movement-only 편집 권한과 desktop 12-column 표를 유지했다. TDD RED 6건 확인 후 focused 9 files/70 tests와 전체 verify(96 files/844 tests, 1 file/9 tests skip, coverage 84.63/71.55/94.40/90.00%, build 18 routes, audit 0 vulnerabilities)를 통과했으며 독립 리뷰 Critical/Important finding은 0건이다. 375×812·390×844 browser smoke에서 document와 Colour overflow 0, console error/warning 0을 확인했다. DB·RLS·Server Action·의존성·배포 변경은 없다. | Codex 5.6-Sol high |
 | 2026-08-25 | Inventory의 승인된 모바일 Add Item disclosure를 복구했다. 720px 이하 admin은 기본 접힌 `Add item` trigger로 기존 단일 폼을 열며, 단순 toggle은 입력값 유지, Cancel·성공은 초기화/닫기/trigger 포커스 복귀, 실패는 값 보존, pending은 trigger·Save·Cancel 잠금을 적용한다. desktop 폼 상시 표시와 supervisor 비노출을 유지했다. TDD focused 3 files/35 tests와 전체 verify(96 files/841 tests, 1 file/9 tests skip, coverage 84.63/71.55/94.40/90.00%, build 18 routes, audit 0 vulnerabilities)를 통과했다. DB·RLS·Server Action·의존성·배포 변경은 없다. | Codex 5.6-Sol high |
 | 2026-08-24 | New/Edit Quote와 Settings Template의 Product / Service Line Item·Text 순서 변경을 material과 같은 drop-only 방식으로 통일했다. hover 중에는 삽입 위치만 표시하고 drop 시 최신 배열을 한 번만 재정렬하며, 키보드 방향키·touch용 한 칸 Move up/down·접근성 위치 안내·기존 내부 목록 auto-scroll을 제공한다. 취소와 빈 공간 drop은 순서를 변경하지 않으며 기존 `position`/Jobber `sortOrder` 저장 흐름을 유지한다. TDD focused 2 files/22 tests와 전체 verify(95 files/834 tests, 1 file/9 tests skip, coverage 84.79/71.53/94.40/90.17%, production build 18 routes, audit 0 vulnerabilities)를 통과했고 독립 재리뷰 finding 0건이다. DB·Server Action·Jobber API·의존성·배포 변경은 없다. | Codex 5.6-Sol high |
 | 2026-08-24 | New/Edit Quote의 Main Materials·Option Materials에 현재 보이는 area 범위의 순서 변경 동작을 확정했다. 데스크톱 drag handle은 drop 때만 순서를 반영하고, 키보드·touch용 한 칸 Move up/down과 viewport 가장자리 page auto-scroll을 제공한다. 숨겨진 area 행은 기존 배열 슬롯을 유지하며 저장은 기존 `position` 매핑을 사용한다. DB·의존성·배포 변경은 없다. | Codex 5.6-Terra high |
