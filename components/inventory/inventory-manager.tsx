@@ -621,6 +621,10 @@ export function InventoryMobileList({
               <span className="pbc-inventorymobile__meta">
                 <span><small>Category</small><b>{item.category ?? '-'}</b></span>
                 <span><small>Size / Serial</small><b>{item.sizeOrSerial ?? '-'}</b></span>
+                <span className="pbc-inventorymobile__colour">
+                  <small>Colour</small>
+                  <b>{item.colour?.trim() || '-'}</b>
+                </span>
               </span>
               <span className="pbc-inventorymobile__chevron" aria-hidden="true">
                 {Icons.arrowDown({ size: 16 })}

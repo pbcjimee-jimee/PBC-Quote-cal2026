@@ -66,6 +66,12 @@ describe('PWA mobile UX', () => {
     expect(narrow).toMatch(/\.pbc-inventorymobile\s*{[^}]*display:\s*grid/)
     expect(narrow).toContain('overflow-wrap: anywhere')
     expect(narrow).toContain('min-height: var(--mobile-tap-target)')
+    expect(css).toMatch(
+      /\.pbc-inventorymobile__colour\s*{[^}]*grid-column:\s*1\s*\/\s*-1[^}]*min-width:\s*0[^}]*max-width:\s*100%[^}]*overflow-wrap:\s*anywhere/
+    )
+    expect(css).not.toMatch(
+      /\.pbc-inventorymobile__colour\s*{[^}]*(white-space:\s*nowrap|width:\s*\d+px)/
+    )
   })
 
   it('collapses the Inventory Add form only at the mobile breakpoint', () => {

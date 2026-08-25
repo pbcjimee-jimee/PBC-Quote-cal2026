@@ -459,6 +459,7 @@
 .pbc-inventorymobile__meta span { min-width: 0; }
 .pbc-inventorymobile__meta small { display: block; color: var(--muted-2); font-size: 12px; font-weight: 700; }
 .pbc-inventorymobile__meta b { display: block; margin-top: 2px; color: var(--muted); font-size: 14px; overflow-wrap: anywhere; }
+.pbc-inventorymobile__colour { grid-column: 1 / -1; min-width: 0; max-width: 100%; overflow-wrap: anywhere; }
 .pbc-inventorymobile__chevron { grid-column: 2; grid-row: 1 / span 2; align-self: center; color: var(--primary); transition: transform .16s ease; }
 .pbc-inventorymobile__summary[aria-expanded="true"] .pbc-inventorymobile__chevron { transform: rotate(180deg); }
 .pbc-inventorymobile__item.is-out .pbc-inventorymobile__name,

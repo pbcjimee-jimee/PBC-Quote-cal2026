@@ -16,7 +16,7 @@ const mobileItem: InventoryItemRecord = {
   category: 'Tools',
   brand: 'Zinsser',
   modelSpecification: null,
-  colour: null,
+  colour: 'Lexicon Quarter Extra Long Colour Name',
   sizeOrSerial: '10L',
   quantity: '1.00',
   purchaseDate: null,
@@ -55,7 +55,7 @@ const mobileCallbacks = {
 }
 
 describe('inventory UI', () => {
-  it('renders a collapsed mobile card with only the approved summary fields', () => {
+  it('shows category, size and colour in the collapsed mobile card', () => {
     const markup = renderToStaticMarkup(createElement(InventoryMobileList, {
       items: [mobileItem],
       categories: ['Tools'],
@@ -75,10 +75,36 @@ describe('inventory UI', () => {
     expect(markup).toContain('Tools')
     expect(markup).toContain('Size / Serial')
     expect(markup).toContain('10L')
-    expect(markup).not.toContain('Brand / Spec')
-    expect(markup).not.toContain('Purchase Date')
-    expect(markup).not.toContain('Used Location')
-    expect(markup).not.toContain('Save row')
+    expect(markup).toContain(
+      '<small>Colour</small><b>Lexicon Quarter Extra Long Colour Name</b>'
+    )
+    for (const omitted of [
+      'Brand / Spec',
+      'Quantity',
+      'Purchase Date',
+      'Used Date',
+      'Used Location',
+      'Status',
+      'Notes',
+      'Save row',
+      'Delete',
+    ]) {
+      expect(markup).not.toContain(omitted)
+    }
+  })
+
+  it.each([null, '', '   '])('renders missing mobile Colour %s as -', (colour) => {
+    const markup = renderToStaticMarkup(createElement(InventoryMobileList, {
+      items: [{ ...mobileItem, colour }],
+      categories: ['Tools'],
+      editingRowId: null,
+      rowEditForm: mobileEditForm,
+      isPending: false,
+      role: 'admin',
+      ...mobileCallbacks,
+    }))
+
+    expect(markup).toContain('<small>Colour</small><b>-</b>')
   })
 
   it('renders the complete admin editor only while its mobile card is expanded', () => {
@@ -139,6 +165,10 @@ describe('inventory UI', () => {
       expect(markup, `${field} must remain unavailable to supervisors`).not.toContain(`aria-label="${accessibleName}"`)
     }
 
+    expect(markup).toContain(
+      '<small>Colour</small><b>Lexicon Quarter Extra Long Colour Name</b>'
+    )
+    expect(markup).not.toContain(`aria-label="Colour for ${mobileItem.name}"`)
     expect(markup).toContain('aria-label="Save row WaterTite"')
   })
 
@@ -185,6 +215,9 @@ describe('inventory UI', () => {
     expect(markup).toContain('Search or add category')
     expect(markup).toContain('07/May Manly')
     expect(markup).toContain('pbc-tablewrap')
+    expect(markup).toContain('pbc-inventorydesktop')
+    expect(markup).toMatch(/<th[^>]*>Colour<\/th>/)
+    expect(markup.match(/<th\b/g) ?? []).toHaveLength(12)
     expect(markup).toContain('aria-label="Weathershield inventory group"')
     expect(markup).not.toContain('aria-label="Paint inventory group"')
     expect(markup).not.toContain('Edit Item')
