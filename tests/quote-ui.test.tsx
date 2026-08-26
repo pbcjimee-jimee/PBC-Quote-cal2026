@@ -124,14 +124,14 @@ describe('quote form pricing UI', () => {
     ],
   }
 
-  function renderQuoteOptionsPanel(canCopyMainPrice: boolean) {
+  function renderQuoteOptionsPanel(canCopyMaterials: boolean) {
     return renderToStaticMarkup(
       createElement(QuoteOptionsPanel, {
         options: [],
         optionTotals: {},
         areas: [],
-        canCopyMainPrice,
-        onCopyMainPrice: () => undefined,
+        canCopyMaterials,
+        onCopyMaterials: () => undefined,
         onAddOption: () => undefined,
         onChangeOption: () => undefined,
         onRemoveOption: () => undefined,
@@ -139,26 +139,26 @@ describe('quote form pricing UI', () => {
     )
   }
 
-  it('disables main-price copy when there are no eligible public price lines', () => {
+  it('disables Materials copy when Main Materials is empty', () => {
     const markup = renderQuoteOptionsPanel(false)
-    const copyButton = markup.match(/<button[^>]*>Copy Main Price to Option<\/button>/)?.[0]
+    const copyButton = markup.match(/<button[^>]*>Copy Materials to Option<\/button>/)?.[0]
 
     expect(copyButton).toBeDefined()
     expect(copyButton).toContain('disabled=""')
-    expect(copyButton).toContain('aria-describedby="main-price-copy-unavailable"')
-    expect(markup).toContain('id="main-price-copy-unavailable"')
-    expect(markup).toContain('>Add at least one visible priced line first.</p>')
+    expect(copyButton).toContain('aria-describedby="materials-copy-unavailable"')
+    expect(markup).toContain('id="materials-copy-unavailable"')
+    expect(markup).toContain('>Add at least one material first.</p>')
   })
 
-  it('enables main-price copy when eligible public price lines exist', () => {
+  it('enables Materials copy when Main Materials contains any row', () => {
     const markup = renderQuoteOptionsPanel(true)
-    const copyButton = markup.match(/<button[^>]*>Copy Main Price to Option<\/button>/)?.[0]
+    const copyButton = markup.match(/<button[^>]*>Copy Materials to Option<\/button>/)?.[0]
 
     expect(copyButton).toBeDefined()
     expect(copyButton).not.toContain('disabled')
   })
 
-  it('enables copying the current quote public price list into an Option', () => {
+  it('enables copying Main Materials without any public price lines', () => {
     const markup = renderToStaticMarkup(createElement(QuoteForm, {
       settings: quoteRecord.pricingSettingsSnapshot,
       areas: [],
@@ -166,11 +166,45 @@ describe('quote form pricing UI', () => {
       quoteLineTemplates: [],
       initialQuote: {
         ...quoteRecord,
+        items: [{
+          id: 'main-material-1',
+          quoteId: quoteRecord.id,
+          productId: null,
+          productNameSnapshot: 'Main material',
+          marketPriceSnapshot: '1250.00',
+          actualPriceSnapshot: '1000.00',
+          quantity: '1',
+          workingDays: '0',
+          labourPerDay: '0',
+          areaId: null,
+          areaNameSnapshot: null,
+          areaScopeSnapshot: null,
+          isCustom: true,
+          position: 0,
+        }],
+        jobberQuoteLines: [],
+      },
+    }))
+    const copyButton = markup.match(/<button[^>]*>Copy Materials to Option<\/button>/)?.[0]
+
+    expect(copyButton).toBeDefined()
+    expect(copyButton).not.toContain('disabled')
+  })
+
+  it('keeps Materials copy disabled when only public price lines exist', () => {
+    const markup = renderToStaticMarkup(createElement(QuoteForm, {
+      settings: quoteRecord.pricingSettingsSnapshot,
+      areas: [],
+      productServices: [],
+      quoteLineTemplates: [],
+      initialQuote: {
+        ...quoteRecord,
+        items: [],
         jobberQuoteLines: [{
           id: 'public-line-1',
           quoteId: quoteRecord.id,
           kind: 'line_item',
-          name: 'Main painting price',
+          name: 'Public price only',
           description: '',
           quantity: '1.00',
           unitPrice: '1250.00',
@@ -185,10 +219,10 @@ describe('quote form pricing UI', () => {
         }],
       },
     }))
-    const copyButton = markup.match(/<button[^>]*>Copy Main Price to Option<\/button>/)?.[0]
+    const copyButton = markup.match(/<button[^>]*>Copy Materials to Option<\/button>/)?.[0]
 
     expect(copyButton).toBeDefined()
-    expect(copyButton).not.toContain('disabled')
+    expect(copyButton).toContain('disabled=""')
   })
 
   it('appends fresh expanded Options without changing the public price list or main subtotal', async () => {
@@ -217,7 +251,7 @@ describe('quote form pricing UI', () => {
 
     function findCopyButton(): TestElement | undefined {
       return container.querySelectorAll('button').find((button) => (
-        button.textContent === 'Copy Main Price to Option'
+        button.textContent === 'Copy Materials to Option'
       ))
     }
 
@@ -335,9 +369,11 @@ describe('quote form pricing UI', () => {
       const firstTitle = firstCards[0]?.querySelectorAll('input').find((input) => (
         input.getAttribute('id')?.endsWith('-title')
       ))
+      const firstOptionInputValues = firstCards[0]?.querySelectorAll('input').map((input) => input.value) ?? []
       expect(firstCards).toHaveLength(1)
-      expect(firstCards[0]?.textContent).toContain('Main painting price')
-      expect(firstCards[0]?.textContent).toContain('Door painting')
+      expect(firstOptionInputValues).toContain('Main material')
+      expect(firstOptionInputValues).not.toContain('Main painting price')
+      expect(firstOptionInputValues).not.toContain('Door painting')
       expect(firstCards[0]?.querySelectorAll('div').some((element) => (
         element.getAttribute('class')?.split(' ').includes('pbc-optioncard__body')
       ))).toBe(true)

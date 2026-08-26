@@ -110,7 +110,7 @@
 > Internal quote memos are also app-only data. They are stored in `quote_memos` and never synced to Jobber notes or line items.
 > Jobber OAuth is a shared company-level connection for allowed app users. The app uses the latest `jobber_tokens` row globally; `jobber_tokens.user_id` identifies the user who connected or reconnected Jobber, and refresh writes back to that owner row. Tokens are encrypted with `lib/jobber/token-encryption.ts`.
 
-- Main-price-to-Option copy is a client-side snapshot transform from current `jobberQuoteLines` state to ordinary custom `QuoteOptionItem` rows. Existing draft and quote option persistence handles the result; no DB, RPC, RLS, or Jobber write-back path is added.
+- Main-Materials-to-Option copy is a client-side snapshot transform from the current `materials` state to ordinary `QuoteOptionItem` rows with fresh identities. Existing draft and quote option persistence handles the result; Product / Service lines and DB, RPC, RLS, Server Action, and Jobber write-back paths are unchanged.
 
 ### Jobber write-back 경계
 

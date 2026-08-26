@@ -21,8 +21,8 @@ interface QuoteOptionsPanelProps {
   options: QuoteOptionItem[]
   optionTotals: Record<string, QuoteOptionTotals>
   areas: AreaRecord[]
-  canCopyMainPrice: boolean
-  onCopyMainPrice: () => void
+  canCopyMaterials: boolean
+  onCopyMaterials: () => void
   onAddOption: () => void
   onChangeOption: (option: QuoteOptionItem) => void
   onReorderOptionMaterials?: (optionId: string, update: MaterialReorderUpdater) => void
@@ -44,8 +44,8 @@ export function QuoteOptionsPanel({
   options,
   optionTotals,
   areas,
-  canCopyMainPrice,
-  onCopyMainPrice,
+  canCopyMaterials,
+  onCopyMaterials,
   onAddOption,
   onChangeOption,
   onReorderOptionMaterials,
@@ -63,19 +63,19 @@ export function QuoteOptionsPanel({
           <div className="flex flex-col items-start gap-1">
             <Button
               type="button"
-              onClick={onCopyMainPrice}
-              disabled={!canCopyMainPrice}
-              aria-describedby={!canCopyMainPrice ? 'main-price-copy-unavailable' : undefined}
-              title={canCopyMainPrice
-                ? 'Create an independent Option from the current visible priced lines.'
+              onClick={onCopyMaterials}
+              disabled={!canCopyMaterials}
+              aria-describedby={!canCopyMaterials ? 'materials-copy-unavailable' : undefined}
+              title={canCopyMaterials
+                ? 'Create an independent Option from all current Main Materials.'
                 : undefined}
               variant="ghost"
             >
-              Copy Main Price to Option
+              Copy Materials to Option
             </Button>
-            {!canCopyMainPrice ? (
-              <p id="main-price-copy-unavailable" className="pbc-panelsub max-w-64 text-left">
-                Add at least one visible priced line first.
+            {!canCopyMaterials ? (
+              <p id="materials-copy-unavailable" className="pbc-panelsub max-w-64 text-left">
+                Add at least one material first.
               </p>
             ) : null}
           </div>
