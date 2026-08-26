@@ -19,6 +19,7 @@ import {
 } from './quote-draft'
 import { useQuoteDraftPersistence } from './use-quote-draft-persistence'
 import { applyOptionMaterialReorder, QuoteOptionsPanel } from './quote-options-panel'
+import { appendMainPriceOption, hasCopyableMainPriceLines } from './main-price-option-copy'
 import { OptionTotalsSummary } from './option-totals-summary'
 import { calculateMainQuoteTotals } from './quote-calculation-totals'
 import type { AreaCreateResult, AreaFormulaSelections, AreaScope, FormulaNumber, JobberQuoteLineItemDraft, MaterialItem, QuoteMemoItem, QuoteOptionItem } from './types'
@@ -570,6 +571,10 @@ export function QuoteForm({ settings, areas, productServices = [], quoteLineTemp
   }
 
   const optionTotals = useMemo(() => calculateQuoteOptionTotals(options, settings), [options, settings])
+  const canCopyMainPrice = useMemo(
+    () => hasCopyableMainPriceLines(jobberQuoteLines),
+    [jobberQuoteLines]
+  )
   const shouldShowJobberSyncPreview = jobberQuoteId.trim().length > 0 ||
     jobberQuoteLookup.trim().length > 0 ||
     jobberQuoteLines.length > 0
@@ -649,6 +654,10 @@ export function QuoteForm({ settings, areas, productServices = [], quoteLineTemp
         isExpanded: true,
       },
     ])
+  }
+
+  function copyMainPriceToOption() {
+    setOptions((current) => appendMainPriceOption(current, jobberQuoteLines, createClientId))
   }
 
   function changeOption(option: QuoteOptionItem) {
@@ -941,6 +950,8 @@ export function QuoteForm({ settings, areas, productServices = [], quoteLineTemp
             options={options}
             optionTotals={optionPanelTotals}
             areas={quoteAreas}
+            canCopyMainPrice={canCopyMainPrice}
+            onCopyMainPrice={copyMainPriceToOption}
             onAddOption={addOption}
             onChangeOption={changeOption}
             onReorderOptionMaterials={reorderOptionMaterials}

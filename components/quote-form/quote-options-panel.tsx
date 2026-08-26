@@ -21,6 +21,8 @@ interface QuoteOptionsPanelProps {
   options: QuoteOptionItem[]
   optionTotals: Record<string, QuoteOptionTotals>
   areas: AreaRecord[]
+  canCopyMainPrice: boolean
+  onCopyMainPrice: () => void
   onAddOption: () => void
   onChangeOption: (option: QuoteOptionItem) => void
   onReorderOptionMaterials?: (optionId: string, update: MaterialReorderUpdater) => void
@@ -42,6 +44,8 @@ export function QuoteOptionsPanel({
   options,
   optionTotals,
   areas,
+  canCopyMainPrice,
+  onCopyMainPrice,
   onAddOption,
   onChangeOption,
   onReorderOptionMaterials,
@@ -55,13 +59,22 @@ export function QuoteOptionsPanel({
           <h2 className="pbc-paneltitle">Options</h2>
           <p className="pbc-panelsub">Optional add-ons are priced separately from the main quote.</p>
         </div>
-        <Button
-          type="button"
-          onClick={onAddOption}
-          variant="ghost"
-        >
-          {Icons.plus({ size: 15 })} Add Option
-        </Button>
+        <div className="pbc-panelhead__actions">
+          <Button
+            type="button"
+            onClick={onCopyMainPrice}
+            disabled={!canCopyMainPrice}
+            title={canCopyMainPrice
+              ? 'Create an independent Option from the current visible priced lines.'
+              : 'Add at least one visible priced line first.'}
+            variant="ghost"
+          >
+            Copy Main Price to Option
+          </Button>
+          <Button type="button" onClick={onAddOption} variant="ghost">
+            {Icons.plus({ size: 15 })} Add Option
+          </Button>
+        </div>
       </div>
 
       {options.length === 0 ? (

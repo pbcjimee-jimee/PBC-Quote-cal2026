@@ -9,6 +9,7 @@ import { FormulaResults } from '@/components/quote-form/formula-results'
 import { AreaPickerDropdown, MaterialRow, updateMaterialRrp } from '@/components/quote-form/material-row'
 import { MaterialsPanel, assignMaterialToActiveArea } from '@/components/quote-form/materials-panel'
 import { OptionTotalsSummary } from '@/components/quote-form/option-totals-summary'
+import { QuoteOptionsPanel } from '@/components/quote-form/quote-options-panel'
 import {
   getQuoteUnexpectedSaveErrorMessage,
   getQuoteNavigationGuardTarget,
@@ -120,6 +121,71 @@ describe('quote form pricing UI', () => {
       },
     ],
   }
+
+  function renderQuoteOptionsPanel(canCopyMainPrice: boolean) {
+    return renderToStaticMarkup(
+      createElement(QuoteOptionsPanel, {
+        options: [],
+        optionTotals: {},
+        areas: [],
+        canCopyMainPrice,
+        onCopyMainPrice: () => undefined,
+        onAddOption: () => undefined,
+        onChangeOption: () => undefined,
+        onRemoveOption: () => undefined,
+      })
+    )
+  }
+
+  it('disables main-price copy when there are no eligible public price lines', () => {
+    const markup = renderQuoteOptionsPanel(false)
+    const copyButton = markup.match(/<button[^>]*>Copy Main Price to Option<\/button>/)?.[0]
+
+    expect(copyButton).toBeDefined()
+    expect(copyButton).toContain('disabled=""')
+    expect(copyButton).toContain('title="Add at least one visible priced line first."')
+  })
+
+  it('enables main-price copy when eligible public price lines exist', () => {
+    const markup = renderQuoteOptionsPanel(true)
+    const copyButton = markup.match(/<button[^>]*>Copy Main Price to Option<\/button>/)?.[0]
+
+    expect(copyButton).toBeDefined()
+    expect(copyButton).not.toContain('disabled')
+  })
+
+  it('enables copying the current quote public price list into an Option', () => {
+    const markup = renderToStaticMarkup(createElement(QuoteForm, {
+      settings: quoteRecord.pricingSettingsSnapshot,
+      areas: [],
+      productServices: [],
+      quoteLineTemplates: [],
+      initialQuote: {
+        ...quoteRecord,
+        jobberQuoteLines: [{
+          id: 'public-line-1',
+          quoteId: quoteRecord.id,
+          kind: 'line_item',
+          name: 'Main painting price',
+          description: '',
+          quantity: '1.00',
+          unitPrice: '1250.00',
+          totalPrice: '1250.00',
+          taxable: true,
+          clientVisible: true,
+          jobberLineItemId: null,
+          linkedProductOrServiceId: null,
+          position: 0,
+          createdAt: '2026-08-26T00:00:00.000Z',
+          updatedAt: '2026-08-26T00:00:00.000Z',
+        }],
+      },
+    }))
+    const copyButton = markup.match(/<button[^>]*>Copy Main Price to Option<\/button>/)?.[0]
+
+    expect(copyButton).toBeDefined()
+    expect(copyButton).not.toContain('disabled')
+  })
 
   it('passes only Jobber refresh fields from quote detail to the client panel', async () => {
     let receivedQuote: unknown
