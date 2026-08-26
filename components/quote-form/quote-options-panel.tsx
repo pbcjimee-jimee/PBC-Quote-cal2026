@@ -60,17 +60,25 @@ export function QuoteOptionsPanel({
           <p className="pbc-panelsub">Optional add-ons are priced separately from the main quote.</p>
         </div>
         <div className="pbc-panelhead__actions">
-          <Button
-            type="button"
-            onClick={onCopyMainPrice}
-            disabled={!canCopyMainPrice}
-            title={canCopyMainPrice
-              ? 'Create an independent Option from the current visible priced lines.'
-              : 'Add at least one visible priced line first.'}
-            variant="ghost"
-          >
-            Copy Main Price to Option
-          </Button>
+          <div className="flex flex-col items-start gap-1">
+            <Button
+              type="button"
+              onClick={onCopyMainPrice}
+              disabled={!canCopyMainPrice}
+              aria-describedby={!canCopyMainPrice ? 'main-price-copy-unavailable' : undefined}
+              title={canCopyMainPrice
+                ? 'Create an independent Option from the current visible priced lines.'
+                : undefined}
+              variant="ghost"
+            >
+              Copy Main Price to Option
+            </Button>
+            {!canCopyMainPrice ? (
+              <p id="main-price-copy-unavailable" className="pbc-panelsub max-w-64 text-left">
+                Add at least one visible priced line first.
+              </p>
+            ) : null}
+          </div>
           <Button type="button" onClick={onAddOption} variant="ghost">
             {Icons.plus({ size: 15 })} Add Option
           </Button>

@@ -25,7 +25,7 @@
 
 - New/Edit Quote의 현재 client-visible priced Product / Service 행을 새 독립 PBC Option으로 복사한다. 적합한 행의 이름·수량·단가·순서와 ex-GST 소계를 유지하고, 반복 실행은 fresh ID를 가진 새 Option을 계속 추가하며 원본과 이후 변경을 동기화하지 않는다.
 - 현재 `jobberQuoteLines` 상태를 ordinary custom `QuoteOptionItem`으로 변환하는 client-side snapshot이며 기존 draft·quote option 저장/복원 경로를 그대로 사용한다. DB migration·RPC·RLS·Server Action·validator·Jobber write-back·외부 의존성 변경은 없다.
-- `git diff --check`, `npm run typecheck`, `npm run lint`, `npm run test:run`, `npm run test:coverage`, `npm run build` 모두 exit 0을 확인했다. Vitest는 97 files/851 tests 통과(환경 조건 1 file/9 tests skip, failed/unhandled error 0), coverage는 84.63/71.55/94.40/90.00%, Next production build는 18/18 static pages를 생성했다.
+- `git diff --check`, `npm run typecheck`, `npm run lint`, `npm run test:run`, `npm run test:coverage`, `npm run build` 모두 exit 0을 확인했다. Vitest는 97 files/852 tests 통과(환경 조건 1 file/9 tests skip, failed/unhandled error 0), coverage는 84.63/71.55/94.40/90.00%, Next production build는 18/18 static pages를 생성했다.
 
 ### 인프라 & 셋업
 - Next.js 16.2.12 + React 19.2.4 + TS + Tailwind 4 스캐폴드, `package.json` 스크립트(dev/build/test/verify 등), 핵심 의존성(decimal.js, zod, @supabase/*, vitest).
@@ -185,7 +185,7 @@
 
 | 날짜 | 작업 | 담당 |
 |---|---|---|
-| 2026-08-26 | New/Edit Quote의 client-visible priced Product / Service 행을 fresh ID·custom·zero-labour·F1-F1 스냅샷으로 새 독립 PBC Option에 복사하는 동작을 추가했다. 반복 복사는 의도적으로 새 Option을 추가하고 기존 draft/save/edit 경로를 재사용하며 DB·RPC·RLS·Server Action·validator·Jobber write-back·의존성 변경은 없다. diff/typecheck/lint/full test/coverage/build 전부 exit 0, 97 files/851 tests 통과(1 file/9 tests skip), coverage 84.63/71.55/94.40/90.00%, build 18/18을 확인했다. | Codex 5.6-Sol high |
+| 2026-08-26 | New/Edit Quote의 client-visible priced Product / Service 행을 fresh ID·custom·zero-labour·F1-F1 스냅샷으로 새 독립 PBC Option에 복사하는 동작을 추가했다. 반복 복사는 의도적으로 새 Option을 추가하고 기존 draft/save/edit 경로를 재사용하며 DB·RPC·RLS·Server Action·validator·Jobber write-back·의존성 변경은 없다. diff/typecheck/lint/full test/coverage/build 전부 exit 0, 97 files/852 tests 통과(1 file/9 tests skip), coverage 84.63/71.55/94.40/90.00%, build 18/18을 확인했다. | Codex 5.6-Sol high |
 | 2026-08-26 | 현재 Markdown의 모델 라우팅을 Codex 5.6-Sol 단일 모델로 통합했다. 설계·기획·QA 설계·디자인·아키텍처·스코프/보안 리스크 판단은 max, 코드 구현·간단한 변경·git·배포는 medium, 테스트·오류 수정·대규모 수정·리뷰·보안 점검/수정은 high로 구분했다. 과거 변경 이력의 담당자 표기와 미구현 제품 기능의 Anthropic 런타임 제안은 당시 사실·별도 아키텍처 후보로 보존했다. | Codex 5.6-Sol medium |
 | 2026-08-25 | 모바일 Inventory disclosure 카드에 Name·Category·Size / Serial·Colour를 함께 표시했다. null·empty·whitespace Colour는 `-`, 긴 값은 full-width wrapping으로 처리하고 supervisor의 movement-only 편집 권한과 desktop 12-column 표를 유지했다. TDD RED 6건 확인 후 focused 9 files/70 tests와 전체 verify(96 files/844 tests, 1 file/9 tests skip, coverage 84.63/71.55/94.40/90.00%, build 18 routes, audit 0 vulnerabilities)를 통과했으며 독립 리뷰 Critical/Important finding은 0건이다. 375×812·390×844 browser smoke에서 document와 Colour overflow 0, console error/warning 0을 확인했다. DB·RLS·Server Action·의존성·배포 변경은 없다. | Codex 5.6-Sol high |
 | 2026-08-25 | Inventory의 승인된 모바일 Add Item disclosure를 복구했다. 720px 이하 admin은 기본 접힌 `Add item` trigger로 기존 단일 폼을 열며, 단순 toggle은 입력값 유지, Cancel·성공은 초기화/닫기/trigger 포커스 복귀, 실패는 값 보존, pending은 trigger·Save·Cancel 잠금을 적용한다. desktop 폼 상시 표시와 supervisor 비노출을 유지했다. TDD focused 3 files/35 tests와 전체 verify(96 files/841 tests, 1 file/9 tests skip, coverage 84.63/71.55/94.40/90.00%, build 18 routes, audit 0 vulnerabilities)를 통과했다. DB·RLS·Server Action·의존성·배포 변경은 없다. | Codex 5.6-Sol high |

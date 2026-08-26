@@ -1,4 +1,5 @@
-import { createElement } from 'react'
+import { act, createElement } from 'react'
+import type { Root } from 'react-dom/client'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { readFileSync } from 'node:fs'
 import Decimal from 'decimal.js'
@@ -32,6 +33,7 @@ import { MonthFilterSelect } from '@/components/quote-list/month-filter-select'
 import { getMonthFilterHref, groupQuotesByYearMonth, filterQuotesByMonth } from '@/app/(app)/quotes/page'
 import type { QuoteRecord } from '@/lib/dev-data'
 import { createQuote, updateQuote } from '@/lib/actions/quotes'
+import { installTestDom, type TestElement } from '@/tests/helpers/test-dom'
 
 const routerPushMock = vi.hoisted(() => vi.fn())
 const routerPrefetchMock = vi.hoisted(() => vi.fn())
@@ -143,7 +145,9 @@ describe('quote form pricing UI', () => {
 
     expect(copyButton).toBeDefined()
     expect(copyButton).toContain('disabled=""')
-    expect(copyButton).toContain('title="Add at least one visible priced line first."')
+    expect(copyButton).toContain('aria-describedby="main-price-copy-unavailable"')
+    expect(markup).toContain('id="main-price-copy-unavailable"')
+    expect(markup).toContain('>Add at least one visible priced line first.</p>')
   })
 
   it('enables main-price copy when eligible public price lines exist', () => {
@@ -185,6 +189,180 @@ describe('quote form pricing UI', () => {
 
     expect(copyButton).toBeDefined()
     expect(copyButton).not.toContain('disabled')
+  })
+
+  it('appends fresh expanded Options without changing the public price list or main subtotal', async () => {
+    const { cleanup, document: testDocument } = installTestDom()
+    Object.assign(window, {
+      clearTimeout: globalThis.clearTimeout.bind(globalThis),
+      history: { pushState: () => undefined },
+      location: { protocol: 'http:', href: 'http://localhost/quotes/quote-id-1/edit' },
+      setTimeout: globalThis.setTimeout.bind(globalThis),
+    })
+    const container = testDocument.createElement('div')
+    testDocument.body.appendChild(container)
+    let root: Root | null = null
+
+    function findByClass(className: string): TestElement | undefined {
+      return [...container.querySelectorAll('div'), ...container.querySelectorAll('section')].find((element) => (
+        element.getAttribute('class')?.split(' ').includes(className)
+      ))
+    }
+
+    function getOptionCards(): TestElement[] {
+      return container.querySelectorAll('div').filter((element) => (
+        element.getAttribute('class')?.split(' ').includes('pbc-optioncard')
+      ))
+    }
+
+    function findCopyButton(): TestElement | undefined {
+      return container.querySelectorAll('button').find((button) => (
+        button.textContent === 'Copy Main Price to Option'
+      ))
+    }
+
+    function getPublicLineSnapshot(publicLineList: TestElement | undefined) {
+      return {
+        inputs: publicLineList?.querySelectorAll('input').map((input) => ({
+          id: input.getAttribute('id'),
+          type: input.type,
+          value: input.value,
+          checked: input.checked,
+        })),
+        descriptions: publicLineList?.querySelectorAll('textarea').map((textarea) => textarea.value),
+      }
+    }
+
+    try {
+      const { createRoot } = await import('react-dom/client')
+      root = createRoot(container as unknown as Element)
+      await act(async () => {
+        root!.render(createElement(QuoteForm, {
+          settings: quoteRecord.pricingSettingsSnapshot,
+          areas: [{ id: 'interior-area', scope: 'interior', name: 'Walls', active: true, position: 0 }],
+          productServices: [],
+          quoteLineTemplates: [],
+          initialQuote: {
+            ...quoteRecord,
+            selectedMin: 1,
+            selectedMax: 1,
+            items: [{
+              id: 'main-material-1',
+              quoteId: quoteRecord.id,
+              productId: null,
+              productNameSnapshot: 'Main material',
+              marketPriceSnapshot: '120.40',
+              actualPriceSnapshot: '100.00',
+              quantity: '2',
+              workingDays: '0',
+              labourPerDay: '0',
+              areaId: 'interior-area',
+              areaNameSnapshot: 'Walls',
+              areaScopeSnapshot: 'interior',
+              isCustom: true,
+              position: 0,
+            }],
+            jobberQuoteLines: [
+              {
+                id: 'public-line-1',
+                quoteId: quoteRecord.id,
+                kind: 'line_item',
+                name: 'Main painting price',
+                description: 'Walls and ceilings',
+                quantity: '1.00',
+                unitPrice: '1250.00',
+                totalPrice: '1250.00',
+                taxable: true,
+                clientVisible: true,
+                jobberLineItemId: null,
+                linkedProductOrServiceId: null,
+                position: 0,
+                createdAt: '2026-08-26T00:00:00.000Z',
+                updatedAt: '2026-08-26T00:00:00.000Z',
+              },
+              {
+                id: 'public-line-2',
+                quoteId: quoteRecord.id,
+                kind: 'line_item',
+                name: 'Door painting',
+                description: '',
+                quantity: '2',
+                unitPrice: '200.00',
+                totalPrice: '400.00',
+                taxable: false,
+                clientVisible: true,
+                jobberLineItemId: null,
+                linkedProductOrServiceId: null,
+                position: 1,
+                createdAt: '2026-08-26T00:00:00.000Z',
+                updatedAt: '2026-08-26T00:00:00.000Z',
+              },
+            ],
+          },
+        }))
+      })
+      await act(async () => new Promise((resolve) => setTimeout(resolve, 0)))
+
+      const publicLineList = findByClass('product-service-scroll-list')
+      const mainSummary = findByClass('pbc-summary')
+      const publicLineSnapshot = getPublicLineSnapshot(publicLineList)
+      const mainSubtotalSnapshot = mainSummary?.textContent
+      expect(publicLineSnapshot).toEqual({
+        inputs: [
+          { id: 'public-line-1-name', type: '', value: 'Main painting price', checked: false },
+          { id: null, type: '', value: '1.00', checked: false },
+          { id: null, type: '', value: '1250.00', checked: false },
+          { id: null, type: 'checkbox', value: '', checked: true },
+          { id: null, type: 'checkbox', value: '', checked: true },
+          { id: 'public-line-2-name', type: '', value: 'Door painting', checked: false },
+          { id: null, type: '', value: '2', checked: false },
+          { id: null, type: '', value: '200.00', checked: false },
+          { id: null, type: 'checkbox', value: '', checked: false },
+          { id: null, type: 'checkbox', value: '', checked: true },
+        ],
+        descriptions: ['Walls and ceilings', ''],
+      })
+      expect(mainSubtotalSnapshot).toContain('Final subtotal$240.80')
+
+      const copyButton = findCopyButton()
+      expect(copyButton?.disabled).toBe(false)
+      if (!copyButton) return
+
+      await act(async () => {
+        copyButton.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
+      })
+      const firstCards = getOptionCards()
+      const firstTitle = firstCards[0]?.querySelectorAll('input').find((input) => (
+        input.getAttribute('id')?.endsWith('-title')
+      ))
+      expect(firstCards).toHaveLength(1)
+      expect(firstCards[0]?.textContent).toContain('Main painting price')
+      expect(firstCards[0]?.textContent).toContain('Door painting')
+      expect(firstCards[0]?.querySelectorAll('div').some((element) => (
+        element.getAttribute('class')?.split(' ').includes('pbc-optioncard__body')
+      ))).toBe(true)
+      expect(firstTitle?.value).toBe('Option 1')
+      expect(firstTitle?.getAttribute('id')).toMatch(/^option-.+-title$/)
+
+      await act(async () => {
+        copyButton.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
+      })
+      const secondCards = getOptionCards()
+      const secondTitle = secondCards[1]?.querySelectorAll('input').find((input) => (
+        input.getAttribute('id')?.endsWith('-title')
+      ))
+      expect(secondCards).toHaveLength(2)
+      expect(secondTitle?.value).toBe('Option 2')
+      expect(secondTitle?.getAttribute('id')).not.toBe(firstTitle?.getAttribute('id'))
+      expect(secondCards[1]?.querySelectorAll('div').some((element) => (
+        element.getAttribute('class')?.split(' ').includes('pbc-optioncard__body')
+      ))).toBe(true)
+      expect(getPublicLineSnapshot(publicLineList)).toEqual(publicLineSnapshot)
+      expect(mainSummary?.textContent).toBe(mainSubtotalSnapshot)
+    } finally {
+      if (root) await act(async () => root?.unmount())
+      cleanup()
+    }
   })
 
   it('passes only Jobber refresh fields from quote detail to the client panel', async () => {
