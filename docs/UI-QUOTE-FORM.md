@@ -200,6 +200,12 @@ Qty [1.00]   Unit price [$0.00]   Taxable [✓]
 - 긴 목록은 기존 Product / Service 전용 스크롤 영역을 유지하며 pointer가 목록 상·하단에 가까워지면 requestAnimationFrame 기반으로 자동 스크롤한다. drag 취소 또는 목록 빈 공간 drop은 순서를 바꾸지 않고 preview와 자동 스크롤을 정리한다.
 - 저장은 재정렬된 배열 index를 기존 `position`과 Jobber `sortOrder` 흐름에 그대로 사용한다. DB schema, Server Action, Jobber API, 외부 dependency는 변경하지 않는다.
 
+### Main price를 PBC Option으로 복사
+
+- `Copy Main Price to Option`은 현재 client-visible priced Product / Service 행의 이름·수량·단가를 새 독립 PBC Option으로 복사한다.
+- 복사된 행은 custom·zero-labour·F1-F1로 초기화되어 복사 시점의 ex-GST 소계를 유지하며, 원본과 이후 변경을 동기화하지 않는다.
+- text/hidden/invalid/zero-total 행과 description·taxable·Jobber/Product Service identity는 복사하지 않는다. 같은 동작을 반복하면 새 Option을 계속 추가한다.
+
 ### 제외
 
 - Build Option Set
