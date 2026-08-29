@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import type { PricingSettings } from '@/lib/calculator'
 import type { QuoteRecord } from '@/lib/dev-data'
 import { createArea } from '@/lib/actions/areas'
+import { resolveQuoteProductPrices } from '@/lib/actions/products'
 import { Icons } from '@/components/ui/icons'
 import { CustomerPanel, type JobberRefreshPreview } from './customer-panel'
 import { MaterialsPanel, type MaterialReorderUpdater } from './materials-panel'
@@ -19,7 +20,11 @@ import {
 } from './quote-draft'
 import { useQuoteDraftPersistence } from './use-quote-draft-persistence'
 import { applyOptionMaterialReorder, QuoteOptionsPanel } from './quote-options-panel'
-import { appendMainMaterialsOption, hasCopyableMainMaterials } from './main-materials-option-copy'
+import {
+  applyTrustedLinkedProductPrices,
+  appendMainMaterialsOption,
+  hasCopyableMainMaterials,
+} from './main-materials-option-copy'
 import { OptionTotalsSummary } from './option-totals-summary'
 import { calculateMainQuoteTotals } from './quote-calculation-totals'
 import type { AreaCreateResult, AreaFormulaSelections, AreaScope, FormulaNumber, JobberQuoteLineItemDraft, MaterialItem, QuoteMemoItem, QuoteOptionItem } from './types'
@@ -326,6 +331,8 @@ export function QuoteForm({ settings, areas, productServices = [], quoteLineTemp
   const [saveError, setSaveError] = useState<string | null>(null)
   const [pendingSaveAction, setPendingSaveAction] = useState<QuoteSaveAction | null>(null)
   const [jobberFetchError, setJobberFetchError] = useState<string | null>(null)
+  const [copyMaterialsError, setCopyMaterialsError] = useState<string | null>(null)
+  const [isCopyingMaterials, setIsCopyingMaterials] = useState(false)
   const [isFetchingJobberQuote, setIsFetchingJobberQuote] = useState(false)
   const [jobberQuoteDraft, setJobberQuoteDraft] = useState<JobberQuoteDraft | null>(initialQuote?.jobberSnapshot ?? null)
   const [jobberRefreshPreview, setJobberRefreshPreview] = useState<(JobberRefreshPreview & { draft: JobberQuoteDraft }) | null>(null)
@@ -343,6 +350,7 @@ export function QuoteForm({ settings, areas, productServices = [], quoteLineTemp
   const [pendingNavigation, setPendingNavigation] = useState<string | null>(null)
   const [hasCheckedStoredDraft, setHasCheckedStoredDraft] = useState(false)
   const isNavigatingRef = useRef(false)
+  const copyMaterialsRequestRef = useRef(false)
 
   const draftStorageKey = useMemo(() => getQuoteDraftStorageKey(initialQuote?.id), [initialQuote?.id])
   const quoteTargetPath = initialQuote ? `/quotes/${initialQuote.id}` : '/quotes'
@@ -656,8 +664,42 @@ export function QuoteForm({ settings, areas, productServices = [], quoteLineTemp
     ])
   }
 
-  function copyMaterialsToOption() {
-    setOptions((current) => appendMainMaterialsOption(current, materials, createClientId))
+  async function copyMaterialsToOption() {
+    if (copyMaterialsRequestRef.current) return
+
+    const sourceMaterials = materials.map((material) => ({ ...material }))
+    const productIds = Array.from(new Set(sourceMaterials.flatMap((material) => (
+      material.productId ? [material.productId] : []
+    ))))
+    setCopyMaterialsError(null)
+
+    if (productIds.length === 0) {
+      setOptions((current) => appendMainMaterialsOption(current, sourceMaterials, createClientId))
+      return
+    }
+
+    copyMaterialsRequestRef.current = true
+    setIsCopyingMaterials(true)
+    try {
+      const result = await resolveQuoteProductPrices({ productIds })
+      if (!result.ok) {
+        setCopyMaterialsError(result.error)
+        return
+      }
+
+      const trustedMaterials = applyTrustedLinkedProductPrices(sourceMaterials, result.data)
+      if (!trustedMaterials) {
+        setCopyMaterialsError('Unable to verify linked material pricing. Refresh the quote and try again.')
+        return
+      }
+
+      setOptions((current) => appendMainMaterialsOption(current, trustedMaterials, createClientId))
+    } catch {
+      setCopyMaterialsError('Unable to verify linked material pricing. Refresh the quote and try again.')
+    } finally {
+      copyMaterialsRequestRef.current = false
+      setIsCopyingMaterials(false)
+    }
   }
 
   function changeOption(option: QuoteOptionItem) {
@@ -788,6 +830,8 @@ export function QuoteForm({ settings, areas, productServices = [], quoteLineTemp
   }
 
   function saveQuote(action: QuoteSaveAction = 'local') {
+    if (copyMaterialsRequestRef.current) return
+
     setSaveError(null)
     setPendingSaveAction(action)
     startTransition(async () => {
@@ -838,6 +882,7 @@ export function QuoteForm({ settings, areas, productServices = [], quoteLineTemp
     ? 'Saving & syncing...'
     : 'Save & Sync to Jobber'
   const mobileSaveLabel = isPending && pendingSaveAction === 'local' ? 'Saving...' : 'Save'
+  const isSaveBlocked = isPending || isCopyingMaterials
 
   return (
     <main>
@@ -855,7 +900,7 @@ export function QuoteForm({ settings, areas, productServices = [], quoteLineTemp
             <button
               type="button"
               onClick={() => saveQuote('local')}
-              disabled={isPending}
+              disabled={isSaveBlocked}
               className="pbc-btn pbc-btn--primary pbc-topbar__local-save"
             >
               {Icons.check({ size: 15 })} {localSaveLabel}
@@ -863,7 +908,7 @@ export function QuoteForm({ settings, areas, productServices = [], quoteLineTemp
             <button
               type="button"
               onClick={() => saveQuote('sync')}
-              disabled={isPending || !canSyncJobberQuote}
+              disabled={isSaveBlocked || !canSyncJobberQuote}
               title={canSyncJobberQuote ? 'Save app changes and update Jobber' : 'Fetch a Jobber quote before syncing'}
               className="pbc-btn pbc-btn--ghost"
             >
@@ -951,6 +996,8 @@ export function QuoteForm({ settings, areas, productServices = [], quoteLineTemp
             optionTotals={optionPanelTotals}
             areas={quoteAreas}
             canCopyMaterials={canCopyMaterials}
+            isCopyingMaterials={isCopyingMaterials}
+            copyMaterialsError={copyMaterialsError}
             onCopyMaterials={copyMaterialsToOption}
             onAddOption={addOption}
             onChangeOption={changeOption}
@@ -996,7 +1043,7 @@ export function QuoteForm({ settings, areas, productServices = [], quoteLineTemp
           <span>Inc GST</span>
           <b className="mono">${totals.areaBreakdown.finalTotal.toFixed(2)}</b>
         </div>
-        <button type="button" onClick={() => saveQuote('local')} disabled={isPending} className="pbc-btn pbc-btn--primary pbc-btn--sm">
+        <button type="button" onClick={() => saveQuote('local')} disabled={isSaveBlocked} className="pbc-btn pbc-btn--primary pbc-btn--sm">
           {Icons.check({ size: 14 })} {mobileSaveLabel}
         </button>
       </div>

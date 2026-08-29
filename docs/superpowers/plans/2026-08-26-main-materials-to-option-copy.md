@@ -6,7 +6,7 @@
 
 ## Scope
 
-Replace the incorrectly sourced Product / Service copy action with a Main Materials snapshot action. Keep the change client-side and reuse existing Option calculation, draft, save, and restoration paths.
+Replace the incorrectly sourced Product / Service copy action with a Main Materials snapshot action. Reuse existing Option calculation, draft, save, and restoration paths, and align fresh linked Option rows with the existing save-time trusted-price policy through one read-only batch lookup.
 
 ## Task 1 — Pure Main Materials snapshot transform
 
@@ -24,6 +24,8 @@ Implement and test:
 - `appendMainMaterialsOption` appends without mutating the current Options array or Main Materials.
 - Repeated copies receive distinct Option and material IDs.
 - The existing save payload serializes copied values and never reuses a Main Material `sourceItemId`.
+- Linked rows can receive resolved trusted prices without mutating visible RRP, custom prices, or Main Materials.
+- Empty input returns `null`, missing linked prices are rejected, and copied objects remain mutation-independent.
 
 Run:
 
@@ -31,7 +33,19 @@ Run:
 npm.cmd run test:run -- tests/main-materials-option-copy.test.ts
 ```
 
-## Task 2 — Wire the Options action to Main Materials
+## Task 2 — Resolve current trusted linked-product prices
+
+**Files:**
+
+- `lib/validators.ts`
+- `lib/actions/products.ts`
+- `lib/dev-data.ts`
+- `tests/products-actions.test.ts`
+- `tests/products-actions-supabase.test.ts`
+
+Add a Zod-validated, authenticated exact-ID batch action that returns only `{ productId, trustedPrice }`. Deduplicate IDs, do not filter inactive rows, use the same RRP-first precedence as quote save, and fail when any linked product cannot be verified.
+
+## Task 3 — Wire the Options action to Main Materials
 
 **Files:**
 
@@ -39,7 +53,7 @@ npm.cmd run test:run -- tests/main-materials-option-copy.test.ts
 - `components/quote-form/quote-options-panel.tsx`
 - `tests/quote-ui.test.tsx`
 
-Change `QuoteForm` so eligibility and the click handler use `materials`, not `jobberQuoteLines`. Rename presentation props to `canCopyMaterials` and `onCopyMaterials`.
+Change `QuoteForm` so eligibility and the click handler use `materials`, not `jobberQuoteLines`. Rename presentation props to `canCopyMaterials` and `onCopyMaterials`. Custom-only copies stay synchronous; linked copies resolve current trusted prices first, prevent concurrent requests, append nothing on failure, and show the error beside the action.
 
 Render the exact label `Copy Materials to Option`. When disabled, show `Add at least one material first.` and associate it with the button through `aria-describedby`.
 
@@ -57,7 +71,7 @@ Run:
 npm.cmd run test:run -- tests/main-materials-option-copy.test.ts tests/quote-ui.test.tsx
 ```
 
-## Task 3 — Correct project documentation
+## Task 4 — Correct project documentation
 
 **Files:**
 
@@ -65,9 +79,9 @@ npm.cmd run test:run -- tests/main-materials-option-copy.test.ts tests/quote-ui.
 - `docs/ARCHITECTURE.md`
 - `PROGRESS.md`
 
-Document Main Materials as the only source, the fresh-ID independent-copy contract, F4/F1 initialization, existing persistence reuse, and the absence of DB/Jobber changes. Remove the superseded Product / Service copy wording.
+Document Main Materials as the only source, the fresh-ID independent-copy contract, F4/F1 initialization, trusted linked-price preview alignment, existing persistence reuse, and the absence of DB/RPC/RLS/Jobber changes. Remove the superseded Product / Service copy wording.
 
-## Task 4 — Verification and review
+## Task 5 — Verification and review
 
 Run:
 

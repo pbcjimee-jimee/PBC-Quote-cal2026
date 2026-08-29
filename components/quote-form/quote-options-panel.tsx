@@ -22,6 +22,8 @@ interface QuoteOptionsPanelProps {
   optionTotals: Record<string, QuoteOptionTotals>
   areas: AreaRecord[]
   canCopyMaterials: boolean
+  isCopyingMaterials: boolean
+  copyMaterialsError: string | null
   onCopyMaterials: () => void
   onAddOption: () => void
   onChangeOption: (option: QuoteOptionItem) => void
@@ -45,6 +47,8 @@ export function QuoteOptionsPanel({
   optionTotals,
   areas,
   canCopyMaterials,
+  isCopyingMaterials,
+  copyMaterialsError,
   onCopyMaterials,
   onAddOption,
   onChangeOption,
@@ -52,6 +56,11 @@ export function QuoteOptionsPanel({
   onRemoveOption,
   onCreateArea,
 }: QuoteOptionsPanelProps) {
+  const copyDescriptionIds = [
+    !canCopyMaterials ? 'materials-copy-unavailable' : null,
+    copyMaterialsError ? 'materials-copy-error' : null,
+  ].filter((id): id is string => id !== null).join(' ') || undefined
+
   return (
     <section className="mt-6 space-y-4 border-t border-[var(--border-soft)] pt-6">
       <div className="pbc-panelhead">
@@ -64,8 +73,9 @@ export function QuoteOptionsPanel({
             <Button
               type="button"
               onClick={onCopyMaterials}
-              disabled={!canCopyMaterials}
-              aria-describedby={!canCopyMaterials ? 'materials-copy-unavailable' : undefined}
+              disabled={!canCopyMaterials || isCopyingMaterials}
+              aria-busy={isCopyingMaterials || undefined}
+              aria-describedby={copyDescriptionIds}
               title={canCopyMaterials
                 ? 'Create an independent Option from all current Main Materials.'
                 : undefined}
@@ -76,6 +86,11 @@ export function QuoteOptionsPanel({
             {!canCopyMaterials ? (
               <p id="materials-copy-unavailable" className="pbc-panelsub max-w-64 text-left">
                 Add at least one material first.
+              </p>
+            ) : null}
+            {copyMaterialsError ? (
+              <p id="materials-copy-error" className="pbc-alert pbc-alert--danger max-w-64" role="alert">
+                {copyMaterialsError}
               </p>
             ) : null}
           </div>

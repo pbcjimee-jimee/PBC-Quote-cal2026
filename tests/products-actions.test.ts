@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { createProduct, importProductsCSV, listProducts, searchProducts } from '@/lib/actions/products'
+import { createProduct, importProductsCSV, listProducts, resolveQuoteProductPrices, searchProducts } from '@/lib/actions/products'
 import { resetDevData } from '@/lib/dev-data'
 import { beforeEach } from 'vitest'
 
@@ -37,6 +37,29 @@ describe('product actions', () => {
       expect(product?.marketPrice).toBe('231.53')
       expect(product?.actualPrice).toBe('219.95')
     }
+  })
+
+  it('resolves current trusted quote prices in dev mode by product ID', async () => {
+    const result = await resolveQuoteProductPrices({
+      productIds: [
+        '00000000-0000-4000-8000-000000000001',
+        '00000000-0000-4000-8000-000000000002',
+      ],
+    })
+
+    expect(result).toEqual({
+      ok: true,
+      data: [
+        {
+          productId: '00000000-0000-4000-8000-000000000001',
+          trustedPrice: '305.21',
+        },
+        {
+          productId: '00000000-0000-4000-8000-000000000002',
+          trustedPrice: '133.63',
+        },
+      ],
+    })
   })
 
   it('imports materials from csv text in dev mode', async () => {

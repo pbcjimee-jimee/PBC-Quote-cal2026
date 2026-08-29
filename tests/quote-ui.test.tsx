@@ -37,6 +37,7 @@ import { installTestDom, type TestElement } from '@/tests/helpers/test-dom'
 
 const routerPushMock = vi.hoisted(() => vi.fn())
 const routerPrefetchMock = vi.hoisted(() => vi.fn())
+const resolveQuoteProductPricesMock = vi.hoisted(() => vi.fn())
 
 vi.mock('next/navigation', () => ({
   useRouter: () => ({
@@ -51,6 +52,14 @@ vi.mock('@/lib/actions/quotes', () => ({
   retryJobberQuoteSync: vi.fn(),
   updateQuote: vi.fn(),
 }))
+
+vi.mock('@/lib/actions/products', async () => {
+  const actual = await vi.importActual<typeof import('@/lib/actions/products')>('@/lib/actions/products')
+  return {
+    ...actual,
+    resolveQuoteProductPrices: resolveQuoteProductPricesMock,
+  }
+})
 
 describe('quote form pricing UI', () => {
   const quoteRecord: QuoteRecord = {
@@ -124,13 +133,18 @@ describe('quote form pricing UI', () => {
     ],
   }
 
-  function renderQuoteOptionsPanel(canCopyMaterials: boolean) {
+  function renderQuoteOptionsPanel(
+    canCopyMaterials: boolean,
+    options: { isCopyingMaterials?: boolean; copyMaterialsError?: string | null } = {}
+  ) {
     return renderToStaticMarkup(
       createElement(QuoteOptionsPanel, {
         options: [],
         optionTotals: {},
         areas: [],
         canCopyMaterials,
+        isCopyingMaterials: options.isCopyingMaterials ?? false,
+        copyMaterialsError: options.copyMaterialsError ?? null,
         onCopyMaterials: () => undefined,
         onAddOption: () => undefined,
         onChangeOption: () => undefined,
@@ -156,6 +170,22 @@ describe('quote form pricing UI', () => {
 
     expect(copyButton).toBeDefined()
     expect(copyButton).not.toContain('disabled')
+  })
+
+  it('disables Materials copy during trusted-price lookup without showing the empty-state hint', () => {
+    const markup = renderQuoteOptionsPanel(true, { isCopyingMaterials: true })
+    const copyButton = markup.match(/<button[^>]*>Copy Materials to Option<\/button>/)?.[0]
+
+    expect(copyButton).toContain('disabled=""')
+    expect(copyButton).toContain('aria-busy="true"')
+    expect(markup).not.toContain('Add at least one material first.')
+  })
+
+  it('shows a trusted-price lookup error beside the copy action', () => {
+    const markup = renderQuoteOptionsPanel(true, { copyMaterialsError: 'Catalog lookup failed.' })
+
+    expect(markup).toContain('role="alert"')
+    expect(markup).toContain('Catalog lookup failed.')
   })
 
   it('enables copying Main Materials without any public price lines', () => {
@@ -226,6 +256,14 @@ describe('quote form pricing UI', () => {
   })
 
   it('appends fresh expanded Options without changing the public price list or main subtotal', async () => {
+    resolveQuoteProductPricesMock.mockReset()
+    resolveQuoteProductPricesMock.mockResolvedValue({
+      ok: true,
+      data: [{
+        productId: '00000000-0000-4000-8000-000000000001',
+        trustedPrice: '150.00',
+      }],
+    })
     const { cleanup, document: testDocument } = installTestDom()
     Object.assign(window, {
       clearTimeout: globalThis.clearTimeout.bind(globalThis),
@@ -283,7 +321,7 @@ describe('quote form pricing UI', () => {
             items: [{
               id: 'main-material-1',
               quoteId: quoteRecord.id,
-              productId: null,
+              productId: '00000000-0000-4000-8000-000000000001',
               productNameSnapshot: 'Main material',
               marketPriceSnapshot: '120.40',
               actualPriceSnapshot: '100.00',
@@ -293,7 +331,7 @@ describe('quote form pricing UI', () => {
               areaId: 'interior-area',
               areaNameSnapshot: 'Walls',
               areaScopeSnapshot: 'interior',
-              isCustom: true,
+              isCustom: false,
               position: 0,
             }],
             jobberQuoteLines: [
@@ -372,8 +410,14 @@ describe('quote form pricing UI', () => {
       const firstOptionInputValues = firstCards[0]?.querySelectorAll('input').map((input) => input.value) ?? []
       expect(firstCards).toHaveLength(1)
       expect(firstOptionInputValues).toContain('Main material')
+      expect(firstOptionInputValues).toContain('120.40')
       expect(firstOptionInputValues).not.toContain('Main painting price')
       expect(firstOptionInputValues).not.toContain('Door painting')
+      expect(firstCards[0]?.textContent).toContain('$428.57')
+      expect(firstCards[0]?.textContent).not.toContain('$285.71')
+      expect(resolveQuoteProductPricesMock).toHaveBeenCalledWith({
+        productIds: ['00000000-0000-4000-8000-000000000001'],
+      })
       expect(firstCards[0]?.querySelectorAll('div').some((element) => (
         element.getAttribute('class')?.split(' ').includes('pbc-optioncard__body')
       ))).toBe(true)
@@ -395,6 +439,27 @@ describe('quote form pricing UI', () => {
       ))).toBe(true)
       expect(getPublicLineSnapshot(publicLineList)).toEqual(publicLineSnapshot)
       expect(mainSummary?.textContent).toBe(mainSubtotalSnapshot)
+
+      let resolvePendingLookup!: (result: { ok: false; error: string }) => void
+      const pendingLookup = new Promise<{ ok: false; error: string }>((resolve) => {
+        resolvePendingLookup = resolve
+      })
+      resolveQuoteProductPricesMock.mockReturnValueOnce(pendingLookup)
+      await act(async () => {
+        copyButton.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
+        await Promise.resolve()
+      })
+      const saveButton = container.querySelectorAll('button').find((button) => button.textContent.includes('Save changes'))
+      expect(copyButton.disabled).toBe(true)
+      expect(saveButton?.disabled).toBe(true)
+
+      await act(async () => {
+        resolvePendingLookup({ ok: false, error: 'Catalog lookup failed.' })
+        await pendingLookup
+      })
+      expect(getOptionCards()).toHaveLength(2)
+      expect(container.querySelectorAll('p').find((element) => element.getAttribute('role') === 'alert')?.textContent)
+        .toBe('Catalog lookup failed.')
     } finally {
       if (root) await act(async () => root?.unmount())
       cleanup()

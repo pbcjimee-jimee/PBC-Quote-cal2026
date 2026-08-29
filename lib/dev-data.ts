@@ -378,6 +378,14 @@ export function listDevProducts(query = '', limit = 200): ProductRecord[] {
   }))
 }
 
+export function getDevProductsByIds(ids: string[]): ProductRecord[] {
+  const productById = new Map(products.map((product) => [product.id, product]))
+  return ids.flatMap((id) => {
+    const product = productById.get(id)
+    return product ? [{ ...product }] : []
+  })
+}
+
 function rowToDevProductService(
   row: Database['public']['Tables']['product_services']['Insert'] & {
     id?: string

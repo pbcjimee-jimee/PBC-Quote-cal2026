@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { DEFAULT_PRICING_SETTINGS } from '@/lib/calculator'
 import {
+  applyTrustedLinkedProductPrices,
   appendMainMaterialsOption,
   createMainMaterialsOption,
   hasCopyableMainMaterials,
@@ -95,6 +96,76 @@ describe('main materials option copy', () => {
     expect(hasCopyableMainMaterials([zeroPriceMaterial])).toBe(true)
   })
 
+  it('returns no Option and preserves the Options array when Main Materials is empty', () => {
+    const createId = sequentialIds()
+    const existing: QuoteOptionItem[] = [{
+      id: 'existing-option',
+      title: 'Option 1',
+      materials: [],
+      selectedMin: 4,
+      selectedMax: 1,
+      isExpanded: false,
+    }]
+
+    expect(createMainMaterialsOption([], 2, createId)).toBeNull()
+    expect(appendMainMaterialsOption(existing, [], createId)).toBe(existing)
+  })
+
+  it('uses current trusted prices for linked rows while preserving visible RRP and custom prices', () => {
+    const source: MaterialItem[] = [
+      {
+        id: 'linked-material',
+        productId: '00000000-0000-4000-8000-000000000001',
+        name: 'Linked paint',
+        marketPrice: '96.79',
+        actualPrice: '71.25',
+        quantity: '1',
+        workingDays: '0',
+        labourPerDay: '0',
+        isCustom: false,
+      },
+      {
+        id: 'custom-material',
+        name: 'Custom allowance',
+        marketPrice: '35.00',
+        actualPrice: '22.00',
+        quantity: '1',
+        workingDays: '0',
+        labourPerDay: '0',
+        isCustom: true,
+      },
+    ]
+
+    const resolved = applyTrustedLinkedProductPrices(source, [{
+      productId: '00000000-0000-4000-8000-000000000001',
+      trustedPrice: '105.50',
+    }])
+
+    expect(resolved).toEqual([
+      { ...source[0], actualPrice: '105.50' },
+      source[1],
+    ])
+    expect(resolved?.[0].marketPrice).toBe('96.79')
+    expect(resolved?.[1].actualPrice).toBe('22.00')
+    expect(source[0].actualPrice).toBe('71.25')
+  })
+
+  it('rejects a linked copy when a trusted product price is missing', () => {
+    const source: MaterialItem[] = [{
+      id: 'linked-material',
+      productId: '00000000-0000-4000-8000-000000000001',
+      name: 'Linked paint',
+      marketPrice: '96.79',
+      actualPrice: '71.25',
+      quantity: '1',
+      workingDays: '0',
+      labourPerDay: '0',
+      isCustom: false,
+    }]
+
+    expect(applyTrustedLinkedProductPrices(source, [])).toBeNull()
+  })
+
   it('appends independent Options with fresh Option and material identities on repeated copies', () => {
     const source: MaterialItem[] = [{
       id: 'main-material-1',
@@ -126,6 +197,11 @@ describe('main materials option copy', () => {
     expect(second[2].id).not.toBe(first[1].id)
     expect(second[2].materials[0].id).not.toBe(first[1].materials[0].id)
     expect(source[0].id).toBe('main-material-1')
+
+    first[1].materials[0].name = 'Changed first copy'
+    source[0].memo = 'Changed source'
+    expect(second[2].materials[0].name).toBe('Main material')
+    expect(second[2].materials[0].memo).toBeUndefined()
   })
 
   it('serializes copied fields with a source identity distinct from the Main Material', () => {
