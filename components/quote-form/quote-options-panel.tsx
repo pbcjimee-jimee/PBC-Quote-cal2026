@@ -21,6 +21,10 @@ interface QuoteOptionsPanelProps {
   options: QuoteOptionItem[]
   optionTotals: Record<string, QuoteOptionTotals>
   areas: AreaRecord[]
+  canCopyMaterials: boolean
+  isCopyingMaterials: boolean
+  copyMaterialsError: string | null
+  onCopyMaterials: () => void
   onAddOption: () => void
   onChangeOption: (option: QuoteOptionItem) => void
   onReorderOptionMaterials?: (optionId: string, update: MaterialReorderUpdater) => void
@@ -42,12 +46,21 @@ export function QuoteOptionsPanel({
   options,
   optionTotals,
   areas,
+  canCopyMaterials,
+  isCopyingMaterials,
+  copyMaterialsError,
+  onCopyMaterials,
   onAddOption,
   onChangeOption,
   onReorderOptionMaterials,
   onRemoveOption,
   onCreateArea,
 }: QuoteOptionsPanelProps) {
+  const copyDescriptionIds = [
+    !canCopyMaterials ? 'materials-copy-unavailable' : null,
+    copyMaterialsError ? 'materials-copy-error' : null,
+  ].filter((id): id is string => id !== null).join(' ') || undefined
+
   return (
     <section className="mt-6 space-y-4 border-t border-[var(--border-soft)] pt-6">
       <div className="pbc-panelhead">
@@ -55,13 +68,36 @@ export function QuoteOptionsPanel({
           <h2 className="pbc-paneltitle">Options</h2>
           <p className="pbc-panelsub">Optional add-ons are priced separately from the main quote.</p>
         </div>
-        <Button
-          type="button"
-          onClick={onAddOption}
-          variant="ghost"
-        >
-          {Icons.plus({ size: 15 })} Add Option
-        </Button>
+        <div className="pbc-panelhead__actions">
+          <div className="flex flex-col items-start gap-1">
+            <Button
+              type="button"
+              onClick={onCopyMaterials}
+              disabled={!canCopyMaterials || isCopyingMaterials}
+              aria-busy={isCopyingMaterials || undefined}
+              aria-describedby={copyDescriptionIds}
+              title={canCopyMaterials
+                ? 'Create an independent Option from all current Main Materials.'
+                : undefined}
+              variant="ghost"
+            >
+              Copy Materials to Option
+            </Button>
+            {!canCopyMaterials ? (
+              <p id="materials-copy-unavailable" className="pbc-panelsub max-w-64 text-left">
+                Add at least one material first.
+              </p>
+            ) : null}
+            {copyMaterialsError ? (
+              <p id="materials-copy-error" className="pbc-alert pbc-alert--danger max-w-64" role="alert">
+                {copyMaterialsError}
+              </p>
+            ) : null}
+          </div>
+          <Button type="button" onClick={onAddOption} variant="ghost">
+            {Icons.plus({ size: 15 })} Add Option
+          </Button>
+        </div>
       </div>
 
       {options.length === 0 ? (

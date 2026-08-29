@@ -7,6 +7,7 @@ import {
   productCreateSchema,
   productDeleteSchema,
   productImportSchema,
+  quoteProductPriceResolveSchema,
   productSearchSchema,
   productUpdateSchema,
 } from '@/lib/validators'
@@ -53,6 +54,11 @@ type ProductImportResult = {
   products: ProductRecord[]
 }
 
+export interface QuoteProductPriceSnapshot {
+  productId: string
+  trustedPrice: string
+}
+
 type PublicProductRow = Pick<
   ProductRow,
   | 'id'
@@ -97,6 +103,12 @@ const PUBLIC_PRODUCT_COLUMNS = [
 ].join(', ')
 
 const QUOTE_PRODUCT_COLUMNS = `${PUBLIC_PRODUCT_COLUMNS}, actual_price`
+const QUOTE_PRODUCT_PRICE_COLUMNS = 'id, market_price, actual_price, price, rrp_price'
+
+type QuoteProductPriceRow = Pick<
+  ProductRow,
+  'id' | 'market_price' | 'actual_price' | 'price' | 'rrp_price'
+>
 
 function rowToProduct(row: PublicProductRow): ProductRecord {
   return normalizeRrpProduct({
@@ -119,6 +131,28 @@ function rowToProduct(row: PublicProductRow): ProductRecord {
     productCode: row.product_code,
     sourceUrl: row.source_url,
   })
+}
+
+function resolveTrustedProductPrice(product: ProductRecord): string {
+  return product.rrpPrice ?? product.marketPrice ?? product.price ?? product.actualPrice
+}
+
+function resolveTrustedProductRowPrice(row: QuoteProductPriceRow): string {
+  return row.rrp_price ?? row.market_price ?? row.price ?? row.actual_price
+}
+
+function orderResolvedQuoteProductPrices(
+  productIds: string[],
+  prices: QuoteProductPriceSnapshot[]
+): QuoteProductPriceSnapshot[] | null {
+  const priceByProductId = new Map(prices.map((price) => [price.productId, price.trustedPrice]))
+  const ordered: QuoteProductPriceSnapshot[] = []
+  for (const productId of productIds) {
+    const trustedPrice = priceByProductId.get(productId)
+    if (trustedPrice === undefined) return null
+    ordered.push({ productId, trustedPrice })
+  }
+  return ordered
 }
 
 function searchTokens(query: string): string[] {
@@ -433,6 +467,63 @@ export async function searchProducts(input: unknown): Promise<ActionResult<Produ
   const { data, error } = await request
   if (error) return { ok: false, error: error.message }
   return { ok: true, data: (data as unknown as PublicProductRow[]).map(rowToProduct) }
+}
+
+export async function resolveQuoteProductPrices(
+  input: unknown
+): Promise<ActionResult<QuoteProductPriceSnapshot[]>> {
+  const parsed = quoteProductPriceResolveSchema.safeParse(input)
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.message, code: 'VALIDATION' }
+  }
+
+  const productIds = Array.from(new Set(parsed.data.productIds))
+
+  if (isDevNoAuthMode()) {
+    const { getDevProductsByIds } = await import('@/lib/dev-data')
+    const resolved = orderResolvedQuoteProductPrices(
+      productIds,
+      getDevProductsByIds(productIds).map((product) => ({
+        productId: product.id,
+        trustedPrice: resolveTrustedProductPrice(product),
+      }))
+    )
+
+    return resolved
+      ? { ok: true, data: resolved }
+      : {
+          ok: false,
+          error: 'Unable to verify linked material pricing. Refresh the quote and try again.',
+          code: 'NOT_FOUND',
+        }
+  }
+
+  const allowedUser = await requireRole('admin')
+  if (!allowedUser.ok) return allowedUser
+
+  const supabase = await createClient()
+  const { data, error } = await supabase
+    .from('products')
+    .select(QUOTE_PRODUCT_PRICE_COLUMNS)
+    .in('id', productIds)
+
+  if (error) return { ok: false, error: error.message }
+
+  const resolved = orderResolvedQuoteProductPrices(
+    productIds,
+    ((data ?? []) as unknown as QuoteProductPriceRow[]).map((row) => ({
+      productId: row.id,
+      trustedPrice: resolveTrustedProductRowPrice(row),
+    }))
+  )
+
+  return resolved
+    ? { ok: true, data: resolved }
+    : {
+        ok: false,
+        error: 'Unable to verify linked material pricing. Refresh the quote and try again.',
+        code: 'NOT_FOUND',
+      }
 }
 
 export async function listProducts(input: unknown = {}): Promise<ActionResult<ProductRecord[]>> {

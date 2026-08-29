@@ -235,6 +235,10 @@ export const productSearchSchema = z.object({
   limit: z.number().int().positive().max(200).default(20),
 })
 
+export const quoteProductPriceResolveSchema = z.object({
+  productIds: z.array(z.string().uuid()).min(1).max(500),
+})
+
 export const productCreateSchema = z.object({
   name: z.string().trim().min(1).max(200).optional(),
   manufacturer: z.string().trim().min(1).max(120).nullable().optional(),

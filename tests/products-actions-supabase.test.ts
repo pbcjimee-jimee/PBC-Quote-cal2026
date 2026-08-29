@@ -27,6 +27,7 @@ import {
   deleteProduct,
   importProductsCSV,
   listProducts,
+  resolveQuoteProductPrices,
   searchProducts,
   updateProduct,
 } from '@/lib/actions/products'
@@ -57,6 +58,7 @@ function createThenableProductsRequest(response: unknown) {
     eq: vi.fn(() => request),
     order: vi.fn(() => request),
     limit: vi.fn(() => request),
+    in: vi.fn(() => request),
     or: vi.fn((filter: string) => {
       void filter
       return request
@@ -181,15 +183,71 @@ describe('product actions against Supabase', () => {
     }
   })
 
+  it('resolves current trusted quote prices by exact product IDs', async () => {
+    const request = createThenableProductsRequest({
+      data: [{
+        ...productRow,
+        market_price: '180.00',
+        actual_price: '70.00',
+        price: '90.00',
+        rrp_price: '199.50',
+      }],
+      error: null,
+    })
+    mocks.createClient.mockResolvedValueOnce({ from: vi.fn(() => request) })
+
+    const result = await resolveQuoteProductPrices({
+      productIds: [
+        '00000000-0000-4000-8000-000000000001',
+        '00000000-0000-4000-8000-000000000001',
+      ],
+    })
+
+    expect(result).toEqual({
+      ok: true,
+      data: [{
+        productId: '00000000-0000-4000-8000-000000000001',
+        trustedPrice: '199.50',
+      }],
+    })
+    expect(request.in).toHaveBeenCalledWith('id', ['00000000-0000-4000-8000-000000000001'])
+    expect(request.eq).not.toHaveBeenCalled()
+  })
+
+  it('rejects quote price resolution when a linked product no longer exists', async () => {
+    const request = createThenableProductsRequest({ data: [], error: null })
+    mocks.createClient.mockResolvedValueOnce({ from: vi.fn(() => request) })
+
+    const result = await resolveQuoteProductPrices({
+      productIds: ['00000000-0000-4000-8000-000000000001'],
+    })
+
+    expect(result).toEqual({
+      ok: false,
+      code: 'NOT_FOUND',
+      error: 'Unable to verify linked material pricing. Refresh the quote and try again.',
+    })
+  })
+
   it('rejects disallowed users before reading quote product prices', async () => {
     mocks.requireAllowedUser.mockResolvedValueOnce({
       ok: false,
       error: 'User is not allowed to access this app',
     })
 
-    const result = await searchProducts({ query: 'weathershield', limit: 8 })
+    const result = await resolveQuoteProductPrices({
+      productIds: ['00000000-0000-4000-8000-000000000001'],
+    })
 
     expect(result).toEqual({ ok: false, error: 'User is not allowed to access this app' })
+    expect(mocks.createClient).not.toHaveBeenCalled()
+  })
+
+  it('rejects malformed quote product IDs before authorization or database access', async () => {
+    const result = await resolveQuoteProductPrices({ productIds: ['not-a-product-id'] })
+
+    expect(result).toMatchObject({ ok: false, code: 'VALIDATION' })
+    expect(mocks.requireAllowedUser).not.toHaveBeenCalled()
     expect(mocks.createClient).not.toHaveBeenCalled()
   })
 

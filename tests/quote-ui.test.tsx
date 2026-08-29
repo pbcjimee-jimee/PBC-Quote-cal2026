@@ -1,4 +1,5 @@
-import { createElement } from 'react'
+import { act, createElement } from 'react'
+import type { Root } from 'react-dom/client'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { readFileSync } from 'node:fs'
 import Decimal from 'decimal.js'
@@ -9,6 +10,7 @@ import { FormulaResults } from '@/components/quote-form/formula-results'
 import { AreaPickerDropdown, MaterialRow, updateMaterialRrp } from '@/components/quote-form/material-row'
 import { MaterialsPanel, assignMaterialToActiveArea } from '@/components/quote-form/materials-panel'
 import { OptionTotalsSummary } from '@/components/quote-form/option-totals-summary'
+import { QuoteOptionsPanel } from '@/components/quote-form/quote-options-panel'
 import {
   getQuoteUnexpectedSaveErrorMessage,
   getQuoteNavigationGuardTarget,
@@ -31,9 +33,11 @@ import { MonthFilterSelect } from '@/components/quote-list/month-filter-select'
 import { getMonthFilterHref, groupQuotesByYearMonth, filterQuotesByMonth } from '@/app/(app)/quotes/page'
 import type { QuoteRecord } from '@/lib/dev-data'
 import { createQuote, updateQuote } from '@/lib/actions/quotes'
+import { installTestDom, type TestElement } from '@/tests/helpers/test-dom'
 
 const routerPushMock = vi.hoisted(() => vi.fn())
 const routerPrefetchMock = vi.hoisted(() => vi.fn())
+const resolveQuoteProductPricesMock = vi.hoisted(() => vi.fn())
 
 vi.mock('next/navigation', () => ({
   useRouter: () => ({
@@ -48,6 +52,14 @@ vi.mock('@/lib/actions/quotes', () => ({
   retryJobberQuoteSync: vi.fn(),
   updateQuote: vi.fn(),
 }))
+
+vi.mock('@/lib/actions/products', async () => {
+  const actual = await vi.importActual<typeof import('@/lib/actions/products')>('@/lib/actions/products')
+  return {
+    ...actual,
+    resolveQuoteProductPrices: resolveQuoteProductPricesMock,
+  }
+})
 
 describe('quote form pricing UI', () => {
   const quoteRecord: QuoteRecord = {
@@ -120,6 +132,339 @@ describe('quote form pricing UI', () => {
       },
     ],
   }
+
+  function renderQuoteOptionsPanel(
+    canCopyMaterials: boolean,
+    options: { isCopyingMaterials?: boolean; copyMaterialsError?: string | null } = {}
+  ) {
+    return renderToStaticMarkup(
+      createElement(QuoteOptionsPanel, {
+        options: [],
+        optionTotals: {},
+        areas: [],
+        canCopyMaterials,
+        isCopyingMaterials: options.isCopyingMaterials ?? false,
+        copyMaterialsError: options.copyMaterialsError ?? null,
+        onCopyMaterials: () => undefined,
+        onAddOption: () => undefined,
+        onChangeOption: () => undefined,
+        onRemoveOption: () => undefined,
+      })
+    )
+  }
+
+  it('disables Materials copy when Main Materials is empty', () => {
+    const markup = renderQuoteOptionsPanel(false)
+    const copyButton = markup.match(/<button[^>]*>Copy Materials to Option<\/button>/)?.[0]
+
+    expect(copyButton).toBeDefined()
+    expect(copyButton).toContain('disabled=""')
+    expect(copyButton).toContain('aria-describedby="materials-copy-unavailable"')
+    expect(markup).toContain('id="materials-copy-unavailable"')
+    expect(markup).toContain('>Add at least one material first.</p>')
+  })
+
+  it('enables Materials copy when Main Materials contains any row', () => {
+    const markup = renderQuoteOptionsPanel(true)
+    const copyButton = markup.match(/<button[^>]*>Copy Materials to Option<\/button>/)?.[0]
+
+    expect(copyButton).toBeDefined()
+    expect(copyButton).not.toContain('disabled')
+  })
+
+  it('disables Materials copy during trusted-price lookup without showing the empty-state hint', () => {
+    const markup = renderQuoteOptionsPanel(true, { isCopyingMaterials: true })
+    const copyButton = markup.match(/<button[^>]*>Copy Materials to Option<\/button>/)?.[0]
+
+    expect(copyButton).toContain('disabled=""')
+    expect(copyButton).toContain('aria-busy="true"')
+    expect(markup).not.toContain('Add at least one material first.')
+  })
+
+  it('shows a trusted-price lookup error beside the copy action', () => {
+    const markup = renderQuoteOptionsPanel(true, { copyMaterialsError: 'Catalog lookup failed.' })
+
+    expect(markup).toContain('role="alert"')
+    expect(markup).toContain('Catalog lookup failed.')
+  })
+
+  it('enables copying Main Materials without any public price lines', () => {
+    const markup = renderToStaticMarkup(createElement(QuoteForm, {
+      settings: quoteRecord.pricingSettingsSnapshot,
+      areas: [],
+      productServices: [],
+      quoteLineTemplates: [],
+      initialQuote: {
+        ...quoteRecord,
+        items: [{
+          id: 'main-material-1',
+          quoteId: quoteRecord.id,
+          productId: null,
+          productNameSnapshot: 'Main material',
+          marketPriceSnapshot: '1250.00',
+          actualPriceSnapshot: '1000.00',
+          quantity: '1',
+          workingDays: '0',
+          labourPerDay: '0',
+          areaId: null,
+          areaNameSnapshot: null,
+          areaScopeSnapshot: null,
+          isCustom: true,
+          position: 0,
+        }],
+        jobberQuoteLines: [],
+      },
+    }))
+    const copyButton = markup.match(/<button[^>]*>Copy Materials to Option<\/button>/)?.[0]
+
+    expect(copyButton).toBeDefined()
+    expect(copyButton).not.toContain('disabled')
+  })
+
+  it('keeps Materials copy disabled when only public price lines exist', () => {
+    const markup = renderToStaticMarkup(createElement(QuoteForm, {
+      settings: quoteRecord.pricingSettingsSnapshot,
+      areas: [],
+      productServices: [],
+      quoteLineTemplates: [],
+      initialQuote: {
+        ...quoteRecord,
+        items: [],
+        jobberQuoteLines: [{
+          id: 'public-line-1',
+          quoteId: quoteRecord.id,
+          kind: 'line_item',
+          name: 'Public price only',
+          description: '',
+          quantity: '1.00',
+          unitPrice: '1250.00',
+          totalPrice: '1250.00',
+          taxable: true,
+          clientVisible: true,
+          jobberLineItemId: null,
+          linkedProductOrServiceId: null,
+          position: 0,
+          createdAt: '2026-08-26T00:00:00.000Z',
+          updatedAt: '2026-08-26T00:00:00.000Z',
+        }],
+      },
+    }))
+    const copyButton = markup.match(/<button[^>]*>Copy Materials to Option<\/button>/)?.[0]
+
+    expect(copyButton).toBeDefined()
+    expect(copyButton).toContain('disabled=""')
+  })
+
+  it('appends fresh expanded Options without changing the public price list or main subtotal', async () => {
+    resolveQuoteProductPricesMock.mockReset()
+    resolveQuoteProductPricesMock.mockResolvedValue({
+      ok: true,
+      data: [{
+        productId: '00000000-0000-4000-8000-000000000001',
+        trustedPrice: '150.00',
+      }],
+    })
+    const { cleanup, document: testDocument } = installTestDom()
+    Object.assign(window, {
+      clearTimeout: globalThis.clearTimeout.bind(globalThis),
+      history: { pushState: () => undefined },
+      location: { protocol: 'http:', href: 'http://localhost/quotes/quote-id-1/edit' },
+      setTimeout: globalThis.setTimeout.bind(globalThis),
+    })
+    const container = testDocument.createElement('div')
+    testDocument.body.appendChild(container)
+    let root: Root | null = null
+
+    function findByClass(className: string): TestElement | undefined {
+      return [...container.querySelectorAll('div'), ...container.querySelectorAll('section')].find((element) => (
+        element.getAttribute('class')?.split(' ').includes(className)
+      ))
+    }
+
+    function getOptionCards(): TestElement[] {
+      return container.querySelectorAll('div').filter((element) => (
+        element.getAttribute('class')?.split(' ').includes('pbc-optioncard')
+      ))
+    }
+
+    function findCopyButton(): TestElement | undefined {
+      return container.querySelectorAll('button').find((button) => (
+        button.textContent === 'Copy Materials to Option'
+      ))
+    }
+
+    function getPublicLineSnapshot(publicLineList: TestElement | undefined) {
+      return {
+        inputs: publicLineList?.querySelectorAll('input').map((input) => ({
+          id: input.getAttribute('id'),
+          type: input.type,
+          value: input.value,
+          checked: input.checked,
+        })),
+        descriptions: publicLineList?.querySelectorAll('textarea').map((textarea) => textarea.value),
+      }
+    }
+
+    try {
+      const { createRoot } = await import('react-dom/client')
+      root = createRoot(container as unknown as Element)
+      await act(async () => {
+        root!.render(createElement(QuoteForm, {
+          settings: quoteRecord.pricingSettingsSnapshot,
+          areas: [{ id: 'interior-area', scope: 'interior', name: 'Walls', active: true, position: 0 }],
+          productServices: [],
+          quoteLineTemplates: [],
+          initialQuote: {
+            ...quoteRecord,
+            selectedMin: 1,
+            selectedMax: 1,
+            items: [{
+              id: 'main-material-1',
+              quoteId: quoteRecord.id,
+              productId: '00000000-0000-4000-8000-000000000001',
+              productNameSnapshot: 'Main material',
+              marketPriceSnapshot: '120.40',
+              actualPriceSnapshot: '100.00',
+              quantity: '2',
+              workingDays: '0',
+              labourPerDay: '0',
+              areaId: 'interior-area',
+              areaNameSnapshot: 'Walls',
+              areaScopeSnapshot: 'interior',
+              isCustom: false,
+              position: 0,
+            }],
+            jobberQuoteLines: [
+              {
+                id: 'public-line-1',
+                quoteId: quoteRecord.id,
+                kind: 'line_item',
+                name: 'Main painting price',
+                description: 'Walls and ceilings',
+                quantity: '1.00',
+                unitPrice: '1250.00',
+                totalPrice: '1250.00',
+                taxable: true,
+                clientVisible: true,
+                jobberLineItemId: null,
+                linkedProductOrServiceId: null,
+                position: 0,
+                createdAt: '2026-08-26T00:00:00.000Z',
+                updatedAt: '2026-08-26T00:00:00.000Z',
+              },
+              {
+                id: 'public-line-2',
+                quoteId: quoteRecord.id,
+                kind: 'line_item',
+                name: 'Door painting',
+                description: '',
+                quantity: '2',
+                unitPrice: '200.00',
+                totalPrice: '400.00',
+                taxable: false,
+                clientVisible: true,
+                jobberLineItemId: null,
+                linkedProductOrServiceId: null,
+                position: 1,
+                createdAt: '2026-08-26T00:00:00.000Z',
+                updatedAt: '2026-08-26T00:00:00.000Z',
+              },
+            ],
+          },
+        }))
+      })
+      await act(async () => new Promise((resolve) => setTimeout(resolve, 0)))
+
+      const publicLineList = findByClass('product-service-scroll-list')
+      const mainSummary = findByClass('pbc-summary')
+      const publicLineSnapshot = getPublicLineSnapshot(publicLineList)
+      const mainSubtotalSnapshot = mainSummary?.textContent
+      expect(publicLineSnapshot).toEqual({
+        inputs: [
+          { id: 'public-line-1-name', type: '', value: 'Main painting price', checked: false },
+          { id: null, type: '', value: '1.00', checked: false },
+          { id: null, type: '', value: '1250.00', checked: false },
+          { id: null, type: 'checkbox', value: '', checked: true },
+          { id: null, type: 'checkbox', value: '', checked: true },
+          { id: 'public-line-2-name', type: '', value: 'Door painting', checked: false },
+          { id: null, type: '', value: '2', checked: false },
+          { id: null, type: '', value: '200.00', checked: false },
+          { id: null, type: 'checkbox', value: '', checked: false },
+          { id: null, type: 'checkbox', value: '', checked: true },
+        ],
+        descriptions: ['Walls and ceilings', ''],
+      })
+      expect(mainSubtotalSnapshot).toContain('Final subtotal$240.80')
+
+      const copyButton = findCopyButton()
+      expect(copyButton?.disabled).toBe(false)
+      if (!copyButton) return
+
+      await act(async () => {
+        copyButton.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
+      })
+      const firstCards = getOptionCards()
+      const firstTitle = firstCards[0]?.querySelectorAll('input').find((input) => (
+        input.getAttribute('id')?.endsWith('-title')
+      ))
+      const firstOptionInputValues = firstCards[0]?.querySelectorAll('input').map((input) => input.value) ?? []
+      expect(firstCards).toHaveLength(1)
+      expect(firstOptionInputValues).toContain('Main material')
+      expect(firstOptionInputValues).toContain('120.40')
+      expect(firstOptionInputValues).not.toContain('Main painting price')
+      expect(firstOptionInputValues).not.toContain('Door painting')
+      expect(firstCards[0]?.textContent).toContain('$428.57')
+      expect(firstCards[0]?.textContent).not.toContain('$285.71')
+      expect(resolveQuoteProductPricesMock).toHaveBeenCalledWith({
+        productIds: ['00000000-0000-4000-8000-000000000001'],
+      })
+      expect(firstCards[0]?.querySelectorAll('div').some((element) => (
+        element.getAttribute('class')?.split(' ').includes('pbc-optioncard__body')
+      ))).toBe(true)
+      expect(firstTitle?.value).toBe('Option 1')
+      expect(firstTitle?.getAttribute('id')).toMatch(/^option-.+-title$/)
+
+      await act(async () => {
+        copyButton.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
+      })
+      const secondCards = getOptionCards()
+      const secondTitle = secondCards[1]?.querySelectorAll('input').find((input) => (
+        input.getAttribute('id')?.endsWith('-title')
+      ))
+      expect(secondCards).toHaveLength(2)
+      expect(secondTitle?.value).toBe('Option 2')
+      expect(secondTitle?.getAttribute('id')).not.toBe(firstTitle?.getAttribute('id'))
+      expect(secondCards[1]?.querySelectorAll('div').some((element) => (
+        element.getAttribute('class')?.split(' ').includes('pbc-optioncard__body')
+      ))).toBe(true)
+      expect(getPublicLineSnapshot(publicLineList)).toEqual(publicLineSnapshot)
+      expect(mainSummary?.textContent).toBe(mainSubtotalSnapshot)
+
+      let resolvePendingLookup!: (result: { ok: false; error: string }) => void
+      const pendingLookup = new Promise<{ ok: false; error: string }>((resolve) => {
+        resolvePendingLookup = resolve
+      })
+      resolveQuoteProductPricesMock.mockReturnValueOnce(pendingLookup)
+      await act(async () => {
+        copyButton.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
+        await Promise.resolve()
+      })
+      const saveButton = container.querySelectorAll('button').find((button) => button.textContent.includes('Save changes'))
+      expect(copyButton.disabled).toBe(true)
+      expect(saveButton?.disabled).toBe(true)
+
+      await act(async () => {
+        resolvePendingLookup({ ok: false, error: 'Catalog lookup failed.' })
+        await pendingLookup
+      })
+      expect(getOptionCards()).toHaveLength(2)
+      expect(container.querySelectorAll('p').find((element) => element.getAttribute('role') === 'alert')?.textContent)
+        .toBe('Catalog lookup failed.')
+    } finally {
+      if (root) await act(async () => root?.unmount())
+      cleanup()
+    }
+  })
 
   it('passes only Jobber refresh fields from quote detail to the client panel', async () => {
     let receivedQuote: unknown

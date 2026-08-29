@@ -200,6 +200,15 @@ Qty [1.00]   Unit price [$0.00]   Taxable [✓]
 - 긴 목록은 기존 Product / Service 전용 스크롤 영역을 유지하며 pointer가 목록 상·하단에 가까워지면 requestAnimationFrame 기반으로 자동 스크롤한다. drag 취소 또는 목록 빈 공간 drop은 순서를 바꾸지 않고 preview와 자동 스크롤을 정리한다.
 - 저장은 재정렬된 배열 index를 기존 `position`과 Jobber `sortOrder` 흐름에 그대로 사용한다. DB schema, Server Action, Jobber API, 외부 dependency는 변경하지 않는다.
 
+### Main Materials를 PBC Option으로 복사
+
+- `Copy Materials to Option`은 현재 Main Materials의 모든 행을 현재 순서대로 새 독립 PBC Option에 복사한다. Product / Service 행은 복사 대상이 아니다.
+- 이름·memo·표시 RRP·수량·labour·area·product metadata를 유지하되 Option과 각 material에는 fresh ID를 부여한다. custom 행의 숨겨진 가격은 그대로 복사하고, linked 행은 저장 경계와 같은 현재 trusted RRP를 먼저 조회해 Option의 숨겨진 계산 가격에 반영한다. 0원 material도 포함한다.
+- 복사된 Option은 기존 Add Option과 같은 F4/F1로 시작한다. 원본과 복사본은 이후 동기화하지 않으며 같은 동작을 반복하면 새 Option을 계속 추가한다.
+- Main Materials가 비어 있으면 버튼을 비활성화하고 `Add at least one material first.`를 표시한다.
+- linked 가격 조회 중에는 중복 클릭을 막고, 조회 실패 시 Option을 추가하지 않은 채 버튼 옆에 오류를 표시한다. DB schema·저장 RPC·RLS·Jobber 경로는 변경하지 않는다.
+- preview는 복사 시점 trusted RRP에 맞춘다. 복사 후 저장 전에 product catalog 가격이 변경되면 저장 서버가 최신 값을 다시 검증·적용한다.
+
 ### 제외
 
 - Build Option Set
