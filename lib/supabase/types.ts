@@ -436,6 +436,12 @@ export type Database = {
           },
         ]
       }
+      quote_lifecycle_events: {
+        Row: { id: string; quote_id: string; event_type: 'deleted' | 'restored'; actor_id: string | null; occurred_at: string; quote_version: number }
+        Insert: never
+        Update: never
+        Relationships: []
+      }
       quotes: {
         Row: {
           id: string
@@ -476,6 +482,8 @@ export type Database = {
           updated_by: string | null
           updated_at: string
           version: number
+          deleted_at: string | null
+          deleted_by: string | null
         }
         Insert: Omit<
           Database['public']['Tables']['quotes']['Row'],
@@ -487,6 +495,8 @@ export type Database = {
           | 'jobber_snapshot_change_summary'
           | 'jobber_snapshot_refresh_error'
           | 'version'
+          | 'deleted_at'
+          | 'deleted_by'
         > & {
           id?: string
           jobber_snapshot_refreshed_at?: string | null
@@ -496,6 +506,8 @@ export type Database = {
           created_at?: string
           updated_at?: string
           version?: number
+          deleted_at?: string | null
+          deleted_by?: string | null
         }
         Update: Partial<Database['public']['Tables']['quotes']['Insert']>
         Relationships: []
@@ -566,6 +578,22 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      soft_delete_quote: {
+        Args: { target_quote_id: string; expected_version: number }
+        Returns: { id: string; version: number; deleted_at: string | null }[]
+      }
+      find_quote_by_jobber_identity: {
+        Args: { jobber_id: string | null; snapshot: Json | null }
+        Returns: { id: string; version: number; deleted_at: string | null }[]
+      }
+      apply_quote_jobber_result: {
+        Args: { target_quote_id: string; expected_version: number; changes: Json; synced_lines?: Json }
+        Returns: undefined
+      }
+      restore_quote: {
+        Args: { target_quote_id: string; expected_version: number }
+        Returns: { id: string; version: number; deleted_at: string | null }[]
+      }
       create_quote_with_children: { Args: { payload: Json }; Returns: string }
       synchronize_jobber_job_snapshot_scope: {
         Args: { p_assigned_job_ids: string[]; p_jobber_user_id: string }

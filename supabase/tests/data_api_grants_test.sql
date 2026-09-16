@@ -2,7 +2,7 @@ BEGIN;
 
 CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA extensions;
 
-SELECT plan(68);
+SELECT plan(72);
 
 WITH expected(table_name, grantee, privileges) AS (
   SELECT
@@ -10,6 +10,8 @@ WITH expected(table_name, grantee, privileges) AS (
     grantee,
     CASE
       WHEN grantee IN ('PUBLIC', 'anon') THEN NULL
+      WHEN table_name = 'quote_lifecycle_events' THEN 'SELECT'
+      WHEN table_name = 'quotes' THEN 'INSERT,SELECT,UPDATE'
       WHEN table_name = 'user_profiles' AND grantee = 'authenticated' THEN 'SELECT'
       WHEN table_name IN ('jobber_tokens', 'jobber_job_snapshots')
         AND grantee = 'authenticated' THEN NULL
@@ -19,6 +21,7 @@ WITH expected(table_name, grantee, privileges) AS (
     'products',
     'pricing_settings',
     'quotes',
+    'quote_lifecycle_events',
     'quote_items',
     'quote_areas',
     'quote_options',

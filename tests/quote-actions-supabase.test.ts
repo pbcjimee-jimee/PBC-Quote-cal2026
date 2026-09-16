@@ -141,6 +141,7 @@ const changedJobberSnapshot: JobberQuoteDraft = {
 
 const quoteRow = {
   id: quoteId,
+  version: 1,
   customer_name: 'Supabase Customer',
   customer_address: '1 Paint St',
   jobber_quote_id: null,
@@ -231,6 +232,7 @@ const quoteRow = {
 }
 
 const quoteInput = {
+  expectedVersion: 1,
   customerName: 'Supabase Customer',
   customerAddress: '1 Paint St',
   workingDays: 1,
@@ -288,32 +290,6 @@ function createAuthUser(user: unknown = { id: 'user-1' }) {
   }
 }
 
-function createInsertSingleBuilder(response: unknown) {
-  const builder = {
-    insert: vi.fn(() => builder),
-    select: vi.fn(() => builder),
-    single: vi.fn(async () => response),
-  }
-  return builder
-}
-
-function createInsertOnlyBuilder(response: unknown) {
-  return {
-    insert: vi.fn(async (rows: unknown) => {
-      void rows
-      return response
-    }),
-  }
-}
-
-function createInsertSelectBuilder(response: unknown) {
-  const builder = {
-    insert: vi.fn(() => builder),
-    select: vi.fn(async () => response),
-  }
-  return builder
-}
-
 function createSelectSingleBuilder(response: unknown) {
   const builder = {
     select: vi.fn((columns?: string) => {
@@ -321,18 +297,8 @@ function createSelectSingleBuilder(response: unknown) {
       return builder
     }),
     eq: vi.fn(() => builder),
+    is: vi.fn(() => builder),
     single: vi.fn(async () => response),
-  }
-  return builder
-}
-
-function createFindExistingJobberQuoteBuilder(response: unknown) {
-  const builder = {
-    select: vi.fn(() => builder),
-    in: vi.fn(() => builder),
-    contains: vi.fn(() => builder),
-    order: vi.fn(() => builder),
-    limit: vi.fn(() => builder),
     maybeSingle: vi.fn(async () => response),
   }
   return builder
@@ -344,6 +310,7 @@ function createThenableBuilder(response: unknown) {
     update: vi.fn(() => builder),
     delete: vi.fn(() => builder),
     eq: vi.fn(() => builder),
+    is: vi.fn(() => builder),
     in: vi.fn(() => builder),
     order: vi.fn(() => builder),
     limit: vi.fn(() => builder),
@@ -354,9 +321,32 @@ function createThenableBuilder(response: unknown) {
   return builder
 }
 
+
+function persistenceFixture(row: unknown = quoteRow) {
+  const quote = createSelectSingleBuilder({ data: row, error: null })
+  const revisions = createThenableBuilder({ data: [{ revision_number: 1 }], error: null })
+  const from = vi.fn((table: string) => {
+    if (table === 'quotes') return quote
+    if (table === 'quote_price_revisions') return revisions
+    throw new Error('Unexpected direct database access: ' + table)
+  })
+  const rpc = vi.fn(async (name: string, args: Record<string, unknown>): Promise<{ data: unknown; error: { message: string } | null }> => {
+    void args
+    return { data: name === 'find_quote_by_jobber_identity' ? [] : name === 'create_quote_with_children' ? quoteId : [{ id: quoteId, version: 2 }], error: null }
+  })
+  mocks.createClient.mockResolvedValue({ from, rpc })
+  return { quote, from, rpc }
+}
+
+function rpcPayload(rpc: ReturnType<typeof persistenceFixture>['rpc'], name = 'update_quote_with_children'): Record<string, unknown> {
+  return rpc.mock.calls.find(([called]) => called === name)?.[1].payload as Record<string, unknown>
+}
+
 describe('quote actions against Supabase', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mocks.syncJobberQuoteLineItems.mockReset()
+    mocks.fetchJobberQuote.mockReset()
     mocks.createClient.mockReset()
     mocks.createServiceClient.mockReset()
     mocks.isDevNoAuthMode.mockReturnValue(false)
@@ -448,598 +438,96 @@ describe('quote actions against Supabase', () => {
     })
   })
 
-  it('creates a quote and item rows through Supabase', async () => {
-    const quoteInsert = createInsertSingleBuilder({ data: { id: quoteId }, error: null })
-    const itemInsert = createInsertOnlyBuilder({ error: null })
-    const priceRevisionInsert = createInsertOnlyBuilder({ error: null })
-    const from = vi.fn((table: string) => {
-      if (table === 'quotes') return quoteInsert
-      if (table === 'quote_items') return itemInsert
-      if (table === 'quote_price_revisions') return priceRevisionInsert
-      throw new Error(`unexpected table ${table}`)
+
+  it('creates the parent, materials, public lines, memos and initial revision in one RPC', async () => {
+    const { rpc, from } = persistenceFixture()
+    expect(await createQuote({ ...quoteInputWithJobberLines, memos: [{ body: '  Call before arriving.  ', position: 0 }] })).toEqual({ ok: true, data: { id: quoteId } })
+    const payload = rpcPayload(rpc, 'create_quote_with_children')
+    expect(payload).toMatchObject({
+      quote: { customer_name: 'Supabase Customer', created_by: 'user-1', final_total: '561.00', roof_selected_min: 2, roof_selected_max: 5, jobber_sync_status: 'not_synced' },
+      items: [{ product_name_snapshot: 'Brush' }],
+      memos: [{ body: 'Call before arriving.', created_by: 'user-1', position: 0 }],
+      jobber_lines: [{ name: 'Public painting service', unit_price: '1250.00', total_price: '2500.00' }, { name: 'Scope notes', unit_price: null, total_price: null }],
+      price_revision: { revision_number: 1, event_type: 'created', previous_final_total: null, new_final_total: '561.00', changed_by: 'user-1' },
     })
-    mocks.createClient.mockResolvedValueOnce({ auth: createAuthUser(), from })
-
-    const result = await createQuote(quoteInput)
-
-    expect(result).toEqual({ ok: true, data: { id: quoteId } })
-    expect(quoteInsert.insert).toHaveBeenCalledWith(expect.objectContaining({
-      customer_name: 'Supabase Customer',
-      created_by: 'user-1',
-      final_total: '561.00',
-      roof_selected_min: 2,
-      roof_selected_max: 5,
-    }))
-    expect(itemInsert.insert).toHaveBeenCalledWith([
-      expect.objectContaining({
-        quote_id: quoteId,
-        product_name_snapshot: 'Brush',
-      }),
-    ])
-    expect(priceRevisionInsert.insert).toHaveBeenCalledWith(expect.objectContaining({
-      quote_id: quoteId,
-      revision_number: 1,
-      event_type: 'created',
-      previous_final_total: null,
-      new_final_total: '561.00',
-      changed_by: 'user-1',
-    }))
+    expect(payload.jobber_lines).not.toEqual(expect.arrayContaining([expect.objectContaining({ actual_price_snapshot: expect.anything() })]))
+    expect(from).not.toHaveBeenCalled()
     expect(mocks.revalidatePath).toHaveBeenCalledWith('/quotes')
   })
 
-  it('updates the existing quote when a new Jobber fetch is saved for a previously saved Jobber quote', async () => {
-    const existingJobberQuote = createFindExistingJobberQuoteBuilder({
-      data: { id: quoteId },
-      error: null,
-    })
-    const existingQuote = createSelectSingleBuilder({
-      data: {
-        pricing_settings_snapshot: DEFAULT_PRICING_SETTINGS,
-        subtotal: '510.00',
-        final_total: '561.00',
-      },
-      error: null,
-    })
-    const quoteUpdate = createThenableBuilder({ error: null })
-    const itemDelete = createThenableBuilder({ error: null })
-    const optionDelete = createThenableBuilder({ error: null })
-    const jobberLineDelete = createThenableBuilder({ error: null })
-    const memoDelete = createThenableBuilder({ error: null })
-    const itemInsert = createInsertOnlyBuilder({ error: null })
-    const firstFrom = vi.fn((table: string) => {
-      if (table === 'quotes') return existingJobberQuote
-      throw new Error(`unexpected initial table ${table}`)
-    })
-    const updateFrom = vi.fn((table: string) => {
-      if (table === 'quotes') return updateFrom.mock.calls.filter(([name]) => name === 'quotes').length === 1 ? existingQuote : quoteUpdate
-      if (table === 'quote_items') return updateFrom.mock.calls.filter(([name]) => name === 'quote_items').length === 1 ? itemDelete : itemInsert
-      if (table === 'quote_options') return optionDelete
-      if (table === 'jobber_quote_lines') return jobberLineDelete
-      if (table === 'quote_memos') return memoDelete
-      throw new Error(`unexpected update table ${table}`)
-    })
-    mocks.createClient
-      .mockResolvedValueOnce({ auth: createAuthUser(), from: firstFrom })
-      .mockResolvedValueOnce({ auth: createAuthUser(), from: updateFrom })
-
-    const result = await createQuote({
-      ...quoteInput,
-      jobberQuoteId: 'encoded-jobber-quote-id',
-      jobberSnapshot: {
-        jobberQuoteId: 'encoded-jobber-quote-id',
-        sourceType: 'quote',
-        quoteNumber: '3535',
-        createdAt: '2026-05-19T00:00:00Z',
-        customerName: 'Supabase Customer',
-        customerAddress: '1 Paint St',
-        workType: 'Exterior',
-        areaSqft: null,
-        customerType: 'Residential',
-        sourceUrl: 'https://secure.getjobber.com/quotes/3535',
-        productsAndServices: [],
-        jobExpenses: [],
-        jobExpensesError: null,
-        financialSummary: {
-          quoteTotal: 0,
-          expensesTotal: 0,
-          profit: 0,
-          profitMarginPercent: null,
-        },
-      },
-    })
-
-    expect(result).toEqual({ ok: true, data: { id: quoteId } })
-    expect(existingJobberQuote.in).toHaveBeenCalledWith('jobber_quote_id', ['encoded-jobber-quote-id', '3535'])
-    expect(existingJobberQuote.order).toHaveBeenCalledWith('created_at', { ascending: true })
-    expect(quoteUpdate.update).toHaveBeenCalledWith(expect.objectContaining({
-      jobber_quote_id: 'encoded-jobber-quote-id',
-      customer_name: 'Supabase Customer',
-    }))
-    expect(firstFrom).toHaveBeenCalledWith('quotes')
-    expect(updateFrom).not.toHaveBeenCalledWith('quote_price_revisions')
+  it('updates the existing identity using its observed version and the same parent ID', async () => {
+    const { rpc } = persistenceFixture()
+    rpc.mockResolvedValueOnce({ data: [{ id: quoteId, version: 8, deleted_at: null }], error: null })
+    expect((await createQuote({ ...quoteInput, jobberQuoteId: 'encoded-jobber-id', jobberSnapshot: previousJobberSnapshot })).ok).toBe(true)
+    expect(rpc).toHaveBeenCalledWith('find_quote_by_jobber_identity', { jobber_id: 'encoded-jobber-id', snapshot: previousJobberSnapshot })
+    expect(rpcPayload(rpc)).toMatchObject({ id: quoteId, expected_version: 8, quote: { jobber_quote_id: 'encoded-jobber-id' } })
+    expect(rpc.mock.calls.some(([name]) => name === 'create_quote_with_children')).toBe(false)
   })
 
-  it('matches an existing quote by saved Jobber snapshot quote number before inserting', async () => {
-    const jobberIdLookup = createFindExistingJobberQuoteBuilder({
-      data: null,
-      error: null,
-    })
-    const quoteNumberLookup = createFindExistingJobberQuoteBuilder({
-      data: { id: quoteId },
-      error: null,
-    })
-    const existingQuote = createSelectSingleBuilder({
-      data: {
-        pricing_settings_snapshot: DEFAULT_PRICING_SETTINGS,
-        subtotal: '510.00',
-        final_total: '561.00',
-      },
-      error: null,
-    })
-    const quoteUpdate = createThenableBuilder({ error: null })
-    const itemDelete = createThenableBuilder({ error: null })
-    const optionDelete = createThenableBuilder({ error: null })
-    const jobberLineDelete = createThenableBuilder({ error: null })
-    const memoDelete = createThenableBuilder({ error: null })
-    const itemInsert = createInsertOnlyBuilder({ error: null })
-    const firstBuilders: Record<string, unknown[]> = {
-      quotes: [jobberIdLookup, quoteNumberLookup],
-    }
-    const firstFrom = vi.fn((table: string) => {
-      const builder = firstBuilders[table]?.shift()
-      if (!builder) throw new Error(`unexpected initial table ${table}`)
-      return builder
-    })
-    const updateFrom = vi.fn((table: string) => {
-      if (table === 'quotes') return updateFrom.mock.calls.filter(([name]) => name === 'quotes').length === 1 ? existingQuote : quoteUpdate
-      if (table === 'quote_items') return updateFrom.mock.calls.filter(([name]) => name === 'quote_items').length === 1 ? itemDelete : itemInsert
-      if (table === 'quote_options') return optionDelete
-      if (table === 'jobber_quote_lines') return jobberLineDelete
-      if (table === 'quote_memos') return memoDelete
-      throw new Error(`unexpected update table ${table}`)
-    })
-    mocks.createClient
-      .mockResolvedValueOnce({ auth: createAuthUser(), from: firstFrom })
-      .mockResolvedValueOnce({ auth: createAuthUser(), from: updateFrom })
-
-    const result = await createQuote({
-      ...quoteInput,
-      jobberQuoteId: 'encoded-jobber-quote-id',
-      jobberSnapshot: {
-        jobberQuoteId: 'encoded-jobber-quote-id',
-        sourceType: 'quote',
-        quoteNumber: '3535',
-        createdAt: '2026-05-19T00:00:00Z',
-        customerName: 'Supabase Customer',
-        customerAddress: '1 Paint St',
-        workType: 'Exterior',
-        areaSqft: null,
-        customerType: 'Residential',
-        sourceUrl: 'https://secure.getjobber.com/quotes/3535',
-        productsAndServices: [],
-        jobExpenses: [],
-        jobExpensesError: null,
-        financialSummary: {
-          quoteTotal: 0,
-          expensesTotal: 0,
-          profit: 0,
-          profitMarginPercent: null,
-        },
-      },
-    })
-
-    expect(result).toEqual({ ok: true, data: { id: quoteId } })
-    expect(jobberIdLookup.in).toHaveBeenCalledWith('jobber_quote_id', ['encoded-jobber-quote-id', '3535'])
-    expect(quoteNumberLookup.contains).toHaveBeenCalledWith('jobber_snapshot', { quoteNumber: '3535' })
-    expect(quoteUpdate.update).toHaveBeenCalledWith(expect.objectContaining({
-      jobber_quote_id: 'encoded-jobber-quote-id',
-    }))
+  it.each([
+    [[{ id: quoteId, version: 2, deleted_at: '2026-09-16' }], 'Trash'],
+    [[{ id: quoteId, version: 1, deleted_at: null }, { id: 'another', version: 1, deleted_at: null }], 'duplicate'],
+    [[{ id: quoteId, version: 1, deleted_at: null }, { id: 'another', version: 2, deleted_at: '2026-09-16' }], 'Trash'],
+  ])('blocks archived or ambiguous Jobber imports before writing', async (rows, expected) => {
+    const { rpc, from } = persistenceFixture()
+    rpc.mockResolvedValueOnce({ data: rows, error: null })
+    expect(await createQuote({ ...quoteInput, jobberSnapshot: previousJobberSnapshot })).toMatchObject({ ok: false, error: expect.stringContaining(expected) })
+    expect(rpc).toHaveBeenCalledTimes(1)
+    expect(from).not.toHaveBeenCalled()
   })
 
-  it('records a price revision when an update changes the quote total', async () => {
-    const existingQuote = createSelectSingleBuilder({
-      data: {
-        pricing_settings_snapshot: DEFAULT_PRICING_SETTINGS,
-        subtotal: '510.00',
-        final_total: '561.00',
-      },
-      error: null,
-    })
-    const latestRevision = createThenableBuilder({
-      data: [{ revision_number: 1 }],
-      error: null,
-    })
-    const quoteUpdate = createThenableBuilder({ error: null })
-    const priceRevisionInsert = createInsertOnlyBuilder({ error: null })
-    const itemDelete = createThenableBuilder({ error: null })
-    const optionDelete = createThenableBuilder({ error: null })
-    const jobberLineDelete = createThenableBuilder({ error: null })
-    const memoDelete = createThenableBuilder({ error: null })
-    const itemInsert = createInsertOnlyBuilder({ error: null })
-    const builders: Record<string, unknown[]> = {
-      quotes: [existingQuote, quoteUpdate],
-      quote_price_revisions: [latestRevision, priceRevisionInsert],
-      quote_items: [itemDelete, itemInsert],
-      quote_options: [optionDelete],
-      jobber_quote_lines: [jobberLineDelete],
-      quote_memos: [memoDelete],
-    }
-    const from = vi.fn((table: string) => {
-      const builder = builders[table]?.shift()
-      if (!builder) throw new Error(`unexpected table ${table}`)
-      return builder
-    })
-    mocks.createClient.mockResolvedValueOnce({ auth: createAuthUser(), from })
-
-    const result = await updateQuote({
-      id: quoteId,
-      ...quoteInput,
-      workingDays: 2,
-      labourPerDay: 1,
-      materialMarket: 10,
-      materialActual: 10,
-    })
-
-    expect(result).toEqual({ ok: true, data: { id: quoteId } })
-    expect(priceRevisionInsert.insert).toHaveBeenCalledWith(expect.objectContaining({
-      quote_id: quoteId,
-      revision_number: 2,
-      event_type: 'updated',
-      previous_final_total: '561.00',
-      new_final_total: '1111.00',
-      previous_options_subtotal: null,
-      new_options_subtotal: null,
-      changed_by: 'user-1',
-    }))
+  it('fails closed when identity lookup fails', async () => {
+    const { rpc } = persistenceFixture()
+    rpc.mockResolvedValueOnce({ data: null, error: { message: 'lookup failed' } })
+    expect((await createQuote({ ...quoteInput, jobberQuoteId: 'linked' })).ok).toBe(false)
+    expect(rpc).toHaveBeenCalledTimes(1)
   })
 
-  it('records option subtotal changes in the price revision', async () => {
-    const existingQuote = createSelectSingleBuilder({
-      data: {
-        pricing_settings_snapshot: DEFAULT_PRICING_SETTINGS,
-        subtotal: '510.00',
-        final_total: '561.00',
-        quote_options: [{ subtotal: '300.00', final_total: '330.00' }],
-      },
-      error: null,
-    })
-    const latestRevision = createThenableBuilder({ data: [], error: null })
-    const quoteUpdate = createThenableBuilder({ error: null })
-    const priceRevisionInsert = createInsertOnlyBuilder({ error: null })
-    const itemDelete = createThenableBuilder({ error: null })
-    const optionDelete = createThenableBuilder({ error: null })
-    const jobberLineDelete = createThenableBuilder({ error: null })
-    const memoDelete = createThenableBuilder({ error: null })
-    const itemInsert = createInsertOnlyBuilder({ error: null })
-    const optionInsert = createInsertSingleBuilder({ data: { id: '00000000-0000-4000-8000-000000000401' }, error: null })
-    const optionItemInsert = createInsertOnlyBuilder({ error: null })
-    const builders: Record<string, unknown[]> = {
-      quotes: [existingQuote, quoteUpdate],
-      quote_options: [optionDelete, optionInsert],
-      quote_price_revisions: [latestRevision, priceRevisionInsert],
-      quote_items: [itemDelete, itemInsert],
-      jobber_quote_lines: [jobberLineDelete],
-      quote_memos: [memoDelete],
-      quote_option_items: [optionItemInsert],
-    }
-    const from = vi.fn((table: string) => {
-      const builder = builders[table]?.shift()
-      if (!builder) throw new Error(`unexpected table ${table}`)
-      return builder
-    })
-    mocks.createClient.mockResolvedValueOnce({ auth: createAuthUser(), from })
-
-    const result = await updateQuote({
-      id: quoteId,
-      ...quoteInput,
-      options: [
-        {
-          id: 'option-input-1',
-          title: 'Option 1',
-          selectedMin: 1,
-          selectedMax: 1,
-          items: [
-            {
-              ...quoteInput.items[0],
-              marketPriceSnapshot: 100,
-              actualPriceSnapshot: 100,
-              quantity: 1,
-              workingDays: 1,
-              labourPerDay: 1,
-            },
-          ],
-        },
-      ],
-    })
-
-    expect(result).toEqual({ ok: true, data: { id: quoteId } })
-    expect(priceRevisionInsert.insert).toHaveBeenCalledWith(expect.objectContaining({
-      quote_id: quoteId,
-      revision_number: 1,
-      previous_options_subtotal: '300.00',
-      new_options_subtotal: '600.00',
-      previous_options_final_total: '330.00',
-      new_options_final_total: '660.00',
-    }))
+  it('records a price revision when main totals change', async () => {
+    const { rpc } = persistenceFixture()
+    expect((await updateQuote({ ...quoteInput, id: quoteId, expectedVersion: 1, workingDays: 2 })).ok).toBe(true)
+    expect(rpcPayload(rpc)).toMatchObject({ expected_version: 1, price_revision: {
+      revision_number: 2, event_type: 'updated', previous_final_total: '561.00', new_final_total: '1111.00',
+      previous_options_subtotal: null, new_options_subtotal: null, changed_by: 'user-1',
+    } })
   })
 
-  it('does not record a price revision when an update leaves the quote total unchanged', async () => {
-    const existingQuote = createSelectSingleBuilder({
-      data: {
-        pricing_settings_snapshot: DEFAULT_PRICING_SETTINGS,
-        subtotal: '510.00',
-        final_total: '561.00',
-      },
-      error: null,
-    })
-    const quoteUpdate = createThenableBuilder({ error: null })
-    const itemDelete = createThenableBuilder({ error: null })
-    const optionDelete = createThenableBuilder({ error: null })
-    const jobberLineDelete = createThenableBuilder({ error: null })
-    const memoDelete = createThenableBuilder({ error: null })
-    const itemInsert = createInsertOnlyBuilder({ error: null })
-    const priceRevisionInsert = createInsertOnlyBuilder({ error: null })
-    const builders: Record<string, unknown[]> = {
-      quotes: [existingQuote, quoteUpdate],
-      quote_items: [itemDelete, itemInsert],
-      quote_options: [optionDelete],
-      jobber_quote_lines: [jobberLineDelete],
-      quote_memos: [memoDelete],
-      quote_price_revisions: [priceRevisionInsert],
-    }
-    const from = vi.fn((table: string) => {
-      const builder = builders[table]?.shift()
-      if (!builder) throw new Error(`unexpected table ${table}`)
-      return builder
-    })
-    mocks.createClient.mockResolvedValueOnce({ auth: createAuthUser(), from })
+  it('records option totals in the same atomic save', async () => {
+    const { rpc } = persistenceFixture({ ...quoteRow, quote_options: [{ subtotal: '300.00', final_total: '330.00' }] })
+    expect((await updateQuote({ ...quoteInput, id: quoteId, expectedVersion: 1, options: [{
+      title: 'Option 1', selectedMin: 1, selectedMax: 1,
+      items: [{ ...quoteInput.items[0], marketPriceSnapshot: 100, actualPriceSnapshot: 100, workingDays: 1, labourPerDay: 1 }],
+    }] })).ok).toBe(true)
+    expect(rpcPayload(rpc)).toMatchObject({ price_revision: {
+      previous_options_subtotal: '300.00', new_options_subtotal: '600.00', previous_options_final_total: '330.00', new_options_final_total: '660.00',
+    } })
+  })
 
-    const result = await updateQuote({ id: quoteId, ...quoteInput, customerName: 'Same Price Customer' })
-
-    expect(result).toEqual({ ok: true, data: { id: quoteId } })
-    expect(priceRevisionInsert.insert).not.toHaveBeenCalled()
+  it('saves unchanged pricing without adding a price revision', async () => {
+    const { rpc, from, quote } = persistenceFixture()
+    expect((await updateQuote({ ...quoteInput, id: quoteId, expectedVersion: 1, customerName: 'Same Price Customer' })).ok).toBe(true)
+    expect(rpcPayload(rpc)).toMatchObject({ price_revision: null, quote: { customer_name: 'Same Price Customer' } })
     expect(from).not.toHaveBeenCalledWith('quote_price_revisions')
+    expect(quote.is).toHaveBeenCalledWith('deleted_at', null)
   })
 
-  it('creates public Jobber rows separately from internal material rows through Supabase', async () => {
-    const quoteInsert = createInsertSingleBuilder({ data: { id: quoteId }, error: null })
-    const itemInsert = createInsertOnlyBuilder({ error: null })
-    const jobberLineInsert = createInsertOnlyBuilder({ error: null })
-    const priceRevisionInsert = createInsertOnlyBuilder({ error: null })
-    const from = vi.fn((table: string) => {
-      if (table === 'quotes') return quoteInsert
-      if (table === 'quote_items') return itemInsert
-      if (table === 'jobber_quote_lines') return jobberLineInsert
-      if (table === 'quote_price_revisions') return priceRevisionInsert
-      throw new Error(`unexpected table ${table}`)
-    })
-    mocks.createClient.mockResolvedValueOnce({ auth: createAuthUser(), from })
-
-    const result = await createQuote(quoteInputWithJobberLines)
-
-    expect(result).toEqual({ ok: true, data: { id: quoteId } })
-    expect(quoteInsert.insert).toHaveBeenCalledWith(expect.objectContaining({
-      jobber_save_mode: 'priced_line_items',
-      jobber_sync_status: 'not_synced',
-    }))
-    expect(itemInsert.insert).toHaveBeenCalledWith([
-      expect.objectContaining({
-        quote_id: quoteId,
-        product_name_snapshot: 'Brush',
-      }),
-    ])
-    expect(jobberLineInsert.insert).toHaveBeenCalledWith([
-      expect.objectContaining({
-        quote_id: quoteId,
-        kind: 'line_item',
-        name: 'Public painting service',
-        unit_price: '1250.00',
-        total_price: '2500.00',
-      }),
-      expect.objectContaining({
-        quote_id: quoteId,
-        kind: 'text',
-        name: 'Scope notes',
-        unit_price: null,
-        total_price: null,
-      }),
-    ])
-    const insertedJobberRows = jobberLineInsert.insert.mock.calls[0]?.[0] as Array<Record<string, unknown>> | undefined
-    expect(insertedJobberRows?.[0]).not.toHaveProperty('actual_price_snapshot')
+  it.each(['create', 'update'])('does not perform compensating deletes when the %s transaction fails', async (operation) => {
+    const { rpc, from } = persistenceFixture()
+    rpc.mockResolvedValueOnce({ data: null, error: { message: 'memo insert failed' } })
+    const result = operation === 'create' ? await createQuote(quoteInput) : await updateQuote({ ...quoteInput, id: quoteId, expectedVersion: 1 })
+    expect(result.ok).toBe(false)
+    expect(rpc).toHaveBeenCalledTimes(1)
+    expect(from.mock.calls.every(([table]) => table === 'quotes')).toBe(true)
+    expect(mocks.revalidatePath).not.toHaveBeenCalled()
   })
 
-  it('creates app-only memo rows through Supabase without adding Jobber lines', async () => {
-    const quoteInsert = createInsertSingleBuilder({ data: { id: quoteId }, error: null })
-    const itemInsert = createInsertOnlyBuilder({ error: null })
-    const priceRevisionInsert = createInsertOnlyBuilder({ error: null })
-    const memoInsert = createInsertSelectBuilder({
-      data: [
-        { id: '00000000-0000-4000-8000-000000000501' },
-        { id: '00000000-0000-4000-8000-000000000502' },
-      ],
-      error: null,
-    })
-    const from = vi.fn((table: string) => {
-      if (table === 'quotes') return quoteInsert
-      if (table === 'quote_items') return itemInsert
-      if (table === 'quote_memos') return memoInsert
-      if (table === 'quote_price_revisions') return priceRevisionInsert
-      throw new Error(`unexpected table ${table}`)
-    })
-    mocks.createClient.mockResolvedValueOnce({ auth: createAuthUser(), from })
-
-    const result = await createQuote({
-      ...quoteInput,
-      memos: [
-        { body: 'Call before arriving.', position: 0 },
-        { body: 'Use side gate access.', position: 1 },
-      ],
-    })
-
-    expect(result).toEqual({ ok: true, data: { id: quoteId } })
-    expect(memoInsert.insert).toHaveBeenCalledWith([
-      expect.objectContaining({
-        quote_id: quoteId,
-        body: 'Call before arriving.',
-        created_by: 'user-1',
-        position: 0,
-      }),
-      expect.objectContaining({
-        quote_id: quoteId,
-        body: 'Use side gate access.',
-        created_by: 'user-1',
-        position: 1,
-      }),
-    ])
-    expect(memoInsert.select).toHaveBeenCalledWith('id')
-    expect(from).not.toHaveBeenCalledWith('jobber_quote_lines')
-  })
-
-  it('cleans up a created quote when memo rows fail to insert', async () => {
-    const quoteInsert = createInsertSingleBuilder({ data: { id: quoteId }, error: null })
-    const quoteDelete = createThenableBuilder({ error: null })
-    const itemInsert = createInsertOnlyBuilder({ error: null })
-    const priceRevisionInsert = createInsertOnlyBuilder({ error: null })
-    const memoInsert = createInsertSelectBuilder({ data: null, error: new Error('memo insert failed') })
-    const builders: Record<string, unknown[]> = {
-      quotes: [quoteInsert, quoteDelete],
-      quote_items: [itemInsert],
-      quote_price_revisions: [priceRevisionInsert],
-      quote_memos: [memoInsert],
-    }
-    const from = vi.fn((table: string) => {
-      const builder = builders[table]?.shift()
-      if (!builder) throw new Error(`unexpected table ${table}`)
-      return builder
-    })
-    mocks.createClient.mockResolvedValueOnce({ auth: createAuthUser(), from })
-
-    const result = await createQuote({
-      ...quoteInput,
-      memos: [{ body: 'Call first.', position: 0 }],
-    })
-
-    expect(result).toEqual({ ok: false, error: 'memo insert failed' })
-    expect(quoteDelete.delete).toHaveBeenCalled()
-    expect(quoteDelete.eq).toHaveBeenCalledWith('id', quoteId)
-  })
-
-  it('requires an allowed user before creating a quote', async () => {
-    mocks.requireAllowedUser.mockResolvedValueOnce({ ok: false, error: 'Authentication required' })
-
-    const result = await createQuote(quoteInput)
-
-    expect(result).toEqual({ ok: false, error: 'Authentication required' })
+  it('requires an administrator before saving or reading quotes', async () => {
+    mocks.requireAllowedUser.mockResolvedValue({ ok: false, error: 'Admin access required' })
+    expect((await createQuote(quoteInput)).ok).toBe(false)
+    expect((await updateQuote({ ...quoteInput, id: quoteId, expectedVersion: 1 })).ok).toBe(false)
+    expect((await searchQuotes()).ok).toBe(false)
+    expect((await getQuote(quoteId)).ok).toBe(false)
     expect(mocks.createClient).not.toHaveBeenCalled()
-  })
-
-  it('rejects disallowed users before reading quotes', async () => {
-    mocks.requireAllowedUser.mockResolvedValueOnce({
-      ok: false,
-      error: 'User is not allowed to access this app',
-    })
-
-    const result = await getQuote(quoteId)
-
-    expect(result).toEqual({ ok: false, error: 'User is not allowed to access this app' })
-    expect(mocks.createClient).not.toHaveBeenCalled()
-  })
-
-  it('updates a quote through Supabase and replaces child rows', async () => {
-    const existingQuote = createSelectSingleBuilder({
-      data: {
-        pricing_settings_snapshot: DEFAULT_PRICING_SETTINGS,
-        subtotal: '510.00',
-        final_total: '561.00',
-      },
-      error: null,
-    })
-    const quoteUpdate = createThenableBuilder({ error: null })
-    const itemDelete = createThenableBuilder({ error: null })
-    const optionDelete = createThenableBuilder({ error: null })
-    const jobberLineDelete = createThenableBuilder({ error: null })
-    const memoDelete = createThenableBuilder({ error: null })
-    const itemInsert = createInsertOnlyBuilder({ error: null })
-    const from = vi.fn((table: string) => {
-      if (table === 'quotes') return from.mock.calls.filter(([name]) => name === 'quotes').length === 1 ? existingQuote : quoteUpdate
-      if (table === 'quote_items') return from.mock.calls.filter(([name]) => name === 'quote_items').length === 1 ? itemDelete : itemInsert
-      if (table === 'quote_options') return optionDelete
-      if (table === 'jobber_quote_lines') return jobberLineDelete
-      if (table === 'quote_memos') return memoDelete
-      throw new Error(`unexpected table ${table}`)
-    })
-    mocks.createClient.mockResolvedValueOnce({ auth: createAuthUser(), from })
-
-    const result = await updateQuote({ id: quoteId, ...quoteInput, customerName: 'Updated Customer' })
-
-    expect(result).toEqual({ ok: true, data: { id: quoteId } })
-    expect(quoteUpdate.update).toHaveBeenCalledWith(expect.objectContaining({
-      customer_name: 'Updated Customer',
-      updated_by: 'user-1',
-      roof_selected_min: 2,
-      roof_selected_max: 5,
-    }))
-    expect(itemDelete.delete).toHaveBeenCalled()
-    expect(optionDelete.delete).toHaveBeenCalled()
-    expect(jobberLineDelete.delete).toHaveBeenCalled()
-    expect(memoDelete.delete).toHaveBeenCalled()
-    expect(itemInsert.insert).toHaveBeenCalledWith([expect.objectContaining({ quote_id: quoteId })])
-    expect(mocks.revalidatePath).toHaveBeenCalledWith(`/quotes/${quoteId}`)
-  })
-
-  it('stores linked material name and RRP edits as quote-local snapshots while pinning actual price', async () => {
-    const productId = '00000000-0000-4000-8000-000000000901'
-    const productQuery = createThenableBuilder({
-      data: [{
-        id: productId,
-        name: 'Current catalog paint',
-        market_price: '150.00',
-        actual_price: '80.00',
-        price: '80.00',
-        rrp_price: '150.00',
-      }],
-      error: null,
-    })
-    const quoteInsert = createInsertSingleBuilder({ data: { id: quoteId }, error: null })
-    const itemInsert = createInsertOnlyBuilder({ error: null })
-    const priceRevisionInsert = createInsertOnlyBuilder({ error: null })
-    const from = vi.fn((table: string) => {
-      if (table === 'products') return productQuery
-      if (table === 'quotes') return quoteInsert
-      if (table === 'quote_items') return itemInsert
-      if (table === 'quote_price_revisions') return priceRevisionInsert
-      throw new Error(`unexpected table ${table}`)
-    })
-    mocks.createClient.mockResolvedValueOnce({ auth: createAuthUser(), from })
-
-    const result = await createQuote({
-      ...quoteInput,
-      materialMarket: 125,
-      materialActual: 999,
-      items: [{
-        productId,
-        productNameSnapshot: 'Quote-local paint label',
-        marketPriceSnapshot: 125,
-        actualPriceSnapshot: 999,
-        quantity: 1,
-        isCustom: false,
-        memo: 'Use tinted primer.',
-        position: 0,
-      }],
-    })
-
-    expect(result).toEqual({ ok: true, data: { id: quoteId } })
-    expect(itemInsert.insert).toHaveBeenCalledWith([
-      expect.objectContaining({
-        quote_id: quoteId,
-        product_id: productId,
-        product_name_snapshot: 'Quote-local paint label',
-        market_price_snapshot: '125.00',
-        actual_price_snapshot: '150.00',
-        memo: 'Use tinted primer.',
-      }),
-    ])
-    expect(productQuery.select).toHaveBeenCalledTimes(1)
   })
 
   it('treats product-linked main and option items as non-custom and pins trusted actual prices on create', async () => {
@@ -1828,7 +1316,6 @@ describe('quote actions against Supabase', () => {
 
     const result = await updateQuote({
       id: quoteId,
-      expectedVersion: 1,
       ...quoteInput,
     })
 
@@ -1845,563 +1332,101 @@ describe('quote actions against Supabase', () => {
     expect(mocks.syncJobberQuoteLineItems).not.toHaveBeenCalled()
   })
 
-  it('does not delete existing memos before replacement memo rows insert successfully', async () => {
-    const existingQuote = createSelectSingleBuilder({
-      data: {
-        pricing_settings_snapshot: DEFAULT_PRICING_SETTINGS,
-        subtotal: '510.00',
-        final_total: '561.00',
-      },
-      error: null,
-    })
-    const quoteUpdate = createThenableBuilder({ error: null })
-    const itemDelete = createThenableBuilder({ error: null })
-    const optionDelete = createThenableBuilder({ error: null })
-    const jobberLineDelete = createThenableBuilder({ error: null })
-    const itemInsert = createInsertOnlyBuilder({ error: null })
-    const memoReplace = {
-      delete: vi.fn(() => memoReplace),
-      insert: vi.fn(() => memoReplace),
-      select: vi.fn(async () => ({ data: null, error: new Error('memo insert failed') })),
-      eq: vi.fn(async () => ({ error: null })),
-    }
-    const from = vi.fn((table: string) => {
-      if (table === 'quotes') return from.mock.calls.filter(([name]) => name === 'quotes').length === 1 ? existingQuote : quoteUpdate
-      if (table === 'quote_items') return from.mock.calls.filter(([name]) => name === 'quote_items').length === 1 ? itemDelete : itemInsert
-      if (table === 'quote_options') return optionDelete
-      if (table === 'jobber_quote_lines') return jobberLineDelete
-      if (table === 'quote_memos') return memoReplace
-      throw new Error(`unexpected table ${table}`)
-    })
-    mocks.createClient.mockResolvedValueOnce({ auth: createAuthUser(), from })
 
-    const result = await updateQuote({
-      id: quoteId,
-      ...quoteInput,
-      memos: [{ body: 'Replacement memo', position: 0 }],
-    })
-
-    expect(result).toEqual({ ok: false, error: 'memo insert failed' })
-    expect(memoReplace.insert).toHaveBeenCalled()
-    expect(memoReplace.select).toHaveBeenCalledWith('id')
-    expect(memoReplace.delete).not.toHaveBeenCalled()
+  it('replaces ordered public lines and memos in the save payload without direct child writes', async () => {
+    const { rpc, from } = persistenceFixture()
+    expect((await updateQuote({ ...quoteInputWithJobberLines, id: quoteId, expectedVersion: 1, memos: [{ body: 'Keep this memo' }] })).ok).toBe(true)
+    expect(rpcPayload(rpc)).toMatchObject({ jobber_lines: [{ position: 0 }, { position: 1 }], memos: [{ body: 'Keep this memo' }] })
+    expect(from.mock.calls.every(([table]) => table === 'quotes')).toBe(true)
   })
 
-  it('updates public Jobber rows by replacing the saved ordered set', async () => {
-    const existingQuote = createSelectSingleBuilder({
-      data: {
-        pricing_settings_snapshot: DEFAULT_PRICING_SETTINGS,
-        subtotal: '510.00',
-        final_total: '561.00',
-      },
-      error: null,
-    })
-    const quoteUpdate = createThenableBuilder({ error: null })
-    const itemDelete = createThenableBuilder({ error: null })
-    const optionDelete = createThenableBuilder({ error: null })
-    const jobberLineDelete = createThenableBuilder({ error: null })
-    const itemInsert = createInsertOnlyBuilder({ error: null })
-    const jobberLineInsert = createInsertOnlyBuilder({ error: null })
-    const builders: Record<string, unknown[]> = {
-      quotes: [existingQuote, quoteUpdate],
-      quote_items: [itemDelete, itemInsert],
-      quote_options: [optionDelete],
-      jobber_quote_lines: [jobberLineDelete, jobberLineInsert],
-      quote_memos: [createThenableBuilder({ error: null })],
-    }
-    const from = vi.fn((table: string) => {
-      const builder = builders[table]?.shift()
-      if (!builder) throw new Error(`unexpected table ${table}`)
-      return builder
-    })
-    mocks.createClient.mockResolvedValueOnce({ auth: createAuthUser(), from })
-
-    const result = await updateQuote({
-      id: quoteId,
-      ...quoteInputWithJobberLines,
-      jobberSaveMode: 'description_total',
-      jobberQuoteLines: [
-        {
-          kind: 'line_item',
-          name: 'Updated public total',
-          quantity: 1,
-          unitPrice: 2750,
-          position: 0,
-        },
-      ],
-    })
-
-    expect(result).toEqual({ ok: true, data: { id: quoteId } })
-    expect(quoteUpdate.update).toHaveBeenCalledWith(expect.objectContaining({
-      jobber_save_mode: 'description_total',
-      jobber_sync_status: 'not_synced',
-    }))
-    expect(jobberLineDelete.delete).toHaveBeenCalled()
-    expect(jobberLineDelete.eq).toHaveBeenCalledWith('quote_id', quoteId)
-    expect(jobberLineInsert.insert).toHaveBeenCalledWith([
-      expect.objectContaining({
-        quote_id: quoteId,
-        name: 'Updated public total',
-        total_price: '2750.00',
-      }),
-    ])
+  it('saves linked Jobber changes locally unless synchronization is requested', async () => {
+    const { rpc } = persistenceFixture()
+    expect((await updateQuote({ ...quoteInputWithJobberLines, id: quoteId, expectedVersion: 1, jobberQuoteId: 'jobber-quote-id' })).ok).toBe(true)
+    expect(rpcPayload(rpc)).toMatchObject({ quote: { jobber_quote_id: 'jobber-quote-id' } })
     expect(mocks.syncJobberQuoteLineItems).not.toHaveBeenCalled()
   })
 
-  it('saves linked Jobber quote changes locally without writing back unless sync is requested', async () => {
-    const existingQuote = createSelectSingleBuilder({
-      data: {
-        pricing_settings_snapshot: DEFAULT_PRICING_SETTINGS,
-        subtotal: '510.00',
-        final_total: '561.00',
-      },
-      error: null,
-    })
-    const quoteUpdate = createThenableBuilder({ error: null })
-    const itemDelete = createThenableBuilder({ error: null })
-    const optionDelete = createThenableBuilder({ error: null })
-    const jobberLineDelete = createThenableBuilder({ error: null })
-    const itemInsert = createInsertOnlyBuilder({ error: null })
-    const jobberLineInsert = createInsertOnlyBuilder({ error: null })
-    const builders: Record<string, unknown[]> = {
-      quotes: [existingQuote, quoteUpdate],
-      quote_items: [itemDelete, itemInsert],
-      quote_options: [optionDelete],
-      jobber_quote_lines: [jobberLineDelete, jobberLineInsert],
-      quote_memos: [createThenableBuilder({ error: null })],
-    }
-    const from = vi.fn((table: string) => {
-      const builder = builders[table]?.shift()
-      if (!builder) throw new Error(`unexpected table ${table}`)
-      return builder
-    })
-    mocks.createClient.mockResolvedValueOnce({ auth: createAuthUser(), from })
+  it('persists edit-form snapshot refresh metadata with the quote', async () => {
+    const { rpc } = persistenceFixture()
+    expect((await updateQuote({ ...quoteInput, id: quoteId, expectedVersion: 1, jobberSnapshot: changedJobberSnapshot,
+      jobberSnapshotRefreshedAt: '2026-05-19T01:00:00.000Z', jobberSnapshotChangeStatus: 'changed', jobberSnapshotChangeSummary: [],
+    })).ok).toBe(true)
+    expect(rpcPayload(rpc)).toMatchObject({ quote: { jobber_snapshot: changedJobberSnapshot, jobber_snapshot_refreshed_at: '2026-05-19T01:00:00.000Z', jobber_snapshot_change_status: 'changed' } })
+  })
 
-    const result = await updateQuote({
-      id: quoteId,
-      ...quoteInputWithJobberLines,
-      jobberQuoteId: 'jobber-quote-id',
-      jobberSaveMode: 'priced_line_items',
-    })
-
-    expect(result).toEqual({ ok: true, data: { id: quoteId } })
-    expect(quoteUpdate.update).toHaveBeenCalledWith(expect.objectContaining({
-      jobber_quote_id: 'jobber-quote-id',
-      jobber_sync_status: 'not_synced',
+  it('checks the saved version before write-back and records lines and status atomically', async () => {
+    const { rpc, quote } = persistenceFixture()
+    mocks.syncJobberQuoteLineItems.mockResolvedValueOnce({ syncedLineItems: [{ sourcePosition: 0, jobberLineItemId: 'new-id' }] })
+    expect((await updateQuote({ ...quoteInputWithJobberLines, id: quoteId, expectedVersion: 6, jobberQuoteId: 'jobber-quote-id', syncJobber: true })).ok).toBe(true)
+    expect(quote.eq).toHaveBeenCalledWith('version', 7)
+    expect(quote.is).toHaveBeenCalledWith('deleted_at', null)
+    expect(rpc).toHaveBeenCalledWith('apply_quote_jobber_result', expect.objectContaining({
+      target_quote_id: quoteId, expected_version: 7,
+      changes: expect.objectContaining({ jobber_sync_status: 'synced', jobber_sync_error: null, jobber_snapshot: expect.any(Object) }),
+      synced_lines: [{ sourcePosition: 0, jobberLineItemId: 'new-id' }],
     }))
-    expect(jobberLineInsert.insert).toHaveBeenCalled()
+  })
+
+  it('skips a scheduled network write after the quote is deleted or changed', async () => {
+    const { quote } = persistenceFixture()
+    quote.maybeSingle.mockResolvedValueOnce({ data: null, error: null })
+    expect((await updateQuote({ ...quoteInputWithJobberLines, id: quoteId, expectedVersion: 1, jobberQuoteId: 'jobber-quote-id', syncJobber: true })).ok).toBe(true)
     expect(mocks.syncJobberQuoteLineItems).not.toHaveBeenCalled()
-    expect(mocks.fetchJobberQuote).not.toHaveBeenCalled()
   })
 
-  it('syncs saved public quote lines to the matching Jobber quote and marks the quote synced', async () => {
-    const existingQuote = createSelectSingleBuilder({
-      data: {
-        pricing_settings_snapshot: DEFAULT_PRICING_SETTINGS,
-        subtotal: '510.00',
-        final_total: '561.00',
-      },
-      error: null,
-    })
-    const quoteUpdate = createThenableBuilder({ error: null })
-    const syncStatusUpdate = createThenableBuilder({ error: null })
-    const itemDelete = createThenableBuilder({ error: null })
-    const optionDelete = createThenableBuilder({ error: null })
-    const jobberLineDelete = createThenableBuilder({ error: null })
-    const itemInsert = createInsertOnlyBuilder({ error: null })
-    const jobberLineInsert = createInsertOnlyBuilder({ error: null })
-    const builders: Record<string, unknown[]> = {
-      quotes: [existingQuote, quoteUpdate, syncStatusUpdate],
-      quote_items: [itemDelete, itemInsert],
-      quote_options: [optionDelete],
-      jobber_quote_lines: [jobberLineDelete, jobberLineInsert],
-      quote_memos: [createThenableBuilder({ error: null })],
-    }
-    const from = vi.fn((table: string) => {
-      const builder = builders[table]?.shift()
-      if (!builder) throw new Error(`unexpected table ${table}`)
-      return builder
-    })
-    mocks.createClient.mockResolvedValueOnce({ auth: createAuthUser(), from })
-
-    const result = await updateQuote({
-      id: quoteId,
-      ...quoteInputWithJobberLines,
-      jobberQuoteId: 'jobber-quote-id',
-      jobberSaveMode: 'description_total',
-      syncJobber: true,
-    })
-
-    expect(result).toEqual({ ok: true, data: { id: quoteId } })
-    expect(mocks.syncJobberQuoteLineItems).toHaveBeenCalledWith('jobber-quote-id', expect.objectContaining({
-      saveMode: 'description_total',
-      lines: expect.any(Array),
-      finalTotalIncludesGst: true,
-    }), expect.objectContaining({
-      accessToken: 'access-token',
-      graphqlVersion: '2025-04-16',
-    }))
-    expect(mocks.fetchJobberQuote).toHaveBeenCalledWith('jobber-quote-id', expect.objectContaining({
-      accessToken: 'access-token',
-      graphqlVersion: '2025-04-16',
-    }))
-    expect(syncStatusUpdate.update).toHaveBeenCalledWith(expect.objectContaining({
-      jobber_sync_status: 'synced',
-      jobber_sync_error: null,
-      jobber_last_synced_at: expect.any(String),
-      jobber_snapshot: expect.objectContaining({
-        productsAndServices: [
-          expect.objectContaining({
-            name: 'Synced product',
-          }),
-        ],
-      }),
-    }))
-    expect(syncStatusUpdate.eq).toHaveBeenCalledWith('id', quoteId)
+  it('keeps successful write-back if only the subsequent snapshot fetch is throttled', async () => {
+    const { rpc } = persistenceFixture({ ...quoteRow, jobber_quote_id: 'jobber-quote-id' })
+    mocks.fetchJobberQuote.mockRejectedValueOnce(new Error('throttled'))
+    expect((await retryJobberQuoteSync(quoteId)).ok).toBe(true)
+    const changes = rpc.mock.calls.find(([name]) => name === 'apply_quote_jobber_result')?.[1].changes
+    expect(changes).toMatchObject({ jobber_sync_status: 'synced' })
+    expect(changes).not.toHaveProperty('jobber_snapshot')
   })
 
-  it('persists applied edit-form Jobber refresh metadata when updating a quote', async () => {
-    const existingQuote = createSelectSingleBuilder({
-      data: {
-        pricing_settings_snapshot: DEFAULT_PRICING_SETTINGS,
-        subtotal: '510.00',
-        final_total: '561.00',
-      },
-      error: null,
-    })
-    const quoteUpdate = createThenableBuilder({ error: null })
-    const itemDelete = createThenableBuilder({ error: null })
-    const optionDelete = createThenableBuilder({ error: null })
-    const jobberLineDelete = createThenableBuilder({ error: null })
-    const itemInsert = createInsertOnlyBuilder({ error: null })
-    const builders: Record<string, unknown[]> = {
-      quotes: [existingQuote, quoteUpdate],
-      quote_items: [itemDelete, itemInsert],
-      quote_options: [optionDelete],
-      jobber_quote_lines: [jobberLineDelete],
-      quote_memos: [createThenableBuilder({ error: null })],
-    }
-    const from = vi.fn((table: string) => {
-      const builder = builders[table]?.shift()
-      if (!builder) throw new Error(`unexpected table ${table}`)
-      return builder
-    })
-    mocks.createClient.mockResolvedValueOnce({ auth: createAuthUser(), from })
-
-    const result = await updateQuote({
-      id: quoteId,
-      ...quoteInput,
-      jobberQuoteId: 'jobber-quote-id',
-      jobberSnapshot: changedJobberSnapshot,
-      jobberSnapshotRefreshedAt: '2026-06-30T00:53:00.000Z',
-      jobberSnapshotChangeStatus: 'changed',
-      jobberSnapshotChangeSummary: [
-        {
-          field: 'financialSummary',
-          label: 'Jobber quote total changed',
-          before: '$100.00',
-          after: '$180.00',
-        },
-      ],
-    })
-
-    expect(result).toEqual({ ok: true, data: { id: quoteId } })
-    expect(quoteUpdate.update).toHaveBeenCalledWith(expect.objectContaining({
-      jobber_snapshot: changedJobberSnapshot,
-      jobber_snapshot_refreshed_at: '2026-06-30T00:53:00.000Z',
-      jobber_snapshot_change_status: 'changed',
-      jobber_snapshot_change_summary: [
-        {
-          field: 'financialSummary',
-          label: 'Jobber quote total changed',
-          before: '$100.00',
-          after: '$180.00',
-        },
-      ],
-      jobber_snapshot_refresh_error: null,
-    }))
+  it('retries persisted lines and reconstructs hidden deletion candidates', async () => {
+    persistenceFixture({ ...quoteRow, jobber_quote_id: 'jobber-quote-id', jobber_quote_lines: [
+      ...quoteRow.jobber_quote_lines,
+      { ...quoteRow.jobber_quote_lines[0], position: 2, client_visible: false, jobber_line_item_id: 'hidden-id' },
+    ] })
+    expect((await retryJobberQuoteSync(quoteId)).ok).toBe(true)
+    expect(mocks.syncJobberQuoteLineItems).toHaveBeenCalledWith('jobber-quote-id', expect.objectContaining({ deletedJobberLineItemIds: ['hidden-id'] }), expect.any(Object))
   })
 
-  it('keeps successful Jobber line sync when only the post-write snapshot refresh is throttled', async () => {
-    const existingQuote = createSelectSingleBuilder({
-      data: {
-        pricing_settings_snapshot: DEFAULT_PRICING_SETTINGS,
-        subtotal: '510.00',
-        final_total: '561.00',
-      },
-      error: null,
-    })
-    const quoteUpdate = createThenableBuilder({ error: null })
-    const syncStatusUpdate = createThenableBuilder({ error: null })
-    const itemDelete = createThenableBuilder({ error: null })
-    const optionDelete = createThenableBuilder({ error: null })
-    const jobberLineDelete = createThenableBuilder({ error: null })
-    const itemInsert = createInsertOnlyBuilder({ error: null })
-    const jobberLineInsert = createInsertOnlyBuilder({ error: null })
-    const jobberLineIdUpdate = createThenableBuilder({ error: null })
-    const builders: Record<string, unknown[]> = {
-      quotes: [existingQuote, quoteUpdate, syncStatusUpdate],
-      quote_items: [itemDelete, itemInsert],
-      quote_options: [optionDelete],
-      jobber_quote_lines: [jobberLineDelete, jobberLineInsert, jobberLineIdUpdate],
-      quote_memos: [createThenableBuilder({ error: null })],
-    }
-    const from = vi.fn((table: string) => {
-      const builder = builders[table]?.shift()
-      if (!builder) throw new Error(`unexpected table ${table}`)
-      return builder
-    })
-    mocks.syncJobberQuoteLineItems.mockResolvedValueOnce({
-      deletedLineItemIds: [],
-      createdLineItemIds: ['created-line-id'],
-      editedLineItemIds: [],
-      syncedLineItems: [{ sourcePosition: 0, jobberLineItemId: 'created-line-id' }],
-    })
-    mocks.fetchJobberQuote.mockRejectedValueOnce(new Error('Jobber returned a GraphQL error: Throttled'))
-    mocks.createClient.mockResolvedValueOnce({ auth: createAuthUser(), from })
-
-    const result = await updateQuote({
-      id: quoteId,
-      ...quoteInputWithJobberLines,
-      jobberQuoteId: 'jobber-quote-id',
-      jobberSaveMode: 'priced_line_items',
-      syncJobber: true,
-    })
-
-    expect(result).toEqual({ ok: true, data: { id: quoteId } })
-    expect(jobberLineIdUpdate.update).toHaveBeenCalledWith({ jobber_line_item_id: 'created-line-id' })
-    expect(jobberLineIdUpdate.eq).toHaveBeenCalledWith('quote_id', quoteId)
-    expect(jobberLineIdUpdate.eq).toHaveBeenCalledWith('position', 0)
-    expect(syncStatusUpdate.update).toHaveBeenCalledWith(expect.objectContaining({
-      jobber_sync_status: 'synced',
-      jobber_sync_error: null,
-      jobber_last_synced_at: expect.any(String),
-    }))
-    expect(syncStatusUpdate.update).not.toHaveBeenCalledWith(expect.objectContaining({
-      jobber_sync_status: 'failed',
-    }))
-    expect(syncStatusUpdate.update).toHaveBeenCalledWith(expect.not.objectContaining({
-      jobber_snapshot: expect.anything(),
-    }))
+  it('refreshes an expired token using the shared connection owner and checks version again', async () => {
+    const { quote } = persistenceFixture({ ...quoteRow, jobber_quote_id: 'jobber-quote-id' })
+    mocks.syncJobberQuoteLineItems.mockRejectedValueOnce(new mocks.JobberApiError('expired', 401))
+    expect((await retryJobberQuoteSync(quoteId)).ok).toBe(true)
+    expect(mocks.refreshSharedJobberConnectionToken).toHaveBeenCalledWith('refresh-token', expect.any(Object), 'user-1')
+    expect(quote.maybeSingle).toHaveBeenCalledTimes(2)
   })
 
-  it('retries a failed Jobber sync from persisted quote lines without deletion candidates', async () => {
-    const retryQuoteSelect = createSelectSingleBuilder({
-      data: {
-        ...quoteRow,
-        jobber_quote_id: 'jobber-quote-id',
-        jobber_save_mode: 'priced_line_items',
-        final_total: '561.00',
-        jobber_quote_lines: quoteRow.jobber_quote_lines,
-      },
-      error: null,
-    })
-    const syncStatusUpdate = createThenableBuilder({ error: null })
-    const builders: Record<string, unknown[]> = {
-      quotes: [retryQuoteSelect, syncStatusUpdate],
-    }
-    const from = vi.fn((table: string) => {
-      const builder = builders[table]?.shift()
-      if (!builder) throw new Error(`unexpected table ${table}`)
-      return builder
-    })
-    mocks.createClient.mockResolvedValueOnce({ auth: createAuthUser(), from })
-
-    const result = await retryJobberQuoteSync(quoteId)
-
-    expect(result).toEqual({ ok: true, data: { id: quoteId } })
-    expect(retryQuoteSelect.select).toHaveBeenCalledWith('id, jobber_quote_id, jobber_save_mode, final_total, jobber_quote_lines(*)')
-    expect(mocks.syncJobberQuoteLineItems).toHaveBeenCalledWith('jobber-quote-id', expect.objectContaining({
-      saveMode: 'priced_line_items',
-      deletedJobberLineItemIds: [],
-      finalTotalIncludesGst: true,
-      lines: [
-        expect.objectContaining({
-          kind: 'line_item',
-          name: 'Public painting service',
-          quantity: 2,
-          unitPrice: 1250,
-          totalPrice: 2500,
-        }),
-      ],
-    }), expect.objectContaining({
-      accessToken: 'access-token',
-      graphqlVersion: '2025-04-16',
-    }))
-    const syncInput = mocks.syncJobberQuoteLineItems.mock.calls[0]?.[1] as { lines?: Array<Record<string, unknown>> } | undefined
-    expect(syncInput?.lines?.[0]).not.toHaveProperty('actualPriceSnapshot')
-    expect(syncStatusUpdate.update).toHaveBeenCalledWith(expect.objectContaining({
-      jobber_sync_status: 'synced',
-      jobber_sync_error: null,
-      jobber_last_synced_at: expect.any(String),
-    }))
-    expect(mocks.revalidatePath).toHaveBeenCalledWith('/quotes')
-    expect(mocks.revalidatePath).toHaveBeenCalledWith(`/quotes/${quoteId}`)
+  it('does not retry a network write if deletion occurs during token refresh', async () => {
+    const { quote } = persistenceFixture({ ...quoteRow, jobber_quote_id: 'jobber-quote-id' })
+    quote.maybeSingle.mockResolvedValueOnce({ data: quoteRow, error: null }).mockResolvedValueOnce({ data: null, error: null })
+    mocks.syncJobberQuoteLineItems.mockRejectedValueOnce(new mocks.JobberApiError('expired', 401))
+    expect((await retryJobberQuoteSync(quoteId)).ok).toBe(false)
+    expect(mocks.syncJobberQuoteLineItems).toHaveBeenCalledTimes(1)
   })
 
-  it('refreshes failed Jobber sync retries against the shared connection owner row', async () => {
-    const retryQuoteSelect = createSelectSingleBuilder({
-      data: {
-        ...quoteRow,
-        jobber_quote_id: 'jobber-quote-id',
-        jobber_save_mode: 'priced_line_items',
-        final_total: '561.00',
-        jobber_quote_lines: quoteRow.jobber_quote_lines,
-      },
-      error: null,
-    })
-    const syncStatusUpdate = createThenableBuilder({ error: null })
-    const builders: Record<string, unknown[]> = {
-      quotes: [retryQuoteSelect, syncStatusUpdate],
-    }
-    const from = vi.fn((table: string) => {
-      const builder = builders[table]?.shift()
-      if (!builder) throw new Error(`unexpected table ${table}`)
-      return builder
-    })
-    mocks.getUsableSharedJobberConnectionToken.mockResolvedValueOnce({
-      accessToken: 'expired-access-token',
-      refreshToken: 'refresh-token',
-      expiresAt: null,
-      ownerUserId: 'jobber-owner',
-    })
-    mocks.refreshSharedJobberConnectionToken.mockResolvedValueOnce({
-      accessToken: 'refreshed-access-token',
-      refreshToken: 'new-refresh-token',
-      expiresAt: null,
-      ownerUserId: 'jobber-owner',
-    })
-    mocks.syncJobberQuoteLineItems
-      .mockRejectedValueOnce(new mocks.JobberApiError('expired access token', 401))
-      .mockResolvedValueOnce({
-        deletedLineItemIds: [],
-        createdLineItemIds: [],
-        editedLineItemIds: [],
-        syncedLineItems: [],
-      })
-    mocks.createClient.mockResolvedValueOnce({ auth: createAuthUser(), from })
-
-    const result = await retryJobberQuoteSync(quoteId)
-
-    expect(result).toEqual({ ok: true, data: { id: quoteId } })
-    expect(mocks.refreshSharedJobberConnectionToken).toHaveBeenCalledWith(
-      'refresh-token',
-      expect.objectContaining({ graphqlVersion: '2025-04-16' }),
-      'jobber-owner'
-    )
-    expect(mocks.syncJobberQuoteLineItems).toHaveBeenNthCalledWith(2, 'jobber-quote-id', expect.any(Object), expect.objectContaining({
-      accessToken: 'refreshed-access-token',
-      graphqlVersion: '2025-04-16',
-    }))
+  it('records partial line mappings together with a failed status for the observed version', async () => {
+    const { rpc } = persistenceFixture({ ...quoteRow, jobber_quote_id: 'jobber-quote-id' })
+    mocks.syncJobberQuoteLineItems.mockRejectedValueOnce(new mocks.JobberLineSyncPartialError('partial failure', [{ sourcePosition: 0, jobberLineItemId: 'partial-id' }]))
+    expect(await retryJobberQuoteSync(quoteId)).toEqual({ ok: false, error: 'partial failure' })
+    expect(rpc).toHaveBeenCalledWith('apply_quote_jobber_result', expect.objectContaining({ expected_version: 1, synced_lines: [{ sourcePosition: 0, jobberLineItemId: 'partial-id' }], changes: expect.objectContaining({ jobber_sync_status: 'failed' }) }))
   })
 
-  it('reconstructs hidden persisted Jobber line deletion candidates during retry', async () => {
-    const retryQuoteSelect = createSelectSingleBuilder({
-      data: {
-        ...quoteRow,
-        jobber_quote_id: 'jobber-quote-id',
-        jobber_save_mode: 'priced_line_items',
-        final_total: '561.00',
-        jobber_quote_lines: [
-          ...quoteRow.jobber_quote_lines,
-          {
-            ...quoteRow.jobber_quote_lines[0],
-            id: '00000000-0000-4000-8000-000000000302',
-            name: 'Hidden old Jobber line',
-            client_visible: false,
-            jobber_line_item_id: 'old-jobber-line-id',
-            position: 1,
-          },
-        ],
-      },
-      error: null,
-    })
-    const syncStatusUpdate = createThenableBuilder({ error: null })
-    const builders: Record<string, unknown[]> = {
-      quotes: [retryQuoteSelect, syncStatusUpdate],
-    }
-    const from = vi.fn((table: string) => {
-      const builder = builders[table]?.shift()
-      if (!builder) throw new Error(`unexpected table ${table}`)
-      return builder
-    })
-    mocks.createClient.mockResolvedValueOnce({ auth: createAuthUser(), from })
-
-    const result = await retryJobberQuoteSync(quoteId)
-
-    expect(result).toEqual({ ok: true, data: { id: quoteId } })
-    expect(mocks.syncJobberQuoteLineItems).toHaveBeenCalledWith('jobber-quote-id', expect.objectContaining({
-      deletedJobberLineItemIds: ['old-jobber-line-id'],
-    }), expect.any(Object))
+  it('reports failed result persistence without claiming successful sync', async () => {
+    const { rpc } = persistenceFixture({ ...quoteRow, jobber_quote_id: 'jobber-quote-id' })
+    rpc.mockResolvedValueOnce({ data: null, error: { message: 'QUOTE_VERSION_CONFLICT' } })
+    expect(await retryJobberQuoteSync(quoteId)).toMatchObject({ ok: false, error: expect.stringContaining('Refresh') })
   })
 
-  it('returns a failed retry result when Jobber rejects the persisted line sync', async () => {
-    const retryQuoteSelect = createSelectSingleBuilder({
-      data: {
-        ...quoteRow,
-        jobber_quote_id: 'jobber-quote-id',
-        jobber_save_mode: 'priced_line_items',
-        final_total: '561.00',
-        jobber_quote_lines: quoteRow.jobber_quote_lines,
-      },
-      error: null,
-    })
-    const syncStatusUpdate = createThenableBuilder({ error: null })
-    const builders: Record<string, unknown[]> = {
-      quotes: [retryQuoteSelect, syncStatusUpdate],
-    }
-    const from = vi.fn((table: string) => {
-      const builder = builders[table]?.shift()
-      if (!builder) throw new Error(`unexpected table ${table}`)
-      return builder
-    })
-    mocks.syncJobberQuoteLineItems.mockRejectedValueOnce(new Error('Jobber timeout'))
-    mocks.createClient.mockResolvedValueOnce({ auth: createAuthUser(), from })
-
-    const result = await retryJobberQuoteSync(quoteId)
-
-    expect(result).toEqual({ ok: false, error: 'Jobber timeout' })
-    expect(syncStatusUpdate.update).toHaveBeenCalledWith(expect.objectContaining({
-      jobber_sync_status: 'failed',
-      jobber_sync_error: 'Jobber timeout',
-      jobber_last_synced_at: null,
-    }))
-    expect(mocks.fetchJobberQuote).not.toHaveBeenCalled()
-    expect(mocks.revalidatePath).toHaveBeenCalledWith('/quotes')
-    expect(mocks.revalidatePath).toHaveBeenCalledWith(`/quotes/${quoteId}`)
-  })
-
-  it('returns a failed retry result when the synced status update fails', async () => {
-    const retryQuoteSelect = createSelectSingleBuilder({
-      data: {
-        ...quoteRow,
-        jobber_quote_id: 'jobber-quote-id',
-        jobber_save_mode: 'priced_line_items',
-        final_total: '561.00',
-        jobber_quote_lines: quoteRow.jobber_quote_lines,
-      },
-      error: null,
-    })
-    const syncStatusUpdate = createThenableBuilder({ error: new Error('status update failed') })
-    const builders: Record<string, unknown[]> = {
-      quotes: [retryQuoteSelect, syncStatusUpdate],
-    }
-    const from = vi.fn((table: string) => {
-      const builder = builders[table]?.shift()
-      if (!builder) throw new Error(`unexpected table ${table}`)
-      return builder
-    })
-    mocks.createClient.mockResolvedValueOnce({ auth: createAuthUser(), from })
-
-    const result = await retryJobberQuoteSync(quoteId)
-
-    expect(result).toEqual({ ok: false, error: 'status update failed' })
-    expect(syncStatusUpdate.update).toHaveBeenCalledWith(expect.objectContaining({
-      jobber_sync_status: 'synced',
-      jobber_sync_error: null,
-      jobber_last_synced_at: expect.any(String),
-    }))
-    expect(mocks.syncJobberQuoteLineItems).toHaveBeenCalled()
+  it('rejects retry for an archived or missing quote before contacting Jobber', async () => {
+    const { quote } = persistenceFixture(null)
+    expect((await retryJobberQuoteSync(quoteId)).ok).toBe(false)
+    expect(quote.is).toHaveBeenCalledWith('deleted_at', null)
+    expect(mocks.syncJobberQuoteLineItems).not.toHaveBeenCalled()
   })
 
   it('duplicates a Supabase quote with refreshed product RRP and no copied Jobber identifiers', async () => {
@@ -2464,10 +1489,7 @@ describe('quote actions against Supabase', () => {
       }],
       error: null,
     })
-    const quoteInsert = createInsertSingleBuilder({ data: { id: duplicateQuoteId }, error: null })
-    const priceRevisionInsert = createInsertOnlyBuilder({ error: null })
-    const itemInsert = createInsertOnlyBuilder({ error: null })
-    const jobberLineInsert = createInsertOnlyBuilder({ error: null })
+    const rpc = vi.fn(async (name: string, args: Record<string, unknown>) => { void name; void args; return { data: duplicateQuoteId, error: null } })
     const duplicateActionFrom = vi.fn((table: string) => {
       if (table === 'products') return productQuery
       throw new Error(`unexpected duplicate action table ${table}`)
@@ -2478,23 +1500,20 @@ describe('quote actions against Supabase', () => {
     })
     const createQuoteFrom = vi.fn((table: string) => {
       if (table === 'products') return productQuery
-      if (table === 'quotes') return quoteInsert
-      if (table === 'quote_price_revisions') return priceRevisionInsert
-      if (table === 'quote_items') return itemInsert
-      if (table === 'jobber_quote_lines') return jobberLineInsert
       throw new Error(`unexpected create quote table ${table}`)
     })
     mocks.createClient
       .mockResolvedValueOnce({ auth: createAuthUser(), from: duplicateActionFrom })
       .mockResolvedValueOnce({ from: getQuoteFrom })
-      .mockResolvedValueOnce({ auth: createAuthUser(), from: createQuoteFrom })
+      .mockResolvedValueOnce({ auth: createAuthUser(), from: createQuoteFrom, rpc })
 
     const result = await duplicateQuote(quoteId)
 
     expect(result).toEqual({ ok: true, data: { id: duplicateQuoteId } })
     expect(productQuery.select).toHaveBeenCalledWith('id, name, market_price, actual_price, price, rrp_price')
     expect(productQuery.in).toHaveBeenCalledWith('id', [duplicateProductId])
-    expect(quoteInsert.insert).toHaveBeenCalledWith(expect.objectContaining({
+    const payload = rpcPayload(rpc, 'create_quote_with_children')
+    expect(payload.quote).toEqual(expect.objectContaining({
       customer_name: 'Supabase Customer',
       jobber_quote_id: null,
       jobber_snapshot: null,
@@ -2502,9 +1521,8 @@ describe('quote actions against Supabase', () => {
       roof_selected_min: 2,
       roof_selected_max: 5,
     }))
-    expect(itemInsert.insert).toHaveBeenCalledWith([
+    expect(payload.items).toEqual([
       expect.objectContaining({
-        quote_id: duplicateQuoteId,
         product_id: duplicateProductId,
         product_name_snapshot: 'Current RRP paint',
         market_price_snapshot: '150.00',
@@ -2514,15 +1532,14 @@ describe('quote actions against Supabase', () => {
         area_scope_snapshot: 'roof',
       }),
     ])
-    expect(jobberLineInsert.insert).toHaveBeenCalledWith([
+    expect(payload.jobber_lines).toEqual([
       expect.objectContaining({
-        quote_id: duplicateQuoteId,
         name: 'Public painting service',
         jobber_line_item_id: null,
         linked_product_or_service_id: 'jobber-product-1',
       }),
     ])
-    expect(jobberLineInsert.insert).not.toHaveBeenCalledWith(expect.arrayContaining([
+    expect(payload.jobber_lines).not.toEqual(expect.arrayContaining([
       expect.objectContaining({ name: 'Hidden old line' }),
     ]))
     expect(mocks.revalidatePath).toHaveBeenCalledWith('/quotes')
@@ -2580,7 +1597,7 @@ describe('quote actions against Supabase', () => {
       }],
       error: null,
     })
-    const quoteInsert = createInsertSingleBuilder({ data: null, error: new Error('duplicate insert failed') })
+    const rpc = vi.fn().mockResolvedValue({ data: null, error: { message: 'duplicate insert failed' } })
     mocks.createClient
       .mockResolvedValueOnce({
         auth: createAuthUser(),
@@ -2596,17 +1613,16 @@ describe('quote actions against Supabase', () => {
         }),
       })
       .mockResolvedValueOnce({
-        auth: createAuthUser(),
+        auth: createAuthUser(), rpc,
         from: vi.fn((table: string) => {
           if (table === 'products') return productQuery
-          if (table === 'quotes') return quoteInsert
           throw new Error(`unexpected create quote table ${table}`)
         }),
       })
 
     const result = await duplicateQuote(quoteId)
 
-    expect(result).toEqual({ ok: false, error: 'duplicate insert failed' })
+    expect(result).toMatchObject({ ok: false, error: expect.stringContaining('Unable') })
   })
 
   it('rejects quote updates without an id before touching Supabase', async () => {
@@ -2616,6 +1632,14 @@ describe('quote actions against Supabase', () => {
     expect(mocks.createClient).not.toHaveBeenCalled()
   })
 
+  it('requires an observed version before updating in every environment', async () => {
+    const { from, rpc } = persistenceFixture()
+    expect(await updateQuote({ ...quoteInput, id: quoteId, expectedVersion: undefined }))
+      .toEqual({ ok: false, error: 'Quote version is required. Refresh and try again.' })
+    expect(from).not.toHaveBeenCalled()
+    expect(rpc).not.toHaveBeenCalled()
+  })
+
   it('rejects Jobber snapshot refresh without an id before touching Supabase', async () => {
     const result = await refreshJobberQuoteSnapshot(' ')
 
@@ -2623,224 +1647,57 @@ describe('quote actions against Supabase', () => {
     expect(mocks.createClient).not.toHaveBeenCalled()
   })
 
-  it('rejects Jobber snapshot refresh for quotes without a linked Jobber quote', async () => {
-    const quoteSelect = createSelectSingleBuilder({
-      data: { id: quoteId, jobber_quote_id: null, jobber_snapshot: previousJobberSnapshot },
-      error: null,
-    })
-    mocks.createClient.mockResolvedValueOnce({
-      auth: createAuthUser(),
-      from: vi.fn((table: string) => {
-        if (table === 'quotes') return quoteSelect
-        throw new Error(`unexpected refresh table ${table}`)
-      }),
-    })
 
-    const result = await refreshJobberQuoteSnapshot(quoteId)
-
-    expect(result).toEqual({ ok: false, error: 'Saved quote is not linked to Jobber' })
-    expect(quoteSelect.select).toHaveBeenCalledWith('id, jobber_quote_id, jobber_snapshot')
+  it('rejects snapshot refresh for missing and unlinked quotes', async () => {
+    persistenceFixture(null)
+    expect((await refreshJobberQuoteSnapshot(quoteId)).ok).toBe(false)
+    persistenceFixture()
+    expect((await refreshJobberQuoteSnapshot(quoteId)).ok).toBe(false)
     expect(mocks.fetchJobberQuote).not.toHaveBeenCalled()
   })
 
-  it('refreshes a linked Jobber quote snapshot and stores changed diff metadata', async () => {
-    const quoteSelect = createSelectSingleBuilder({
-      data: { id: quoteId, jobber_quote_id: 'jobber-quote-id', jobber_snapshot: previousJobberSnapshot },
-      error: null,
-    })
-    const quoteUpdate = createThenableBuilder({ error: null })
-    const builders: Record<string, unknown[]> = {
-      quotes: [quoteSelect, quoteUpdate],
-    }
-    const from = vi.fn((table: string) => {
-      const builder = builders[table]?.shift()
-      if (!builder) throw new Error(`unexpected refresh table ${table}`)
-      return builder
-    })
-    mocks.mapJobberQuoteToDraft.mockReturnValueOnce(changedJobberSnapshot)
-    mocks.createClient.mockResolvedValueOnce({ auth: createAuthUser(), from })
-
-    const result = await refreshJobberQuoteSnapshot(quoteId)
-
-    expect(result).toEqual({ ok: true, data: { id: quoteId, status: 'changed' } })
-    expect(mocks.fetchJobberQuote).toHaveBeenCalledWith('jobber-quote-id', expect.objectContaining({
-      accessToken: 'access-token',
-      graphqlVersion: '2025-04-16',
+  it.each([['changed', changedJobberSnapshot], ['unchanged', previousJobberSnapshot]] as const)('stores %s snapshot metadata using the versioned result RPC', async (status, fresh) => {
+    const { rpc, quote } = persistenceFixture({ ...quoteRow, jobber_quote_id: 'jobber-quote-id', jobber_snapshot: previousJobberSnapshot })
+    mocks.mapJobberQuoteToDraft.mockReturnValueOnce(fresh)
+    expect(await refreshJobberQuoteSnapshot(quoteId)).toEqual({ ok: true, data: { id: quoteId, status } })
+    expect(rpc).toHaveBeenCalledWith('apply_quote_jobber_result', expect.objectContaining({ target_quote_id: quoteId, expected_version: 1,
+      changes: expect.objectContaining({ jobber_snapshot: fresh, jobber_snapshot_change_status: status }),
     }))
-    expect(quoteUpdate.update).toHaveBeenCalledWith(expect.objectContaining({
-      jobber_snapshot: changedJobberSnapshot,
-      jobber_snapshot_refreshed_at: expect.any(String),
-      jobber_snapshot_change_status: 'changed',
-      jobber_snapshot_change_summary: expect.arrayContaining([
-        expect.objectContaining({
-          field: 'financialSummary',
-          label: 'Jobber quote total changed',
-          before: '$100.00',
-          after: '$180.00',
-        }),
-      ]),
-      jobber_snapshot_refresh_error: null,
-    }))
-    expect(mocks.revalidatePath).toHaveBeenCalledWith('/quotes')
-    expect(mocks.revalidatePath).toHaveBeenCalledWith(`/quotes/${quoteId}`)
-    expect(mocks.revalidatePath).toHaveBeenCalledWith(`/quotes/${quoteId}/edit`)
+    expect(quote.is).toHaveBeenCalledWith('deleted_at', null)
   })
 
-  it('refreshes linked Jobber quote snapshots against the shared connection owner row', async () => {
-    const quoteSelect = createSelectSingleBuilder({
-      data: { id: quoteId, jobber_quote_id: 'jobber-quote-id', jobber_snapshot: previousJobberSnapshot },
-      error: null,
-    })
-    const quoteUpdate = createThenableBuilder({ error: null })
-    const builders: Record<string, unknown[]> = {
-      quotes: [quoteSelect, quoteUpdate],
-    }
-    const from = vi.fn((table: string) => {
-      const builder = builders[table]?.shift()
-      if (!builder) throw new Error(`unexpected refresh table ${table}`)
-      return builder
-    })
-    mocks.getUsableSharedJobberConnectionToken.mockResolvedValueOnce({
-      accessToken: 'expired-access-token',
-      refreshToken: 'refresh-token',
-      expiresAt: null,
-      ownerUserId: 'jobber-owner',
-    })
-    mocks.refreshSharedJobberConnectionToken.mockResolvedValueOnce({
-      accessToken: 'refreshed-access-token',
-      refreshToken: 'new-refresh-token',
-      expiresAt: null,
-      ownerUserId: 'jobber-owner',
-    })
-    mocks.fetchJobberQuote
-      .mockRejectedValueOnce(new mocks.JobberApiError('expired access token', 401))
-      .mockResolvedValueOnce({ id: 'jobber-quote-id', lineItems: { nodes: [] } })
-    mocks.mapJobberQuoteToDraft.mockReturnValueOnce(changedJobberSnapshot)
-    mocks.createClient.mockResolvedValueOnce({ auth: createAuthUser(), from })
-
-    const result = await refreshJobberQuoteSnapshot(quoteId)
-
-    expect(result).toEqual({ ok: true, data: { id: quoteId, status: 'changed' } })
-    expect(mocks.refreshSharedJobberConnectionToken).toHaveBeenCalledWith(
-      'refresh-token',
-      expect.objectContaining({ graphqlVersion: '2025-04-16' }),
-      'jobber-owner'
-    )
-    expect(mocks.fetchJobberQuote).toHaveBeenNthCalledWith(2, 'jobber-quote-id', {
-      accessToken: 'refreshed-access-token',
-      graphqlVersion: '2025-04-16',
-    })
+  it('refreshes snapshots against the shared token owner', async () => {
+    persistenceFixture({ ...quoteRow, jobber_quote_id: 'jobber-quote-id' })
+    mocks.fetchJobberQuote.mockRejectedValueOnce(new mocks.JobberApiError('expired', 401))
+    expect((await refreshJobberQuoteSnapshot(quoteId)).ok).toBe(true)
+    expect(mocks.refreshSharedJobberConnectionToken).toHaveBeenCalledWith('refresh-token', expect.any(Object), 'user-1')
   })
 
-  it('fails Jobber snapshot refresh clearly when a shared token has no owner row', async () => {
-    const quoteSelect = createSelectSingleBuilder({
-      data: { id: quoteId, jobber_quote_id: 'jobber-quote-id', jobber_snapshot: previousJobberSnapshot },
-      error: null,
-    })
-    const quoteUpdate = createThenableBuilder({ error: null })
-    const builders: Record<string, unknown[]> = {
-      quotes: [quoteSelect, quoteUpdate],
-    }
-    const from = vi.fn((table: string) => {
-      const builder = builders[table]?.shift()
-      if (!builder) throw new Error(`unexpected refresh table ${table}`)
-      return builder
-    })
-    mocks.getUsableSharedJobberConnectionToken.mockResolvedValueOnce({
-      accessToken: 'expired-access-token',
-      refreshToken: 'refresh-token',
-      expiresAt: null,
-    })
-    mocks.fetchJobberQuote.mockRejectedValueOnce(new mocks.JobberApiError('expired access token', 401))
-    mocks.createClient.mockResolvedValueOnce({ auth: createAuthUser(), from })
-
-    const result = await refreshJobberQuoteSnapshot(quoteId)
-
-    expect(result).toEqual({ ok: false, error: 'Unable to identify Jobber connection owner' })
-    expect(mocks.refreshSharedJobberConnectionToken).not.toHaveBeenCalled()
-    expect(quoteUpdate.update).toHaveBeenCalledWith({
-      jobber_snapshot_refresh_error: 'Unable to identify Jobber connection owner',
-    })
+  it('fails clearly when the shared token owner cannot be resolved', async () => {
+    persistenceFixture({ ...quoteRow, jobber_quote_id: 'jobber-quote-id' })
+    mocks.getUsableSharedJobberConnectionToken.mockResolvedValueOnce({ accessToken: 'token', refreshToken: 'refresh' })
+    mocks.fetchJobberQuote.mockRejectedValueOnce(new mocks.JobberApiError('expired', 401))
+    expect(await refreshJobberQuoteSnapshot(quoteId)).toMatchObject({ ok: false, error: expect.stringContaining('owner') })
   })
 
-  it('stores unchanged refresh status with an empty summary when the Jobber snapshot matches', async () => {
-    const quoteSelect = createSelectSingleBuilder({
-      data: { id: quoteId, jobber_quote_id: 'jobber-quote-id', jobber_snapshot: previousJobberSnapshot },
-      error: null,
-    })
-    const quoteUpdate = createThenableBuilder({ error: null })
-    const builders: Record<string, unknown[]> = {
-      quotes: [quoteSelect, quoteUpdate],
-    }
-    const from = vi.fn((table: string) => {
-      const builder = builders[table]?.shift()
-      if (!builder) throw new Error(`unexpected refresh table ${table}`)
-      return builder
-    })
-    mocks.mapJobberQuoteToDraft.mockReturnValueOnce(previousJobberSnapshot)
-    mocks.createClient.mockResolvedValueOnce({ auth: createAuthUser(), from })
-
-    const result = await refreshJobberQuoteSnapshot(quoteId)
-
-    expect(result).toEqual({ ok: true, data: { id: quoteId, status: 'unchanged' } })
-    expect(quoteUpdate.update).toHaveBeenCalledWith(expect.objectContaining({
-      jobber_snapshot: previousJobberSnapshot,
-      jobber_snapshot_change_status: 'unchanged',
-      jobber_snapshot_change_summary: [],
-      jobber_snapshot_refresh_error: null,
-    }))
+  it('stores refresh errors with the original version and rejects late success results', async () => {
+    const { rpc } = persistenceFixture({ ...quoteRow, jobber_quote_id: 'jobber-quote-id' })
+    mocks.fetchJobberQuote.mockRejectedValueOnce(new Error('Jobber timeout'))
+    expect(await refreshJobberQuoteSnapshot(quoteId)).toEqual({ ok: false, error: 'Jobber timeout' })
+    expect(rpc).toHaveBeenCalledWith('apply_quote_jobber_result', { target_quote_id: quoteId, expected_version: 1, changes: { jobber_snapshot_refresh_error: 'Jobber timeout' } })
+    rpc.mockResolvedValueOnce({ data: null, error: { message: 'QUOTE_DELETED' } })
+    expect(await refreshJobberQuoteSnapshot(quoteId)).toMatchObject({ ok: false, error: expect.stringContaining('Trash') })
   })
 
-  it('stores Jobber snapshot refresh errors when fetching the linked quote fails', async () => {
-    const quoteSelect = createSelectSingleBuilder({
-      data: { id: quoteId, jobber_quote_id: 'jobber-quote-id', jobber_snapshot: previousJobberSnapshot },
-      error: null,
-    })
-    const quoteUpdate = createThenableBuilder({ error: null })
-    const builders: Record<string, unknown[]> = {
-      quotes: [quoteSelect, quoteUpdate],
-    }
-    const from = vi.fn((table: string) => {
-      const builder = builders[table]?.shift()
-      if (!builder) throw new Error(`unexpected refresh table ${table}`)
-      return builder
-    })
-    mocks.fetchJobberQuote.mockRejectedValueOnce(new Error('Jobber timeout while refreshing snapshot'))
-    mocks.createClient.mockResolvedValueOnce({ auth: createAuthUser(), from })
-
-    const result = await refreshJobberQuoteSnapshot(quoteId)
-
-    expect(result).toEqual({ ok: false, error: 'Jobber timeout while refreshing snapshot' })
-    expect(quoteUpdate.update).toHaveBeenCalledWith({
-      jobber_snapshot_refresh_error: 'Jobber timeout while refreshing snapshot',
-    })
-    expect(quoteUpdate.eq).toHaveBeenCalledWith('id', quoteId)
-    expect(mocks.revalidatePath).toHaveBeenCalledWith(`/quotes/${quoteId}`)
-    expect(mocks.revalidatePath).not.toHaveBeenCalledWith(`/quotes/${quoteId}/edit`)
-  })
-
-  it('deletes a quote through Supabase after authentication', async () => {
-    const deleteBuilder = createThenableBuilder({ error: null })
-    mocks.createClient.mockResolvedValueOnce({
-      auth: createAuthUser(),
-      from: vi.fn(() => deleteBuilder),
-    })
-
-    const result = await deleteQuote(quoteId)
-
-    expect(result).toEqual({ ok: true, data: { id: quoteId } })
-    expect(deleteBuilder.delete).toHaveBeenCalled()
-    expect(deleteBuilder.eq).toHaveBeenCalledWith('id', quoteId)
-    expect(mocks.revalidatePath).toHaveBeenCalledWith('/quotes')
-  })
-
-  it('requires an allowed user before deleting a quote', async () => {
-    mocks.requireAllowedUser.mockResolvedValueOnce({ ok: false, error: 'Authentication required' })
-
-    const result = await deleteQuote(quoteId)
-
-    expect(result).toEqual({ ok: false, error: 'Authentication required' })
-    expect(mocks.createClient).not.toHaveBeenCalled()
+  it('keeps the legacy delete action safe and requires a version', async () => {
+    const { rpc, from } = persistenceFixture()
+    expect((await deleteQuote(quoteId)).ok).toBe(false)
+    expect(rpc).not.toHaveBeenCalled()
+    expect(await deleteQuote(quoteId, 1)).toEqual({ ok: true, data: { id: quoteId } })
+    expect(rpc).toHaveBeenCalledWith('soft_delete_quote', { target_quote_id: quoteId, expected_version: 1 })
+    expect(from).not.toHaveBeenCalled()
+    mocks.requireAllowedUser.mockResolvedValueOnce({ ok: false, error: 'Admin access required' })
+    expect((await deleteQuote(quoteId, 1)).ok).toBe(false)
   })
 
   it('searches the lightweight overview by human-readable Jobber quote number', async () => {

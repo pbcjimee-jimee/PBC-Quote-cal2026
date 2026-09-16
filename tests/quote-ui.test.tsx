@@ -595,7 +595,8 @@ describe('quote form pricing UI', () => {
     expect(source).toContain('pbc-dialogbackdrop')
     expect(source).toContain('role="dialog"')
     expect(source).toContain('Cancel')
-    expect(source).toContain('Delete quote')
+    expect(source).toContain('Move to Trash')
+    expect(source).toContain('restore it from Trash')
   })
 
   it('groups overview quotes by created year and month', () => {

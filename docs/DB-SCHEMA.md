@@ -168,3 +168,17 @@ quote/option totals의 price-change 스냅샷을 보관해 이후 편집이 sell
 - area별 선택 공식 번호는 `quotes.{interior,exterior,roof}_selected_{min,max}`에 저장. `selected_min/max`는 legacy fallback.
 - `quote_options.subtotal/final_total`은 옵션 소유 값이며 메인 total에 포함되지 않는다.
 - Roof는 F2-F5 공유 margin을 쓰고 별도 Roof margin 필드는 없다. material은 소비자가 기준.
+
+## 2026-09-16 견적 휴지통 (로컬 구현, 운영 미적용)
+
+Migration: `20260916023434_add_quote_soft_delete_and_lifecycle.sql`.
+
+- `quotes.deleted_at TIMESTAMPTZ`, `deleted_by UUID`로 삭제 상태를 보관한다. 기존 행의 기본값은 NULL(활성)이다. 메인/옵션 자재, 메모, 서비스 행, 가격 이력과 부모 ID는 삭제·복구로 변경되지 않는다.
+- `quote_lifecycle_events`는 quote ID, deleted/restored 사건, 서버 actor/시각과 quote version을 기록한다. quote/version 조합은 고유하며 복구해도 사건을 남긴다. actor 계정이 제거되면 표시 이름은 Unknown user가 될 수 있다.
+- `soft_delete_quote` / `restore_quote`는 활성 admin만 실행하고 expected version을 검증한다. 같은 목표 상태의 재요청은 no-op, 다른 상태의 오래된 요청은 conflict다. 전환 시 version을 올린다.
+- authenticated/service_role의 부모 DELETE 권한을 회수한다. 사건 표는 admin SELECT만 제공하고 직접 쓰기를 허용하지 않는다. private audit trigger만 고정 search_path의 SECURITY DEFINER를 사용한다.
+- 부모 및 모든 자식의 statement advisory lock과 row guard가 삭제된 데이터의 직접 쓰기·자식 cascade를 차단한다. 짧은 quote 관련 쓰기 트랜잭션은 하나의 advisory lock으로 직렬화한다.
+- 일반 앱 쿼리는 `deleted_at IS NULL`; 휴지통 쿼리는 `IS NOT NULL`, `deleted_at DESC, id DESC`, 50+1개다. admin SELECT RLS 자체는 두 상태 모두 허용한다.
+- `find_quote_by_jobber_identity`는 저장된 ID, 디코딩된 Jobber 내부 ID, snapshot quoteNumber를 함께 확인한다. archived 재import와 활성 중복을 거절하며 복구 시 활성 중복을 검사한다.
+- `apply_quote_jobber_result`는 활성 여부와 저장 시 version을 확인하고 허용된 Jobber 메타데이터·line ID만 한 트랜잭션에서 적용한다. 삭제 또는 삭제 후 복구된 견적에 이전 응답을 반영하지 않는다.
+- 자동 영구 삭제/보존 기간 만료 작업은 없다. 과거 물리 삭제 데이터를 이 migration으로 재생성할 수는 없다.

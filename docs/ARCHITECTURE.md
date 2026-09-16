@@ -230,3 +230,12 @@ Internal quote memos are stored as child rows in `quote_memos`.
 - Memos are created, updated, deleted, and read through the app quote Server Actions.
 - Memos are app-only. They are not fetched from Jobber and are not written back to Jobber notes, text line items, or public Product / Service line items.
 - RLS follows the app v1.0 authenticated-user policy, matching other quote child tables.
+
+## 2026-09-16 Quote Trash and Recovery (local implementation)
+
+- UI Delete → `moveQuoteToTrash({ id, expectedVersion })` → authenticated `soft_delete_quote` → parent lifecycle update + audit event in one transaction.
+- `/quotes/trash` inherits the admin Quotes layout. `searchDeletedQuotes` returns only summary fields, ordered by deleted time and ID with 50-row pagination. `restoreQuote` restores the same ID and all original children without recalculation or Jobber synchronization.
+- Ordinary list/detail/edit/duplicate/save/retry/refresh lookups exclude archived rows. Import identity lookup intentionally includes both states and refuses archived or ambiguous matches.
+- create/update use only the atomic save RPCs. Jobber results use `apply_quote_jobber_result`, which locks the parent and verifies the version captured before the network request; delayed results cannot overwrite archived or restored records.
+- The DB locks quote-related writes before row locks and enforces archive guards on parent/child tables. This favors predictable data preservation for the current small internal team; higher write volume would require measuring lock contention before changing the lock design.
+- Migration and release are not applied to production. See the implementation plan for coordinated rollout and forward-fix rollback.

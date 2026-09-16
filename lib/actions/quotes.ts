@@ -33,6 +33,8 @@ import { getAuthUserProfile, getAuthUserProfilesById, getUserProfilesById, type 
 import { getPricingSettings } from './settings'
 import type { ActionResult } from './types'
 import { isDevNoAuthMode } from './types'
+import { moveQuoteToTrash } from './quote-lifecycle'
+import { quoteLifecycleError } from '@/lib/quotes/lifecycle'
 import type { JobberQuoteLineInput, JobberSaveModeInput } from '@/lib/validators'
 
 type JobberSyncStatus = 'not_synced' | 'synced' | 'failed'
@@ -68,7 +70,7 @@ type JobberQuoteLineRow = {
   created_at: string
   updated_at: string
 }
-type JobberRetryQuoteRow = Pick<QuoteRow, 'id' | 'jobber_quote_id' | 'jobber_save_mode' | 'final_total'> & {
+type JobberRetryQuoteRow = Pick<QuoteRow, 'id' | 'version' | 'jobber_quote_id' | 'jobber_save_mode' | 'final_total'> & {
   jobber_quote_lines?: JobberQuoteLineRow[]
 }
 type QuoteOptionWithItemsRow = QuoteOptionRow & {
@@ -81,7 +83,6 @@ type QuoteWithItemsRow = QuoteRow & {
   quote_memos?: QuoteMemoRow[]
   quote_price_revisions?: QuotePriceRevisionRow[]
 }
-type ExistingJobberQuoteMatchRow = Pick<QuoteRow, 'id' | 'version'>
 type QuoteListRow = Pick<
   QuoteRow,
   | 'id'
@@ -814,6 +815,7 @@ async function resolveQuoteInputSnapshots(
     const { data, error } = await supabase
       .from('quotes')
       .select('quote_items(id, product_id, actual_price_snapshot), quote_options(quote_option_items(id, product_id, actual_price_snapshot))')
+      .is('deleted_at', null)
       .eq('id', quoteId)
       .single()
 
@@ -1042,133 +1044,6 @@ function buildQuoteSavePayload(params: {
   }
 }
 
-async function insertQuoteOptions(
-  supabase: Awaited<ReturnType<typeof createClient>>,
-  quoteId: string,
-  options: QuoteInput['options'],
-  settings: PricingSettings
-): Promise<string | null> {
-  for (const [optionIndex, option] of options.entries()) {
-    const calculated = calculateOption(option, settings)
-    const { data: optionRow, error: optionError } = await supabase
-      .from('quote_options')
-      .insert({
-        quote_id: quoteId,
-        title: option.title.trim(),
-        working_days: money(calculated.labour.workingDays),
-        labour_per_day: money(calculated.labour.labourDays),
-        material_market: money(calculated.materialMarket),
-        material_actual: money(calculated.materialActual),
-        formula1_total: money(calculated.formulas[0].total),
-        formula2_total: money(calculated.formulas[1].total),
-        formula3_total: money(calculated.formulas[2].total),
-        formula4_total: money(calculated.formulas[3].total),
-        formula5_total: money(calculated.formulas[4].total),
-        selected_min: option.selectedMin,
-        selected_max: option.selectedMax,
-        subtotal: money(calculated.subtotal),
-        final_total: money(calculated.finalTotal),
-        position: option.position ?? optionIndex,
-      })
-      .select('id')
-      .single()
-
-    if (optionError) return optionError.message
-
-    const items = option.items.map((item, itemIndex) => ({
-      option_id: optionRow.id,
-      product_id: item.productId ?? null,
-      product_name_snapshot: item.productNameSnapshot,
-      memo: (item.memo ?? '').trim(),
-      market_price_snapshot: item.marketPriceSnapshot.toFixed(2),
-      actual_price_snapshot: item.actualPriceSnapshot.toFixed(2),
-      quantity: item.quantity.toFixed(2),
-      working_days: optionalMoney(item.workingDays),
-      labour_per_day: optionalMoney(item.labourPerDay),
-      area_id: item.areaId ?? null,
-      area_name_snapshot: item.areaNameSnapshot ?? null,
-      area_scope_snapshot: item.areaScopeSnapshot ?? null,
-      is_custom: item.isCustom,
-      position: item.position ?? itemIndex,
-    }))
-
-    if (items.length > 0) {
-      const { error: itemsError } = await supabase.from('quote_option_items').insert(items)
-      if (itemsError) return itemsError.message
-    }
-  }
-
-  return null
-}
-
-async function insertQuoteMemos(
-  supabase: Awaited<ReturnType<typeof createClient>>,
-  quoteId: string,
-  memos: QuoteInput['memos'],
-  userId: string
-): Promise<{ ok: true; ids: string[] } | { ok: false; error: string }> {
-  const rows = memos
-    .map((memo, index) => ({
-      quote_id: quoteId,
-      body: memo.body.trim(),
-      position: memo.position ?? index,
-      created_by: userId,
-    }))
-    .filter((memo) => memo.body.length > 0)
-
-  if (rows.length === 0) return { ok: true, ids: [] }
-
-  const { data, error } = await supabase
-    .from('quote_memos')
-    .insert(rows)
-    .select('id')
-  if (error) return { ok: false, error: error.message }
-  return { ok: true, ids: (data ?? []).map((row) => row.id) }
-}
-
-async function deleteQuoteMemos(
-  supabase: Awaited<ReturnType<typeof createClient>>,
-  quoteId: string,
-  keepIds: string[] = []
-): Promise<string | null> {
-  let request = supabase.from('quote_memos').delete().eq('quote_id', quoteId)
-  if (keepIds.length > 0) {
-    request = request.not('id', 'in', `(${keepIds.join(',')})`)
-  }
-
-  const { error } = await request
-  return error?.message ?? null
-}
-
-async function replaceQuoteMemos(
-  supabase: Awaited<ReturnType<typeof createClient>>,
-  quoteId: string,
-  memos: QuoteInput['memos'],
-  userId: string
-): Promise<string | null> {
-  const inserted = await insertQuoteMemos(supabase, quoteId, memos, userId)
-  if (!inserted.ok) return inserted.error
-  return deleteQuoteMemos(supabase, quoteId, inserted.ids)
-}
-
-async function deleteCreatedQuote(
-  supabase: Awaited<ReturnType<typeof createClient>>,
-  quoteId: string
-): Promise<void> {
-  await supabase.from('quotes').delete().eq('id', quoteId)
-}
-
-async function insertQuotePriceRevision(
-  supabase: Awaited<ReturnType<typeof createClient>>,
-  row: Database['public']['Tables']['quote_price_revisions']['Insert']
-): Promise<string | null> {
-  const { error } = await supabase
-    .from('quote_price_revisions')
-    .insert(row)
-
-  return error?.message ?? null
-}
-
 async function getNextQuotePriceRevisionNumber(
   supabase: Awaited<ReturnType<typeof createClient>>,
   quoteId: string
@@ -1210,46 +1085,18 @@ async function scheduleSavedQuoteToJobber(
   }
 }
 
-function getJobberQuoteIdentityCandidates(input: QuoteInput): string[] {
-  return Array.from(new Set([
-    input.jobberQuoteId?.trim(),
-    input.jobberSnapshot?.quoteNumber?.trim(),
-  ].filter((value): value is string => typeof value === 'string' && value.length > 0)))
-}
-
 async function findExistingQuoteIdForJobberQuote(
   supabase: Awaited<ReturnType<typeof createClient>>,
   input: QuoteInput
 ): Promise<ActionResult<{ id: string | null; version: number | null }>> {
-  const candidates = getJobberQuoteIdentityCandidates(input)
-  if (candidates.length === 0) return { ok: true, data: { id: null, version: null } }
-
-  const { data, error } = await supabase
-    .from('quotes')
-    .select('id, version')
-    .in('jobber_quote_id', candidates)
-    .order('created_at', { ascending: true })
-    .limit(1)
-    .maybeSingle()
-
-  if (error) return { ok: false, error: error.message }
-  const row = data as unknown as ExistingJobberQuoteMatchRow | null
-  if (row?.id) return { ok: true, data: { id: row.id, version: row.version } }
-
-  const quoteNumber = input.jobberSnapshot?.quoteNumber?.trim()
-  if (!quoteNumber) return { ok: true, data: { id: null, version: null } }
-
-  const { data: snapshotData, error: snapshotError } = await supabase
-    .from('quotes')
-    .select('id, version')
-    .contains('jobber_snapshot', { quoteNumber })
-    .order('created_at', { ascending: true })
-    .limit(1)
-    .maybeSingle()
-
-  if (snapshotError) return { ok: false, error: snapshotError.message }
-  const snapshotRow = snapshotData as unknown as ExistingJobberQuoteMatchRow | null
-  return { ok: true, data: { id: snapshotRow?.id ?? null, version: snapshotRow?.version ?? null } }
+  if (!input.jobberQuoteId && !input.jobberSnapshot?.quoteNumber) return { ok: true, data: { id: null, version: null } }
+  const { data, error } = await supabase.rpc('find_quote_by_jobber_identity', {
+    jobber_id: input.jobberQuoteId ?? null, snapshot: (input.jobberSnapshot ?? null) as unknown as Json,
+  })
+  if (error) return { ok: false, error: 'Unable to check saved Jobber quotes. Please try again.' }
+  if (data?.some((row) => row.deleted_at)) return { ok: false, error: quoteLifecycleError('QUOTE_IN_TRASH') }
+  if (data && data.length > 1) return { ok: false, error: quoteLifecycleError('QUOTE_JOBBER_CONFLICT') }
+  return { ok: true, data: { id: data?.[0]?.id ?? null, version: data?.[0]?.version ?? null } }
 }
 
 export async function createQuote(input: unknown): Promise<ActionResult<{ id: string }>> {
@@ -1259,8 +1106,11 @@ export async function createQuote(input: unknown): Promise<ActionResult<{ id: st
   }
 
   if (isDevNoAuthMode()) {
-    const { createDevQuote } = await import('@/lib/dev-data')
-    const quote = createDevQuote(parsed.data)
+    const { createDevQuote, findDevQuoteByJobberIdentity, updateDevQuote } = await import('@/lib/dev-data')
+    const match = findDevQuoteByJobberIdentity(parsed.data)
+    if (match.error) return { ok: false, error: quoteLifecycleError(match.error) }
+    const quote = match.quote ? updateDevQuote(match.quote.id, { ...parsed.data, expectedVersion: match.quote.version }) : createDevQuote(parsed.data)
+    if (!quote) return { ok: false, error: 'Unable to save quote' }
     return { ok: true, data: { id: quote.id } }
   }
 
@@ -1328,64 +1178,16 @@ export async function createQuote(input: unknown): Promise<ActionResult<{ id: st
     includeJobberSnapshot: true,
   })
 
-  let quoteId: string
-  if (typeof supabase.rpc === 'function') {
-    const { data, error: quoteError } = await supabase
-      .rpc('create_quote_with_children', { payload: payload as unknown as Json })
-
-    if (quoteError) return { ok: false, error: quoteError.message }
-    if (!data) return { ok: false, error: 'Unable to create quote' }
-    quoteId = data
-  } else {
-    const { data: quote, error: quoteError } = await supabase
-      .from('quotes')
-      .insert(payload.quote as Database['public']['Tables']['quotes']['Insert'])
-      .select('id')
-      .single()
-
-    if (quoteError) return { ok: false, error: quoteError.message }
-    quoteId = quote.id
-
-    const createdRevisionError = await insertQuotePriceRevision(supabase, {
-      ...priceRevision,
-      quote_id: quoteId,
-    })
-    if (createdRevisionError) {
-      await deleteCreatedQuote(supabase, quoteId)
-      return { ok: false, error: createdRevisionError }
-    }
-
-    if (quoteInput.items.length > 0) {
-      const { error: itemsError } = await supabase.from('quote_items').insert(buildQuoteItemRows(quoteInput.items).map((item) => ({ ...item, quote_id: quoteId })))
-      if (itemsError) {
-        await deleteCreatedQuote(supabase, quoteId)
-        return { ok: false, error: itemsError.message }
-      }
-    }
-
-    const jobberLinesError = await insertJobberQuoteLines(supabase, quoteId, quoteInput.jobberQuoteLines)
-    if (jobberLinesError) {
-      await deleteCreatedQuote(supabase, quoteId)
-      return { ok: false, error: jobberLinesError }
-    }
-
-    const optionsError = await insertQuoteOptions(supabase, quoteId, quoteInput.options, settingsResult.data)
-    if (optionsError) {
-      await deleteCreatedQuote(supabase, quoteId)
-      return { ok: false, error: optionsError }
-    }
-
-    const memosResult = await insertQuoteMemos(supabase, quoteId, quoteInput.memos, allowedUser.user.id)
-    if (!memosResult.ok) {
-      await deleteCreatedQuote(supabase, quoteId)
-      return { ok: false, error: memosResult.error }
-    }
-  }
+  const { data: quoteId, error: quoteError } = await supabase
+    .rpc('create_quote_with_children', { payload: payload as unknown as Json })
+  if (quoteError) return { ok: false, error: quoteLifecycleError(quoteError.message) }
+  if (!quoteId) return { ok: false, error: 'Unable to create quote' }
 
   if (parsed.data.syncJobber) {
     await scheduleSavedQuoteToJobber({
       supabase,
       quoteId,
+      expectedVersion: 1,
       jobberQuoteId: quoteInput.jobberQuoteId || null,
       saveMode: quoteInput.jobberSaveMode,
       lines: quoteInput.jobberQuoteLines,
@@ -1422,7 +1224,7 @@ export async function updateQuote(input: unknown): Promise<ActionResult<{ id: st
   if (!allowedUser.ok) return allowedUser
 
   const supabase = await createClient()
-  const expectedVersion = parsed.data.expectedVersion ?? (process.env.NODE_ENV === 'test' ? 1 : undefined)
+  const expectedVersion = parsed.data.expectedVersion
   if (expectedVersion === undefined) {
     return { ok: false, error: 'Quote version is required. Refresh and try again.' }
   }
@@ -1430,6 +1232,7 @@ export async function updateQuote(input: unknown): Promise<ActionResult<{ id: st
   const { data: existingQuote, error: existingQuoteError } = await supabase
     .from('quotes')
     .select('pricing_settings_snapshot, subtotal, final_total, quote_options(subtotal, final_total)')
+    .is('deleted_at', null)
     .eq('id', id)
     .single()
   if (existingQuoteError) return { ok: false, error: existingQuoteError.message }
@@ -1516,63 +1319,15 @@ export async function updateQuote(input: unknown): Promise<ActionResult<{ id: st
     includeJobberSnapshot: parsed.data.jobberSnapshot !== undefined,
   })
 
-  if (typeof supabase.rpc === 'function') {
-    const { error: quoteError } = await supabase
-      .rpc('update_quote_with_children', { payload: payload as unknown as Json })
-
-    if (quoteError) {
-      if (quoteError.message.includes('QUOTE_VERSION_CONFLICT')) {
-        return { ok: false, error: 'Quote was changed by someone else. Refresh and try again.' }
-      }
-      if (quoteError.message.includes('QUOTE_NOT_FOUND')) {
-        return { ok: false, error: 'Quote not found' }
-      }
-      return { ok: false, error: quoteError.message }
-    }
-  } else {
-    const { error: quoteError } = await supabase
-      .from('quotes')
-      .update(payload.quote)
-      .eq('id', id)
-
-    if (quoteError) return { ok: false, error: quoteError.message }
-
-    if (priceRevision) {
-      const revisionError = await insertQuotePriceRevision(supabase, {
-        ...priceRevision,
-        quote_id: id,
-      })
-      if (revisionError) return { ok: false, error: revisionError }
-    }
-
-    const { error: deleteItemsError } = await supabase.from('quote_items').delete().eq('quote_id', id)
-    if (deleteItemsError) return { ok: false, error: deleteItemsError.message }
-
-    const { error: deleteOptionsError } = await supabase.from('quote_options').delete().eq('quote_id', id)
-    if (deleteOptionsError) return { ok: false, error: deleteOptionsError.message }
-
-    const { error: deleteJobberLinesError } = await supabase.from('jobber_quote_lines').delete().eq('quote_id', id)
-    if (deleteJobberLinesError) return { ok: false, error: deleteJobberLinesError.message }
-
-    if (quoteInput.items.length > 0) {
-      const { error: itemsError } = await supabase.from('quote_items').insert(buildQuoteItemRows(quoteInput.items).map((item) => ({ ...item, quote_id: id })))
-      if (itemsError) return { ok: false, error: itemsError.message }
-    }
-
-    const optionsError = await insertQuoteOptions(supabase, id, quoteInput.options, settings)
-    if (optionsError) return { ok: false, error: optionsError }
-
-    const jobberLinesError = await insertJobberQuoteLines(supabase, id, quoteInput.jobberQuoteLines)
-    if (jobberLinesError) return { ok: false, error: jobberLinesError }
-
-    const memosError = await replaceQuoteMemos(supabase, id, quoteInput.memos, allowedUser.user.id)
-    if (memosError) return { ok: false, error: memosError }
-  }
+  const { error: quoteError } = await supabase
+    .rpc('update_quote_with_children', { payload: payload as unknown as Json })
+  if (quoteError) return { ok: false, error: quoteLifecycleError(quoteError.message) }
 
   if (parsed.data.syncJobber) {
     await scheduleSavedQuoteToJobber({
       supabase,
       quoteId: id,
+      expectedVersion: expectedVersion + 1,
       jobberQuoteId: quoteInput.jobberQuoteId || null,
       saveMode: quoteInput.jobberSaveMode,
       lines: quoteInput.jobberQuoteLines,
@@ -1641,27 +1396,8 @@ export async function duplicateQuote(sourceQuoteId: string): Promise<ActionResul
   return duplicated
 }
 
-export async function deleteQuote(id: string): Promise<ActionResult<{ id: string }>> {
-  if (!id.trim()) return { ok: false, error: 'Quote id is required' }
-
-  if (isDevNoAuthMode()) {
-    const { deleteDevQuote } = await import('@/lib/dev-data')
-    const deleted = deleteDevQuote(id)
-    if (!deleted) return { ok: false, error: 'Quote not found' }
-    revalidatePath('/quotes')
-    return { ok: true, data: { id } }
-  }
-
-  const allowedUser = await requireRole('admin')
-  if (!allowedUser.ok) return allowedUser
-
-  const supabase = await createClient()
-
-  const { error } = await supabase.from('quotes').delete().eq('id', id)
-  if (error) return { ok: false, error: error.message }
-
-  revalidatePath('/quotes')
-  return { ok: true, data: { id } }
+export async function deleteQuote(id: string, expectedVersion?: number): Promise<ActionResult<{ id: string }>> {
+  return moveQuoteToTrash({ id, expectedVersion: expectedVersion ?? 0 })
 }
 
 export async function searchQuotes(query = '', limit = 100): Promise<ActionResult<QuoteRecord[]>> {
@@ -1680,6 +1416,7 @@ export async function searchQuotes(query = '', limit = 100): Promise<ActionResul
   let request = supabase
     .from('quotes')
     .select(QUOTES_LIST_SELECT)
+    .is('deleted_at', null)
     .order('created_at', { ascending: false })
     .limit(limit)
 
@@ -1752,26 +1489,14 @@ function toJobberQuoteLineInput(line: JobberQuoteLineRow, index: number): Jobber
   }
 }
 
-async function insertJobberQuoteLines(
-  supabase: Awaited<ReturnType<typeof createClient>>,
-  quoteId: string,
-  lines: JobberQuoteLineInput[]
-): Promise<string | null> {
-  if (lines.length === 0) return null
-
-  const { error } = await supabase
-    .from('jobber_quote_lines')
-    .insert(lines.map((line, index) => toJobberQuoteLineInsert(quoteId, line, index)))
-
-  return error?.message ?? null
-}
-
 async function markJobberSyncStatus(
   supabase: Awaited<ReturnType<typeof createClient>>,
   quoteId: string,
+  expectedVersion: number,
   status: JobberSyncStatus,
   errorMessage: string | null,
-  snapshot?: JobberQuoteDraft | null
+  snapshot?: JobberQuoteDraft | null,
+  syncedLines: Array<{ sourcePosition: number; jobberLineItemId: string }> = []
 ): Promise<string | null> {
   const updatePayload: Database['public']['Tables']['quotes']['Update'] = {
     jobber_sync_status: status,
@@ -1787,26 +1512,17 @@ async function markJobberSyncStatus(
     updatePayload.jobber_snapshot_refresh_error = null
   }
 
-  const { error } = await supabase
-    .from('quotes')
-    .update(updatePayload)
-    .eq('id', quoteId)
-
-  return error?.message ?? null
+  const { error } = await supabase.rpc('apply_quote_jobber_result', {
+    target_quote_id: quoteId, expected_version: expectedVersion,
+    changes: updatePayload as Json, synced_lines: syncedLines,
+  })
+  return error ? quoteLifecycleError(error.message) : null
 }
 
-async function recordSyncedJobberLineIds(
-  supabase: Awaited<ReturnType<typeof createClient>>,
-  quoteId: string,
-  syncedLineItems: Array<{ sourcePosition: number; jobberLineItemId: string }>
-): Promise<void> {
-  for (const line of syncedLineItems) {
-    await supabase
-      .from('jobber_quote_lines')
-      .update({ jobber_line_item_id: line.jobberLineItemId })
-      .eq('quote_id', quoteId)
-      .eq('position', line.sourcePosition)
-  }
+async function checkQuoteSyncVersion(supabase: Awaited<ReturnType<typeof createClient>>, id: string, version: number): Promise<void> {
+  const { data, error } = await supabase.from('quotes').select('id')
+    .eq('id', id).eq('version', version).is('deleted_at', null).maybeSingle()
+  if (error || !data) throw new Error('This quote changed or is in Trash. Refresh before syncing.')
 }
 
 function getSyncErrorMessage(error: unknown): string {
@@ -1853,6 +1569,7 @@ type JobberSyncAttemptResult =
 async function syncSavedQuoteToJobber(params: {
   supabase: Awaited<ReturnType<typeof createClient>>
   quoteId: string
+  expectedVersion: number
   jobberQuoteId: string | null
   saveMode: QuoteInput['jobberSaveMode']
   lines: QuoteInput['jobberQuoteLines']
@@ -1867,7 +1584,7 @@ async function syncSavedQuoteToJobber(params: {
   const missing = getMissingGraphqlConfigKeys(config)
   if (missing.length > 0) {
     const error = `Jobber quote sync is not configured: ${missing.join(', ')}`
-    await markJobberSyncStatus(params.supabase, params.quoteId, 'failed', error)
+    await markJobberSyncStatus(params.supabase, params.quoteId, params.expectedVersion, 'failed', error)
     return { status: 'failed', error }
   }
 
@@ -1877,7 +1594,7 @@ async function syncSavedQuoteToJobber(params: {
     let accessToken = token?.accessToken ?? config.accessToken
     if (!accessToken) {
       const error = 'Jobber is not connected. Connect Jobber first.'
-      await markJobberSyncStatus(params.supabase, params.quoteId, 'failed', error)
+      await markJobberSyncStatus(params.supabase, params.quoteId, params.expectedVersion, 'failed', error)
       return { status: 'failed', error }
     }
 
@@ -1889,6 +1606,7 @@ async function syncSavedQuoteToJobber(params: {
       deletedJobberLineItemIds: params.deletedJobberLineItemIds,
     }
 
+    await checkQuoteSyncVersion(params.supabase, params.quoteId, params.expectedVersion)
     let syncResult: Awaited<ReturnType<typeof syncJobberQuoteLineItems>>
     try {
       syncResult = await syncJobberQuoteLineItems(params.jobberQuoteId, syncInput, {
@@ -1902,13 +1620,13 @@ async function syncSavedQuoteToJobber(params: {
 
       token = await refreshSharedJobberConnectionToken(token.refreshToken, config, requireSharedJobberConnectionOwnerId(token))
       accessToken = token.accessToken
+      await checkQuoteSyncVersion(params.supabase, params.quoteId, params.expectedVersion)
       syncResult = await syncJobberQuoteLineItems(params.jobberQuoteId, syncInput, {
         accessToken,
         graphqlVersion: config.graphqlVersion,
       })
     }
 
-    await recordSyncedJobberLineIds(params.supabase, params.quoteId, syncResult.syncedLineItems)
     let refreshedSnapshot: JobberQuoteDraft | undefined
     try {
       refreshedSnapshot = mapJobberQuoteToDraft(await fetchJobberQuote(params.jobberQuoteId, {
@@ -1919,15 +1637,12 @@ async function syncSavedQuoteToJobber(params: {
       refreshedSnapshot = undefined
     }
 
-    const statusError = await markJobberSyncStatus(params.supabase, params.quoteId, 'synced', null, refreshedSnapshot)
+    const statusError = await markJobberSyncStatus(params.supabase, params.quoteId, params.expectedVersion, 'synced', null, refreshedSnapshot, syncResult.syncedLineItems)
     if (statusError) return { status: 'failed', error: statusError }
     return { status: 'synced' }
   } catch (error) {
-    if (error instanceof JobberLineSyncPartialError) {
-      await recordSyncedJobberLineIds(params.supabase, params.quoteId, error.syncedLineItems)
-    }
     const errorMessage = getSyncErrorMessage(error)
-    const statusError = await markJobberSyncStatus(params.supabase, params.quoteId, 'failed', errorMessage)
+    const statusError = await markJobberSyncStatus(params.supabase, params.quoteId, params.expectedVersion, 'failed', errorMessage, undefined, error instanceof JobberLineSyncPartialError ? error.syncedLineItems : [])
     return { status: 'failed', error: statusError ?? errorMessage }
   }
 }
@@ -1947,7 +1662,8 @@ export async function retryJobberQuoteSync(quoteId: string): Promise<ActionResul
 
   const { data, error } = await supabase
     .from('quotes')
-    .select('id, jobber_quote_id, jobber_save_mode, final_total, jobber_quote_lines(*)')
+    .select('id, version, jobber_quote_id, jobber_save_mode, final_total, jobber_quote_lines(*)')
+    .is('deleted_at', null)
     .eq('id', id)
     .single()
   if (error) return { ok: false, error: error.message }
@@ -1970,6 +1686,7 @@ export async function retryJobberQuoteSync(quoteId: string): Promise<ActionResul
   const syncResult = await syncSavedQuoteToJobber({
     supabase,
     quoteId: row.id,
+    expectedVersion: row.version,
     jobberQuoteId: row.jobber_quote_id,
     saveMode: row.jobber_save_mode ?? 'priced_line_items',
     lines,
@@ -2006,12 +1723,13 @@ export async function refreshJobberQuoteSnapshot(
 
   const { data, error } = await supabase
     .from('quotes')
-    .select('id, jobber_quote_id, jobber_snapshot')
+    .select('id, version, jobber_quote_id, jobber_snapshot')
+    .is('deleted_at', null)
     .eq('id', id)
     .single()
   if (error) return { ok: false, error: error.message }
 
-  const row = data as unknown as Pick<QuoteRow, 'id' | 'jobber_quote_id' | 'jobber_snapshot'> | null
+  const row = data as unknown as Pick<QuoteRow, 'id' | 'version' | 'jobber_quote_id' | 'jobber_snapshot'> | null
   if (!row) return { ok: false, error: 'Quote not found' }
   if (!row.jobber_quote_id) return { ok: false, error: 'Saved quote is not linked to Jobber' }
 
@@ -2019,18 +1737,18 @@ export async function refreshJobberQuoteSnapshot(
   try {
     const freshSnapshot = await fetchJobberSnapshot(row.jobber_quote_id)
     const diff = diffJobberSnapshots(previousSnapshot, freshSnapshot)
-    const { error: updateError } = await supabase
-      .from('quotes')
-      .update({
+    const { error: updateError } = await supabase.rpc('apply_quote_jobber_result', {
+      target_quote_id: id, expected_version: row.version,
+      changes: {
         jobber_snapshot: freshSnapshot as unknown as Json,
         jobber_snapshot_refreshed_at: new Date().toISOString(),
         jobber_snapshot_change_status: diff.status,
         jobber_snapshot_change_summary: diff.summary as unknown as Json,
         jobber_snapshot_refresh_error: null,
-      })
-      .eq('id', id)
+      },
+    })
 
-    if (updateError) return { ok: false, error: updateError.message }
+    if (updateError) return { ok: false, error: quoteLifecycleError(updateError.message) }
 
     revalidatePath('/quotes')
     revalidatePath(`/quotes/${id}`)
@@ -2038,10 +1756,10 @@ export async function refreshJobberQuoteSnapshot(
     return { ok: true, data: { id, status: diff.status } }
   } catch (error) {
     const message = getSyncErrorMessage(error)
-    await supabase
-      .from('quotes')
-      .update({ jobber_snapshot_refresh_error: message.slice(0, 500) })
-      .eq('id', id)
+    await supabase.rpc('apply_quote_jobber_result', {
+      target_quote_id: id, expected_version: row.version,
+      changes: { jobber_snapshot_refresh_error: message.slice(0, 500) },
+    })
     revalidatePath(`/quotes/${id}`)
     return { ok: false, error: message }
   }
@@ -2060,6 +1778,7 @@ export async function getQuote(id: string): Promise<ActionResult<QuoteRecord | n
   const { data, error } = await supabase
     .from('quotes')
     .select(QUOTE_DETAIL_SELECT)
+    .is('deleted_at', null)
     .eq('id', id)
     .single()
 
@@ -2075,11 +1794,14 @@ export async function getQuote(id: string): Promise<ActionResult<QuoteRecord | n
       const { data: fallbackData, error: fallbackError } = await supabase
         .from('quotes')
         .select(QUOTE_DETAIL_WITHOUT_MEMOS_SELECT)
+        .is('deleted_at', null)
         .eq('id', id)
         .single()
 
       if (!fallbackError) {
         row = fallbackData as unknown as QuoteWithItemsRow
+      } else if (isSupabaseNoRowsError(fallbackError)) {
+        return { ok: true, data: null }
       } else if (!isMissingLegacyDetailRelationError(fallbackError)) {
         return { ok: false, error: fallbackError.message }
       }
@@ -2089,6 +1811,7 @@ export async function getQuote(id: string): Promise<ActionResult<QuoteRecord | n
       const { data: fallbackData, error: fallbackError } = await supabase
         .from('quotes')
         .select(QUOTES_LIST_SELECT)
+        .is('deleted_at', null)
         .eq('id', id)
         .single()
       if (isSupabaseNoRowsError(fallbackError)) return { ok: true, data: null }
