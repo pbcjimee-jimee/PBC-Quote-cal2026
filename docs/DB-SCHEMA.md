@@ -169,7 +169,7 @@ quote/option totals의 price-change 스냅샷을 보관해 이후 편집이 sell
 - `quote_options.subtotal/final_total`은 옵션 소유 값이며 메인 total에 포함되지 않는다.
 - Roof는 F2-F5 공유 margin을 쓰고 별도 Roof margin 필드는 없다. material은 소비자가 기준.
 
-## 2026-09-16 견적 휴지통 (로컬 구현, 운영 미적용)
+## 2026-09-16 견적 휴지통 (운영 적용 완료)
 
 Migration: `20260916023434_add_quote_soft_delete_and_lifecycle.sql`.
 

@@ -12,7 +12,7 @@
 
 **Model:** gpt-6-astra (설계 담당 기준). 설계·구현·테스트·검토를 모두 동일 모델로 수행한다.
 
-**Status:** 태스크 #1–#5 로컬 구현·검증 완료. 운영 DB 변경·배포는 별도 승인 대기.
+**Status:** 태스크 #1–#5 구현·검증 완료. 사용자 승인 후 운영 DB 적용·앱 배포·운영 확인 완료(10절).
 
 ## Global Constraints
 
@@ -403,7 +403,7 @@ npm.cmd run test:run -- tests/quote-trash-ui.test.tsx tests/quote-ui.test.tsx te
 
 ## 7. 운영 적용 순서 — 구현 완료 후 별도 승인
 
-이 절은 지금 실행하지 않는다. 대상은 Supabase `ojcrfgguhbxhtlgdflzp`, Vercel `pbc-quote-cal2026-v2`다.
+2026-09-16 사용자 승인 후 이 절의 순서로 적용했다. 대상은 Supabase `ojcrfgguhbxhtlgdflzp`, Vercel `pbc-quote-cal2026-v2`다.
 
 1. **사전 검증:** production에 최신 저장 RPC·role schema가 있는지, 관련 grant와 Jobber 연결 중복이 어떤 상태인지 읽기 전용으로 확인한다. 기존 고객 데이터를 자동 정리하지 않는다. 복원 가능한 백업/검증된 export를 확보하고 로컬에서 복원 절차를 확인한다.
 2. **새 앱 검증:** 로컬/격리 DB와 preview에서 기능을 검증한다. preview가 production DB를 쓰면 삭제·복구 시나리오를 그 환경에서 실행하지 않는다.
@@ -461,9 +461,9 @@ npm.cmd run test:run -- tests/quote-trash-ui.test.tsx tests/quote-ui.test.tsx te
 - 이후 추가한 삭제 대 복구 경쟁 테스트를 포함해 동시성 7 tests를 다시 통과했다. 긴 삭제자 이름의 모바일 넘침은 `break-words`로 수정하고 UI 회귀 2 files/123 tests를 통과했다. 최종 typecheck/lint도 통과했다. 현재 기본 실행의 환경 조건 skip은 API 9 + 동시성 7건이다.
 - Next.js 16.3.5 상태에서 데스크톱 삭제→휴지통, 모바일 복구→같은 상세 URL·메모·옵션 표시를 확인했다. 390px에서 긴 이름/주소/삭제자 이름을 표시해 가로 overflow 0, Search/Restore 높이 44px를 확인했다. 데스크톱 1280px에서도 가로 overflow 0이다.
 - Next.js가 생성한 AGENTS 안내 블록과 `next-env.d.ts` root-params 타입 참조를 보존했다. 모델 라우팅은 진입점·워크플로·관련 안내를 gpt-6-astra로 통일했고 과거 이력은 보존했다.
-- 실제 iPhone/PWA, 운영 Supabase migration, Vercel preview/production 검증은 미실행이다. 삭제 전에 이미 전송된 Jobber 요청은 취소할 수 없으며 늦은 로컬 결과 적용만 차단한다. 모든 견적 쓰기를 advisory lock으로 직렬화하므로 높은 동시 쓰기 부하 측정은 별도다.
+- 실제 iPhone/PWA와 높은 동시 쓰기 부하 측정은 미실행이다. 운영 Supabase와 Vercel 검증은 10절에 기록한다. 삭제 전에 이미 전송된 Jobber 요청은 취소할 수 없으며 늦은 로컬 결과 적용만 차단한다. 모든 견적 쓰기는 advisory lock으로 직렬화한다.
 - 로컬 검증용 앱 서버와 이번에 생성한 Supabase 스택은 종료하며, 전용 스택의 임시 fixture/volume을 정리한다. 기존 다른 로컬 Supabase 스택은 유지한다.
-- 변경물은 `codex/quote-trash-recovery`의 미커밋 파일로 검토할 수 있다. 운영 적용 시 DB migration을 먼저 적용하고 검증 앱을 뒤이어 배포한다. 실제 배포 commit SHA는 승인된 변경을 커밋하는 단계에서 확정한다.
+- 기능 commit은 `285dcb0`, migration history 정렬 commit은 `d71355b`, 운영 merge commit은 `9668a93`이다. 기존 자동완성 작업은 배포에서 제외하고 원래 작업 폴더에 보존했다.
 
 ## 10. 승인된 운영 적용 기록 (2026-09-16)
 
@@ -474,4 +474,8 @@ npm.cmd run test:run -- tests/quote-trash-ui.test.tsx tests/quote-ui.test.tsx te
 - 2026-09-16 12:34 Sydney에 운영 migration을 적용했다. 관리 API가 기록한 실제 version `20260916023434`에 로컬 파일명을 맞췄다(초기 CLI 작성 version `20260916011201`과 SQL 내용은 동일).
 - 운영 적용 전후 counts와 내용 해시가 7개 견적 테이블 모두 일치했다: quotes 106, items 582, options 52, option items 129, memos 7, service lines 1249, price revisions 189. active 106/trashed 0/events 0.
 - authenticated/service_role 부모 DELETE=false, anon restore EXECUTE=false, audit RLS=true. Security advisor는 새 finding이 없으며 기존 service 전용 RLS INFO와 기존 leaked-password protection WARN만 남아 있다.
-- 실제 고객 견적을 삭제/복구하는 시험이나 Jobber 쓰기 요청은 실행하지 않았다. 앱 배포와 운영 UI 검증 결과는 릴리스 완료 후 기록한다.
+- 실제 고객 견적을 삭제/복구하는 시험이나 Jobber 쓰기 요청은 실행하지 않았다.
+- Vercel preview `dpl_7xtsWoqwu6EXFp8wG8KRgQaP6XPo`가 READY인 것을 확인한 후 main으로 반영했다. GitHub connector PR 생성은 integration 권한 403으로 불가해, 이미 설정된 프로젝트 SSH 인증으로 일반 merge/push를 수행했다. 강제 push는 사용하지 않았다.
+- 운영 merge `9668a933478daf8913f592196ca9912ad7c03023`, 배포 `dpl_9PiYcdsWDfMNxhGYFMBiMSq4mctu`는 12:38:42 Sydney에 READY, `syd1`, 정식 alias 연결을 확인했다. URL: https://pbc-quote-cal2026-v2.vercel.app/quotes/trash.
+- 로그인된 실제 관리자 화면에서 Quotes의 Trash 링크, 휴지통 빈 상태, 번호 검색의 결과 없음 표시를 확인했다. 비로그인 `/quotes/trash`는 로그인 화면으로 이동한다. `/`, `/manifest.webmanifest`, `/sw.js`, `/offline`은 정상 200이며 service worker는 재검증 cache policy를 유지한다.
+- 초기 운영 runtime error/fatal 로그 조회 결과 0건이다. Security advisor의 기존 [유출 비밀번호 보호 경고](https://supabase.com/docs/guides/auth/password-security#password-strength-and-leaked-password-protection)는 설정 변경 범위에 포함하지 않았다. 이번 migration으로 추가된 보안 finding은 없다.

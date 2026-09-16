@@ -141,10 +141,10 @@ PR 머지 전 다음을 반드시 확인:
 
 > 문서 변경 이력은 `PROGRESS.md` 참조.
 
-## 2026-09-16 견적 삭제·복구 경계 (운영 미적용)
+## 2026-09-16 견적 삭제·복구 경계 (운영 적용 완료)
 
 `quotes`의 앱 삭제는 soft-delete RPC만 사용한다. authenticated/service_role의 부모 DELETE를 DB 권한에서 차단하고 삭제된 견적과 자식은 trigger로 수정·삭제를 거절한다. admin만 `/quotes/trash`와 lifecycle RPC에 접근하며 supervisor/anon은 복구·사건 이력에 접근할 수 없다. actor와 시각은 DB가 정하고 audit는 복구 후에도 남는다.
 
 create/update는 원자적 저장 RPC만 사용하며 개별 child DELETE/INSERT 및 실패 보상 parent DELETE 경로는 제거했다. Jobber identity 검사는 archived 행도 포함한다. 외부 동기화 직전 활성 상태와 version을 확인하고 결과 적용은 버전이 고정된 RPC로 처리한다. 이미 Jobber로 전송된 요청 자체를 로컬 휴지통이 취소할 수는 없다.
 
-이 변경의 마이그레이션과 운영 배포는 별도 승인 대상이다. 운영 적용 전 기존 DB 백업과 schema/RPC 상태를 확인하고, 롤백 시 보존 컬럼·이력을 삭제하거나 부모 DELETE 권한을 다시 열지 않는다. 자세한 절차는 `docs/superpowers/plans/2026-09-16-quote-trash-and-recovery.md` 7절을 따른다.
+사용자 명시 승인 후 백업 복원과 schema/RPC 상태를 확인하고 운영에 적용했다. 롤백 시 보존 컬럼·이력을 삭제하거나 부모 DELETE 권한을 다시 열지 않는다. 자세한 절차와 검증 증거는 `docs/superpowers/plans/2026-09-16-quote-trash-and-recovery.md` 7·10절을 따른다.

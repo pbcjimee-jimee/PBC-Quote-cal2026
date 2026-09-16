@@ -224,7 +224,7 @@ Jobs is available to both roles and is the supervisor landing page. A supervisor
 > class, radius, shadow, or responsive guidance conflicts, follow
 > `docs/UI-DESIGN-SYSTEM.md`.
 
-## 2026-09-16 관리자 휴지통 (`/quotes/trash`, 로컬 구현)
+## 2026-09-16 관리자 휴지통 (`/quotes/trash`, 운영 배포 완료)
 
 Quotes 상단의 Trash 링크로 이동한다. 삭제된 견적의 고객명·주소·Jobber 견적 번호·저장 subtotal·삭제자·Sydney 기준 삭제 시각을 표시하며 고객/주소/번호 검색과 50개 단위 Previous/Next를 제공한다. 빈 휴지통, 검색 결과 없음, 조회 실패를 구분한다.
 
