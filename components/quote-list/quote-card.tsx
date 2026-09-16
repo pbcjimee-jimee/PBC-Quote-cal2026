@@ -76,7 +76,7 @@ export function QuoteCard({ quote }: { quote: QuoteRecord }) {
               Edit
             </IntentLink>
             <QuoteDuplicateButton quoteId={quote.id} />
-            <QuoteDeleteButton quoteId={quote.id} />
+            <QuoteDeleteButton quoteId={quote.id} quoteVersion={quote.version} />
           </div>
         </div>
       </div>

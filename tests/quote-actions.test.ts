@@ -568,7 +568,7 @@ describe('quote actions', () => {
     })
     if (!created.ok) throw new Error(created.error)
 
-    const deleted = await deleteQuote(created.data.id)
+    const deleted = await deleteQuote(created.data.id, 1)
 
     expect(deleted.ok).toBe(true)
     const fetched = await getQuote(created.data.id)

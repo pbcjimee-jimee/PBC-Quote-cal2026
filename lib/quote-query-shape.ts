@@ -1,3 +1,8 @@
+export const QUOTES_TRASH_SELECT = [
+  'id', 'version', 'customer_name', 'customer_address',
+  'quote_number:jobber_snapshot->>quoteNumber', 'subtotal', 'deleted_at', 'deleted_by',
+].join(', ')
+
 export const QUOTES_LIST_SELECT = [
   'id',
   'version',

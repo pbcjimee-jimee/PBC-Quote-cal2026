@@ -19,6 +19,7 @@ import type { AreaRecord } from './areas/types'
 import type { Database } from './supabase/types'
 import type { JobberQuoteDraft } from './jobber/mapper'
 import { normalizeQuoteSearchQuery } from './quote-search'
+import { TRASH_PAGE_SIZE, type DeletedQuotePage, type QuoteLifecycleInput } from './quotes/lifecycle'
 
 export type { ProductRecord }
 
@@ -184,6 +185,7 @@ interface DevDataStore {
   areas: AreaRecord[]
   quoteLineTemplates: QuoteLineTemplateRecord[]
   inventoryItems: InventoryItemRecord[]
+  deletedQuotes: Record<string, { deletedAt: string; deletedByName: string }>
 }
 
 const storeOwner = globalThis as typeof globalThis & {
@@ -196,7 +198,9 @@ const store = storeOwner.__pbcDevDataStore ??= {
   areas: [],
   quoteLineTemplates: [],
   inventoryItems: [],
+  deletedQuotes: {},
 }
+store.deletedQuotes ??= {}
 
 function nextId(prefix: string): string {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
@@ -821,10 +825,11 @@ export function deleteDevProduct(id: string): ProductRecord | null {
 }
 
 export function listDevQuotes(query = ''): QuoteRecord[] {
+  const activeQuotes = store.quotes.filter((quote) => !store.deletedQuotes[quote.id])
   const hasQuery = query.trim().length > 0
   const needle = normalizeQuoteSearchQuery(query).toLowerCase()
   const filtered = hasQuery && needle
-    ? store.quotes.filter((quote) =>
+    ? activeQuotes.filter((quote) =>
         [quote.customerName, quote.customerAddress, quote.jobberQuoteId, quote.jobberSnapshot?.quoteNumber]
           .filter(Boolean)
           .join(' ')
@@ -833,13 +838,65 @@ export function listDevQuotes(query = ''): QuoteRecord[] {
       )
     : hasQuery
       ? []
-      : store.quotes
+      : activeQuotes
 
   return [...filtered].sort((a, b) => b.createdAt.localeCompare(a.createdAt))
 }
 
 export function getDevQuote(id: string): QuoteRecord | null {
+  if (store.deletedQuotes[id]) return null
   return store.quotes.find((quote) => quote.id === id) ?? null
+}
+
+export function changeDevQuoteLifecycle(input: QuoteLifecycleInput, restore: boolean): string | null {
+  const current = store.quotes.find((quote) => quote.id === input.id)
+  if (!current) return 'QUOTE_NOT_FOUND'
+  const deleted = Boolean(store.deletedQuotes[input.id])
+  if (deleted !== restore) return null
+  if (current.version !== input.expectedVersion) return 'QUOTE_VERSION_CONFLICT'
+  if (restore) {
+    const keys = devJobberIdentity(current)
+    if (store.quotes.some((quote) => quote.id !== current.id && !store.deletedQuotes[quote.id] && devJobberIdentity(quote).some((key) => keys.includes(key)))) return 'QUOTE_RESTORE_CONFLICT'
+  }
+  store.quotes = store.quotes.map((quote) => quote.id === input.id ? { ...quote, version: quote.version + 1 } : quote)
+  if (restore) delete store.deletedQuotes[input.id]
+  else store.deletedQuotes[input.id] = { deletedAt: new Date().toISOString(), deletedByName: 'Dev User' }
+  return null
+}
+
+function devJobberIdentity(input: { jobberQuoteId?: string | null; jobberSnapshot?: JobberQuoteDraft | null }): string[] {
+  const keys = [input.jobberQuoteId?.trim(), input.jobberSnapshot?.quoteNumber?.trim()].filter((key): key is string => Boolean(key))
+  if (input.jobberQuoteId) {
+    try {
+      const decoded = atob(input.jobberQuoteId.trim())
+      if (/^gid:\/\/Jobber\/Quote\/[0-9]+$/.test(decoded)) keys.push(decoded.split('/').at(-1)!)
+    } catch { /* Legacy IDs may already contain the quote number. */ }
+  }
+  return keys
+}
+
+export function findDevQuoteByJobberIdentity(input: DevQuoteInput, excludeId?: string): { quote: QuoteRecord | null; error: string | null } {
+  const keys = devJobberIdentity(input)
+  const matches = store.quotes.filter((quote) => quote.id !== excludeId && devJobberIdentity(quote).some((key) => keys.includes(key)))
+  if (matches.some((quote) => store.deletedQuotes[quote.id])) return { quote: null, error: 'QUOTE_IN_TRASH' }
+  if (matches.length > 1) return { quote: null, error: 'QUOTE_JOBBER_CONFLICT' }
+  return { quote: matches[0] ?? null, error: null }
+}
+
+export function listDeletedDevQuotes(query: string, page: number): DeletedQuotePage {
+  const needle = normalizeQuoteSearchQuery(query).toLowerCase()
+  const matching = store.quotes.filter((quote) => store.deletedQuotes[quote.id] && (!query.trim() || (needle &&
+    [quote.customerName, quote.customerAddress, quote.jobberQuoteId, quote.jobberSnapshot?.quoteNumber]
+      .filter(Boolean).join(' ').toLowerCase().includes(needle))))
+    .sort((a, b) => store.deletedQuotes[b.id].deletedAt.localeCompare(store.deletedQuotes[a.id].deletedAt) || b.id.localeCompare(a.id))
+  const start = (page - 1) * TRASH_PAGE_SIZE
+  return {
+    items: matching.slice(start, start + TRASH_PAGE_SIZE).map((quote) => ({
+      id: quote.id, version: quote.version, customerName: quote.customerName, customerAddress: quote.customerAddress,
+      quoteNumber: quote.jobberSnapshot?.quoteNumber ?? null, subtotal: quote.subtotal, ...store.deletedQuotes[quote.id],
+    })),
+    page, hasNextPage: matching.length > start + TRASH_PAGE_SIZE,
+  }
 }
 
 function buildDevQuoteRecord(id: string, createdAt: string, input: DevQuoteInput, settings: PricingSettings): QuoteRecord {
@@ -1097,11 +1154,16 @@ export function createDevQuote(input: DevQuoteInput): QuoteRecord {
 }
 
 export function updateDevQuote(id: string, input: DevQuoteInput): QuoteRecord | null {
+  if (store.deletedQuotes[id]) return null
   const index = store.quotes.findIndex((quote) => quote.id === id)
   if (index === -1) return null
 
   const current = store.quotes[index]
   if (input.expectedVersion !== undefined && input.expectedVersion !== current.version) return null
+  if (devJobberIdentity(current).join('|') !== devJobberIdentity(input).join('|')) {
+    const match = findDevQuoteByJobberIdentity(input, id)
+    if (match.error || match.quote) return null
+  }
 
   const quote = buildDevQuoteRecord(id, current.createdAt, {
     ...input,
@@ -1157,15 +1219,14 @@ function sumDevQuoteOptionTotals(
 }
 
 export function deleteDevQuote(id: string): boolean {
-  const nextQuotes = store.quotes.filter((quote) => quote.id !== id)
-  const deleted = nextQuotes.length !== store.quotes.length
-  store.quotes = nextQuotes
-  return deleted
+  const quote = getDevQuote(id)
+  return Boolean(quote && changeDevQuoteLifecycle({ id, expectedVersion: quote.version }, false) === null)
 }
 
 export function resetDevData(): void {
   store.pricingSettings = { ...DEFAULT_PRICING_SETTINGS }
   store.quotes = []
+  store.deletedQuotes = {}
   store.areas = []
   store.quoteLineTemplates = []
   store.inventoryItems = []

@@ -223,3 +223,11 @@ Jobs is available to both roles and is the supervisor landing page. A supervisor
 > Use this file for page behavior and layout history; when token, component
 > class, radius, shadow, or responsive guidance conflicts, follow
 > `docs/UI-DESIGN-SYSTEM.md`.
+
+## 2026-09-16 관리자 휴지통 (`/quotes/trash`, 로컬 구현)
+
+Quotes 상단의 Trash 링크로 이동한다. 삭제된 견적의 고객명·주소·Jobber 견적 번호·저장 subtotal·삭제자·Sydney 기준 삭제 시각을 표시하며 고객/주소/번호 검색과 50개 단위 Previous/Next를 제공한다. 빈 휴지통, 검색 결과 없음, 조회 실패를 구분한다.
+
+기존 Delete 버튼은 `Move this quote to Trash?` 확인창을 열며 관리자가 복구할 수 있다고 안내한다. Cancel/Escape와 포커스 순환을 지원하고 처리 중 버튼을 비활성화한다. 삭제 시 현재 견적 version을 전송한다.
+
+Restore는 해당 행의 version을 전송한다. 성공하면 목록에서 제거하고 `Quote restored`와 원래 견적을 여는 링크를 표시한다. 서버 오류·충돌이면 행과 오류를 유지한다. 영구 삭제 버튼은 제공하지 않는다. 데스크톱 및 390px에서 기존 pbc 토큰/컴포넌트를 사용한다.

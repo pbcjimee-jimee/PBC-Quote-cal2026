@@ -381,7 +381,7 @@ export function QuoteDetailView({ quote }: QuoteDetailViewProps) {
             <QuoteDuplicateButton quoteId={quote.id} className="pbc-btn pbc-btn--ghost">
               {Icons.template({ size: 15 })} Duplicate
             </QuoteDuplicateButton>
-            <QuoteDeleteButton quoteId={quote.id} redirectToQuotes />
+            <QuoteDeleteButton quoteId={quote.id} quoteVersion={quote.version} redirectToQuotes />
           </div>
         </div>
 

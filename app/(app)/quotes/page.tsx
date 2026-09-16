@@ -165,6 +165,7 @@ export default async function QuotesPage({ searchParams }: QuotesPageProps) {
       <header className="pbc-topbar">
         <div className="pbc-crumb"><span>Admin</span>{Icons.arrowDown({ size: 14 })}<b>Overview</b></div>
         <div className="pbc-topbar__right">
+          <Link href="/quotes/trash" className="pbc-btn pbc-btn--ghost">Trash</Link>
           <Link href="/quotes/new" className="pbc-btn pbc-btn--primary">{Icons.plus({ size: 15 })} New Quote</Link>
         </div>
       </header>
