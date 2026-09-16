@@ -445,7 +445,7 @@ npm.cmd run test:run -- tests/quote-trash-ui.test.tsx tests/quote-ui.test.tsx te
 ## 9. 실행 기록 (2026-09-16)
 
 - 작업 브랜치: `codex/quote-trash-recovery`. 기존 미커밋 변경을 보존했고 모델 라우팅 진입 문서는 gpt-6-astra로 변경했다. 서브에이전트 없이 순차 구현했다.
-- Migration은 CLI로 `20260916011201_add_quote_soft_delete_and_lifecycle.sql`을 생성했다. 새 격리 Supabase 스택에 기존 migration부터 전부 적용해 초기 설치도 확인했다.
+- Migration은 CLI로 `20260916023434_add_quote_soft_delete_and_lifecycle.sql`을 생성했다. 새 격리 Supabase 스택에 기존 migration부터 전부 적용해 초기 설치도 확인했다.
 - 추가 계약: `find_quote_by_jobber_identity`로 identity 해석을 DB와 통일했다. `apply_quote_jobber_result`로 parent metadata와 child line ID를 함께 버전 검증·저장한다. 기존 개별 line 갱신 함수는 제거했다.
 - quote 일반 update에도 테스트 전용 version 기본값을 제거하여 모든 환경에서 관측된 version을 요구한다.
 - DB pgTAP: lifecycle 46, grants 72, role RLS 22 assertions 통과. 실제 로컬 Supabase API 9 tests, 독립 DB 세션 경쟁 최종 7 tests 통과. 기본 전체 suite의 환경 조건 skip과 구분해 별도 실행했다.
@@ -464,3 +464,14 @@ npm.cmd run test:run -- tests/quote-trash-ui.test.tsx tests/quote-ui.test.tsx te
 - 실제 iPhone/PWA, 운영 Supabase migration, Vercel preview/production 검증은 미실행이다. 삭제 전에 이미 전송된 Jobber 요청은 취소할 수 없으며 늦은 로컬 결과 적용만 차단한다. 모든 견적 쓰기를 advisory lock으로 직렬화하므로 높은 동시 쓰기 부하 측정은 별도다.
 - 로컬 검증용 앱 서버와 이번에 생성한 Supabase 스택은 종료하며, 전용 스택의 임시 fixture/volume을 정리한다. 기존 다른 로컬 Supabase 스택은 유지한다.
 - 변경물은 `codex/quote-trash-recovery`의 미커밋 파일로 검토할 수 있다. 운영 적용 시 DB migration을 먼저 적용하고 검증 앱을 뒤이어 배포한다. 실제 배포 commit SHA는 승인된 변경을 커밋하는 단계에서 확정한다.
+
+## 10. 승인된 운영 적용 기록 (2026-09-16)
+
+- 사용자가 운영 DB 적용과 앱 배포를 명시 승인했다. Supabase `ojcrfgguhbxhtlgdflzp`, Vercel `pbc-quote-cal2026-v2`와 production/main SHA `7dcf544`를 확인했다.
+- 기존 자동완성 미커밋 작업을 제외한 릴리스 commit `285dcb0`를 별도 checkout에서 검증했다. 최종 verify: 100 files/885 tests 통과, API 9 + 동시성 7 환경 조건 skip(앞서 별도 실행 통과), coverage 85.54/72.31/94.40/90.43%, build와 production audit 0건.
+- CLI 백업 인증이 없어 인증된 Supabase 연결로 견적 전체와 복원 의존 자료를 한 snapshot으로 export했다. 백업은 `%LOCALAPPDATA%/PBCQuoteBackups/2026-09-16-quote-trash/quote-data-before.json`에 저장했다. SHA-256 `4DFC178AC83050FE16A7DC7F63253C5E11A4A06E4D19F9E424F3EB08991167DD`. 비밀번호·Jobber token은 포함하지 않는다.
+- export를 별도 로컬 DB에 복원해 전체 행 JSON 일치를 확인했고, 새 migration 적용 후에도 기존 견적 본문·자식 전체 보존을 확인했다.
+- 2026-09-16 12:34 Sydney에 운영 migration을 적용했다. 관리 API가 기록한 실제 version `20260916023434`에 로컬 파일명을 맞췄다(초기 CLI 작성 version `20260916011201`과 SQL 내용은 동일).
+- 운영 적용 전후 counts와 내용 해시가 7개 견적 테이블 모두 일치했다: quotes 106, items 582, options 52, option items 129, memos 7, service lines 1249, price revisions 189. active 106/trashed 0/events 0.
+- authenticated/service_role 부모 DELETE=false, anon restore EXECUTE=false, audit RLS=true. Security advisor는 새 finding이 없으며 기존 service 전용 RLS INFO와 기존 leaked-password protection WARN만 남아 있다.
+- 실제 고객 견적을 삭제/복구하는 시험이나 Jobber 쓰기 요청은 실행하지 않았다. 앱 배포와 운영 UI 검증 결과는 릴리스 완료 후 기록한다.

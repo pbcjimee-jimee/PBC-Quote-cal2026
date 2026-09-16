@@ -25,7 +25,7 @@
 
 - `codex/quote-trash-recovery`에서 gpt-6-astra로 순차 구현했다. 현재 모델 라우팅 문서를 함께 변경했으며 과거 작업 이력의 담당자 표기는 보존했다.
 - 앱 Delete는 `deleted_at`/`deleted_by` 상태 전환으로 변경했다. 견적·자재·옵션·메모·서비스 라인·가격 이력은 Supabase에 보존하며 일반 목록·검색·통계·상세·편집에서는 제외한다. 관리자 `/quotes/trash`에서 검색·페이지 이동·같은 ID로 복구할 수 있고 삭제·복구 사건을 별도 기록한다.
-- Migration `20260916011201_add_quote_soft_delete_and_lifecycle.sql`은 실제 부모 DELETE 권한 차단, 삭제 상태의 부모/자식 수정 차단, version 충돌·중복 요청 처리, Jobber identity 중복 방지와 늦은 동기화 결과의 원자적 차단을 포함한다. 과거 물리 삭제를 자동 복구하는 기능은 아니다.
+- Migration `20260916023434_add_quote_soft_delete_and_lifecycle.sql`은 실제 부모 DELETE 권한 차단, 삭제 상태의 부모/자식 수정 차단, version 충돌·중복 요청 처리, Jobber identity 중복 방지와 늦은 동기화 결과의 원자적 차단을 포함한다. 과거 물리 삭제를 자동 복구하는 기능은 아니다.
 - 전체 `npm.cmd run verify` 통과: 101 files/895 tests, coverage 85.54/72.31/94.40/90.43%, production build 19/19, production dependency audit 0건. 환경 조건으로 기본 실행에서 제외되는 실제 API 9건·동시성 7건은 격리 로컬 Supabase에서 별도로 모두 통과했다. pgTAP lifecycle 46/grants 72/role RLS 22 assertions도 통과했다.
 - 데스크톱·390px 모바일에서 삭제→휴지통→복구, 같은 상세 URL·메모·옵션 보존, 키보드 Cancel 포커스·순환, 44px 버튼을 확인했다. 긴 삭제자 이름의 가로 넘침을 발견해 줄바꿈을 보완한 뒤 overflow 0과 UI 회귀 123 tests를 재확인했다.
 - 검증 중 production audit 오류를 해결하기 위해 Next.js/eslint-config-next 16.3.5, sharp 0.35.4, baseline-browser-mapping 2.11.0으로 기존 의존성을 갱신했다. Next.js가 생성하는 agent 안내 블록과 root-params 타입 참조도 포함한다.

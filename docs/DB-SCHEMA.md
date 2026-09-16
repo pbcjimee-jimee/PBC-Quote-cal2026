@@ -171,7 +171,7 @@ quote/option totals의 price-change 스냅샷을 보관해 이후 편집이 sell
 
 ## 2026-09-16 견적 휴지통 (로컬 구현, 운영 미적용)
 
-Migration: `20260916011201_add_quote_soft_delete_and_lifecycle.sql`.
+Migration: `20260916023434_add_quote_soft_delete_and_lifecycle.sql`.
 
 - `quotes.deleted_at TIMESTAMPTZ`, `deleted_by UUID`로 삭제 상태를 보관한다. 기존 행의 기본값은 NULL(활성)이다. 메인/옵션 자재, 메모, 서비스 행, 가격 이력과 부모 ID는 삭제·복구로 변경되지 않는다.
 - `quote_lifecycle_events`는 quote ID, deleted/restored 사건, 서버 actor/시각과 quote version을 기록한다. quote/version 조합은 고유하며 복구해도 사건을 남긴다. actor 계정이 제거되면 표시 이름은 Unknown user가 될 수 있다.
