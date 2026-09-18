@@ -89,6 +89,60 @@ export type Database = {
           },
         ]
       }
+      jobber_sync_operations: {
+        Row: {
+          id: string
+          quote_id: string
+          quote_version: number
+          jobber_quote_id: string
+          desired_payload: Json
+          status: 'queued' | 'running' | 'retryable' | 'reconciliation_required' | 'succeeded' | 'superseded'
+          claim_token: string | null
+          lease_expires_at: string | null
+          attempt_count: number
+          failure_code: string | null
+          result: Json | null
+          created_by: string
+          created_at: string
+          updated_at: string
+        }
+        Insert: never
+        Update: never
+        Relationships: [
+          {
+            foreignKeyName: "jobber_sync_operations_quote_id_fkey"
+            columns: ["quote_id"]
+            isOneToOne: false
+            referencedRelation: "quotes"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      jobber_sync_steps: {
+        Row: {
+          id: string
+          operation_id: string
+          step_key: string
+          sequence: number
+          kind: 'edit' | 'create' | 'delete' | 'reorder'
+          request_payload: Json
+          status: 'sending' | 'applied'
+          result_payload: Json | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: never
+        Update: never
+        Relationships: [
+          {
+            foreignKeyName: "jobber_sync_steps_operation_id_fkey"
+            columns: ["operation_id"]
+            isOneToOne: false
+            referencedRelation: "jobber_sync_operations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       jobber_tokens: {
         Row: {
           user_id: string
@@ -453,6 +507,7 @@ export type Database = {
           jobber_sync_status: 'not_synced' | 'synced' | 'failed'
           jobber_last_synced_at: string | null
           jobber_sync_error: string | null
+          jobber_pending_deleted_line_item_ids: Json
           jobber_snapshot_refreshed_at: string | null
           jobber_snapshot_change_status: 'unknown' | 'unchanged' | 'changed'
           jobber_snapshot_change_summary: Json
@@ -494,6 +549,7 @@ export type Database = {
           | 'jobber_snapshot_change_status'
           | 'jobber_snapshot_change_summary'
           | 'jobber_snapshot_refresh_error'
+          | 'jobber_pending_deleted_line_item_ids'
           | 'version'
           | 'deleted_at'
           | 'deleted_by'
@@ -503,6 +559,7 @@ export type Database = {
           jobber_snapshot_change_status?: 'unknown' | 'unchanged' | 'changed'
           jobber_snapshot_change_summary?: Json
           jobber_snapshot_refresh_error?: string | null
+          jobber_pending_deleted_line_item_ids?: Json
           created_at?: string
           updated_at?: string
           version?: number
@@ -590,6 +647,30 @@ export type Database = {
         Args: { target_quote_id: string; expected_version: number; changes: Json; synced_lines?: Json }
         Returns: undefined
       }
+      begin_jobber_sync_step: {
+        Args: { operation_id: string; claim_token: string; step_key: string; step_kind: string; request_payload: Json }
+        Returns: undefined
+      }
+      claim_jobber_sync_operation: { Args: { operation_id: string }; Returns: Json }
+      complete_jobber_sync_step: {
+        Args: { operation_id: string; claim_token: string; step_key: string; result_payload: Json }
+        Returns: undefined
+      }
+      create_quote_with_jobber_sync: { Args: { payload: Json }; Returns: string }
+      finish_jobber_sync_operation: {
+        Args: { operation_id: string; claim_token: string; outcome: string; failure_code?: string | null }
+        Returns: undefined
+      }
+      get_jobber_sync_operation: { Args: { target_quote_id: string }; Returns: Json }
+      record_jobber_sync_completion: {
+        Args: { operation_id: string; claim_token: string; result_payload: Json }
+        Returns: undefined
+      }
+      request_jobber_sync: {
+        Args: { target_quote_id: string; expected_version: number }
+        Returns: Json
+      }
+      resolve_jobber_sync_operation: { Args: { operation_id: string }; Returns: undefined }
       restore_quote: {
         Args: { target_quote_id: string; expected_version: number }
         Returns: { id: string; version: number; deleted_at: string | null }[]
@@ -604,6 +685,13 @@ export type Database = {
         }[]
       }
       update_quote_with_children: {
+        Args: { payload: Json }
+        Returns: {
+          id: string
+          version: number
+        }[]
+      }
+      update_quote_with_jobber_sync: {
         Args: { payload: Json }
         Returns: {
           id: string

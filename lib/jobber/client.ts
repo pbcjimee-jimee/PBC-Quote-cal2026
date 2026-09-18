@@ -4,6 +4,9 @@ import {
   type BuildJobberQuoteLinePayloadInput,
   type JobberQuoteLineMutationItem,
 } from './quote-line-payload'
+import { fetchAllJobberPages, type JobberConnectionPage } from './pagination'
+import { jobberReadMatchesCompletion } from './sync-reconciliation'
+import type { JobberSyncJournal } from './sync-types'
 
 export interface JobberQuoteAddress {
   street1?: string | null
@@ -139,6 +142,7 @@ export interface JobberQuoteLineItem {
   quantity: number
   unitPrice: number
   totalPrice: number
+  taxable?: boolean
   textOnly?: boolean
   linkedProductOrService: {
     id: string
@@ -148,13 +152,14 @@ export interface JobberQuoteLineItem {
   } | null
 }
 
-interface FetchJobberQuoteOptions {
+export interface FetchJobberQuoteOptions {
   accessToken: string
   graphqlVersion: string
   fetcher?: (input: string, init: RequestInit) => Promise<Response>
   throttleRetryDelayMs?: number
   maxThrottleRetries?: number
   preferFullQuoteQuery?: boolean
+  journal?: JobberSyncJournal
 }
 
 export class JobberApiError extends Error {
@@ -198,6 +203,16 @@ export interface JobberQuoteLineSyncResult {
     sourcePosition: number
     jobberLineItemId: string
   }>
+  expectedLineItems: JobberQuoteLineMutationItem[]
+}
+
+export class JobberLineKindMismatchError extends Error {
+  readonly code = 'line_kind_mismatch'
+
+  constructor(readonly lineItemId: string) {
+    super(`Known Jobber line item ${lineItemId} has a different line kind`)
+    this.name = 'JobberLineKindMismatchError'
+  }
 }
 
 export class JobberLineSyncPartialError extends Error {
@@ -418,6 +433,37 @@ const JOBBER_QUOTE_LINE_ITEMS_QUERY = `
             category
             description
           }
+        }
+      }
+    }
+  }
+`
+
+const JOBBER_DURABLE_QUOTE_LINE_ITEMS_QUERY = `
+  query PbcDurableQuoteLineItems($id: EncodedId!, $after: String) {
+    quote(id: $id) {
+      id
+      lineItems(first: 100, after: $after) {
+        nodes {
+          id
+          name
+          category
+          description
+          quantity
+          unitPrice
+          totalPrice
+          taxable
+          textOnly
+          linkedProductOrService {
+            id
+            name
+            category
+            description
+          }
+        }
+        pageInfo {
+          endCursor
+          hasNextPage
         }
       }
     }
@@ -790,6 +836,60 @@ function getQuoteLineItemsFromPayload(payload: unknown): JobberQuoteLineItem[] {
   return lineItems.nodes.filter(isRecord) as unknown as JobberQuoteLineItem[]
 }
 
+function getStrictQuoteLineItemsPage(payload: unknown): JobberConnectionPage<JobberQuoteLineItem> {
+  if (!isRecord(payload)) throw new Error('Invalid Jobber response')
+  if (Array.isArray(payload.errors) && payload.errors.length > 0) {
+    throw new JobberGraphqlError(formatGraphqlErrors(payload.errors))
+  }
+  const data = payload.data
+  if (!isRecord(data) || !isRecord(data.quote)) throw new Error('Jobber quote not found')
+  const connection = data.quote.lineItems
+  if (!isRecord(connection) || !Array.isArray(connection.nodes) || !isRecord(connection.pageInfo)) {
+    throw new Error('Invalid Jobber quote line item connection')
+  }
+  if (
+    typeof connection.pageInfo.hasNextPage !== 'boolean' ||
+    !(connection.pageInfo.endCursor === null || typeof connection.pageInfo.endCursor === 'string')
+  ) {
+    throw new Error('Invalid Jobber quote line item pageInfo')
+  }
+
+  const nodes = connection.nodes.map((value) => {
+    if (!isRecord(value)) throw new Error('Invalid Jobber quote line item')
+    const id = typeof value.id === 'string' ? value.id.trim() : ''
+    if (
+      !id ||
+      typeof value.name !== 'string' ||
+      typeof value.description !== 'string' ||
+      typeof value.category !== 'string' ||
+      typeof value.quantity !== 'number' || !Number.isFinite(value.quantity) ||
+      typeof value.unitPrice !== 'number' || !Number.isFinite(value.unitPrice) ||
+      typeof value.totalPrice !== 'number' || !Number.isFinite(value.totalPrice) ||
+      typeof value.textOnly !== 'boolean' ||
+      typeof value.taxable !== 'boolean'
+    ) {
+      throw new Error('Invalid Jobber quote line item')
+    }
+    const linked = value.linkedProductOrService
+    if (!(linked === null || (isRecord(linked) && typeof linked.id === 'string' && linked.id.trim()))) {
+      throw new Error('Invalid Jobber linked product or service')
+    }
+    return {
+      ...value,
+      id,
+      linkedProductOrService: linked as JobberQuoteLineItem['linkedProductOrService'],
+    } as JobberQuoteLineItem
+  })
+
+  return {
+    nodes,
+    pageInfo: {
+      hasNextPage: connection.pageInfo.hasNextPage,
+      endCursor: connection.pageInfo.endCursor,
+    },
+  }
+}
+
 function getQuoteJobsFromPayload(payload: unknown): JobberJob[] {
   if (!isRecord(payload)) throw new Error('Invalid Jobber response')
   const errors = payload.errors
@@ -1089,6 +1189,47 @@ function getEditedLineItemIds(payload: unknown, mutationName: string): string[] 
     .filter((id): id is string => typeof id === 'string')
 }
 
+function assertExactIds(actualIds: string[], expectedIds: string[], label: string): string[] {
+  const normalized = actualIds.map((id) => id.trim())
+  const actualSet = new Set(normalized)
+  const expectedSet = new Set(expectedIds)
+  if (
+    normalized.some((id) => id.length === 0) ||
+    actualSet.size !== normalized.length ||
+    expectedSet.size !== expectedIds.length ||
+    actualSet.size !== expectedSet.size ||
+    expectedIds.some((id) => !actualSet.has(id))
+  ) {
+    throw new Error(`Jobber ${label} response did not confirm the expected ID set`)
+  }
+  return normalized
+}
+
+function getStrictMutationIds(
+  payload: unknown,
+  mutationName: string,
+  fieldName: 'createdLineItems' | 'modifiedLineItems' | 'deletedLineItems',
+): string[] {
+  assertNoMutationUserErrors(payload, mutationName)
+  if (!isRecord(payload) || !isRecord(payload.data)) throw new Error('Invalid Jobber response')
+  const mutationPayload = payload.data[mutationName]
+  if (
+    !isRecord(mutationPayload) ||
+    !Array.isArray(mutationPayload.userErrors) ||
+    !Array.isArray(mutationPayload[fieldName])
+  ) {
+    throw new Error('Invalid Jobber mutation response')
+  }
+  const ids = mutationPayload[fieldName].map((lineItem) => {
+    if (!isRecord(lineItem) || typeof lineItem.id !== 'string' || !lineItem.id.trim()) {
+      throw new Error('Invalid Jobber mutation line item ID')
+    }
+    return lineItem.id.trim()
+  })
+  if (new Set(ids).size !== ids.length) throw new Error('Duplicate Jobber mutation line item ID')
+  return ids
+}
+
 function toQuoteCreateLineItemAttributes(item: JobberQuoteLineMutationItem) {
   return {
     name: item.name,
@@ -1311,11 +1452,187 @@ async function fetchJobberQuoteLineItems(
   return getQuoteLineItemsFromPayload(payload)
 }
 
+export async function fetchDurableJobberQuoteLineItems(
+  quoteId: string,
+  options: Omit<FetchJobberQuoteOptions, 'journal'>,
+): Promise<JobberQuoteLineItem[]> {
+  const nodes = await fetchAllJobberPages(async (after) => {
+    const payload = await postJobberGraphql(
+      JOBBER_DURABLE_QUOTE_LINE_ITEMS_QUERY,
+      { id: quoteId, after },
+      options,
+    )
+    return getStrictQuoteLineItemsPage(payload)
+  })
+  return [...nodes]
+}
+
+async function durableJobberQuoteLineSync(
+  quoteId: string,
+  input: BuildJobberQuoteLinePayloadInput,
+  options: FetchJobberQuoteOptions,
+  journal: JobberSyncJournal,
+): Promise<JobberQuoteLineSyncResult> {
+  const currentLineItems = await fetchDurableJobberQuoteLineItems(quoteId, options)
+  const currentById = new Map(currentLineItems.map((item) => [item.id, item]))
+  const mutationItems = buildJobberQuoteLineMutationItems(input).map((item, index) => ({
+    ...item,
+    sortOrder: index,
+  }))
+  const desiredKnownIds = new Set<string>()
+
+  for (const item of mutationItems) {
+    if (!item.jobberLineItemId) continue
+    if (desiredKnownIds.has(item.jobberLineItemId)) {
+      throw new Error(`Duplicate known Jobber line item ID: ${item.jobberLineItemId}`)
+    }
+    desiredKnownIds.add(item.jobberLineItemId)
+    const current = currentById.get(item.jobberLineItemId)
+    if (!current) throw new Error(`Known Jobber line item is missing: ${item.jobberLineItemId}`)
+    if (currentLineKind(current) !== item.kind) {
+      throw new JobberLineKindMismatchError(item.jobberLineItemId)
+    }
+  }
+
+  const deletedLineItemIds: string[] = []
+  const createdLineItemIds: string[] = []
+  const editedLineItemIds: string[] = []
+  const syncedLineItems: JobberQuoteLineSyncResult['syncedLineItems'] = []
+  const editItems = mutationItems.filter((item) => item.jobberLineItemId)
+  const createItems = mutationItems.filter((item) => !item.jobberLineItemId)
+  const desiredDeletedIds = [...new Set((input.deletedJobberLineItemIds ?? [])
+    .map((id) => id.trim())
+    .filter(Boolean))]
+  const deleteCandidateIds = desiredDeletedIds.filter((id) => currentById.has(id) && !desiredKnownIds.has(id))
+  const resultingCount = currentLineItems.length + createItems.length - deleteCandidateIds.length
+  if (deleteCandidateIds.length > 0 && resultingCount === 0) {
+    throw new Error('Jobber sync cannot delete every quote line item')
+  }
+
+  if (editItems.length > 0) {
+    const stepKey = 'edit:0'
+    await journal.beforeMutation({ key: stepKey, kind: 'edit', request: { lineItems: editItems } })
+    const payload = await postApprovedJobberMutation(
+      JOBBER_QUOTE_EDIT_LINE_ITEMS_MUTATION,
+      { quoteId, lineItems: editItems.map(toQuoteEditLineItemAttributes) },
+      options,
+      true,
+    )
+    const expectedIds = editItems.map((item) => item.jobberLineItemId as string)
+    const ids = assertExactIds(
+      getStrictMutationIds(payload, 'quoteEditLineItems', 'modifiedLineItems'),
+      expectedIds,
+      'edit',
+    )
+    editedLineItemIds.push(...ids)
+    const mappings = editItems.flatMap((item) => (
+      typeof item.sourcePosition === 'number' && item.jobberLineItemId
+        ? [{ sourcePosition: item.sourcePosition, jobberLineItemId: item.jobberLineItemId }]
+        : []
+    ))
+    syncedLineItems.push(...mappings)
+    await journal.afterMutation(stepKey, { editedLineItemIds: ids, syncedLineItems: mappings })
+  }
+
+  for (const [createIndex, item] of createItems.entries()) {
+    const stepKey = `create:${createIndex}`
+    await journal.beforeMutation({ key: stepKey, kind: 'create', request: { lineItems: [item] } })
+    const mutationName = item.kind === 'text' ? 'quoteCreateTextLineItems' : 'quoteCreateLineItems'
+    const payload = await postApprovedJobberMutation(
+      item.kind === 'text' ? JOBBER_QUOTE_CREATE_TEXT_LINE_ITEMS_MUTATION : JOBBER_QUOTE_CREATE_LINE_ITEMS_MUTATION,
+      {
+        quoteId,
+        lineItems: [item.kind === 'text'
+          ? toQuoteCreateTextLineItemAttributes(item)
+          : toQuoteCreateLineItemAttributes(item)],
+      },
+      options,
+      true,
+    )
+    const ids = getStrictMutationIds(payload, mutationName, 'createdLineItems')
+    if (ids.length !== 1 || !ids[0]) {
+      throw new Error('Jobber create response must contain exactly one non-empty new ID')
+    }
+    const createdId = ids[0]
+    if (currentById.has(createdId) || createdLineItemIds.includes(createdId)) {
+      throw new Error('Jobber create response did not contain a new unique ID')
+    }
+    item.jobberLineItemId = createdId
+    createdLineItemIds.push(createdId)
+    const mappings = typeof item.sourcePosition === 'number'
+      ? [{ sourcePosition: item.sourcePosition, jobberLineItemId: createdId }]
+      : []
+    syncedLineItems.push(...mappings)
+    await journal.afterMutation(stepKey, { createdLineItemIds: [createdId], syncedLineItems: mappings })
+  }
+
+  if (deleteCandidateIds.length > 0) {
+    const stepKey = 'delete:0'
+    await journal.beforeMutation({
+      key: stepKey,
+      kind: 'delete',
+      request: { lineItems: [], lineItemIds: deleteCandidateIds },
+    })
+    const payload = await postApprovedJobberMutation(
+      JOBBER_QUOTE_DELETE_LINE_ITEMS_MUTATION,
+      { quoteId, lineItemIds: deleteCandidateIds },
+      options,
+      true,
+    )
+    const ids = assertExactIds(
+      getStrictMutationIds(payload, 'quoteDeleteLineItems', 'deletedLineItems'),
+      deleteCandidateIds,
+      'delete',
+    )
+    deletedLineItemIds.push(...ids)
+    await journal.afterMutation(stepKey, { deletedLineItemIds: ids })
+  }
+
+  const finalSortItems = mutationItems.filter((item) => item.jobberLineItemId)
+  if (createItems.length > 0 && finalSortItems.length > 1) {
+    const stepKey = 'reorder:0'
+    await journal.beforeMutation({ key: stepKey, kind: 'reorder', request: { lineItems: finalSortItems } })
+    const payload = await postApprovedJobberMutation(
+      JOBBER_QUOTE_EDIT_LINE_ITEMS_MUTATION,
+      { quoteId, lineItems: finalSortItems.map(toQuoteEditLineItemAttributes) },
+      options,
+      true,
+    )
+    const expectedIds = finalSortItems.map((item) => item.jobberLineItemId as string)
+    const ids = assertExactIds(
+      getStrictMutationIds(payload, 'quoteEditLineItems', 'modifiedLineItems'),
+      expectedIds,
+      'reorder',
+    )
+    await journal.afterMutation(stepKey, { editedLineItemIds: ids })
+  }
+
+  const result: JobberQuoteLineSyncResult = {
+    deletedLineItemIds,
+    createdLineItemIds,
+    editedLineItemIds,
+    syncedLineItems,
+    expectedLineItems: mutationItems,
+  }
+  const finalLineItems = await fetchDurableJobberQuoteLineItems(quoteId, options)
+  if (!jobberReadMatchesCompletion(finalLineItems, {
+    syncedLineItems,
+    expectedLineItems: mutationItems,
+    deletedLineItemIds: desiredDeletedIds,
+  })) {
+    throw new Error('Jobber final line item readback did not match the durable completion')
+  }
+  return result
+}
+
 export async function syncJobberQuoteLineItems(
   quoteId: string,
   input: BuildJobberQuoteLinePayloadInput,
   options: FetchJobberQuoteOptions
 ): Promise<JobberQuoteLineSyncResult> {
+  if (options.journal) {
+    return durableJobberQuoteLineSync(quoteId, input, options, options.journal)
+  }
   const currentLineItems = await fetchJobberQuoteLineItems(quoteId, options)
   const currentLineItemIds = new Set(currentLineItems.map((lineItem) => lineItem.id).filter(Boolean))
   const deletedLineItemIds: string[] = []
@@ -1422,6 +1739,7 @@ export async function syncJobberQuoteLineItems(
       createdLineItemIds,
       editedLineItemIds,
       syncedLineItems,
+      expectedLineItems: mutationItems,
     }
   } catch (error) {
     if (syncedLineItems.length > 0) {

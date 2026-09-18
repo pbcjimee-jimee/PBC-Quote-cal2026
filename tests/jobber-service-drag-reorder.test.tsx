@@ -6,6 +6,8 @@ import { getNextDeletedJobberLineItemIds } from '@/components/quote-form/quote-f
 import type { JobberQuoteLineItemDraft } from '@/components/quote-form/types'
 import { installTestDom, type TestElement } from '@/tests/helpers/test-dom'
 
+vi.mock('server-only', () => ({}))
+
 const lines: JobberQuoteLineItemDraft[] = [
   {
     id: 'line-1',

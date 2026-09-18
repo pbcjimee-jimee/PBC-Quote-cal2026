@@ -24,6 +24,7 @@ export interface BuildJobberQuoteLinePayloadInput {
   finalTotal: DecimalInput
   finalTotalIncludesGst: boolean
   deletedJobberLineItemIds?: string[]
+  totalLineItemId?: string | null
   internalMaterials?: unknown
 }
 
@@ -169,9 +170,13 @@ function buildTextMutationLine(line: JobberQuoteLineInput): JobberQuoteLineMutat
   return payload
 }
 
-function buildTotalMutationLine(finalTotal: DecimalInput, finalTotalIncludesGst: boolean): JobberQuoteLineMutationItem {
+function buildTotalMutationLine(
+  finalTotal: DecimalInput,
+  finalTotalIncludesGst: boolean,
+  totalLineItemId?: string | null
+): JobberQuoteLineMutationItem {
   const totalLine = buildTotalLine(finalTotal, finalTotalIncludesGst)
-  return {
+  const mutationItem: JobberQuoteLineMutationItem = {
     kind: 'line_item',
     name: totalLine.name,
     description: totalLine.description,
@@ -180,6 +185,9 @@ function buildTotalMutationLine(finalTotal: DecimalInput, finalTotalIncludesGst:
     totalPrice: moneyNumber(decimalFrom(totalLine.quantity).mul(totalLine.unitPrice)),
     taxable: totalLine.taxable,
   }
+  const confirmedId = cleanText(totalLineItemId)
+  if (confirmedId) mutationItem.jobberLineItemId = confirmedId
+  return mutationItem
 }
 
 export function buildJobberQuoteLinePayload(
@@ -209,7 +217,7 @@ export function buildJobberQuoteLineMutationItems(
   if (input.saveMode === 'description_total') {
     return [
       ...lines.map(buildTextMutationLine),
-      buildTotalMutationLine(input.finalTotal, input.finalTotalIncludesGst),
+      buildTotalMutationLine(input.finalTotal, input.finalTotalIncludesGst, input.totalLineItemId),
     ]
   }
 

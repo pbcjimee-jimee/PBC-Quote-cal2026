@@ -9,6 +9,8 @@ import type { MaterialItem, QuoteOptionItem } from '@/components/quote-form/type
 import { DEFAULT_PRICING_SETTINGS } from '@/lib/calculator'
 import { installTestDom, type TestElement } from '@/tests/helpers/test-dom'
 
+vi.mock('server-only', () => ({}))
+
 type ReorderVisibleMaterials = (
   materials: MaterialItem[],
   visibleMaterialIds: string[],
