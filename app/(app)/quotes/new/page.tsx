@@ -1,21 +1,36 @@
 import { QuoteForm } from '@/components/quote-form/quote-form'
+import { QuoteLoadError } from '@/components/quote-form/quote-load-error'
 import { listAreas } from '@/lib/actions/areas'
 import { listQuoteLineTemplates } from '@/lib/actions/quote-line-templates'
 import { getPricingSettings } from '@/lib/actions/settings'
-import { DEFAULT_PRICING_SETTINGS } from '@/lib/calculator'
 
 export default async function QuoteNewPage() {
-  const [settings, areas, quoteLineTemplates] = await Promise.all([
+  const [settings, areas, quoteLineTemplates] = await Promise.allSettled([
     getPricingSettings(),
     listAreas(),
     listQuoteLineTemplates(),
   ])
 
+  const unavailable: Array<'Pricing settings' | 'Areas'> = []
+  if (settings.status === 'rejected' || !settings.value.ok) unavailable.push('Pricing settings')
+  if (areas.status === 'rejected' || !areas.value.ok) unavailable.push('Areas')
+
+  if (settings.status !== 'fulfilled' || !settings.value.ok || areas.status !== 'fulfilled' || !areas.value.ok) {
+    return <QuoteLoadError mode="new" unavailable={unavailable} />
+  }
+
+  const templates = quoteLineTemplates.status === 'fulfilled' && quoteLineTemplates.value.ok
+    ? quoteLineTemplates.value.data
+    : null
+
   return (
-    <QuoteForm
-      areas={areas.ok ? areas.data : []}
-      quoteLineTemplates={quoteLineTemplates.ok ? quoteLineTemplates.data : []}
-      settings={settings.ok ? settings.data : DEFAULT_PRICING_SETTINGS}
-    />
+    <>
+      {templates === null ? (
+        <p className="pbc-alert pbc-alert--warning mx-4 mt-4" role="status">
+          Templates are unavailable. You can still add Product / Service lines manually. Save your work before reloading to try templates again.
+        </p>
+      ) : null}
+      <QuoteForm areas={areas.value.data} quoteLineTemplates={templates ?? []} settings={settings.value.data} />
+    </>
   )
 }
