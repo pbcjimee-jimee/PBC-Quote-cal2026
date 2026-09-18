@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { DEFAULT_PRICING_SETTINGS } from '@/lib/calculator'
 import {
   applyTrustedLinkedProductPrices,
@@ -8,6 +8,8 @@ import {
 } from '@/components/quote-form/main-materials-option-copy'
 import { buildQuoteSavePayload } from '@/components/quote-form/quote-save-payload'
 import type { MaterialItem, QuoteOptionItem } from '@/components/quote-form/types'
+
+vi.mock('server-only', () => ({}))
 
 function sequentialIds() {
   let sequence = 0

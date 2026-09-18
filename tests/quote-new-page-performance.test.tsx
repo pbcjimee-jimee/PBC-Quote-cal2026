@@ -25,7 +25,7 @@ describe('new quote initial load', () => {
     mocks.listQuoteLineTemplates.mockResolvedValue({ ok: true, data: [] })
   })
 
-  it('does not preload the full Product and Service catalogue', async () => {
+  it('does not block the initial server render on the full Product and Service catalogue', async () => {
     await QuoteNewPage()
 
     expect(mocks.listProductServices).not.toHaveBeenCalled()

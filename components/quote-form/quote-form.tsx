@@ -307,7 +307,7 @@ export function getNextDeletedJobberLineItemIds(
   return Array.from(merged)
 }
 
-export function QuoteForm({ settings, areas, productServices = [], quoteLineTemplates = [], initialQuote }: QuoteFormProps) {
+export function QuoteForm({ settings, areas, productServices, quoteLineTemplates = [], initialQuote }: QuoteFormProps) {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
   const [quoteAreas, setQuoteAreas] = useState(() => sortQuoteAreas(areas))

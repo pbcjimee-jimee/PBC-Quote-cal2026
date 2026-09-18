@@ -37,6 +37,7 @@ quote_areas(interior/exterior/roof)
 products(페인트 마스터) ── quote_items.product_id / quote_option_items.product_id
 product_services(Jobber 공개 라인 카탈로그) ── quote_line_templates / _items
 warehouse_inventory(Settings Inventory page, app-only stock list)
+quotes ── jobber_sync_operations ──< jobber_sync_steps
 ```
 
 ---
@@ -73,6 +74,7 @@ warehouse_inventory(Settings Inventory page, app-only stock list)
 | `20260731011000_tighten_role_rls.sql` | 기존 견적 앱 테이블을 admin 전용과 admin+supervisor Inventory로 분리 |
 | `20260731012000_add_jobber_job_snapshots.sql` | read-only Jobber job/expense 응답 캐시(`jobber_job_snapshots`, service-role only) |
 | `20260815000648_add_quote_item_memos.sql` | `quote_items`·`quote_option_items`에 견적별 app-only `memo`(최대 4,000자) 추가 + 견적 저장 RPC 갱신·`search_path` 고정 |
+| `20260917025111_add_jobber_durable_sync.sql` | 불변 Jobber operation snapshot·mutation step journal, lease/claim/reconciliation RPC, quote save+enqueue wrapper |
 
 `20260731` role 마이그레이션은 위 세 개가 전부다. Progress Invoice 마이그레이션은 이 브랜치와 릴리스에 없으며 별도 소유된다.
 
@@ -112,6 +114,12 @@ warehouse_inventory(Settings Inventory page, app-only stock list)
 
 ### jobber_quote_lines (Jobber write-back 로컬 저장)
 공개 Product / Service line만 보관(`kind` line_item/text, `name`, `description`, `quantity`, `unit_price`, `taxable`, `client_visible`, `jobber_line_item_id`, `linked_product_or_service_id`, `position`). 내부 material은 `quote_items`에만 저장. Jobber 실제 mutation은 중앙 client의 승인된 write-back 경로만 사용. SQL: `0010`.
+
+### jobber_sync_operations / jobber_sync_steps
+
+`jobber_sync_operations`는 quote/version별 하나의 불변 remote intent를 `desired_payload` JSONB로 보존한다. 상태는 `queued`, `running`, `retryable`, `reconciliation_required`, `succeeded`, `superseded`며 claim token·lease·completion result는 RPC로만 관리한다. `jobber_sync_steps`는 mutation 직전 request와 반환된 공개 ID/결과를 순서대로 기록해 재시작이 같은 외부 쓰기를 중복하지 않게 한다. RLS와 column grant는 일반 DML·claim token 조회를 차단하고 active admin RPC만 허용한다.
+
+`get_jobber_sync_operation` status path는 quote lifecycle advisory lock과 row lock을 가진 채 expired running claim을 `reconciliation_required/lease_expired`로 바꾸고 safe operation+journal만 반환한다. 상태 조회는 claim을 생성하지 않고 token을 반환하지 않으며, completion 증거가 없는 expired operation은 계속 차단된다. SQL: `20260917025111`.
 
 ### product_services / quote_line_templates
 `product_services`: Jobber Products & Services Export CSV 관리(공개 line 자동채우기용). `unit_cost`는 Jobber 호환 필드로만 보관, 계산에는 미사용(소비자가 기준 유지). `quote_line_templates`/`_items`: Settings에서 저장하는 재사용 line/text 묶음, quote에 복사 후에만 write-back. SQL: `0011`/`0012`.
