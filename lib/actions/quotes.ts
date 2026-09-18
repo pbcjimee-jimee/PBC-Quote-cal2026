@@ -2,6 +2,7 @@
 
 import { revalidatePath } from 'next/cache'
 import { after } from 'next/server'
+import { z } from 'zod'
 import {
   type JobberSnapshotChangeSummaryItem,
   type QuoteRecord,
@@ -24,9 +25,14 @@ import type { Database, Json } from '@/lib/supabase/types'
 import { jobberQuoteSnapshotSchema, pricingSettingsSchema, quoteSchema, type QuoteInput } from '@/lib/validators'
 import { mapJobberQuoteToDraft, type JobberQuoteDraft } from '@/lib/jobber/mapper'
 import { diffJobberSnapshots } from '@/lib/jobber/snapshot-diff'
-import { fetchJobberQuote, JobberApiError, JobberLineSyncPartialError, syncJobberQuoteLineItems } from '@/lib/jobber/client'
+import { fetchJobberQuote, JobberApiError } from '@/lib/jobber/client'
 import { getJobberConfig, getMissingGraphqlConfigKeys } from '@/lib/jobber/config'
-import { getUsableSharedJobberConnectionToken, refreshSharedJobberConnectionToken, requireSharedJobberConnectionOwnerId, type StoredJobberToken } from '@/lib/jobber/tokens'
+import { getUsableSharedJobberConnectionToken, refreshSharedJobberConnectionToken, requireSharedJobberConnectionOwnerId } from '@/lib/jobber/tokens'
+import {
+  getJobberSyncOperationForQuote,
+  requestJobberSyncOperation,
+  runJobberSyncOperation,
+} from '@/lib/jobber/sync-runner'
 import { QUOTE_DETAIL_SELECT, QUOTE_DETAIL_WITHOUT_MEMOS_SELECT, QUOTES_LIST_SELECT } from '@/lib/quote-query-shape'
 import { buildQuoteSearchPostgrestFilter, normalizeQuoteSearchQuery } from '@/lib/quote-search'
 import { getAuthUserProfile, getAuthUserProfilesById, getUserProfilesById, type UserProfile } from '@/lib/user-profiles'
@@ -69,9 +75,6 @@ type JobberQuoteLineRow = {
   position: number
   created_at: string
   updated_at: string
-}
-type JobberRetryQuoteRow = Pick<QuoteRow, 'id' | 'version' | 'jobber_quote_id' | 'jobber_save_mode' | 'final_total'> & {
-  jobber_quote_lines?: JobberQuoteLineRow[]
 }
 type QuoteOptionWithItemsRow = QuoteOptionRow & {
   quote_option_items?: QuoteOptionItemRow[]
@@ -249,6 +252,8 @@ type QuoteSavePayload = {
   jobber_lines: QuoteSaveJobberLineRow[]
   memos: QuoteSaveMemoRow[]
   price_revision: QuoteSavePriceRevisionRow | null
+  sync_requested: boolean
+  deleted_jobber_line_item_ids: string[]
 }
 
 type ExistingQuoteItemSnapshotRow = Pick<
@@ -1041,6 +1046,8 @@ function buildQuoteSavePayload(params: {
     jobber_lines: buildJobberQuoteLineRows(params.input.jobberQuoteLines),
     memos: buildQuoteMemoRows(params.input.memos, params.userId),
     price_revision: params.priceRevision,
+    sync_requested: params.input.syncJobber ?? false,
+    deleted_jobber_line_item_ids: params.input.deletedJobberLineItemIds,
   }
 }
 
@@ -1061,27 +1068,19 @@ async function getNextQuotePriceRevisionNumber(
 }
 
 async function scheduleSavedQuoteToJobber(
-  params: Parameters<typeof syncSavedQuoteToJobber>[0],
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  quoteId: string,
   revalidatePaths: string[]
 ): Promise<void> {
-  if (!params.jobberQuoteId || (params.lines.length === 0 && params.deletedJobberLineItemIds.length === 0)) return
-
-  const runSync = async () => {
-    await syncSavedQuoteToJobber(params)
-    for (const path of revalidatePaths) {
-      revalidatePath(path)
-    }
-  }
-
-  if (process.env.NODE_ENV === 'test') {
-    await runSync()
-    return
-  }
-
   try {
-    after(runSync)
+    const operation = await getJobberSyncOperationForQuote(supabase, quoteId)
+    if (!operation || !['queued', 'retryable'].includes(operation.status)) return
+    after(async () => {
+      await runJobberSyncOperation(operation.id, supabase)
+      for (const path of revalidatePaths) revalidatePath(path)
+    })
   } catch {
-    await runSync()
+    return
   }
 }
 
@@ -1179,21 +1178,12 @@ export async function createQuote(input: unknown): Promise<ActionResult<{ id: st
   })
 
   const { data: quoteId, error: quoteError } = await supabase
-    .rpc('create_quote_with_children', { payload: payload as unknown as Json })
+    .rpc('create_quote_with_jobber_sync', { payload: payload as unknown as Json })
   if (quoteError) return { ok: false, error: quoteLifecycleError(quoteError.message) }
   if (!quoteId) return { ok: false, error: 'Unable to create quote' }
 
   if (parsed.data.syncJobber) {
-    await scheduleSavedQuoteToJobber({
-      supabase,
-      quoteId,
-      expectedVersion: 1,
-      jobberQuoteId: quoteInput.jobberQuoteId || null,
-      saveMode: quoteInput.jobberSaveMode,
-      lines: quoteInput.jobberQuoteLines,
-      deletedJobberLineItemIds: quoteInput.deletedJobberLineItemIds,
-      finalTotal,
-    }, ['/quotes', `/quotes/${quoteId}`])
+    await scheduleSavedQuoteToJobber(supabase, quoteId, ['/quotes', `/quotes/${quoteId}`])
   }
 
   revalidatePath('/quotes')
@@ -1320,20 +1310,11 @@ export async function updateQuote(input: unknown): Promise<ActionResult<{ id: st
   })
 
   const { error: quoteError } = await supabase
-    .rpc('update_quote_with_children', { payload: payload as unknown as Json })
+    .rpc('update_quote_with_jobber_sync', { payload: payload as unknown as Json })
   if (quoteError) return { ok: false, error: quoteLifecycleError(quoteError.message) }
 
   if (parsed.data.syncJobber) {
-    await scheduleSavedQuoteToJobber({
-      supabase,
-      quoteId: id,
-      expectedVersion: expectedVersion + 1,
-      jobberQuoteId: quoteInput.jobberQuoteId || null,
-      saveMode: quoteInput.jobberSaveMode,
-      lines: quoteInput.jobberQuoteLines,
-      deletedJobberLineItemIds: quoteInput.deletedJobberLineItemIds,
-      finalTotal,
-    }, ['/quotes', `/quotes/${id}`])
+    await scheduleSavedQuoteToJobber(supabase, id, ['/quotes', `/quotes/${id}`])
   }
 
   revalidatePath('/quotes')
@@ -1468,67 +1449,6 @@ function toJobberQuoteLineInsert(quoteId: string, line: JobberQuoteLineInput, in
   }
 }
 
-function optionalLineNumber(value: string | null): number | undefined {
-  if (value === null) return undefined
-  return Number(new Decimal(value).toString())
-}
-
-function toJobberQuoteLineInput(line: JobberQuoteLineRow, index: number): JobberQuoteLineInput {
-  return {
-    kind: line.kind,
-    name: line.name,
-    description: line.description ?? undefined,
-    quantity: optionalLineNumber(line.quantity),
-    unitPrice: optionalLineNumber(line.unit_price),
-    totalPrice: optionalLineNumber(line.total_price),
-    taxable: line.taxable,
-    clientVisible: line.client_visible,
-    jobberLineItemId: line.jobber_line_item_id ?? undefined,
-    linkedProductOrServiceId: line.linked_product_or_service_id ?? undefined,
-    position: line.position ?? index,
-  }
-}
-
-async function markJobberSyncStatus(
-  supabase: Awaited<ReturnType<typeof createClient>>,
-  quoteId: string,
-  expectedVersion: number,
-  status: JobberSyncStatus,
-  errorMessage: string | null,
-  snapshot?: JobberQuoteDraft | null,
-  syncedLines: Array<{ sourcePosition: number; jobberLineItemId: string }> = []
-): Promise<string | null> {
-  const updatePayload: Database['public']['Tables']['quotes']['Update'] = {
-    jobber_sync_status: status,
-    jobber_last_synced_at: status === 'synced' ? new Date().toISOString() : null,
-    jobber_sync_error: errorMessage ? errorMessage.slice(0, 500) : null,
-  }
-
-  if (snapshot !== undefined) {
-    updatePayload.jobber_snapshot = snapshot as unknown as Json | null
-    updatePayload.jobber_snapshot_refreshed_at = snapshot ? new Date().toISOString() : null
-    updatePayload.jobber_snapshot_change_status = 'unknown'
-    updatePayload.jobber_snapshot_change_summary = []
-    updatePayload.jobber_snapshot_refresh_error = null
-  }
-
-  const { error } = await supabase.rpc('apply_quote_jobber_result', {
-    target_quote_id: quoteId, expected_version: expectedVersion,
-    changes: updatePayload as Json, synced_lines: syncedLines,
-  })
-  return error ? quoteLifecycleError(error.message) : null
-}
-
-async function checkQuoteSyncVersion(supabase: Awaited<ReturnType<typeof createClient>>, id: string, version: number): Promise<void> {
-  const { data, error } = await supabase.from('quotes').select('id')
-    .eq('id', id).eq('version', version).is('deleted_at', null).maybeSingle()
-  if (error || !data) throw new Error('This quote changed or is in Trash. Refresh before syncing.')
-}
-
-function getSyncErrorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : 'Unable to sync quote to Jobber'
-}
-
 async function fetchJobberSnapshot(jobberQuoteId: string): Promise<JobberQuoteDraft> {
   const config = getJobberConfig()
   const missing = getMissingGraphqlConfigKeys(config)
@@ -1561,95 +1481,10 @@ async function fetchJobberSnapshot(jobberQuoteId: string): Promise<JobberQuoteDr
   }
 }
 
-type JobberSyncAttemptResult =
-  | { status: 'skipped' }
-  | { status: 'synced' }
-  | { status: 'failed'; error: string }
-
-async function syncSavedQuoteToJobber(params: {
-  supabase: Awaited<ReturnType<typeof createClient>>
-  quoteId: string
-  expectedVersion: number
-  jobberQuoteId: string | null
-  saveMode: QuoteInput['jobberSaveMode']
-  lines: QuoteInput['jobberQuoteLines']
-  deletedJobberLineItemIds: QuoteInput['deletedJobberLineItemIds']
-  finalTotal: Decimal
-}): Promise<JobberSyncAttemptResult> {
-  if (!params.jobberQuoteId || (params.lines.length === 0 && params.deletedJobberLineItemIds.length === 0)) {
-    return { status: 'skipped' }
-  }
-
-  const config = getJobberConfig()
-  const missing = getMissingGraphqlConfigKeys(config)
-  if (missing.length > 0) {
-    const error = `Jobber quote sync is not configured: ${missing.join(', ')}`
-    await markJobberSyncStatus(params.supabase, params.quoteId, params.expectedVersion, 'failed', error)
-    return { status: 'failed', error }
-  }
-
-  let token: StoredJobberToken | null = null
-  try {
-    token = await getUsableSharedJobberConnectionToken(config)
-    let accessToken = token?.accessToken ?? config.accessToken
-    if (!accessToken) {
-      const error = 'Jobber is not connected. Connect Jobber first.'
-      await markJobberSyncStatus(params.supabase, params.quoteId, params.expectedVersion, 'failed', error)
-      return { status: 'failed', error }
-    }
-
-    const syncInput = {
-      saveMode: params.saveMode ?? 'priced_line_items',
-      lines: params.lines,
-      finalTotal: params.finalTotal,
-      finalTotalIncludesGst: true,
-      deletedJobberLineItemIds: params.deletedJobberLineItemIds,
-    }
-
-    await checkQuoteSyncVersion(params.supabase, params.quoteId, params.expectedVersion)
-    let syncResult: Awaited<ReturnType<typeof syncJobberQuoteLineItems>>
-    try {
-      syncResult = await syncJobberQuoteLineItems(params.jobberQuoteId, syncInput, {
-        accessToken,
-        graphqlVersion: config.graphqlVersion,
-      })
-    } catch (error) {
-      if (!(error instanceof JobberApiError) || error.status !== 401 || !token) {
-        throw error
-      }
-
-      token = await refreshSharedJobberConnectionToken(token.refreshToken, config, requireSharedJobberConnectionOwnerId(token))
-      accessToken = token.accessToken
-      await checkQuoteSyncVersion(params.supabase, params.quoteId, params.expectedVersion)
-      syncResult = await syncJobberQuoteLineItems(params.jobberQuoteId, syncInput, {
-        accessToken,
-        graphqlVersion: config.graphqlVersion,
-      })
-    }
-
-    let refreshedSnapshot: JobberQuoteDraft | undefined
-    try {
-      refreshedSnapshot = mapJobberQuoteToDraft(await fetchJobberQuote(params.jobberQuoteId, {
-        accessToken,
-        graphqlVersion: config.graphqlVersion,
-      }))
-    } catch {
-      refreshedSnapshot = undefined
-    }
-
-    const statusError = await markJobberSyncStatus(params.supabase, params.quoteId, params.expectedVersion, 'synced', null, refreshedSnapshot, syncResult.syncedLineItems)
-    if (statusError) return { status: 'failed', error: statusError }
-    return { status: 'synced' }
-  } catch (error) {
-    const errorMessage = getSyncErrorMessage(error)
-    const statusError = await markJobberSyncStatus(params.supabase, params.quoteId, params.expectedVersion, 'failed', errorMessage, undefined, error instanceof JobberLineSyncPartialError ? error.syncedLineItems : [])
-    return { status: 'failed', error: statusError ?? errorMessage }
-  }
-}
-
 export async function retryJobberQuoteSync(quoteId: string): Promise<ActionResult<{ id: string }>> {
-  const id = quoteId.trim()
-  if (!id) return { ok: false, error: 'Quote id is required' }
+  const parsedId = z.string().uuid().safeParse(quoteId)
+  if (!parsedId.success) return { ok: false, error: 'Invalid quote id' }
+  const id = parsedId.data
 
   if (isDevNoAuthMode()) {
     return { ok: false, error: 'Jobber sync retry requires a saved Supabase quote' }
@@ -1662,48 +1497,47 @@ export async function retryJobberQuoteSync(quoteId: string): Promise<ActionResul
 
   const { data, error } = await supabase
     .from('quotes')
-    .select('id, version, jobber_quote_id, jobber_save_mode, final_total, jobber_quote_lines(*)')
+    .select('id, version')
     .is('deleted_at', null)
     .eq('id', id)
     .single()
-  if (error) return { ok: false, error: error.message }
+  if (error || !data) return { ok: false, error: 'Unable to load the saved quote. Please refresh and try again.' }
 
-  const row = data as unknown as JobberRetryQuoteRow | null
-  if (!row) return { ok: false, error: 'Quote not found' }
-  if (!row.jobber_quote_id) return { ok: false, error: 'Saved quote is not linked to Jobber' }
+  try {
+    const operation = await requestJobberSyncOperation(supabase, id, data.version)
+    const isCurrentVersion = operation.quote_id === id && operation.quote_version === data.version
+    if (!isCurrentVersion || operation.status === 'reconciliation_required') {
+      return { ok: false, error: 'This sync cannot be resent safely. Use Check Jobber to inspect the existing operation.' }
+    }
+    if (operation.status === 'succeeded') return { ok: true, data: { id } }
+    if (operation.status === 'running') {
+      return { ok: false, error: 'Jobber sync is already in progress. Use Check Jobber for the latest status.' }
+    }
+    if (operation.status !== 'queued' && operation.status !== 'retryable') {
+      return { ok: false, error: 'This sync cannot be retried safely.' }
+    }
 
-  const lines = [...(row.jobber_quote_lines ?? [])]
-    .sort((left, right) => left.position - right.position)
-    .map((line, index) => toJobberQuoteLineInput(line, index))
-  const deletedJobberLineItemIds = lines
-    .filter((line) => line.clientVisible === false)
-    .map((line) => line.jobberLineItemId)
-    .filter((lineItemId): lineItemId is string => typeof lineItemId === 'string' && lineItemId.trim().length > 0)
-  if (lines.length === 0 && deletedJobberLineItemIds.length === 0) {
-    return { ok: false, error: 'No saved Jobber lines to sync' }
+    const result = await runJobberSyncOperation(operation.id, supabase)
+    revalidatePath('/quotes')
+    revalidatePath(`/quotes/${id}`)
+    if (result.status === 'succeeded') return { ok: true, data: { id } }
+    if (result.status === 'retryable' && result.reason === 'line_kind_mismatch') {
+      return {
+        ok: false,
+        error: 'Nothing was sent to Jobber. Align the priced/text types in Jobber and this quote before retrying.',
+      }
+    }
+    if (result.status === 'retryable') {
+      return { ok: false, error: 'Nothing was sent to Jobber. Fix the connection or configuration and retry.' }
+    }
+    return { ok: false, error: 'Jobber sync is blocked from resending. Use Check Jobber before taking further action.' }
+  } catch {
+    return { ok: false, error: 'Unable to retry Jobber sync safely. Please try again.' }
   }
+}
 
-  const syncResult = await syncSavedQuoteToJobber({
-    supabase,
-    quoteId: row.id,
-    expectedVersion: row.version,
-    jobberQuoteId: row.jobber_quote_id,
-    saveMode: row.jobber_save_mode ?? 'priced_line_items',
-    lines,
-    deletedJobberLineItemIds,
-    finalTotal: new Decimal(decimalText(row.final_total)),
-  })
-
-  revalidatePath('/quotes')
-  revalidatePath(`/quotes/${row.id}`)
-  if (syncResult.status === 'failed') {
-    return { ok: false, error: syncResult.error }
-  }
-  if (syncResult.status === 'skipped') {
-    return { ok: false, error: 'No saved Jobber lines to sync' }
-  }
-
-  return { ok: true, data: { id: row.id } }
+function getSyncErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : 'Unable to sync quote to Jobber'
 }
 
 export async function refreshJobberQuoteSnapshot(

@@ -7,6 +7,7 @@ import { resetDevData } from '@/lib/dev-data'
 vi.mock('next/cache', () => ({
   revalidatePath: vi.fn(),
 }))
+vi.mock('server-only', () => ({}))
 
 describe('quote actions', () => {
   beforeEach(() => {
@@ -580,7 +581,7 @@ describe('quote actions', () => {
   it('rejects failed Jobber sync retry without a quote id', async () => {
     const result = await retryJobberQuoteSync(' ')
 
-    expect(result).toEqual({ ok: false, error: 'Quote id is required' })
+    expect(result).toEqual({ ok: false, error: 'Invalid quote id' })
   })
 
   it('rejects Jobber snapshot refresh without a quote id', async () => {

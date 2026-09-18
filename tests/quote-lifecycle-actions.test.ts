@@ -4,6 +4,7 @@ import { moveQuoteToTrash, restoreQuote, searchDeletedQuotes } from '@/lib/actio
 import { resetDevData } from '@/lib/dev-data'
 
 vi.mock('next/cache', () => ({ revalidatePath: vi.fn() }))
+vi.mock('server-only', () => ({}))
 
 const input = {
   customerName: 'Recovery fixture', workingDays: 1, labourPerDay: 1,

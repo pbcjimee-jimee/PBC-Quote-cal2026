@@ -109,6 +109,52 @@ Promotion 전 확인:
 
 `auth.getClaims()` 전환과 DB index/RLS/RPC 최적화는 이 배포의 일부가 아니다. 각각 운영 보안 결정과 별도 migration review·production DB 명시 승인이 필요하다.
 
+### P0-02 Jobber durable sync 릴리스 게이트
+
+`20260917025111_add_jobber_durable_sync.sql`과 해당 앱은 일반 배포 절차를 그대로 따르지 않는다. **이 섹션이 아래 표준 배포·롤백 절차보다 우선한다.** 다음 항목은 실행 완료 기록이 아니라 운영 반영 전에 충족해야 할 선행 조건이다.
+
+#### 1. Preview 격리 선행 조건
+
+- PR preview는 Production과 분리된 Supabase DB·Auth data·service-role key·Jobber credential/account를 사용해야 한다. Preview에 Production Supabase 또는 Production Jobber credential이 주입될 수 있으면 preview 실행·Jobber 조회·merge를 중단한다.
+- 격리된 preview DB에 schema를 먼저 적용한 후 새 앱 preview를 연다. 새 앱은 일반 Save도 새 wrapper RPC를 호출하므로 app-before-schema preview는 사용하지 않는다.
+- 격리 환경이 준비되지 않았거나 이를 제어할 권한/절차가 없으면 운영 배포를 진행하지 않는다. 환경 변수·Vercel 설정 변경은 사용자 명시 승인 후 별도로 수행한다.
+
+#### 2. 외부 schema read-only 호환성 검증
+
+- 명시적 승인을 받은 작업자만 배포 대상 Jobber account와 configured GraphQL version에 대해 read-only schema 검증을 수행한다.
+- `QuoteLineItem.taxable: Boolean!`과 `QuoteLineItem.textOnly: Boolean!`가 현재 configured version에서 조회 가능한지 확인한다. 이 검증에서 mutation, Save & Sync, Retry를 실행하지 않는다.
+- 검증을 실행할 승인·credential·격리가 없거나 필드 계약이 다르면 배포를 중단한다. 추측한 필드로 대체하지 않는다.
+
+#### 3. Sync maintenance와 old callback drain
+
+- schema 적용 전에 Jobber Save & Sync·Retry를 중지하는 maintenance window를 선언하고 사용자와 운영 담당자에게 공유한다. 일반 Save를 언제까지 허용할지는 schema/app 전환 시점과 함께 명시한다.
+- 기존 배포의 `after()` callback·Vercel function invocation이 모두 종료되었음을 runtime log/invocation 상태로 확인한다. 확인 전에 새 sync를 활성화하지 않는다.
+- 현재 앱에 maintenance 기능은 구현되어 있지 않다. 사용자 공지·접근 제어·old callback drain을 안전하게 조정할 방법이 없으면 즉시 중단하고 별도 운영 계획을 승인받는다.
+
+#### 4. Schema-first 적용과 앱 전환
+
+1. Production DB migration 명시 승인·백업/PITR 상태·CLI project context를 재확인한다.
+2. maintenance와 old callback drain이 확인된 상태에서 additive `20260917025111_add_jobber_durable_sync.sql`을 **앱보다 먼저** 적용한다.
+3. `jobber_sync_operations`/`jobber_sync_steps`, create/update wrapper RPC, request/status/claim/journal/resolve RPC, RLS·grant가 예상 시그니처로 설치되었는지 read-only로 확인한다. migration 일부만 적용됐으면 앱을 배포하지 않는다.
+4. 새 앱을 배포한 뒤 admin 인증 하에 일반 **Save**와 Save & Sync/Retry/status 경로를 격리된 시험 quote로 확인한다. live Jobber 쓰기는 승인된 시험 대상과 절차가 있을 때만 수행한다.
+5. 새 앱 instance가 안정된 후에만 sync maintenance 해제를 검토한다.
+
+#### 5. Unresolved operation inspection과 rollback gate
+
+아래와 동등한 read-only 조회로 unresolved operation을 계속 확인한다. claim token, desired/result payload, step payload는 운영 보고에 출력하지 않는다.
+
+```sql
+select id, quote_id, quote_version, jobber_quote_id, status, failure_code, created_at, updated_at
+from public.jobber_sync_operations
+where status in ('queued', 'running', 'retryable', 'reconciliation_required')
+order by created_at, id;
+```
+
+- unresolved row가 하나라도 있으면 이전 pre-journal 앱을 Production으로 promote/redeploy/revert하지 않는다. maintenance를 유지하고 현재 durable app의 `Check Jobber`나 검토된 forward fix로 해소한다.
+- durable operation이 한 번이라도 생성된 후에는 이전 pre-journal 앱 롤백 대신 schema와 호환되는 forward fix/이전 durable 버전을 우선한다. 예외적 이전 앱 복귀는 unresolved 0, old callback drain, 추가 안전 리뷰·명시 승인을 모두 충족해야 한다.
+- additive schema를 임의로 돌리지 않는다. 새 앱 instance가 하나라도 남은 상태에서 wrapper RPC를 제거하면 일반 Save까지 실패한다.
+- 이 게이트를 실행·검증할 권한이 없으면 롤백하지 말고 maintenance를 유지한 채 승인권자에게 escalation한다.
+
 ### PWA 배포 확인
 
 - `/sw.js`는 `Cache-Control: public, max-age=0, must-revalidate`로 응답해 새 배포의 worker 확인을 지연시키지 않아야 한다. 이 헤더는 `next.config.ts` 전용 rule이 설정한다.
@@ -119,6 +165,8 @@ Promotion 전 확인:
 ---
 
 ## 배포 프로세스 (표준)
+
+> Jobber durable sync migration/app을 포함하면 이 표준 절차를 시작하기 전에 위 `P0-02 Jobber durable sync 릴리스 게이트`를 먼저 완료한다. 게이트가 준비되지 않았으면 PR preview·merge·자동 배포를 중단한다.
 
 1. **로컬 검증**
    ```cmd
@@ -139,9 +187,12 @@ Promotion 전 확인:
 
 문제 발생 시:
 
-1. Vercel 대시보드에서 이전 배포 선택 → "Promote to Production"
-2. 또는 main 브랜치에서 문제 커밋 revert 후 push
-3. **`git reset --hard`나 `git push --force`는 절대 사용 금지** (사용자 명시 승인 시에만)
+> Jobber durable sync 릴리스는 먼저 위 unresolved-operation rollback gate를 적용한다. unresolved row가 있으면 아래의 이전 배포 promotion/revert를 실행하지 않는다.
+
+1. 릴리스별 rollback gate와 DB schema 호환성을 먼저 확인한다.
+2. 해당 게이트가 허용하는 경우에만 Vercel 대시보드에서 이전 배포 선택 → "Promote to Production"을 검토한다.
+3. 또는 게이트와 호환되는 forward fix/main revert를 review 후 push한다.
+4. **`git reset --hard`나 `git push --force`는 절대 사용 금지** (사용자 명시 승인 시에만)
 
 > ⚠️ **2026-07-06 감사 발견(`docs/BACKLOG.md` P4):** 마이그레이션은 forward-only(down 없음)라 스키마 변경을 동반한 배포는 코드 롤백만으로 복구되지 않는다. 파괴적 마이그레이션(drop column 등) 전 백업/PITR 시점 확보 필수. 또한 CI 부재로 `verify` 게이트가 자동 강제되지 않고, 프리뷰 배포가 프로덕션 Supabase에 접근할 위험(환경 분리 미문서화)이 있다. 조치 방향은 BACKLOG 참조.
 

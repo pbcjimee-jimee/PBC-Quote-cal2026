@@ -100,8 +100,8 @@
 5. min/max 선택 → subtotal → final_total (× 1.10 GST)
 6. 옵션(add-on) 견적 추가/편집 → 자체 final_total (메인에 합산 안 함)
 7. Internal memos 작성/편집 → `quote_memos`에만 저장, Jobber fetch/write-back 제외
-8. [Save quote] → Server Action → quote save RPC → DB만 저장, 새 견적은 저장 후 `/quotes/{id}`로 이동
-   [Save & Sync to Jobber] → DB 저장 후 approved Jobber quote write-back. 실제 Jobber quote id가 없으면 sync 버튼 비활성
+8. [Save quote] → Server Action → 영속 quote wrapper RPC(`sync_requested=false`) → DB만 저장, 새 견적은 저장 후 `/quotes/{id}`로 이동
+   [Save & Sync to Jobber] → 같은 wrapper RPC(`sync_requested=true`) → quote/version의 불변 operation snapshot enqueue → `after()`가 best-effort로 executor 시작. 실제 Jobber quote id가 없으면 sync 버튼 비활성
 9. Quote detail에서 [Refresh from Jobber] → 최신 Jobber snapshot 저장, 마지막 refresh 시간 표시, 이전 snapshot과 다른 경우 변경 요약 알림
 ```
 
@@ -112,16 +112,22 @@
 
 - Main-Materials-to-Option copy transforms the current `materials` state into ordinary `QuoteOptionItem` rows with fresh identities. Custom rows copy entirely in client state. Linked rows first use an authenticated exact-ID batch Server Action to align only their hidden calculation price with the same current trusted RRP basis enforced by quote save; lookup failure appends nothing. Quote save revalidates the product price and remains authoritative if the catalog changes after copy. Existing draft and quote option persistence handles the result, while Product / Service lines, DB schema, save RPC, RLS, and Jobber write-back paths remain unchanged.
 
-### Jobber write-back 경계
+- New/Edit Quote route loaders isolate dependency failures with `Promise.allSettled`. Pricing settings and Areas are required: either failure returns `QuoteLoadError` without mounting the calculation/save form. `router.refresh()` retries the read-only load; generic UI messages do not expose database errors. Template failure is non-blocking, and successful Edit continues to use the saved pricing snapshot. Quote load failures remain retryable rather than being reported as missing records.
+
+### Jobber durable write-back 경계
 
 - read query와 write mutation client를 분리한다.
 - write mutation은 확정된 quote line item update mutation만 allowlist한다.
 - UI/Server Action에서 raw GraphQL 문서를 전달하지 않는다.
 - 일반 저장과 Jobber 동기화 저장은 UI에서 분리한다. Jobber write-back은 사용자가 `Save & Sync to Jobber`를 선택한 경우에만 실행한다.
-- Jobber write 실패 시 local quote 저장은 유지하고 `jobber_sync_status = failed`로 표시한다.
-- Jobber create mutation은 throttle 자동 재시도를 하지 않는다. 일부 line item 생성 후 실패하면 생성된 Jobber line id를 에러에 싣고 local DB에 보존해 다음 retry가 같은 line을 중복 생성하지 않게 한다.
+- local quote 저장과 operation enqueue는 하나의 DB transaction이다. operation은 저장된 customer-visible line/deletion intent만 스냅샷하고 자재·원가·토큰·raw error를 포함하지 않는다.
+- `after()`는 queue가 아니라 실행 kick이다. callback이 유실되어도 queued operation은 DB에 남고 안전한 Retry로 다시 시작할 수 있다.
+- executor는 5분 lease의 단일 claim과 mutation별 `sending`/`applied` journal을 사용한다. 외부 mutation이 시작된 후의 오류·응답 유실·lease 만료는 재전송하지 않고 `reconciliation_required`로 차단한다.
+- 상태 조회는 claim을 하지 않는다. 만료된 running operation을 lifecycle lock 아래 재대조 필요로 분류하며, 기록된 completion·known ID를 보존하고 claim token은 반환하지 않는다.
+- `Check Jobber`는 existing operation을 read-only로 검증하며 새 operation/mutation을 만들지 않는다. 완전한 completion 기록과 동일 quote/version이 확인된 경우에만 DB 성공 반영을 완료한다.
+- priced/text kind가 기존 Jobber 항목과 다르면 mutation 전에 `line_kind_mismatch`로 중단하고, 자동 삭제·재생성 대신 유형을 맞춘 후 Retry하도록 안내한다.
 - 저장 전에는 PBC subtotal, Jobber public line total, 차이를 보여주는 sync preview를 제공한다.
-- 실패한 sync는 quote detail에서 retry할 수 있게 한다.
+- quote detail의 Retry 권한은 cached `quotes.jobber_sync_status` 값이 아니라 operation status와 quote identity/version으로만 결정한다. 상태/action transport 실패나 quote 전환 중 stale 응답은 버튼을 숨기고 fail-closed한다.
 - Jobber snapshot refresh는 write-back sync와 별도 상태다. `jobber_snapshot_refreshed_at`은 마지막 Jobber fetch/cache 갱신 시간이고, `jobber_last_synced_at`은 write-back 성공 시간이다.
 - Refresh 기반 변경 감지는 고객/주소/work type/customer type/Product-Service line/Jobber total의 compact summary만 저장한다.
 - Jobber option import는 preview/manual confirm 방식이며 자동 DB 저장을 하지 않는다. 사용자가 import한 후보는 기존 quote save/update 경로로만 `quote_options`에 저장된다.
@@ -145,6 +151,7 @@
 | 페이지 이동 클릭 피드백 | <200ms, 고정 progress 표시 |
 | 견적 작성 화면 진입 (`/quotes/new`) | <500ms |
 | 페인트 검색 (한 키 입력) | <200ms, debounce 200ms |
+| Product / Service item name 추천 | 초기 server render를 막지 않고 active catalog 최대 300개를 client mount 후 준비; local hit는 즉시 표시+180ms 서버 정합화, local miss는 75ms fallback, 동일 query 요청 재사용, 병합 dropdown 최대 300개 |
 | 5가지 공식 계산 | <10ms (클라이언트 사이드) |
 | 견적 저장 | <500ms |
 | 견적 목록 페이지 | <500ms, 현재 최신 100건 제한. 전체 페이지네이션은 후속 |

@@ -1,11 +1,11 @@
 'use client'
 
-import { useEffect, useRef, useState, type ChangeEvent, type DragEvent, type KeyboardEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent, type KeyboardEvent } from 'react'
 import { Icons } from '@/components/ui/icons'
 import type { JobberQuoteLineItemDraft } from './types'
 import type { ProductServiceRecord } from '@/lib/product-services/types'
 import type { QuoteLineTemplateRecord } from '@/lib/quote-line-templates/types'
-import { searchProductServices } from '@/lib/actions/product-services'
+import { listProductServices, searchProductServices } from '@/lib/actions/product-services'
 
 interface JobberProductServiceEditorProps {
   value: JobberQuoteLineItemDraft[]
@@ -52,6 +52,9 @@ type ScrollContainerRect = Pick<DOMRect, 'top' | 'bottom' | 'height'>
 
 const PRODUCT_SERVICE_DRAG_SCROLL_EDGE_PX = 72
 const PRODUCT_SERVICE_DRAG_SCROLL_MAX_STEP_PX = 18
+const PRODUCT_SERVICE_RESULT_LIMIT = 300
+const PRODUCT_SERVICE_FALLBACK_DEBOUNCE_MS = 75
+const PRODUCT_SERVICE_SEARCH_DEBOUNCE_MS = 180
 
 export function getProductServiceDragScrollStep(
   containerRect: ScrollContainerRect,
@@ -116,6 +119,23 @@ export function getProductServiceMatches(
     })
 }
 
+function mergeProductServices(
+  primary: ProductServiceRecord[],
+  secondary: ProductServiceRecord[]
+): ProductServiceRecord[] {
+  const seenIds = new Set<string>()
+  const merged: ProductServiceRecord[] = []
+
+  for (const productService of [...primary, ...secondary]) {
+    if (seenIds.has(productService.id)) continue
+    seenIds.add(productService.id)
+    merged.push(productService)
+    if (merged.length === PRODUCT_SERVICE_RESULT_LIMIT) break
+  }
+
+  return merged
+}
+
 export function reorderJobberQuoteLines(
   lines: JobberQuoteLineItemDraft[],
   draggedId: string,
@@ -160,7 +180,7 @@ export function applyQuoteLineTemplateToDrafts(
 
 export function JobberProductServiceEditor({
   value,
-  productServices = [],
+  productServices,
   templates = [],
   onChange,
 }: JobberProductServiceEditorProps) {
@@ -168,12 +188,20 @@ export function JobberProductServiceEditor({
   const [dropTarget, setDropTarget] = useState<{ id: string; placement: DropPlacement } | null>(null)
   const [selectedTemplateId, setSelectedTemplateId] = useState('')
   const [activeLookupLineId, setActiveLookupLineId] = useState<string | null>(null)
-  const [catalogMatches, setCatalogMatches] = useState<ProductServiceRecord[]>([])
+  const [loadedProductServices, setLoadedProductServices] = useState<ProductServiceRecord[]>([])
+  const [remoteProductServices, setRemoteProductServices] = useState<{
+    query: string
+    data: ProductServiceRecord[]
+  }>({ query: '', data: [] })
   const [reorderAnnouncement, setReorderAnnouncement] = useState('')
   const scrollListRef = useRef<HTMLDivElement | null>(null)
   const dragScrollFrameRef = useRef<number | null>(null)
   const dragScrollStepRef = useRef(0)
   const pendingAnnouncementLineIdRef = useRef<string | null>(null)
+  const productServiceSearchRequestRef = useRef<{
+    query: string
+    request: ReturnType<typeof searchProductServices>
+  } | null>(null)
 
   function stopProductServiceDragScroll() {
     dragScrollStepRef.current = 0
@@ -228,28 +256,84 @@ export function JobberProductServiceEditor({
   }, [value])
 
   const activeLookupQuery = value.find((line) => line.id === activeLookupLineId)?.name.trim() ?? ''
-  const availableProductServices = productServices.length > 0
-    ? productServices
-    : activeLookupQuery.length > 0
-      ? catalogMatches
-      : []
+  const hasLoadedProductServiceMatches = useMemo(() => (
+    activeLookupQuery.length > 0
+    && getProductServiceMatches(activeLookupQuery, loadedProductServices).length > 0
+  ), [activeLookupQuery, loadedProductServices])
+  const availableProductServices = useMemo(() => {
+    if (productServices !== undefined) return productServices
+    if (remoteProductServices.query !== activeLookupQuery) return loadedProductServices
+    return mergeProductServices(remoteProductServices.data, loadedProductServices)
+  }, [activeLookupQuery, loadedProductServices, productServices, remoteProductServices])
 
   useEffect(() => {
-    if (productServices.length > 0 || activeLookupQuery.length === 0) {
-      return
-    }
+    if (productServices !== undefined) return
 
     let cancelled = false
-    const timeoutId = window.setTimeout(async () => {
-      const result = await searchProductServices({ query: activeLookupQuery, limit: 300, match: 'name' })
-      if (!cancelled) setCatalogMatches(result.ok ? result.data : [])
-    }, 180)
+    void listProductServices({ limit: PRODUCT_SERVICE_RESULT_LIMIT })
+      .then((result) => {
+        if (!cancelled && result.ok) setLoadedProductServices(result.data)
+      })
+      .catch(() => undefined)
 
     return () => {
       cancelled = true
-      window.clearTimeout(timeoutId)
     }
-  }, [activeLookupQuery, productServices.length])
+  }, [productServices])
+
+  useEffect(() => {
+    if (productServices !== undefined || activeLookupQuery.length === 0) return
+
+    let cancelled = false
+    let timeoutId: number | null = null
+    const queryKey = activeLookupQuery.toLowerCase()
+    const runSearch = async () => {
+      try {
+        let request = productServiceSearchRequestRef.current?.query === queryKey
+          ? productServiceSearchRequestRef.current.request
+          : null
+        if (!request) {
+          request = searchProductServices({
+            query: activeLookupQuery,
+            limit: PRODUCT_SERVICE_RESULT_LIMIT,
+            match: 'name',
+          })
+          productServiceSearchRequestRef.current = { query: queryKey, request }
+        }
+
+        const result = await request
+        if (!cancelled) {
+          setRemoteProductServices({
+            query: result.ok ? activeLookupQuery : '',
+            data: result.ok ? result.data : [],
+          })
+        }
+        if (!result.ok && productServiceSearchRequestRef.current?.request === request) {
+          productServiceSearchRequestRef.current = null
+        }
+      } catch {
+        if (!cancelled) setRemoteProductServices({ query: '', data: [] })
+        if (productServiceSearchRequestRef.current?.query === queryKey) {
+          productServiceSearchRequestRef.current = null
+        }
+      }
+    }
+
+    if (productServiceSearchRequestRef.current?.query === queryKey) {
+      void runSearch()
+    } else {
+      timeoutId = window.setTimeout(() => {
+        void runSearch()
+      }, hasLoadedProductServiceMatches
+        ? PRODUCT_SERVICE_SEARCH_DEBOUNCE_MS
+        : PRODUCT_SERVICE_FALLBACK_DEBOUNCE_MS)
+    }
+
+    return () => {
+      cancelled = true
+      if (timeoutId !== null) window.clearTimeout(timeoutId)
+    }
+  }, [activeLookupQuery, hasLoadedProductServiceMatches, productServices])
 
   function updateLine(updatedLine: JobberQuoteLineItemDraft) {
     onChange(value.map((line) => line.id === updatedLine.id ? updatedLine : line))
@@ -601,7 +685,9 @@ function PricedLineRow({
   onChange,
   onRemove,
 }: PricedLineRowProps) {
-  const filteredProductServices = getProductServiceMatches(line.name, productServices)
+  const filteredProductServices = isLookupActive
+    ? getProductServiceMatches(line.name, productServices)
+    : []
   const reorderControls = { label: line.name || 'line item', canMoveUp, canMoveDown, onMoveUp, onMoveDown }
 
   return (
@@ -769,7 +855,9 @@ function TextLineRow({
   onChange,
   onRemove,
 }: TextLineRowProps) {
-  const filteredProductServices = getProductServiceMatches(line.name, productServices)
+  const filteredProductServices = isLookupActive
+    ? getProductServiceMatches(line.name, productServices)
+    : []
   const reorderControls = { label: line.name || 'text line', canMoveUp, canMoveDown, onMoveUp, onMoveDown }
 
   return (

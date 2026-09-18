@@ -1,7 +1,34 @@
 import { describe, expect, it } from 'vitest'
-import { buildJobberQuoteLinePayload } from '@/lib/jobber/quote-line-payload'
+import {
+  buildJobberQuoteLineMutationItems,
+  buildJobberQuoteLinePayload,
+} from '@/lib/jobber/quote-line-payload'
 
 describe('buildJobberQuoteLinePayload', () => {
+  it('reuses the confirmed Total ID only on the generated description-total line', () => {
+    const result = buildJobberQuoteLineMutationItems({
+      saveMode: 'description_total',
+      lines: [{
+        kind: 'line_item',
+        name: 'Walls',
+        description: 'Scope',
+        clientVisible: true,
+        jobberLineItemId: 'source-line-id',
+        position: 0,
+      }],
+      finalTotal: '110.00',
+      finalTotalIncludesGst: true,
+      totalLineItemId: 'confirmed-total-id',
+    })
+
+    expect(result).toHaveLength(2)
+    expect(result[0]).toMatchObject({ kind: 'text', jobberLineItemId: 'source-line-id' })
+    expect(result[1]).toMatchObject({
+      kind: 'line_item',
+      name: 'Total',
+      jobberLineItemId: 'confirmed-total-id',
+    })
+  })
   it('builds priced public line items without internal material values', () => {
     const payload = buildJobberQuoteLinePayload({
       saveMode: 'priced_line_items',

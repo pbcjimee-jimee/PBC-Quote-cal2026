@@ -4,6 +4,7 @@ import type { ReactNode } from 'react'
 import type { QuoteRecord } from '@/lib/dev-data'
 import { JobberRefreshPanel } from '@/components/quote-detail/jobber-refresh-panel'
 import { formatJobberRefreshTime } from '@/components/quote-detail/jobber-refresh-time'
+import { JobberSyncStatus } from '@/components/quote-detail/jobber-sync-status'
 import { JobberQuoteSummary } from '@/components/quote-form/customer-panel'
 import { FinalSummary } from '@/components/quote-form/final-summary'
 import { OptionTotalsSummary } from '@/components/quote-form/option-totals-summary'
@@ -15,7 +16,6 @@ import { QuoteDeleteButton } from '@/components/quote-list/quote-delete-button'
 import { QuoteDuplicateButton } from '@/components/quote-list/quote-duplicate-button'
 import { Card, SectionLabel } from '@/components/ui/card'
 import { Icons } from '@/components/ui/icons'
-import { retryJobberQuoteSync } from '@/lib/actions/quotes'
 import { AREA_SCOPE_LABELS } from '@/lib/areas/constants'
 
 interface QuoteDetailViewProps {
@@ -248,27 +248,6 @@ function MaterialDetail({
   )
 }
 
-function JobberSyncFailurePanel({ quote }: { quote: QuoteRecord }) {
-  async function retryJobberSync() {
-    'use server'
-    await retryJobberQuoteSync(quote.id)
-  }
-
-  if (quote.jobberSyncStatus !== 'failed') return null
-
-  return (
-    <form action={retryJobberSync} className="pbc-alert pbc-alert--danger">
-      <span>
-        <b>Jobber sync failed</b>
-        {quote.jobberSyncError ? ` - ${quote.jobberSyncError}` : ''}
-      </span>
-      <button type="submit" className="pbc-btn pbc-btn--ghost pbc-btn--sm">
-        Retry Jobber sync
-      </button>
-    </form>
-  )
-}
-
 function getPreferredFormulaScopes(
   quote: QuoteRecord,
   areaBreakdown: { interior: AreaSubtotalGroup; exterior: AreaSubtotalGroup; roof: AreaSubtotalGroup }
@@ -385,7 +364,12 @@ export function QuoteDetailView({ quote }: QuoteDetailViewProps) {
           </div>
         </div>
 
-        <JobberSyncFailurePanel quote={quote} />
+        {quote.jobberQuoteId || quote.jobberSyncStatus === 'failed' ? (
+          <JobberSyncStatus
+            quoteId={quote.id}
+            legacyFailed={quote.jobberSyncStatus === 'failed'}
+          />
+        ) : null}
 
         <div className="pbc-dgrid">
           <div className="pbc-dlead pbc-dspan">

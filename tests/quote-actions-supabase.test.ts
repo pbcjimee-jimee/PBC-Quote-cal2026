@@ -22,6 +22,10 @@ const mocks = vi.hoisted(() => {
     isDevNoAuthMode: vi.fn(),
     requireAllowedUser: vi.fn(),
     revalidatePath: vi.fn(),
+    after: vi.fn(),
+    runJobberSyncOperation: vi.fn(),
+    getJobberSyncOperationForQuote: vi.fn(),
+    requestJobberSyncOperation: vi.fn(),
     getJobberConfig: vi.fn(),
     getMissingGraphqlConfigKeys: vi.fn(),
     getUsableSharedJobberConnectionToken: vi.fn(),
@@ -61,6 +65,16 @@ vi.mock('@/lib/security/require-app-user', () => ({
 
 vi.mock('next/cache', () => ({
   revalidatePath: mocks.revalidatePath,
+}))
+
+vi.mock('next/server', () => ({
+  after: mocks.after,
+}))
+
+vi.mock('@/lib/jobber/sync-runner', () => ({
+  runJobberSyncOperation: mocks.runJobberSyncOperation,
+  getJobberSyncOperationForQuote: mocks.getJobberSyncOperationForQuote,
+  requestJobberSyncOperation: mocks.requestJobberSyncOperation,
 }))
 
 vi.mock('@/lib/jobber/config', () => ({
@@ -332,13 +346,22 @@ function persistenceFixture(row: unknown = quoteRow) {
   })
   const rpc = vi.fn(async (name: string, args: Record<string, unknown>): Promise<{ data: unknown; error: { message: string } | null }> => {
     void args
-    return { data: name === 'find_quote_by_jobber_identity' ? [] : name === 'create_quote_with_children' ? quoteId : [{ id: quoteId, version: 2 }], error: null }
+    return {
+      data: name === 'find_quote_by_jobber_identity'
+        ? []
+        : name === 'create_quote_with_jobber_sync'
+          ? quoteId
+          : name === 'get_jobber_sync_operation'
+            ? { id: '00000000-0000-4000-8000-000000000701', status: 'queued' }
+            : [{ id: quoteId, version: 2 }],
+      error: null,
+    }
   })
   mocks.createClient.mockResolvedValue({ from, rpc })
   return { quote, from, rpc }
 }
 
-function rpcPayload(rpc: ReturnType<typeof persistenceFixture>['rpc'], name = 'update_quote_with_children'): Record<string, unknown> {
+function rpcPayload(rpc: ReturnType<typeof persistenceFixture>['rpc'], name = 'update_quote_with_jobber_sync'): Record<string, unknown> {
   return rpc.mock.calls.find(([called]) => called === name)?.[1].payload as Record<string, unknown>
 }
 
@@ -349,6 +372,10 @@ describe('quote actions against Supabase', () => {
     mocks.fetchJobberQuote.mockReset()
     mocks.createClient.mockReset()
     mocks.createServiceClient.mockReset()
+    mocks.after.mockReset()
+    mocks.runJobberSyncOperation.mockReset()
+    mocks.getJobberSyncOperationForQuote.mockReset()
+    mocks.requestJobberSyncOperation.mockReset()
     mocks.isDevNoAuthMode.mockReturnValue(false)
     mocks.requireAllowedUser.mockResolvedValue({
       ok: true,
@@ -419,6 +446,19 @@ describe('quote actions against Supabase', () => {
         profitMarginPercent: 100,
       },
     })
+    mocks.getJobberSyncOperationForQuote.mockResolvedValue({
+      id: '00000000-0000-4000-8000-000000000701',
+      quote_id: quoteId,
+      quote_version: 1,
+      jobber_quote_id: 'jobber-quote-id',
+      desired_payload: {},
+      status: 'queued',
+      lease_expires_at: null,
+      attempt_count: 0,
+      failure_code: null,
+      result: null,
+      steps: [],
+    })
     mocks.createServiceClient.mockResolvedValue({
       auth: {
         admin: {
@@ -442,13 +482,15 @@ describe('quote actions against Supabase', () => {
   it('creates the parent, materials, public lines, memos and initial revision in one RPC', async () => {
     const { rpc, from } = persistenceFixture()
     expect(await createQuote({ ...quoteInputWithJobberLines, memos: [{ body: '  Call before arriving.  ', position: 0 }] })).toEqual({ ok: true, data: { id: quoteId } })
-    const payload = rpcPayload(rpc, 'create_quote_with_children')
+    const payload = rpcPayload(rpc, 'create_quote_with_jobber_sync')
     expect(payload).toMatchObject({
       quote: { customer_name: 'Supabase Customer', created_by: 'user-1', final_total: '561.00', roof_selected_min: 2, roof_selected_max: 5, jobber_sync_status: 'not_synced' },
       items: [{ product_name_snapshot: 'Brush' }],
       memos: [{ body: 'Call before arriving.', created_by: 'user-1', position: 0 }],
       jobber_lines: [{ name: 'Public painting service', unit_price: '1250.00', total_price: '2500.00' }, { name: 'Scope notes', unit_price: null, total_price: null }],
       price_revision: { revision_number: 1, event_type: 'created', previous_final_total: null, new_final_total: '561.00', changed_by: 'user-1' },
+      sync_requested: false,
+      deleted_jobber_line_item_ids: [],
     })
     expect(payload.jobber_lines).not.toEqual(expect.arrayContaining([expect.objectContaining({ actual_price_snapshot: expect.anything() })]))
     expect(from).not.toHaveBeenCalled()
@@ -461,7 +503,7 @@ describe('quote actions against Supabase', () => {
     expect((await createQuote({ ...quoteInput, jobberQuoteId: 'encoded-jobber-id', jobberSnapshot: previousJobberSnapshot })).ok).toBe(true)
     expect(rpc).toHaveBeenCalledWith('find_quote_by_jobber_identity', { jobber_id: 'encoded-jobber-id', snapshot: previousJobberSnapshot })
     expect(rpcPayload(rpc)).toMatchObject({ id: quoteId, expected_version: 8, quote: { jobber_quote_id: 'encoded-jobber-id' } })
-    expect(rpc.mock.calls.some(([name]) => name === 'create_quote_with_children')).toBe(false)
+    expect(rpc.mock.calls.some(([name]) => name === 'create_quote_with_jobber_sync')).toBe(false)
   })
 
   it.each([
@@ -579,7 +621,7 @@ describe('quote actions against Supabase', () => {
     })
 
     expect(result).toEqual({ ok: true, data: { id: quoteId } })
-    expect(rpc).toHaveBeenCalledWith('create_quote_with_children', {
+    expect(rpc).toHaveBeenCalledWith('create_quote_with_jobber_sync', {
       payload: expect.objectContaining({
         items: [expect.objectContaining({
           product_id: productId,
@@ -673,7 +715,7 @@ describe('quote actions against Supabase', () => {
     })
 
     expect(result).toEqual({ ok: true, data: { id: quoteId } })
-    expect(rpc).toHaveBeenCalledWith('update_quote_with_children', {
+    expect(rpc).toHaveBeenCalledWith('update_quote_with_jobber_sync', {
       payload: expect.objectContaining({
         quote: expect.objectContaining({
           formula1_total: '625.00',
@@ -772,7 +814,7 @@ describe('quote actions against Supabase', () => {
     })
 
     expect(result).toEqual({ ok: true, data: { id: quoteId } })
-    expect(rpc).toHaveBeenCalledWith('update_quote_with_children', {
+    expect(rpc).toHaveBeenCalledWith('update_quote_with_jobber_sync', {
       payload: expect.objectContaining({
         items: [expect.objectContaining({
           product_id: productId,
@@ -867,7 +909,7 @@ describe('quote actions against Supabase', () => {
     })
 
     expect(result).toEqual({ ok: true, data: { id: quoteId } })
-    expect(rpc).toHaveBeenCalledWith('update_quote_with_children', {
+    expect(rpc).toHaveBeenCalledWith('update_quote_with_jobber_sync', {
       payload: expect.objectContaining({
         items: [expect.objectContaining({
           product_id: retainedProductId,
@@ -968,7 +1010,7 @@ describe('quote actions against Supabase', () => {
     })
 
     expect(result).toEqual({ ok: true, data: { id: quoteId } })
-    expect(rpc).toHaveBeenCalledWith('update_quote_with_children', {
+    expect(rpc).toHaveBeenCalledWith('update_quote_with_jobber_sync', {
       payload: expect.objectContaining({
         items: [
           expect.objectContaining({ actual_price_snapshot: '22.00', position: 0 }),
@@ -1233,7 +1275,7 @@ describe('quote actions against Supabase', () => {
     })
 
     expect(result).toEqual({ ok: true, data: { id: quoteId } })
-    expect(rpc).toHaveBeenCalledWith('update_quote_with_children', {
+    expect(rpc).toHaveBeenCalledWith('update_quote_with_jobber_sync', {
       payload: expect.objectContaining({
         options: [expect.objectContaining({
           items: [
@@ -1323,7 +1365,7 @@ describe('quote actions against Supabase', () => {
       ok: false,
       error: 'Quote was changed by someone else. Refresh and try again.',
     })
-    expect(rpc).toHaveBeenCalledWith('update_quote_with_children', expect.objectContaining({
+    expect(rpc).toHaveBeenCalledWith('update_quote_with_jobber_sync', expect.objectContaining({
       payload: expect.objectContaining({
         id: quoteId,
         expected_version: 1,
@@ -1355,78 +1397,105 @@ describe('quote actions against Supabase', () => {
     expect(rpcPayload(rpc)).toMatchObject({ quote: { jobber_snapshot: changedJobberSnapshot, jobber_snapshot_refreshed_at: '2026-05-19T01:00:00.000Z', jobber_snapshot_change_status: 'changed' } })
   })
 
-  it('checks the saved version before write-back and records lines and status atomically', async () => {
-    const { rpc, quote } = persistenceFixture()
-    mocks.syncJobberQuoteLineItems.mockResolvedValueOnce({ syncedLineItems: [{ sourcePosition: 0, jobberLineItemId: 'new-id' }] })
-    expect((await updateQuote({ ...quoteInputWithJobberLines, id: quoteId, expectedVersion: 6, jobberQuoteId: 'jobber-quote-id', syncJobber: true })).ok).toBe(true)
-    expect(quote.eq).toHaveBeenCalledWith('version', 7)
-    expect(quote.is).toHaveBeenCalledWith('deleted_at', null)
-    expect(rpc).toHaveBeenCalledWith('apply_quote_jobber_result', expect.objectContaining({
-      target_quote_id: quoteId, expected_version: 7,
-      changes: expect.objectContaining({ jobber_sync_status: 'synced', jobber_sync_error: null, jobber_snapshot: expect.any(Object) }),
-      synced_lines: [{ sourcePosition: 0, jobberLineItemId: 'new-id' }],
+  it('commits Save & Sync intent transactionally before scheduling an operation-only worker', async () => {
+    const operationId = '00000000-0000-4000-8000-000000000701'
+    const { rpc } = persistenceFixture()
+
+    expect((await updateQuote({
+      ...quoteInputWithJobberLines,
+      id: quoteId,
+      expectedVersion: 6,
+      jobberQuoteId: 'jobber-quote-id',
+      deletedJobberLineItemIds: ['deleted-before-save'],
+      syncJobber: true,
+    })).ok).toBe(true)
+
+    expect(rpc).toHaveBeenCalledWith('update_quote_with_jobber_sync', expect.objectContaining({
+      payload: expect.objectContaining({
+        sync_requested: true,
+        deleted_jobber_line_item_ids: ['deleted-before-save'],
+      }),
+    }))
+    expect(mocks.getJobberSyncOperationForQuote).toHaveBeenCalledWith(expect.any(Object), quoteId)
+    expect(mocks.after).toHaveBeenCalledTimes(1)
+    expect(mocks.runJobberSyncOperation).not.toHaveBeenCalled()
+    expect(mocks.syncJobberQuoteLineItems).not.toHaveBeenCalled()
+
+    const scheduled = mocks.after.mock.calls[0]?.[0] as (() => Promise<void>) | undefined
+    expect(scheduled).toBeTypeOf('function')
+    await scheduled?.()
+    expect(mocks.runJobberSyncOperation).toHaveBeenCalledWith(operationId, expect.any(Object))
+    expect(mocks.runJobberSyncOperation).not.toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
+      deletedJobberLineItemIds: expect.anything(),
     }))
   })
 
-  it('skips a scheduled network write after the quote is deleted or changed', async () => {
-    const { quote } = persistenceFixture()
-    quote.maybeSingle.mockResolvedValueOnce({ data: null, error: null })
-    expect((await updateQuote({ ...quoteInputWithJobberLines, id: quoteId, expectedVersion: 1, jobberQuoteId: 'jobber-quote-id', syncJobber: true })).ok).toBe(true)
+  it('keeps durable intent queued when the best-effort scheduler callback never runs', async () => {
+    const { rpc } = persistenceFixture()
+
+    expect((await createQuote({
+      ...quoteInputWithJobberLines,
+      jobberQuoteId: 'jobber-quote-id',
+      syncJobber: true,
+    })).ok).toBe(true)
+
+    expect(rpc).toHaveBeenCalledWith('create_quote_with_jobber_sync', expect.objectContaining({
+      payload: expect.objectContaining({ sync_requested: true }),
+    }))
+    expect(mocks.after).toHaveBeenCalledTimes(1)
+    expect(mocks.runJobberSyncOperation).not.toHaveBeenCalled()
     expect(mocks.syncJobberQuoteLineItems).not.toHaveBeenCalled()
   })
 
-  it('keeps successful write-back if only the subsequent snapshot fetch is throttled', async () => {
-    const { rpc } = persistenceFixture({ ...quoteRow, jobber_quote_id: 'jobber-quote-id' })
-    mocks.fetchJobberQuote.mockRejectedValueOnce(new Error('throttled'))
-    expect((await retryJobberQuoteSync(quoteId)).ok).toBe(true)
-    const changes = rpc.mock.calls.find(([name]) => name === 'apply_quote_jobber_result')?.[1].changes
-    expect(changes).toMatchObject({ jobber_sync_status: 'synced' })
-    expect(changes).not.toHaveProperty('jobber_snapshot')
-  })
+  it('does not run a duplicate retry request whose immutable operation already succeeded', async () => {
+    persistenceFixture({ ...quoteRow, jobber_quote_id: 'jobber-quote-id' })
+    mocks.requestJobberSyncOperation.mockResolvedValueOnce({
+      ...await mocks.getJobberSyncOperationForQuote(),
+      status: 'succeeded',
+      result: { syncedLineItems: [], expectedLineItems: [], deletedLineItemIds: [] },
+    })
 
-  it('retries persisted lines and reconstructs hidden deletion candidates', async () => {
-    persistenceFixture({ ...quoteRow, jobber_quote_id: 'jobber-quote-id', jobber_quote_lines: [
-      ...quoteRow.jobber_quote_lines,
-      { ...quoteRow.jobber_quote_lines[0], position: 2, client_visible: false, jobber_line_item_id: 'hidden-id' },
-    ] })
-    expect((await retryJobberQuoteSync(quoteId)).ok).toBe(true)
-    expect(mocks.syncJobberQuoteLineItems).toHaveBeenCalledWith('jobber-quote-id', expect.objectContaining({ deletedJobberLineItemIds: ['hidden-id'] }), expect.any(Object))
-  })
-
-  it('refreshes an expired token using the shared connection owner and checks version again', async () => {
-    const { quote } = persistenceFixture({ ...quoteRow, jobber_quote_id: 'jobber-quote-id' })
-    mocks.syncJobberQuoteLineItems.mockRejectedValueOnce(new mocks.JobberApiError('expired', 401))
-    expect((await retryJobberQuoteSync(quoteId)).ok).toBe(true)
-    expect(mocks.refreshSharedJobberConnectionToken).toHaveBeenCalledWith('refresh-token', expect.any(Object), 'user-1')
-    expect(quote.maybeSingle).toHaveBeenCalledTimes(2)
-  })
-
-  it('does not retry a network write if deletion occurs during token refresh', async () => {
-    const { quote } = persistenceFixture({ ...quoteRow, jobber_quote_id: 'jobber-quote-id' })
-    quote.maybeSingle.mockResolvedValueOnce({ data: quoteRow, error: null }).mockResolvedValueOnce({ data: null, error: null })
-    mocks.syncJobberQuoteLineItems.mockRejectedValueOnce(new mocks.JobberApiError('expired', 401))
-    expect((await retryJobberQuoteSync(quoteId)).ok).toBe(false)
-    expect(mocks.syncJobberQuoteLineItems).toHaveBeenCalledTimes(1)
-  })
-
-  it('records partial line mappings together with a failed status for the observed version', async () => {
-    const { rpc } = persistenceFixture({ ...quoteRow, jobber_quote_id: 'jobber-quote-id' })
-    mocks.syncJobberQuoteLineItems.mockRejectedValueOnce(new mocks.JobberLineSyncPartialError('partial failure', [{ sourcePosition: 0, jobberLineItemId: 'partial-id' }]))
-    expect(await retryJobberQuoteSync(quoteId)).toEqual({ ok: false, error: 'partial failure' })
-    expect(rpc).toHaveBeenCalledWith('apply_quote_jobber_result', expect.objectContaining({ expected_version: 1, synced_lines: [{ sourcePosition: 0, jobberLineItemId: 'partial-id' }], changes: expect.objectContaining({ jobber_sync_status: 'failed' }) }))
-  })
-
-  it('reports failed result persistence without claiming successful sync', async () => {
-    const { rpc } = persistenceFixture({ ...quoteRow, jobber_quote_id: 'jobber-quote-id' })
-    rpc.mockResolvedValueOnce({ data: null, error: { message: 'QUOTE_VERSION_CONFLICT' } })
-    expect(await retryJobberQuoteSync(quoteId)).toMatchObject({ ok: false, error: expect.stringContaining('Refresh') })
-  })
-
-  it('rejects retry for an archived or missing quote before contacting Jobber', async () => {
-    const { quote } = persistenceFixture(null)
-    expect((await retryJobberQuoteSync(quoteId)).ok).toBe(false)
-    expect(quote.is).toHaveBeenCalledWith('deleted_at', null)
+    expect(await retryJobberQuoteSync(quoteId)).toEqual({ ok: true, data: { id: quoteId } })
+    expect(mocks.runJobberSyncOperation).not.toHaveBeenCalled()
     expect(mocks.syncJobberQuoteLineItems).not.toHaveBeenCalled()
+  })
+
+  it('blocks a legacy failed quote without a journal instead of blindly resending it', async () => {
+    persistenceFixture({ ...quoteRow, jobber_quote_id: 'jobber-quote-id', jobber_sync_status: 'failed' })
+    mocks.requestJobberSyncOperation.mockResolvedValueOnce({
+      ...await mocks.getJobberSyncOperationForQuote(),
+      status: 'reconciliation_required',
+      failure_code: 'legacy_unjournaled',
+      result: null,
+    })
+
+    expect(await retryJobberQuoteSync(quoteId)).toEqual({
+      ok: false,
+      error: expect.stringContaining('Check Jobber'),
+    })
+    expect(mocks.runJobberSyncOperation).not.toHaveBeenCalled()
+    expect(mocks.syncJobberQuoteLineItems).not.toHaveBeenCalled()
+  })
+
+  it('returns the safe priced/text mismatch explanation after a zero-write preflight', async () => {
+    persistenceFixture({ ...quoteRow, jobber_quote_id: 'jobber-quote-id' })
+    const operation = await mocks.getJobberSyncOperationForQuote()
+    mocks.requestJobberSyncOperation.mockResolvedValueOnce(operation)
+    mocks.runJobberSyncOperation.mockResolvedValueOnce({
+      status: 'retryable',
+      reason: 'line_kind_mismatch',
+      operation: { ...operation, status: 'retryable', failure_code: 'line_kind_mismatch' },
+    })
+
+    const result = await retryJobberQuoteSync(quoteId)
+    expect(result).toEqual({
+      ok: false,
+      error: expect.stringContaining('Nothing was sent to Jobber'),
+    })
+    expect(result).toEqual({
+      ok: false,
+      error: expect.stringContaining('priced/text types'),
+    })
   })
 
   it('duplicates a Supabase quote with refreshed product RRP and no copied Jobber identifiers', async () => {
@@ -1512,7 +1581,7 @@ describe('quote actions against Supabase', () => {
     expect(result).toEqual({ ok: true, data: { id: duplicateQuoteId } })
     expect(productQuery.select).toHaveBeenCalledWith('id, name, market_price, actual_price, price, rrp_price')
     expect(productQuery.in).toHaveBeenCalledWith('id', [duplicateProductId])
-    const payload = rpcPayload(rpc, 'create_quote_with_children')
+    const payload = rpcPayload(rpc, 'create_quote_with_jobber_sync')
     expect(payload.quote).toEqual(expect.objectContaining({
       customer_name: 'Supabase Customer',
       jobber_quote_id: null,

@@ -53,6 +53,11 @@ vi.mock('@/lib/actions/quotes', () => ({
   updateQuote: vi.fn(),
 }))
 
+vi.mock('@/lib/actions/jobber-sync', () => ({
+  getJobberSyncState: vi.fn(),
+  checkJobberQuoteSync: vi.fn(),
+}))
+
 vi.mock('@/lib/actions/products', async () => {
   const actual = await vi.importActual<typeof import('@/lib/actions/products')>('@/lib/actions/products')
   return {
@@ -3462,7 +3467,7 @@ describe('quote form pricing UI', () => {
     expect(markup).toContain('$3478.93')
   })
 
-  it('shows failed Jobber sync status, error, and retry action on quote detail pages', () => {
+  it('fails closed while the durable Jobber status is loading instead of authorizing a legacy retry', () => {
     const markup = renderToStaticMarkup(
       createElement(QuoteDetailView, {
         quote: {
@@ -3493,9 +3498,9 @@ describe('quote form pricing UI', () => {
       })
     )
 
-    expect(markup).toContain('Jobber sync failed')
-    expect(markup).toContain('Jobber rejected the saved line item.')
-    expect(markup).toContain('Retry Jobber sync')
+    expect(markup).toContain('Checking the durable record')
+    expect(markup).not.toContain('Jobber rejected the saved line item.')
+    expect(markup).not.toContain('Retry sync')
   })
 
   it('shows saved internal memos on quote detail pages', () => {
