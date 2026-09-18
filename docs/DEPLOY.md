@@ -79,7 +79,7 @@ git ls-remote origin main
 ### Deploy trigger
 
 - main 브랜치 push 시 Vercel이 자동 트리거
-- PR preview deploy도 자동 생성
+- PR preview deploy도 기본적으로 자동 생성한다. 아래 durable-sync 릴리스 게이트에 기록된 브랜치별 자동 배포 차단은 예외다.
 
 ### Health check
 
@@ -118,6 +118,8 @@ Promotion 전 확인:
 - PR preview는 Production과 분리된 Supabase DB·Auth data·service-role key·Jobber credential/account를 사용해야 한다. Preview에 Production Supabase 또는 Production Jobber credential이 주입될 수 있으면 preview 실행·Jobber 조회·merge를 중단한다.
 - 격리된 preview DB에 schema를 먼저 적용한 후 새 앱 preview를 연다. 새 앱은 일반 Save도 새 wrapper RPC를 호출하므로 app-before-schema preview는 사용하지 않는다.
 - 격리 환경이 준비되지 않았거나 이를 제어할 권한/절차가 없으면 운영 배포를 진행하지 않는다. 환경 변수·Vercel 설정 변경은 사용자 명시 승인 후 별도로 수행한다.
+
+2026-09-18 사용자 승인에 따라 코드 전달만 가능하도록 `vercel.json`의 `git.deploymentEnabled`에서 `codex/audit-priority-remediation`만 `false`로 지정했다. 이 브랜치의 Git 자동 Preview를 차단한 상태로 Push·Draft PR은 진행할 수 있다. `main` 및 다른 브랜치의 자동 배포 설정은 변경하지 않는다. 이는 환경 격리 완료나 운영 배포 승인이 아니며, 수동 배포·다른 브랜치로의 Push·원격 main 병합으로 우회하지 않는다. Preview를 다시 켜거나 실행하기 전에는 위 격리·schema-first 조건을 충족해야 한다. 설정 계약: [Vercel Git configuration](https://vercel.com/docs/project-configuration/git-configuration).
 
 #### 2. 외부 schema read-only 호환성 검증
 

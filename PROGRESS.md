@@ -19,7 +19,14 @@
 
 ---
 
-## 로컬 main 병합 완료, Push·PR 보류 (2026-09-18)
+## 브랜치 자동 Preview 차단 승인, Push·Draft PR 준비 (2026-09-18)
+
+- 사용자가 이 작업 브랜치의 자동 Preview만 차단한 뒤 Push·PR을 진행하도록 승인했다. `vercel.json`에 `codex/audit-priority-remediation: false`만 추가했다. 원격 main·다른 브랜치·환경 변수·DB는 변경하지 않는다.
+- 최신 `origin/main`은 `a48bab8`로 동일하고 기존 해당 브랜치 PR은 없다. 새 전체 검증과 설정 검토 후 기능 브랜치만 Push하고 Draft PR을 생성한다. 실제 전달 결과는 완료 후 기록한다.
+- Push 전 fresh `npm.cmd run verify`는 exit0: 110 files/992 tests 통과, 3 files/19 tests 환경 조건 skip, coverage 85.34/72.88/93.56/90.34%, typecheck·lint·build19·production audit0이다. 별도 DB 검사는 이번 전달 단계에서 재실행하지 않았다. 설정 객체 비교로 승인된 브랜치 규칙 외 기존 설정이 그대로임을 확인했고 독립 설정 검토도 통과했다. 빌드가 생성한 `next-env.d.ts` 경로 변경은 원상 복구하고 커밋에서 제외한다.
+- 자동 Preview 차단은 환경 격리 완료가 아니다. Production DB migration·Jobber 호환성 확인·maintenance/drain·schema-first 조건은 그대로 유지한다. 원격 main 병합과 운영 배포는 별도 승인·릴리스 게이트 충족 전까지 보류한다.
+
+## 로컬 main 병합 완료, Push·PR 승인 전 보류 기록 (2026-09-18)
 
 - 사용자 승인 후 최신 `origin/main`(`a48bab8`)을 확인하고 자동완성(`6c0c39b`), 필수 로딩 보호(`abfb84f`), 영속 동기화(`8a2a4f8`), 문서(`7cdd27a`)를 각각 커밋했다. 로컬 `main`은 원격 기준으로 fast-forward한 뒤 `cd080bb`에서 기능 브랜치를 병합했다.
 - 병합 직전 fresh `npm.cmd run verify`는 992 tests 통과/19 gated skips, coverage 85.34/72.88/93.56/90.34%, typecheck·lint·build19·production audit0으로 exit0이다. 생성된 `next-env.d.ts`는 원래 참조로 복구하고 typecheck를 다시 통과했으며 릴리스 커밋에서 제외했다.
