@@ -19,7 +19,16 @@
 
 ---
 
-## 로컬 구현·검증·리뷰 완료, 반영 대기 — P0-02 Jobber 영속 동기화 (2026-09-18)
+## 로컬 main 병합 완료, Push·PR 보류 (2026-09-18)
+
+- 사용자 승인 후 최신 `origin/main`(`a48bab8`)을 확인하고 자동완성(`6c0c39b`), 필수 로딩 보호(`abfb84f`), 영속 동기화(`8a2a4f8`), 문서(`7cdd27a`)를 각각 커밋했다. 로컬 `main`은 원격 기준으로 fast-forward한 뒤 `cd080bb`에서 기능 브랜치를 병합했다.
+- 병합 직전 fresh `npm.cmd run verify`는 992 tests 통과/19 gated skips, coverage 85.34/72.88/93.56/90.34%, typecheck·lint·build19·production audit0으로 exit0이다. 생성된 `next-env.d.ts`는 원래 참조로 복구하고 typecheck를 다시 통과했으며 릴리스 커밋에서 제외했다.
+- 병합된 로컬 main에서도 `npm.cmd run test:run`을 다시 실행해 110 files/992 tests 통과, 3 files/19 tests skip, exit0을 확인했다.
+- 독립 범위·계획 검토는 48개 deliverable 모두 승인 범위, 로컬 통합 GO, 새 Critical/Informational 결함 0건이다. runner 조합 함수 통합 테스트와 reconciliation의 추가 실패 조합은 보강 여지가 있지만 현재 로컬 통합을 막는 확인된 결함은 아니다. 실제 Jobber/인증 앱 E2E는 미실행이다.
+- Vercel 읽기 전용 조회에서 Supabase URL·service-role 및 Jobber credential 관련 동일 변수 레코드가 Production/Preview에 함께 지정되어 있음을 확인했다. 자동 Preview를 먼저 차단하거나 환경을 격리하는 별도 승인 전까지 **원격 Push·PR 생성은 보류**한다. 원격 main Push·운영 DB·실제 Jobber 쓰기·Vercel 설정 변경은 실행하지 않았다.
+- `codex/audit-priority-remediation` 브랜치를 PR용으로 보존한다. 새 릴리스 버전 체계나 VERSION/CHANGELOG 파일은 도입하지 않았다. 설치된 `ship` 비밀값 검사 helper는 모듈 누락으로 실행되지 않았으며, 대신 대상 48개 파일의 제한된 credential-pattern 검사는 0건이었다. 이를 전체 비밀정보 검증으로 과장하지 않는다.
+
+## 로컬 구현·검증·리뷰 완료 — P0-02 Jobber 영속 동기화 (2026-09-18)
 
 - **Model:** DB 1차 구현은 GPT-6 Astra high. 이후 새 서브에이전트는 최신 직접 지시에 따라 `gpt-5.6-sol/high`로 실행한다.
 - 사용자 `진행` 승인에 따라 DB outbox·실행권·단계별 기록·불확 결과 재전송 차단과 앱 연결을 로컬에 구현했다. 명세/계획: `docs/superpowers/specs/2026-09-17-jobber-durable-sync-design.md`, `docs/superpowers/plans/2026-09-17-jobber-durable-sync.md`.
@@ -35,7 +44,7 @@
 - 참고: Docker 연동까지 전체 병렬 실행에 포함한 추가 검사에서는 993건 통과·DB 테스트 2건이 기존 5초 제한으로 timeout했다. DB 대기 작업은 없었고, 소스·timeout 변경 없이 동일 DB suite를 단독 실행하면 8/8 통과했다. 전체 unit/coverage와 실제 DB 검사는 계획대로 분리해 검증했으며, 병렬 부하에 민감한 테스트 환경 제한을 숨기지 않는다.
 - whole-branch final review의 Important 2건·Minor 1건을 하나의 fix wave로 처리했다. `Check Jobber`는 확인된 success만 성공으로 보고하고 remote read/mismatch/resolve/readback을 고정 안전 문구로 구분하며, action warning은 A→B→A quote 전환에서도 재사용되지 않는다. `docs/DEPLOY.md`에 preview 격리·read-only schema 확인·maintenance/drain·schema-first·unresolved rollback gate를 추가했다.
 - 원 final reviewer의 단일 scoped re-review가 Important2/Minor1 모두 해결, 새 문제 없음으로 통과했다. controller 최종 full verify도 통과했으며, 보고서/로그/스냅샷은 `.superpowers/sdd/2026-09-17-jobber-durable-sync/`에 보존했다.
-- 브랜치 `codex/audit-priority-remediation`, HEAD `a48bab8`에 **미커밋 상태**다. 운영 DB·실제 Jobber 쓰기·커밋·Push/Merge·배포는 실행하지 않았다. P0-02는 **로컬 구현·검증·독립 리뷰 완료, main/운영 반영 대기**다. 일반 Save도 새 schema가 필요하므로 미적용 운영 DB에 연결한 새 앱을 먼저 사용/배포하지 않는다. 다음 미구현 우선순위는 P1-03 Quotes 전체 집계·페이지네이션이다.
+- 최초 로컬 검증 완료 시점에는 `a48bab8` 기준 미커밋 상태였으며, 이후 사용자 승인에 따른 커밋·로컬 main 병합 결과는 상단 기록을 따른다. 원격·운영 반영은 아직이다. 일반 Save도 새 schema가 필요하므로 미적용 운영 DB에 연결한 새 앱을 먼저 사용/배포하지 않는다. 다음 미구현 우선순위는 P1-03 Quotes 전체 집계·페이지네이션이다.
 
 ## ✅ 완료 (요약)
 

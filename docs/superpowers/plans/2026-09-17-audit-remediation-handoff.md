@@ -1,6 +1,6 @@
 # 2026-09-17 작업 보관 / 다음 세션 재개
 
-> **과거 보관 기록:** 2026-09-18 `이어서 진행해`로 재개해 Tasks1–3과 최종 수정·독립 재리뷰를 마쳤다. 최종 verify992/DB123·8 통과, 로컬 미커밋·운영 반영 대기다. 아래 Task2 재개 지점은09-17 당시 기록이므로 다시 실행하지 않는다. 최신 상태는 `PROGRESS.md`, `2026-09-17-jobber-durable-sync.md`와 `.superpowers/sdd/2026-09-17-jobber-durable-sync/progress.md`를 따른다.
+> **과거 보관 기록:** 2026-09-18 `이어서 진행해`로 재개해 Tasks1–3과 최종 수정·독립 재리뷰를 마쳤다. 최종 verify992/DB123·8 통과 후 사용자 승인으로 커밋·로컬 main 병합(`cd080bb`)까지 완료했다. Preview의 운영 환경 변수 공유로 Push·PR·운영 반영은 보류다. 아래 Task2 재개 지점은09-17 당시 기록이므로 다시 실행하지 않는다. 최신 상태는 `PROGRESS.md`, `2026-09-17-jobber-durable-sync.md`와 `.superpowers/sdd/2026-09-17-jobber-durable-sync/progress.md`를 따른다.
 
 **상태:** 사용자 요청으로 중지. P0-02 전체 미완료, 배포 불가.
 **Branch / HEAD:** `codex/audit-priority-remediation` / `a48bab8`.
