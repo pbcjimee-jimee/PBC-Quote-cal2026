@@ -5,6 +5,17 @@
 
 ---
 
+## 필수 데이터 조회 실패
+
+- New/Edit 진입 시 Pricing settings와 Areas가 모두 정상 조회되어야 `QuoteForm`을 표시한다. 조회 실패나 예외를 기본 가격 또는 빈 Area 목록으로 대체하지 않는다.
+- 필수 조회 실패 시 계산·합계·저장/Jobber Sync 버튼을 표시하지 않고, 실패한 데이터 종류와 `Retry`, `Back to Quotes`를 제공한다. 내부 DB 오류 원문은 노출하지 않는다.
+- `Retry`는 현재 경로의 서버 데이터를 다시 조회한다. 저장 견적·로컬 초안을 변경하거나 삭제하지 않으며, 실패가 계속되면 폼도 계속 차단한다. 정상 조회된 빈 Area 목록은 실패와 구분한다.
+- Edit는 조회가 복구된 뒤 기존 가격 스냅샷으로 계산한다. 저장 스냅샷을 최신 가격으로 일괄 교체하지 않는다.
+- Template 조회 실패는 별도 경고와 빈 템플릿 목록으로 처리한다. 수동 Product / Service 작성은 허용하며, 작성 중 재조회로 상태를 바꾸지 않도록 템플릿 경고에는 자동 재시도를 추가하지 않는다.
+- 견적 조회 장애는 Retry 화면으로, 정상 조회 결과가 없는 경우에만 not found로 처리한다.
+
+---
+
 ## 전체 레이아웃 (≥1280px)
 
 ```
@@ -261,9 +272,12 @@ F2  L460 + Labour 30%
 [Save & Sync to Jobber] 클릭
   → 실제 Jobber quote id가 있거나 삭제할 기존 Jobber line id가 있을 때만 활성화
   → createQuote()/updateQuote() Server Action 호출(syncJobber=true)
-  → DB 저장 성공 후 approved Jobber quote write-back 실행
-  → Jobber write 실패 시 local quote 저장은 유지하고 sync 상태/에러를 남김
+  → DB wrapper가 quote 저장+version snapshot operation enqueue를 하나의 transaction으로 완료
+  → after() best-effort kick이 operation ID를 DB에서 다시 읽어 durable executor 시작
+  → callback 유실·preflight 실패에도 local quote/operation은 유지되며 안전한 Retry로 재시작 가능
 ```
+
+Quote detail의 `JobberSyncStatus`는 operation을 별도로 조회한다. 현재 quote identity/version의 `queued`/`retryable`에서만 `Retry sync`를 표시하고, `running`/불확 결과는 `Check Jobber`로 read-only 재대조한다. `Check Jobber`는 remote read 실패, 기록과 remote 불일치, 로컬 resolve 실패, authoritative readback 실패를 서로 다른 고정 안전 문구로 안내하며 raw reason/API/DB 오류를 노출하지 않는다. 확인된 `succeeded`만 성공으로 표시하고 나머지는 재전송 차단을 유지한다. 이전 quote의 blocking operation, legacy failed에 durable record가 없는 경우, status/action transport 실패에는 재전송 버튼을 표시하지 않는다. action 경고는 quote identity에 scope되어 다른 quote로 전환되면 표시하지 않는다. 버튼은 action 중 disabled이며 alert content는 작은 폭에서 세로로 stack한다.
 
 ---
 
@@ -282,7 +296,11 @@ F2  L460 + Labour 30%
 ## Product & Service catalog import
 
 - Settings > Product & Service tab manages the Jobber `Products and Services Export` CSV format: `Name, Description, Category, Unit Price, Unit Cost, Bookable, Duration Minutes, Quantity Enabled, Minimum Quantity, Maximum Quantity, Taxable, Active`.
-- The quote Product / Service editor receives this catalog and shows a local dropdown directly from the priced line item name input and text item title input.
+- The quote Product / Service editor prepares up to 300 active catalog items once in the background after the form mounts, without blocking the initial server render. If a caller already supplies the catalog, it reuses that data.
+- Priced line item names and text item titles filter the prepared catalog locally on each keystroke, so available matches open without waiting for a debounce, authorization check, or database round trip.
+- When local matches exist, a 180ms debounced Name-only search reconciles current server matches in the background. When no local match is available because preload is pending/failed or the item sits outside the initial window, a shorter 75ms fallback debounce coalesces fast typing before the server request.
+- The same pending/completed query request is reused when preload state changes, preventing duplicate authorization and database calls for that query.
+- Server matches take precedence, cached matches fill remaining slots, duplicate IDs are removed, and the rendered dropdown remains capped at 300 items.
 - The quote editor dropdown searches catalog `Name` only, so description text does not create unrelated matches.
 - Selecting a catalog item fills `name`, `description`, `unitPrice`, `taxable`, and `minimumQuantity` into priced line items.
 - Selecting a catalog item for Add Text fills only title/body and leaves the item as price-free text.

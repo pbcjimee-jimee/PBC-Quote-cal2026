@@ -19,7 +19,43 @@
 
 ---
 
+## 로컬 구현·검증·리뷰 완료, 반영 대기 — P0-02 Jobber 영속 동기화 (2026-09-18)
+
+- **Model:** DB 1차 구현은 GPT-6 Astra high. 이후 새 서브에이전트는 최신 직접 지시에 따라 `gpt-5.6-sol/high`로 실행한다.
+- 사용자 `진행` 승인에 따라 DB outbox·실행권·단계별 기록·불확 결과 재전송 차단과 앱 연결을 로컬에 구현했다. 명세/계획: `docs/superpowers/specs/2026-09-17-jobber-durable-sync-design.md`, `docs/superpowers/plans/2026-09-17-jobber-durable-sync.md`.
+- 일반 저장도 삭제 대기 ID를 보존하고, 이후 동기화가 삭제 항목을 잊지 않게 한다. 불확실한 생성 ID나 변경된 견적 버전은 추측해 재연결하지 않는다. `description_total`의 생성 Total ID도 확인된 성공 기록으로만 재사용한다.
+- 사용자 Docker 복구 후 기존 프로젝트와 분리한 `pbc-jobber-sync-20260917` 로컬 DB를 준비했다. CLI 프로필 오류는 `--profile supabase-local`로 우회했으며 사용자 설정은 수정하지 않았다.
+- DB·전송·앱 연결을 완성했다. 모든 quote save는 영속 wrapper RPC를 사용하고 `sync_requested` 만 외부 작업을 enqueue한다. `after()`는 operation ID를 DB에서 다시 읽어 실행하는 best-effort kick이며, 유실되어도 요청은 DB에 남는다.
+- 사용자 확인에 따라 기존 Jobber 항목의 가격/설명 유형이 다르면 전체 전송 전에 차단하고 안내한다. 자동 삭제·재생성은 하지 않는다. 상태 조회 시 만료된 실행을 결과 확인 상태로 전환하는 UI/DB 연결 검증도 포함한다.
+- 전송 리뷰 4건을 수정하고 독립 재리뷰를 통과했다. 앱 연결은 암호화 토큰을 실행 직전에만 읽고, mutation 시작 후 전체 workflow를 401로 재실행하지 않으며, 재대조는 read-only 조회만 사용한다.
+- Quote detail은 DB status와 quote identity/version으로만 Retry 권한을 표시한다. running/불확 상태는 `Check Jobber`, legacy 실패에 operation이 없으면 차단 경고를 표시한다. Server Action transport 거절과 quote 전환 중 stale 응답도 fail-closed다.
+- 전용 로컬 DB에서 pgTAP 123건과 동시성·migration contract 8건이 통과했다. 만료된 running operation의 상태 조회는 lifecycle lock 아래 재대조 필요로 분류하고 token을 반환하지 않으며, 완전한 completion 증거가 있을 때만 read-only 재대조를 허용한다. 직접 호출 가능한 만료 helper도 같은 lock을 재진입 취득하며 supervisor·inactive admin·anonymous를 거부한다.
+- 격리된 실제 Next 페이지+stub Server Action 브라우저 QA에서 390/1280px의 load-error/status alert, pending 버튼, queued→running·reconciliation→success, legacy/mismatch/predecessor 차단을 확인했다. 390px overflow·콘솔 error/warn은 0이다. 전체 인증 앱이나 live Jobber E2E는 아니다.
+- final fix 후 controller가 직접 실행한 `npm.cmd run verify`는 exit0, 110 files/992 tests 통과, 환경 조건 3 files/19 tests skip, coverage 85.34/72.88/93.56/90.34%, production build 19/19, production audit 0건이다. 전용 DB pgTAP123 및 동시성·migration8은 별도 실행으로 통과했다. skip을 성공 건수에 더하지 않는다.
+- 참고: Docker 연동까지 전체 병렬 실행에 포함한 추가 검사에서는 993건 통과·DB 테스트 2건이 기존 5초 제한으로 timeout했다. DB 대기 작업은 없었고, 소스·timeout 변경 없이 동일 DB suite를 단독 실행하면 8/8 통과했다. 전체 unit/coverage와 실제 DB 검사는 계획대로 분리해 검증했으며, 병렬 부하에 민감한 테스트 환경 제한을 숨기지 않는다.
+- whole-branch final review의 Important 2건·Minor 1건을 하나의 fix wave로 처리했다. `Check Jobber`는 확인된 success만 성공으로 보고하고 remote read/mismatch/resolve/readback을 고정 안전 문구로 구분하며, action warning은 A→B→A quote 전환에서도 재사용되지 않는다. `docs/DEPLOY.md`에 preview 격리·read-only schema 확인·maintenance/drain·schema-first·unresolved rollback gate를 추가했다.
+- 원 final reviewer의 단일 scoped re-review가 Important2/Minor1 모두 해결, 새 문제 없음으로 통과했다. controller 최종 full verify도 통과했으며, 보고서/로그/스냅샷은 `.superpowers/sdd/2026-09-17-jobber-durable-sync/`에 보존했다.
+- 브랜치 `codex/audit-priority-remediation`, HEAD `a48bab8`에 **미커밋 상태**다. 운영 DB·실제 Jobber 쓰기·커밋·Push/Merge·배포는 실행하지 않았다. P0-02는 **로컬 구현·검증·독립 리뷰 완료, main/운영 반영 대기**다. 일반 Save도 새 schema가 필요하므로 미적용 운영 DB에 연결한 새 앱을 먼저 사용/배포하지 않는다. 다음 미구현 우선순위는 P1-03 Quotes 전체 집계·페이지네이션이다.
+
 ## ✅ 완료 (요약)
+
+### P0-01 가격·Area 조회 실패 보호 (2026-09-17, 로컬 구현)
+
+- **Model:** GPT-6 Astra. 이번 요청의 독립 검토·후속 설계 에이전트도 모두 `gpt-6-astra/high`로 실행했다. 기존 현재 모델 라우팅 문서는 이미 GPT-6 Astra이며 과거 담당 모델 이력은 보존했다.
+- `codex/audit-priority-remediation` 브랜치에서 New/Edit의 가격·Area 조회 실패 및 rejected promise를 fail-closed로 처리했다. 기본 가격/빈 Area fallback 대신 폼·계산·저장/Sync를 차단하고 안전한 오류·Retry를 표시한다. Area 차단은 사용자에게 별도로 확인받았다.
+- Template 실패는 경고만 표시하고 수동 작성은 유지한다. Edit의 저장 가격 스냅샷을 보존하고 견적 조회 장애와 실제 not found를 구분한다. 기존 자동완성 미커밋 변경, 저장/계산 공식, DB·RLS·Jobber write-back, 외부 의존성은 변경하지 않았다.
+- TDD에서 기존 동작의 15개 실패를 확인한 뒤 통과시켰다. 전체 `npm.cmd run verify`는 102 files/914 tests 통과, 환경 조건 2 files/16 tests skip, coverage 85.54/72.31/94.40/90.43%, production build 19/19, production audit 0건이다. 이후 Area 개별 복구·동시 실패·견적 조회 예외를 추가한 최종 로딩 회귀 24건과 전체 102 files/919 tests(16 skip)가 통과했다. 마지막 테스트 추가 후 typecheck·변경 파일 ESLint도 재검증했다. 실제 DB skip은 성공으로 간주하지 않는다.
+- 독립 scoped review finding은 0건이다. 브라우저용 임시 fixture는 실행 환경 문제로 렌더링되지 않아 시각 QA를 완료로 표시하지 않았다. 임시 fixture 파일·서버만 정리했으며 실제 Next 라우팅의 desktop/mobile 오류 화면·Retry 검증은 남아 있다.
+- 별도 발견: legacy 부분 가격 스냅샷의 누락 필드는 조회/UI에서 기본값, update에서 현재 설정으로 채우는 기존 차이가 있다. 과거 가격 보존 정책에 영향을 주므로 이번 로딩 실패 수정에 섞지 않았으며 정규화 기준 확인이 필요하다.
+- 다음 순서 P0-02의 안전 우선 복구 방식을 사용자에게 확인받아 로컬 구현에 착수했다(위 진행 중 항목). 운영 DB 적용·배포·실제 Jobber 쓰기는 별도 승인 전에는 실행하지 않는다. Push/Merge/배포는 이번 단계에서 하지 않았다.
+
+### 앱 감사 보고서 main 변경 반영 (2026-09-16, 문서 갱신)
+
+- `docs/APP-AUDIT-2026-09-15.md`를 원격 main `a48bab8` 기준으로 갱신했다. 최초 `7dcf544` 대비 견적 휴지통·복구/lifecycle 보호와 의존성 패치를 확인해 hard delete 및 취약 버전 항목을 해결로 전환했다.
+- Jobber 지연 응답 보호와 영속 동기화 복구, 새 lifecycle 사건 표와 기존 가격 revision 무결성을 구분했다. 일반 Quotes 100건 제한, 휴지통 복구 후 포커스·대상 식별, 정기 백업 운영 정책을 잔여 개선점으로 기록했다.
+- 관련 회귀 221 tests 통과, 실제 API 9건·동시성 7건은 이번 실행에서 환경 조건 skip, production audit 0건을 확인했다. 배포 당시 별도 DB/전체 verify 증거는 이번 직접 실행과 구분했다. 브라우저 제어 초기화 오류로 새 시각 QA는 수행하지 않았으며 83점은 09-15 기준값으로 유지했다.
+- 보고서·진행 기록만 갱신했고 기존 자동완성 미커밋 변경을 보존했다. BACKLOG, 제품 코드, DB, 운영 설정·배포는 변경하지 않았다.
+- 사용자 후속 요청으로 완료 항목·과거 QA 점수·해결 이력을 보고서에서 제외하고, 미해결 32개를 P0 2개 / P1 10개 / P2 12개 / P3 8개의 실행 순서로 재정렬했다. 부분 개선·운영 확인·반영 대기를 구분하고 각 항목의 근거와 완료 기준을 유지했다.
 
 ### 견적 휴지통·복구 (2026-09-16, 운영 DB·앱 배포 완료)
 
@@ -30,6 +66,13 @@
 - 데스크톱·390px 모바일에서 삭제→휴지통→복구, 같은 상세 URL·메모·옵션 보존, 키보드 Cancel 포커스·순환, 44px 버튼을 확인했다. 긴 삭제자 이름의 가로 넘침을 발견해 줄바꿈을 보완한 뒤 overflow 0과 UI 회귀 123 tests를 재확인했다.
 - 검증 중 production audit 오류를 해결하기 위해 Next.js/eslint-config-next 16.3.5, sharp 0.35.4, baseline-browser-mapping 2.11.0으로 기존 의존성을 갱신했다. Next.js가 생성하는 agent 안내 블록과 root-params 타입 참조도 포함한다.
 - 사용자 승인 후 운영 migration `20260916023434`와 main `9668a93` 앱을 배포했다. 백업을 별도 DB에 복원·검증했고 운영 적용 전후 7개 견적 테이블의 전체 내용 해시가 일치했다. 최종 릴리스만 분리한 verify는 885 tests를 통과했다. 관리자 Trash 조회/검색과 비로그인 차단, public health/PWA 경로, 초기 runtime error 0건을 확인했다. 고객 견적 삭제·복구 시험과 Jobber 쓰기는 실행하지 않았다. 적용 증거·한계는 계획 10절에 기록했다.
+
+### Quote Service Item 자동완성 성능 개선 (2026-08-29, 로컬 구현·검증 완료)
+
+- New/Edit Quote의 Product / Service editor는 초기 server render를 막지 않고 client mount 후 active catalog 최대 300개를 한 번 준비한다. 준비된 데이터는 item name·Text title 입력마다 Name-only로 즉시 로컬 필터링하며, 비활성 행은 catalog를 다시 스캔하지 않는다.
+- local hit는 dropdown을 즉시 표시한 뒤 180ms 서버 검색으로 정합화하고, preload pending/실패·초기 300개 밖의 local miss는 75ms fallback으로 빠른 연속 입력을 한 요청으로 합친다. 동일 query의 pending/completed 요청을 재사용하고 stale/rejected 응답을 안전하게 처리한다.
+- 서버 결과 우선 병합, ID 중복 제거, 최대 300개 렌더 상한을 적용해 오래된 저장 아이템 누락과 최대 600행 DOM 회귀를 함께 방지한다. TDD로 즉시 로컬 표시, cold 입력, 빠른 타이핑 coalescing, preload/search 실패, 오래된 항목 병합, stale 응답, request 재사용, 300개 상한, supplied empty catalog 경계를 검증했다.
+- 최종 `npm run verify`는 Vitest 98 files/873 tests 통과(환경 조건 1 file/9 tests skip), coverage 84.72/71.44/94.47/90.09%, Next production build 18/18, production audit 취약점 0건을 기록했다. 독립 최종 리뷰의 Critical/Important finding은 0건이며 DB·의존성·배포 변경은 없다.
 
 ### Main Materials를 PBC Option으로 복사 (2026-08-26, 로컬 구현·검증 완료)
 
@@ -198,6 +241,7 @@
 | 2026-09-16 | 사용자 승인 후 견적 휴지통을 운영에 반영했다. snapshot export의 로컬 복원·새 migration 사전 검증을 거쳐 `20260916023434`를 적용했고, 전후 7개 견적 테이블의 건수·내용 해시가 일치했다. 기존 자동완성 작업을 제외한 릴리스 verify 885 tests와 preview READY 확인 후 main `9668a93`을 배포했다. 관리자 Trash 조회·검색, 비로그인 차단, health/PWA 경로 및 초기 운영 오류 0건을 확인했다. 실제 고객 견적 삭제/복구 시험은 하지 않았다. | GPT-6 Astra |
 | 2026-09-16 | 승인된 견적 휴지통 계획을 순차 구현했다. soft-delete·관리자 휴지통/복구·사건 이력·Jobber 충돌/늦은 결과 보호·DB DELETE 차단을 반영했다. 전체 verify 895 tests, 별도 실제 API 9/동시성 7 tests, pgTAP 140 assertions 및 모바일 UI를 검증했다. production audit 실패를 기존 의존성 보안 업데이트로 해결해 0건을 확인했다. 모델 라우팅을 GPT-6 Astra로 변경했으며 운영 DB 적용·배포는 승인 대기다. | GPT-6 Astra |
 | 2026-09-16 | 사용자 요청으로 견적 soft-delete 및 관리자 휴지통·복구 계획 `docs/superpowers/plans/2026-09-16-quote-trash-and-recovery.md`를 작성했다. 삭제 시 원본/자식 데이터 보존, 삭제·복구 이력, 활성 조회 필터, Jobber 재저장 충돌, DB 권한·동시성 검증과 단계별 운영 적용을 제안한다. 최초 계획 작성 시점에는 기능 코드·테스트·마이그레이션 작성, 운영 DB 변경, 배포를 실행하지 않았다. 이후 구현 승인과 완료 결과는 같은 날짜의 상단 기록을 따른다. | Codex (설계 담당 기준: 5.6-Sol max) |
+| 2026-08-29 | New/Edit Quote의 Product / Service item name·Text title 자동완성을 background catalog preload와 Name-only 로컬 즉시 필터로 전환했다. local hit는 즉시 표시 후 180ms 서버 정합화, cold/local miss는 75ms fallback을 사용하며 동일 query 요청 재사용, stale/rejection 처리, 서버 우선 ID dedupe 병합, 300개 렌더 상한으로 오래된 항목 누락과 요청/DOM 폭증을 방지한다. TDD 경계 10건과 독립 재리뷰를 완료했고 전체 verify는 98 files/873 tests 통과(1 file/9 tests skip), coverage 84.72/71.44/94.47/90.09%, build 18/18, production audit 0건을 기록했다. DB·의존성·배포 변경은 없다. | Codex 5.6-Sol high |
 | 2026-08-26 | New/Edit Quote의 Main Materials 모든 행을 `Copy Materials to Option`으로 fresh ID의 새 독립 PBC Option에 복사하도록 구현했다. 0원·linked/custom 행과 이름·memo·표시 RRP·수량·labour·area를 보존하고 Product / Service 행은 제외하며, F4/F1 Option과 기존 draft/save/edit 경로를 재사용한다. 최종 리뷰에서 saved linked 행의 F3/F5 preview가 저장 시 current trusted RRP로 바뀌는 불일치를 발견해 exact-ID read-only batch Server Action, pending/error UI, save-boundary 회귀 테스트로 수정했다. 최종 `npm.cmd run verify`는 98 files/863 tests 통과(1 file/9 tests skip), coverage 84.72/71.44/94.47/90.09%, build 18/18, production audit 0건을 기록했다. DB migration·저장 RPC·RLS·Jobber write-back·의존성 변경은 없다. | Codex 5.6-Sol high |
 | 2026-08-26 | 현재 Markdown의 모델 라우팅을 Codex 5.6-Sol 단일 모델로 통합했다. 설계·기획·QA 설계·디자인·아키텍처·스코프/보안 리스크 판단은 max, 코드 구현·간단한 변경·git·배포는 medium, 테스트·오류 수정·대규모 수정·리뷰·보안 점검/수정은 high로 구분했다. 과거 변경 이력의 담당자 표기와 미구현 제품 기능의 Anthropic 런타임 제안은 당시 사실·별도 아키텍처 후보로 보존했다. | Codex 5.6-Sol medium |
 | 2026-08-25 | 모바일 Inventory disclosure 카드에 Name·Category·Size / Serial·Colour를 함께 표시했다. null·empty·whitespace Colour는 `-`, 긴 값은 full-width wrapping으로 처리하고 supervisor의 movement-only 편집 권한과 desktop 12-column 표를 유지했다. TDD RED 6건 확인 후 focused 9 files/70 tests와 전체 verify(96 files/844 tests, 1 file/9 tests skip, coverage 84.63/71.55/94.40/90.00%, build 18 routes, audit 0 vulnerabilities)를 통과했으며 독립 리뷰 Critical/Important finding은 0건이다. 375×812·390×844 browser smoke에서 document와 Colour overflow 0, console error/warning 0을 확인했다. DB·RLS·Server Action·의존성·배포 변경은 없다. | Codex 5.6-Sol high |
