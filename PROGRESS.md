@@ -19,10 +19,12 @@
 
 ---
 
-## 브랜치 자동 Preview 차단 승인, Push·Draft PR 준비 (2026-09-18)
+## 브랜치 Push 완료, Draft PR은 GitHub 로그인 대기 (2026-09-18)
 
 - 사용자가 이 작업 브랜치의 자동 Preview만 차단한 뒤 Push·PR을 진행하도록 승인했다. `vercel.json`에 `codex/audit-priority-remediation: false`만 추가했다. 원격 main·다른 브랜치·환경 변수·DB는 변경하지 않는다.
-- 최신 `origin/main`은 `a48bab8`로 동일하고 기존 해당 브랜치 PR은 없다. 새 전체 검증과 설정 검토 후 기능 브랜치만 Push하고 Draft PR을 생성한다. 실제 전달 결과는 완료 후 기록한다.
+- 최신 `origin/main`은 `a48bab8`로 동일하다. `c05a038`에 브랜치별 차단 설정·문서를 커밋하고 `codex/audit-priority-remediation`만 정상 Push했으며 원격 SHA 일치를 확인했다. 기존 해당 브랜치 PR은 없다.
+- GitHub 연결 도구의 PR 생성은 `403 Resource not accessible by integration`으로 거부됐다. 앱 내 브라우저도 GitHub 로그인 전 상태여서 로그인 화면을 열고 사용자에게 요청했다. **PR은 아직 생성되지 않았다.** 로그인 후 배포 보류 사유·검증 결과를 포함한 Draft PR을 생성하고 실제 링크를 기록한다.
+- Push 후 Vercel 최신 deployment 20건에서 해당 브랜치/commit 배포는 0건이고 최신 Production은 계속 `a48bab8`이다. 이는 조회 시점의 관측이며 영구 모니터링 보장이 아니다. GitHub commit status/PR-triggered workflow 조회도 빈 목록이므로 CI 성공으로 표현하지 않는다.
 - Push 전 fresh `npm.cmd run verify`는 exit0: 110 files/992 tests 통과, 3 files/19 tests 환경 조건 skip, coverage 85.34/72.88/93.56/90.34%, typecheck·lint·build19·production audit0이다. 별도 DB 검사는 이번 전달 단계에서 재실행하지 않았다. 설정 객체 비교로 승인된 브랜치 규칙 외 기존 설정이 그대로임을 확인했고 독립 설정 검토도 통과했다. 빌드가 생성한 `next-env.d.ts` 경로 변경은 원상 복구하고 커밋에서 제외한다.
 - 자동 Preview 차단은 환경 격리 완료가 아니다. Production DB migration·Jobber 호환성 확인·maintenance/drain·schema-first 조건은 그대로 유지한다. 원격 main 병합과 운영 배포는 별도 승인·릴리스 게이트 충족 전까지 보류한다.
 
