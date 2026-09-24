@@ -19,6 +19,45 @@
 
 ---
 
+## 로컬 main 병합·재검증 — 운영 반영 선행 조건 유지 (2026-09-24)
+
+- 사용자가 필요한 변경과 전체 변경사항의 main 병합·커밋 및 오류 재검토를 요청했다. 기존 승인된 변경을 통합하되 원격 main Push의 자동 운영 배포를 우회하지 않는다. 운영 DB·환경변수 변경 승인이 있어도 아래 릴리스 선행 조건은 먼저 충족해야 한다.
+- fresh `npm.cmd run verify` exit0: TypeScript·ESLint 통과, 110 files/992 tests 통과와 환경 조건 3 files/19 tests skip, coverage 85.34/72.88/93.56/90.34%, production build 19/19, production audit 0건. 빌드가 바꾼 `next-env.d.ts` 생성 경로는 원상 복구하고 typecheck를 다시 통과했다.
+- 별도 Preview DB에서 durable132·role22·Data API72·lifecycle46, 총 pgTAP272건을 `plan(N)`·`finish(true)`로 재검증했다. 모든 테스트를 ROLLBACK했고 Auth 사용자·프로필·견적·Jobber token/operation·pgTAP 확장 0을 확인했다. Docker 엔진이 실행 중이 아니므로 전용 로컬 DB 동시성 검사는 이번에 재실행하지 못했으며 skip을 성공으로 보고하지 않는다.
+- 운영 DB의 새 operation/step 테이블, create/update wrapper와 total-line helper가 여전히 없음을 read-only로 확인했다. 운영 배포는 `a48bab8` / `dpl_BYVwa8yc4aFPtRHoJNS6mXS1cxmC` / READY이며 `/login`, `/manifest.webmanifest`, `/sw.js`, `/offline`은 HTTP200이다. 이는 인증 저장·live Jobber E2E 검증이 아니다.
+- 운영 환경변수 값과 Jobber 연결을 교체할 필요는 없지만, Production/Preview 공통 10개 변수의 테스트 환경 분리는 미완료다. Jobber 테스트 계정이 없어 Preview에서 Jobber를 완전히 차단하는 별도 방식의 승인을 요청했다. 테스트 Auth/Area·인증 E2E·Jobber read-only schema 호환성·백업·점검 시간/old callback drain이 준비되지 않은 상태에서는 운영 DB 적용·원격 main 병합·배포를 진행하지 않는다.
+- 독립 전체 변경 리뷰(`gpt-5.6-sol/high`)에서 확인된 Critical/Important/Minor 결함 0건으로 로컬 통합을 승인했다. 운영 릴리스는 위 미완료 검증을 이유로 HOLD다. 테스트 DB에서 검증한 forward migration·권한 회귀 테스트·관련 문서를 `e4137cb`에 함께 커밋했고 로컬 main에 충돌 없이 병합했다. 병합 결과의 `npm.cmd run test:run`도 110 files/992 tests 통과·19 skip·exit0이다. `docs/DB-SCHEMA.md`의 적용 순서와 설계 문서의 최신 승인 범위도 갱신했다.
+- 원격 main은 `a48bab8` 그대로다. 이번 로컬 병합 커밋은 Push·운영 배포 완료를 뜻하지 않는다. 환경변수·운영 DB·실제 Jobber 연결은 변경하지 않았고 기존 Draft PR #1과 기능 브랜치는 후속 검증을 위해 보존한다. 다른 작업 브랜치·worktree는 통합하거나 삭제하지 않았다.
+
+## 모바일 UI·UX 재분석 완료 — 구현 제안 단계 (2026-09-24)
+
+- **Model:** GPT-6 Astra (설계·분석), 독립 코드 검토 `gpt-5.6-sol/high` 2명.
+- 로그인된 운영 앱의 Inventory, New/Edit Quote, Overview, 견적 상세, Settings(Labour/Material/Area), Jobs/비용 상세를 Chrome 390×844 viewport에서 읽기 전용으로 확인하고 이번 실행의 스크린샷 14장을 저장·검수했다. Jobs만 360×800을 추가 확인했다. 로컬 `c20e1ac` 코드와 운영 화면의 배포 버전 일치는 별도로 검증하지 않았다.
+- 빈 견적 3,110px, 공개 항목 19개·자재 7개인 수정 샘플 7,162px와 공개 항목 내부 6,241px/표시 608px를 관측했다. Overview 검색 y=869px, Inventory 첫 그룹 y=799px, Settings 자재표 y=1,384px가 핵심 스크롤 부담이었다. 주요 관측 화면의 문서 가로 overflow는 0이며 Settings 내부 표 스크롤은 별도다.
+- 개선 제안은 견적 작업 영역 전환·한 항목씩 편집·다른 Area 요약·compact 공식 비교, 검색/합계 우선 배치, 관리 기능 접힘, 작은 보조/상태 글자의 대비 강화다. 기존 16px 입력·44px 주요 버튼·하단 저장 바를 유지한다. 수동 min/max·Decimal·GST·옵션 별도 합계 등 핵심 결정은 변경하지 않았다.
+- 상세 분석과 캡처는 로컬 `.superpowers/audits/2026-09-24-mobile-ux/report.md`에 저장했다. 앱 코드·DB·Jobber 쓰기·배포·핵심 결정·백로그 변경은 없으며 실제 iPhone/PWA/키보드/스크린리더와 저장·Sync 흐름은 이번에 검증하지 않았다. 브라우저는 원래 Inventory 화면과 크기로 복귀했다.
+
+## Preview 테스트 DB 생성·스키마 검증 완료 — Auth·Jobber 준비 대기 (2026-09-18)
+
+- **Model:** GPT-6 Astra (진행·수정·검증), 독립 DB/권한 검토는 최신 직접 지시에 따라 `gpt-5.6-sol/high`.
+- 사용자 생성 승인 후 Supabase가 제시한 월 $0 비용을 확인·승인하고, 기존 Jimee-PBC 조직에 `PBC Quote cal Preview` (`wzntbkdkessgbgoyekir`, ap-southeast-2)를 생성했다. ACTIVE_HEALTHY·Postgres 17.6.1.166을 확인했으며 유료 옵션은 추가하지 않았다.
+- 빈 프로젝트에서 `c20e1ac5789b4218e077548fc2be0608b52368a3`의 migration 30개를 검토해 테스트용 baseline으로 적용했다. 실제 재고 seed 및 그 재분류 DML은 제외했으며 운영 고객·견적·사용자·Jobber token은 복사하지 않았다. 원본 migration 파일과 이력은 수정하지 않았다.
+- clean replay 후 실제 DB 테스트가 누락된 `latest_jobber_total_line_id(text)` 실행 권한을 발견했다. invoker 견적 수정 RPC에서 helper 호출이 실패해 후속 version conflict로 이어졌다. 이전 전용 로컬 DB의 통과 기록은 점진적 SQL 적용 상태였으므로 clean replay 통과 증거로 사용하지 않는다.
+- 테스트를 먼저 추가해 권한 prefix 10건 중 3건 실패를 확인한 뒤, CLI가 생성한 `20260918020411_fix_jobber_total_line_lookup_grant.sql`을 추가해 **테스트 DB에만** 적용했다. 기존 활성 admin guard·고정 search_path를 보존하고 authenticated 실행 권한만 복구했다. PUBLIC/anon/service_role 권한은 계속 차단된다. 독립 최종 검토에서 추가 차단 결함은 없었다.
+- fresh 테스트 DB 검사: durable sync 132 + 역할 RLS 22 + Data API grant 72 + 삭제·복구 46 = **pgTAP 272건 통과**. `plan(N)`·`finish(true)`로 실패를 예외 처리하고 모든 fixture/임시 확장/trigger는 ROLLBACK했다. public 20개 테이블 모두 RLS enabled. 보안 advisor ERROR/WARN 0, 의도적인 service-only 테이블의 policy 없음 INFO 2건이며 성능 advisor의 기존 경고는 별도 미해결 상태다.
+- fresh `npm run test:run`: 110 files/992 tests 통과, 환경 조건 3 files/19 tests skip, exit0. 이번 DB 권한 수정에서는 typecheck/lint/build 및 실제 DB 동시성 검사를 재실행하지 않았다. live Jobber·인증 앱 E2E도 미실행이다.
+- 환경변수·원격 main·운영 DB·배포는 변경하지 않았다. 새 수정은 로컬 `codex/audit-priority-remediation`과 테스트 DB에만 반영되어 있고 아직 커밋·Push하지 않았다. 테스트 Auth/active admin 프로필·합성 Area 및 별도 Jobber 검증 방식이 준비되기 전까지 Preview 격리·릴리스 게이트는 미완료다. 사용자는 Jobber 테스트 계정이 없다고 확인했다.
+- baseline/forward migration의 원격 버전 대응 및 후속 적용 주의사항은 `docs/DEPLOY.md`를 따른다. 상세 source hash manifest는 `.superpowers/sdd/2026-09-18-preview-db/bootstrap-manifest.json`에 남겼다.
+
+### 생성 전 확인 기록
+
+- 사용자는 원격 main 병합·운영 DB 변경·운영 배포에 이어, 운영 앱 설정을 유지하는 Preview 환경 분리를 승인했다. 기존 durable-sync 릴리스 선행 조건을 충족한 뒤 운영 반영하며, 유료 리소스 생성·운영 Jobber 재인증은 임의로 수행하지 않는다.
+- Vercel 환경변수 10개는 모두 동일한 `sensitive` 레코드에서 Production/Preview에 함께 지정되어 있고 branch override는 없다. 원문 비밀값을 복호화하거나 출력하지 않고 ID·대상 환경·수정 시각만 확인했다. 대체 테스트 연결 정보 없이 Preview 변수부터 제거하지 않는다.
+- Supabase MCP에서 접근 가능한 조직은 `Jimee-PBC` (`lelsbrjyoeibypsuvpjb`, Free), 프로젝트는 정상 상태인 운영 `ojcrfgguhbxhtlgdflzp` 하나뿐이었다. non-main 테스트 branch는 없다. 새 테스트 DB의 조직 선택·생성 비용 확인과 별도 Jobber 테스트 계정 확인을 사용자에게 요청했다.
+- 2026-09-18 01:29–01:30 UTC 확인 시 Production은 `dpl_BYVwa8yc4aFPtRHoJNS6mXS1cxmC` / `a48bab8` / READY 그대로이며, `/login`, `/manifest.webmanifest`, `/sw.js`, `/offline`은 모두 HTTP 200이다. 이는 공개 경로 점검이며 인증된 견적 저장·Jobber E2E 통과를 뜻하지 않는다.
+- 현재까지 환경변수·원격 main·운영 DB·배포는 변경하지 않았다. Preview 격리 완료가 아니며, 테스트 DB·Auth·Jobber 연결과 schema-first 검증 전까지 기존 기능 브랜치 자동 Preview 차단을 유지한다. 추가 준비 내용은 `docs/DEPLOY.md`의 Preview 환경 격리 준비 기록을 따른다.
+- 독립 읽기 전용 검토도 대체값 없는 Preview 변수 제거가 로그인/저장을 실패시킬 수 있음을 확인했다. GraphQL version은 같은 검증 버전을 사용할 수 있지만 Supabase URL/모든 fallback 키, Jobber 연결·callback·암호화 키는 테스트 대상으로 분리한다. 기존 테스트 fixture는 로컬 전용이며 배포 가능한 Jobber sandbox를 대신하지 않는다.
+
 ## 로컬 main 병합·브랜치 Push·Draft PR 생성 완료 (2026-09-18)
 
 - 사용자가 이 작업 브랜치의 자동 Preview만 차단한 뒤 Push·PR을 진행하도록 승인했다. `vercel.json`에 `codex/audit-priority-remediation: false`만 추가했다. 원격 main·다른 브랜치·환경 변수·DB는 변경하지 않는다.

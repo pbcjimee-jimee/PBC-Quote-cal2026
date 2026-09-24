@@ -75,6 +75,7 @@ quotes ── jobber_sync_operations ──< jobber_sync_steps
 | `20260731012000_add_jobber_job_snapshots.sql` | read-only Jobber job/expense 응답 캐시(`jobber_job_snapshots`, service-role only) |
 | `20260815000648_add_quote_item_memos.sql` | `quote_items`·`quote_option_items`에 견적별 app-only `memo`(최대 4,000자) 추가 + 견적 저장 RPC 갱신·`search_path` 고정 |
 | `20260917025111_add_jobber_durable_sync.sql` | 불변 Jobber operation snapshot·mutation step journal, lease/claim/reconciliation RPC, quote save+enqueue wrapper |
+| `20260918020411_fix_jobber_total_line_lookup_grant.sql` | invoker 저장 wrapper가 호출하는 `latest_jobber_total_line_id(text)`의 authenticated 실행 권한 보완. 활성 admin 검사 유지, PUBLIC/anon/service_role 실행 차단 |
 
 `20260731` role 마이그레이션은 위 세 개가 전부다. Progress Invoice 마이그레이션은 이 브랜치와 릴리스에 없으며 별도 소유된다.
 
