@@ -109,6 +109,25 @@ SELECT ok(not has_column_privilege('authenticated','public.jobber_sync_operation
 SELECT ok(not has_table_privilege('authenticated','public.jobber_sync_operations','insert,update,delete'), 'operations are RPC-only');
 SELECT ok(not has_table_privilege('authenticated','public.jobber_sync_steps','insert,update,delete'), 'journal is RPC-only');
 
+SELECT ok(has_function_privilege('authenticated','app_auth.latest_jobber_total_line_id(text)','execute'),
+  'authenticated save wrappers can invoke the admin-guarded total ID lookup');
+SELECT ok(not has_function_privilege('anon','app_auth.latest_jobber_total_line_id(text)','execute'),
+  'anonymous users have no total ID lookup grant');
+SELECT ok(not has_function_privilege('service_role','app_auth.latest_jobber_total_line_id(text)','execute'),
+  'service role has no total ID lookup grant');
+SELECT ok(not EXISTS (
+  SELECT 1 FROM pg_proc procedure_row
+  CROSS JOIN LATERAL aclexplode(COALESCE(procedure_row.proacl, acldefault('f',procedure_row.proowner))) privilege_row
+  WHERE procedure_row.oid='app_auth.latest_jobber_total_line_id(text)'::regprocedure
+    AND privilege_row.grantee=0 AND privilege_row.privilege_type='EXECUTE'
+), 'PUBLIC has no total ID lookup grant');
+SELECT lives_ok($$SELECT app_auth.latest_jobber_total_line_id('remote-old-109')$$,
+  'active admin can invoke the total ID lookup through its granted execution boundary');
+SELECT set_config('request.jwt.claim.sub', '', true);
+SELECT throws_ok($$SELECT app_auth.latest_jobber_total_line_id('remote-old-109')$$,
+  '42501', 'ADMIN_REQUIRED', 'authenticated role without a user cannot look up total IDs');
+SELECT set_config('request.jwt.claim.sub', '91000000-0000-4000-8000-000000000001', true);
+
 CREATE TEMP TABLE compatibility_creates AS
 SELECT 'unlinked' AS kind, public.create_quote_with_jobber_sync(jsonb_build_object(
   'sync_requested',true,'quote',to_jsonb(q) || '{"jobber_quote_id":null,"jobber_sync_status":"not_synced"}'::jsonb,
@@ -624,14 +643,20 @@ SELECT throws_ok($$SELECT public.request_jobber_sync('91000000-0000-4000-8000-00
   '42501', 'ADMIN_REQUIRED', 'supervisor cannot request sync');
 SELECT throws_ok($$SELECT app_auth.mark_expired_jobber_sync_claim('91000000-0000-4000-8000-000000000799')$$,
   '42501', 'ADMIN_REQUIRED', 'supervisor cannot invoke the status expiry helper');
+SELECT throws_ok($$SELECT app_auth.latest_jobber_total_line_id('remote-old-109')$$,
+  '42501', 'ADMIN_REQUIRED', 'supervisor cannot look up total IDs');
 SELECT set_config('request.jwt.claim.sub', '91000000-0000-4000-8000-000000000003', true);
 SELECT throws_ok($$SELECT app_auth.mark_expired_jobber_sync_claim('91000000-0000-4000-8000-000000000799')$$,
   '42501', 'ADMIN_REQUIRED', 'inactive admin cannot invoke the status expiry helper');
+SELECT throws_ok($$SELECT app_auth.latest_jobber_total_line_id('remote-old-109')$$,
+  '42501', 'ADMIN_REQUIRED', 'inactive admin cannot look up total IDs');
 SET LOCAL ROLE anon;
 SELECT throws_ok($$SELECT public.get_jobber_sync_operation('91000000-0000-4000-8000-000000000101')$$,
   '42501', NULL, 'anonymous status access is denied');
 SELECT throws_ok($$SELECT app_auth.mark_expired_jobber_sync_claim('91000000-0000-4000-8000-000000000799')$$,
   '42501', NULL, 'anonymous user cannot invoke the status expiry helper');
+SELECT throws_ok($$SELECT app_auth.latest_jobber_total_line_id('remote-old-109')$$,
+  '42501', NULL, 'anonymous user cannot look up total IDs');
 
 RESET ROLE;
 SELECT * FROM finish();

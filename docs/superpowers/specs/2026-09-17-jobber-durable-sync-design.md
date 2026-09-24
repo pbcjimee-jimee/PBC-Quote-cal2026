@@ -1,7 +1,7 @@
 # Jobber durable sync and conservative recovery
 
 **Model:** GPT-6 Astra max (design), GPT-6 Astra high (implementation/review).
-**Approval:** User approved local implementation on 2026-09-17 ("진행"). Production migration, deployment and live Jobber mutations are not approved.
+**Approval:** User approved local implementation on 2026-09-17 ("진행"). Subsequent approval covers main integration, production migration/deployment and Preview environment isolation, most recently reconfirmed on 2026-09-24. Execution remains gated by `docs/DEPLOY.md`: isolated validation, read-only Jobber schema compatibility, backup, maintenance and old callback drain must precede release. Live Jobber test writes require an explicitly approved test target and procedure; approval does not waive these gates.
 
 ## Outcome
 
