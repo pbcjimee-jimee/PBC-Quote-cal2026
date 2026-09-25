@@ -26,7 +26,7 @@
 - 마지막 `npm.cmd run verify` exit0: 119 files/1,040 tests 통과·환경 조건 19 tests skip, TypeScript·ESLint·coverage·build 19/19·production audit0. Coverage S/B/F/L=85.34/72.88/93.56/90.34%. 생성 타입 참조 복구 후 typecheck 통과. 마지막 수정 교차 검토에서 남은 P0–P2 회귀 없음.
 - 브라우저: 합성 옵션 360/1280의 단일/다중 펼침 및 값 보존, 날짜 키보드 focus 3px. 실제 인증 Jobs 360/721 전환·빈/4건 일정·44px 클릭 영역, Overview 360/1280 금액 왼쪽/오른쪽·overflow0, 상세 360 overflow0을 확인했다. 실제 데이터 쓰기·Jobber 전송은 하지 않았다.
 - fresh 운영 조회: Production DB에는 durable migration 2개·일반 Save wrapper RPC가 여전히 없고 Vercel Preview 변수 10개가 Production과 공유된다. 현재 Production은 `a48bab8`/READY, 공개 health4개 HTTP200이다. 현재 main의 전체 앱을 Push하면 일반 Save가 실패하므로 원격 Push/배포는 미실행이다. 기존 DB·환경변수 승인과 별개로 Preview 격리/Jobber read-only 계약/점검·callback drain/백업/스키마 선적용 조건이 남았다.
-- 변경·실측·승인 기록을 구분한 후속 실행 순서는 `docs/superpowers/reviews/2026-09-25-mobile-ux-release-review.md`에 정리했다. 실제 main 통합 결과는 완료 후 아래에 추가한다.
+- 변경·실측·승인 기록을 구분한 후속 실행 순서는 `docs/superpowers/reviews/2026-09-25-mobile-ux-release-review.md`에 정리했다. UI 변경 62개 파일을 `26fcf48`에 커밋하고 로컬 main에 `f473bd5`로 충돌 없이 병합했다. 병합 직후 전체 트리가 검증된 UI 커밋과 같은 것을 `git diff --exit-code`로 확인했다. 기능 브랜치는 보존했으며 다른 worktree는 변경하지 않았다. 원격 Push·새 PR·배포·운영 DB·환경 변수 변경은 하지 않았다.
 
 ## 설정 직접 이동 버튼·상단 바로가기 정리 (2026-09-25)
 

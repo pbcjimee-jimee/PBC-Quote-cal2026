@@ -66,4 +66,12 @@ UI 기준 `e4970ad`는 원격 main `a48bab8`보다 11 commits 앞서며 durable-
 5. 그 뒤 원격 main Push → Vercel 배포 완료/commit 일치 → 인증된 합성 견적 Save를 검증한다. 실제 Jobber 쓰기는 승인된 시험 대상과 절차가 있을 때만 수행한다.
 6. unresolved durable operation이 생기면 pre-journal 앱으로 rollback하지 않는다. `docs/DEPLOY.md`의 resolve/forward-fix 절차를 따른다.
 
-**When done:** 아래에 실제 commit/main 병합 SHA와 검증 결과를 기록한다. 원격 Push·배포가 미실행이면 완료로 표시하지 않는다.
+## 5. 최종 통합 결과
+
+- 구현·회귀·문서 62개 파일 커밋: `26fcf48` (`feat: streamline mobile quote and management workspaces`).
+- 로컬 main 병합: `f473bd5`, 충돌 없음. 병합 직후 `git diff --exit-code codex/mobile-ux-redesign HEAD` exit 0으로 검증한 코드와 동일한 전체 트리를 확인했다.
+- 기능 브랜치와 다른 worktree는 보존했다. 위 병합 후에는 이 완료 기록과 PROGRESS만 추가 갱신했다.
+- **원격 Push·새 PR·Production 배포는 미실행.** 운영 DB·환경 변수·Jobber 쓰기는 변경하지 않았다. 원격 main과 실제 Production은 `a48bab8`이다.
+- localhost:3000은 마지막 production build로 재시작했다. 실제 기기와 인증 저장·Jobber E2E 미검증 범위는 그대로 남는다.
+
+**When done:** UI 재검토·수정·로컬 main 통합은 완료했다. 원격 운영 반영은 3–4절의 실제 조건을 충족한 뒤 진행한다.
