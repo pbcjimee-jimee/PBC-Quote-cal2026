@@ -27,6 +27,7 @@ import { mapJobberQuoteToDraft, type JobberQuoteDraft } from '@/lib/jobber/mappe
 import { diffJobberSnapshots } from '@/lib/jobber/snapshot-diff'
 import { fetchJobberQuote, JobberApiError } from '@/lib/jobber/client'
 import { getJobberConfig, getMissingGraphqlConfigKeys } from '@/lib/jobber/config'
+import { isJobberDisabledInPreview, JOBBER_DISABLED_MESSAGE } from '@/lib/jobber/environment'
 import { getUsableSharedJobberConnectionToken, refreshSharedJobberConnectionToken, requireSharedJobberConnectionOwnerId } from '@/lib/jobber/tokens'
 import {
   getJobberSyncOperationForQuote,
@@ -1103,6 +1104,9 @@ export async function createQuote(input: unknown): Promise<ActionResult<{ id: st
   if (!parsed.success) {
     return { ok: false, error: parsed.error.message }
   }
+  if (parsed.data.syncJobber && isJobberDisabledInPreview()) {
+    return { ok: false, error: JOBBER_DISABLED_MESSAGE }
+  }
 
   if (isDevNoAuthMode()) {
     const { createDevQuote, findDevQuoteByJobberIdentity, updateDevQuote } = await import('@/lib/dev-data')
@@ -1199,6 +1203,9 @@ export async function updateQuote(input: unknown): Promise<ActionResult<{ id: st
   const parsed = quoteSchema.safeParse(input)
   if (!parsed.success) {
     return { ok: false, error: parsed.error.message }
+  }
+  if (parsed.data.syncJobber && isJobberDisabledInPreview()) {
+    return { ok: false, error: JOBBER_DISABLED_MESSAGE }
   }
 
   if (isDevNoAuthMode()) {
@@ -1485,6 +1492,9 @@ export async function retryJobberQuoteSync(quoteId: string): Promise<ActionResul
   const parsedId = z.string().uuid().safeParse(quoteId)
   if (!parsedId.success) return { ok: false, error: 'Invalid quote id' }
   const id = parsedId.data
+  if (isJobberDisabledInPreview()) {
+    return { ok: false, error: JOBBER_DISABLED_MESSAGE }
+  }
 
   if (isDevNoAuthMode()) {
     return { ok: false, error: 'Jobber sync retry requires a saved Supabase quote' }
@@ -1545,6 +1555,9 @@ export async function refreshJobberQuoteSnapshot(
 ): Promise<ActionResult<{ id: string; status: 'unknown' | 'unchanged' | 'changed' }>> {
   const id = quoteId.trim()
   if (!id) return { ok: false, error: 'Quote id is required' }
+  if (isJobberDisabledInPreview()) {
+    return { ok: false, error: JOBBER_DISABLED_MESSAGE }
+  }
 
   if (isDevNoAuthMode()) {
     return { ok: false, error: 'Jobber snapshot refresh requires a saved Supabase quote' }

@@ -2,6 +2,27 @@ import { describe, expect, it, vi } from 'vitest'
 import { JobberLineSyncPartialError, syncJobberQuoteLineItems } from '@/lib/jobber/client'
 
 describe('jobber quote write client', () => {
+  it('blocks a configured mutation before fetch in preview', async () => {
+    vi.stubEnv('VERCEL_ENV', 'preview')
+    const fetcher = vi.fn<(input: string, init: RequestInit) => Promise<Response>>()
+
+    try {
+      await expect(syncJobberQuoteLineItems('quote-id', {
+        saveMode: 'priced_line_items',
+        lines: [],
+        finalTotal: '0',
+        finalTotalIncludesGst: true,
+      }, {
+        accessToken: 'access-token',
+        graphqlVersion: '2025-04-16',
+        fetcher,
+      })).rejects.toThrow('Jobber is disabled in this preview environment.')
+      expect(fetcher).not.toHaveBeenCalled()
+    } finally {
+      vi.unstubAllEnvs()
+    }
+  })
+
   it('loads only current Jobber line items before writing to avoid heavy quote fetch throttling', async () => {
     const fetcher = vi
       .fn()

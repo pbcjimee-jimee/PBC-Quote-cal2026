@@ -2,6 +2,7 @@
 
 import { revalidatePath } from 'next/cache'
 import { z } from 'zod'
+import { isJobberDisabledInPreview, JOBBER_DISABLED_MESSAGE } from '@/lib/jobber/environment'
 import { requireRole, type AppRole } from '@/lib/security/require-app-user'
 import { createServiceClient } from '@/lib/supabase/server'
 import type { Database } from '@/lib/supabase/types'
@@ -195,6 +196,9 @@ export async function resetUserPassword(input: unknown): Promise<ActionResult<{ 
 export async function linkJobberUser(input: unknown): Promise<ActionResult<ManagedUser>> {
   const parsed = linkJobberSchema.safeParse(input)
   if (!parsed.success) return { ok: false, error: parsed.error.message }
+  if (isJobberDisabledInPreview()) {
+    return { ok: false, error: JOBBER_DISABLED_MESSAGE }
+  }
 
   const admin = await authorizeAdmin()
   if (!admin.ok) return admin

@@ -15,7 +15,15 @@ function replaceUser(users: ManagedUser[], updated: ManagedUser): ManagedUser[] 
   return users.map((user) => user.id === updated.id ? updated : user)
 }
 
-export function UserManagement({ initialUsers }: { initialUsers: ManagedUser[] }) {
+export function UserManagement({
+  initialUsers,
+  jobberEnabled = true,
+  jobberNotice = 'Jobber is unavailable.',
+}: {
+  initialUsers: ManagedUser[]
+  jobberEnabled?: boolean
+  jobberNotice?: string
+}) {
   const [users, setUsers] = useState(initialUsers)
   const [email, setEmail] = useState('')
   const [displayName, setDisplayName] = useState('')
@@ -70,6 +78,7 @@ export function UserManagement({ initialUsers }: { initialUsers: ManagedUser[] }
   }
 
   function saveJobberLink(user: ManagedUser) {
+    if (!jobberEnabled) return
     run(async () => {
       const result = await linkJobberUser({ id: user.id, jobberUserId: jobberIds[user.id]?.trim() || null })
       if (!result.ok) return setError(result.error)
@@ -90,6 +99,9 @@ export function UserManagement({ initialUsers }: { initialUsers: ManagedUser[] }
 
   return (
     <div className="space-y-5">
+      {!jobberEnabled ? (
+        <p className="pbc-alert pbc-alert--warning" role="status">{jobberNotice}</p>
+      ) : null}
       <section className="pbc-card pbc-card--pad">
         <div className="pbc-panelhead"><div><h2 className="pbc-paneltitle">Create user</h2><p className="pbc-panelsub">Use a temporary password of at least 12 characters.</p></div></div>
         <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
@@ -115,7 +127,7 @@ export function UserManagement({ initialUsers }: { initialUsers: ManagedUser[] }
                   <td><b>{user.displayName || user.email}</b><br /><span className="text-xs text-slate-500">{user.email}</span></td>
                   <td><select aria-label={`Role for ${user.email}`} className="pbc-input" value={user.role} disabled={isPending} onChange={(event) => changeRole(user, event.target.value as AppRole)}><option value="admin">Admin</option><option value="supervisor">Supervisor</option></select></td>
                   <td><button type="button" className={`pbc-btn pbc-btn--sm ${user.isActive ? 'pbc-btn--ghost' : 'pbc-btn--primary'}`} disabled={isPending} onClick={() => toggleActive(user)}>{user.isActive ? 'Deactivate' : 'Activate'}</button></td>
-                  <td><div className="flex min-w-64 gap-2"><input aria-label={`Jobber user ID for ${user.email}`} className="pbc-input" value={jobberIds[user.id] ?? ''} onChange={(event) => setJobberIds((current) => ({ ...current, [user.id]: event.target.value }))} /><button type="button" className="pbc-btn pbc-btn--ghost pbc-btn--sm" disabled={isPending} onClick={() => saveJobberLink(user)}>Link</button></div></td>
+                  <td><div className="flex min-w-64 gap-2"><input aria-label={`Jobber user ID for ${user.email}`} className="pbc-input" value={jobberIds[user.id] ?? ''} disabled={!jobberEnabled} title={!jobberEnabled ? jobberNotice : undefined} onChange={(event) => setJobberIds((current) => ({ ...current, [user.id]: event.target.value }))} /><button type="button" className="pbc-btn pbc-btn--ghost pbc-btn--sm" disabled={isPending || !jobberEnabled} title={!jobberEnabled ? jobberNotice : undefined} onClick={() => saveJobberLink(user)}>Link</button></div></td>
                   <td><div className="flex min-w-64 gap-2"><input aria-label={`Temporary password for ${user.email}`} className="pbc-input" type="password" value={passwords[user.id] ?? ''} onChange={(event) => setPasswords((current) => ({ ...current, [user.id]: event.target.value }))} /><button type="button" className="pbc-btn pbc-btn--ghost pbc-btn--sm" disabled={isPending} onClick={() => resetPassword(user)}>Reset</button></div></td>
                 </tr>
               ))}

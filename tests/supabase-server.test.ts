@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({
   createBrowserAwareServerClient: vi.fn(),
@@ -21,6 +21,7 @@ vi.mock('next/headers', () => ({
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 
 describe('supabase server clients', () => {
+  afterEach(() => vi.unstubAllEnvs())
   beforeEach(() => {
     vi.clearAllMocks()
     process.env.NEXT_PUBLIC_SUPABASE_URL = 'https://example.supabase.co'
@@ -65,5 +66,12 @@ describe('supabase server clients', () => {
         },
       }
     )
+  })
+
+  it.each([createClient, createServiceClient])('blocks an unsafe Preview client before contacting Supabase', async (create) => {
+    vi.stubEnv('VERCEL_ENV', 'preview')
+    await expect(create()).rejects.toThrow(/Preview/)
+    expect(mocks.createBrowserAwareServerClient).not.toHaveBeenCalled()
+    expect(mocks.createServiceRoleClient).not.toHaveBeenCalled()
   })
 })

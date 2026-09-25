@@ -161,6 +161,24 @@ describe('admin user actions', () => {
     expect(updateUserById).toHaveBeenCalledWith(profileRow.id, { password: 'Replacement!234' })
   })
 
+  it('blocks Jobber user linking in Vercel Preview before auth or database access', async () => {
+    vi.stubEnv('VERCEL_ENV', 'preview')
+
+    try {
+      await expect(linkJobberUser({ id: profileRow.id, jobberUserId: 'jobber-user-1' }))
+        .resolves.toEqual({
+          ok: false,
+          error: 'Jobber is disabled in this preview environment.',
+        })
+    } finally {
+      vi.unstubAllEnvs()
+    }
+
+    expect(mocks.requireRole).not.toHaveBeenCalled()
+    expect(mocks.createServiceClient).not.toHaveBeenCalled()
+    expect(mocks.revalidatePath).not.toHaveBeenCalled()
+  })
+
   it('surfaces the database last-admin error when an admin demotes themself', async () => {
     const selfId = '00000000-0000-4000-8000-000000000001'
     mocks.createServiceClient.mockResolvedValue({

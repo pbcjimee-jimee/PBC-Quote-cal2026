@@ -29,6 +29,8 @@ interface CustomerPanelProps {
   jobberQuoteDraft: JobberQuoteDraft | null
   jobberActionMode?: 'fetch' | 'refresh'
   jobberRefreshPreview?: JobberRefreshPreview | null
+  jobberEnabled?: boolean
+  jobberNotice?: string
 }
 
 export interface JobberRefreshPreview {
@@ -148,7 +150,15 @@ function JobExpensesGroup({ job }: { job: JobberQuoteDraftJobExpenses }) {
   )
 }
 
-export function JobberQuoteSummary({ quote }: { quote: JobberQuoteDraft }) {
+export function JobberQuoteSummary({
+  quote,
+  jobberEnabled = true,
+  jobberNotice = 'Jobber is unavailable.',
+}: {
+  quote: JobberQuoteDraft
+  jobberEnabled?: boolean
+  jobberNotice?: string
+}) {
   const sourceLabel = quote.sourceType === 'job' ? 'Jobber job' : 'Jobber quote'
 
   return (
@@ -198,10 +208,12 @@ export function JobberQuoteSummary({ quote }: { quote: JobberQuoteDraft }) {
         {quote.jobExpensesError ? (
           <div className="pbc-alert pbc-alert--warning mt-2">
             <p>{quote.jobExpensesError}</p>
-            {quote.jobExpensesError.includes('Reconnect Jobber') ? (
+            {quote.jobExpensesError.includes('Reconnect Jobber') && jobberEnabled ? (
               <a href="/api/jobber/connect" className="mt-2 inline-flex font-bold text-amber-800 underline underline-offset-2">
                 Reconnect Jobber
               </a>
+            ) : quote.jobExpensesError.includes('Reconnect Jobber') ? (
+              <span className="mt-2 block font-bold text-amber-800">{jobberNotice}</span>
             ) : null}
           </div>
         ) : null}
@@ -221,7 +233,15 @@ export function JobberQuoteSummary({ quote }: { quote: JobberQuoteDraft }) {
   )
 }
 
-function JobberQuoteSnapshotDetails({ quote }: { quote: JobberQuoteDraft }) {
+function JobberQuoteSnapshotDetails({
+  quote,
+  jobberEnabled,
+  jobberNotice,
+}: {
+  quote: JobberQuoteDraft
+  jobberEnabled?: boolean
+  jobberNotice?: string
+}) {
   const sourceLabel = quote.sourceType === 'job' ? 'Jobber job' : 'Jobber quote'
 
   return (
@@ -233,7 +253,7 @@ function JobberQuoteSnapshotDetails({ quote }: { quote: JobberQuoteDraft }) {
         </span>
       </summary>
       <div className="mt-3">
-        <JobberQuoteSummary quote={quote} />
+        <JobberQuoteSummary quote={quote} jobberEnabled={jobberEnabled} jobberNotice={jobberNotice} />
       </div>
     </details>
   )
@@ -297,6 +317,8 @@ function JobberRefreshPreviewPanel({
 }
 
 export function CustomerPanel(props: CustomerPanelProps) {
+  const jobberEnabled = props.jobberEnabled ?? true
+  const jobberNotice = props.jobberNotice ?? 'Jobber is unavailable.'
   const lookupLabel = props.jobberLookupType === 'job'
     ? 'Jobber Job Number or URL'
     : 'Jobber Quote Number or URL'
@@ -318,7 +340,7 @@ export function CustomerPanel(props: CustomerPanelProps) {
         </label>
         <label className="pbc-field pbc-customerline__lookup">
           <span className="pbc-field__label">{lookupLabel}</span>
-          <input data-error-key="details:form:jobberQuoteId" value={props.jobberQuoteId} onChange={(event) => props.onJobberQuoteIdChange(event.target.value)} className="pbc-input" />
+          <input data-error-key="details:form:jobberQuoteId" value={props.jobberQuoteId} onChange={(event) => props.onJobberQuoteIdChange(event.target.value)} disabled={!jobberEnabled} title={!jobberEnabled ? jobberNotice : undefined} className="pbc-input" />
         </label>
         <div className="pbc-toggle pbc-customerline__mode" role="group" aria-label="Jobber lookup type">
           {(['quote', 'job'] as const).map((type) => (
@@ -326,13 +348,15 @@ export function CustomerPanel(props: CustomerPanelProps) {
               key={type}
               type="button"
               onClick={() => props.onJobberLookupTypeChange(type)}
+              disabled={!jobberEnabled}
+              title={!jobberEnabled ? jobberNotice : undefined}
               className={props.jobberLookupType === type ? 'is-on' : ''}
             >
               {type === 'quote' ? 'Quote' : 'Job'}
             </button>
           ))}
         </div>
-        <button type="button" onClick={props.onFetchJobberQuote} disabled={props.isFetchingJobberQuote} className="pbc-btn pbc-btn--ghost pbc-customerline__action">
+        <button type="button" onClick={props.onFetchJobberQuote} disabled={props.isFetchingJobberQuote || !jobberEnabled} title={!jobberEnabled ? jobberNotice : undefined} className="pbc-btn pbc-btn--ghost pbc-customerline__action">
           {props.isFetchingJobberQuote ? loadingLabel : actionLabel}
         </button>
         {props.onEditPublicQuote ? (
@@ -340,7 +364,7 @@ export function CustomerPanel(props: CustomerPanelProps) {
             Products &amp; pricing
           </button>
         ) : null}
-        {actionMode === 'refresh' ? (
+        {actionMode === 'refresh' && jobberEnabled ? (
           <span className="pbc-field__hint pbc-customerline__hint">
             Preview Jobber changes before applying them to this saved quote.
           </span>
@@ -348,10 +372,12 @@ export function CustomerPanel(props: CustomerPanelProps) {
         {props.jobberFetchError ? (
           <span className="pbc-alert pbc-alert--danger pbc-customerline__error">
             {props.jobberFetchError}
-            {props.jobberFetchError.includes('Reconnect Jobber') ? (
+            {props.jobberFetchError.includes('Reconnect Jobber') && jobberEnabled ? (
               <a href="/api/jobber/connect" className="ml-2 font-bold text-red-700 underline underline-offset-2">
                 Reconnect Jobber
               </a>
+            ) : props.jobberFetchError.includes('Reconnect Jobber') ? (
+              <span className="ml-2 font-bold text-red-700">{jobberNotice}</span>
             ) : null}
           </span>
         ) : null}
@@ -367,7 +393,9 @@ export function CustomerPanel(props: CustomerPanelProps) {
           onKeep={props.onKeepCurrentJobberQuote}
         />
       ) : null}
-      {props.jobberQuoteDraft ? <JobberQuoteSnapshotDetails quote={props.jobberQuoteDraft} /> : null}
+      {props.jobberQuoteDraft ? (
+        <JobberQuoteSnapshotDetails quote={props.jobberQuoteDraft} jobberEnabled={jobberEnabled} jobberNotice={jobberNotice} />
+      ) : null}
       <div className="grid gap-4 sm:grid-cols-2">
         <label className="pbc-field">
           <span className="pbc-field__label">Work Type</span>

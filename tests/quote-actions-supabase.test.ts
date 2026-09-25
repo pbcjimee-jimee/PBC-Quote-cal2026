@@ -1389,6 +1389,48 @@ describe('quote actions against Supabase', () => {
     expect(mocks.syncJobberQuoteLineItems).not.toHaveBeenCalled()
   })
 
+  it('keeps ordinary create and update saves working in Vercel Preview', async () => {
+    vi.stubEnv('VERCEL_ENV', 'preview')
+    const { rpc } = persistenceFixture()
+
+    try {
+      await expect(createQuote(quoteInput)).resolves.toEqual({ ok: true, data: { id: quoteId } })
+      await expect(updateQuote({ ...quoteInput, id: quoteId, expectedVersion: 1 }))
+        .resolves.toEqual({ ok: true, data: { id: quoteId } })
+    } finally {
+      vi.unstubAllEnvs()
+    }
+
+    expect(rpc).toHaveBeenCalledWith('create_quote_with_jobber_sync', expect.objectContaining({
+      payload: expect.objectContaining({ sync_requested: false }),
+    }))
+    expect(rpc).toHaveBeenCalledWith('update_quote_with_jobber_sync', expect.objectContaining({
+      payload: expect.objectContaining({ sync_requested: false }),
+    }))
+  })
+
+  it('rejects Save & Sync in Vercel Preview before any quote database access', async () => {
+    vi.stubEnv('VERCEL_ENV', 'preview')
+
+    try {
+      await expect(createQuote({ ...quoteInput, syncJobber: true })).resolves.toEqual({
+        ok: false,
+        error: 'Jobber is disabled in this preview environment.',
+      })
+      await expect(updateQuote({ ...quoteInput, id: quoteId, expectedVersion: 1, syncJobber: true }))
+        .resolves.toEqual({
+          ok: false,
+          error: 'Jobber is disabled in this preview environment.',
+        })
+    } finally {
+      vi.unstubAllEnvs()
+    }
+
+    expect(mocks.createClient).not.toHaveBeenCalled()
+    expect(mocks.getPricingSettings).not.toHaveBeenCalled()
+    expect(mocks.after).not.toHaveBeenCalled()
+  })
+
   it('persists edit-form snapshot refresh metadata with the quote', async () => {
     const { rpc } = persistenceFixture()
     expect((await updateQuote({ ...quoteInput, id: quoteId, expectedVersion: 1, jobberSnapshot: changedJobberSnapshot,
@@ -1458,6 +1500,28 @@ describe('quote actions against Supabase', () => {
     expect(await retryJobberQuoteSync(quoteId)).toEqual({ ok: true, data: { id: quoteId } })
     expect(mocks.runJobberSyncOperation).not.toHaveBeenCalled()
     expect(mocks.syncJobberQuoteLineItems).not.toHaveBeenCalled()
+  })
+
+  it('rejects Retry and snapshot refresh in Vercel Preview before reading a quote', async () => {
+    vi.stubEnv('VERCEL_ENV', 'preview')
+
+    try {
+      await expect(retryJobberQuoteSync(quoteId)).resolves.toEqual({
+        ok: false,
+        error: 'Jobber is disabled in this preview environment.',
+      })
+      await expect(refreshJobberQuoteSnapshot(quoteId)).resolves.toEqual({
+        ok: false,
+        error: 'Jobber is disabled in this preview environment.',
+      })
+    } finally {
+      vi.unstubAllEnvs()
+    }
+
+    expect(mocks.requireAllowedUser).not.toHaveBeenCalled()
+    expect(mocks.createClient).not.toHaveBeenCalled()
+    expect(mocks.requestJobberSyncOperation).not.toHaveBeenCalled()
+    expect(mocks.fetchJobberQuote).not.toHaveBeenCalled()
   })
 
   it('blocks a legacy failed quote without a journal instead of blindly resending it', async () => {

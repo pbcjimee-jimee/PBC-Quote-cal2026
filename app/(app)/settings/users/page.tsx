@@ -2,11 +2,13 @@ import Link from 'next/link'
 import { UserManagement } from '@/components/settings/user-management'
 import { Icons } from '@/components/ui/icons'
 import { listUsers } from '@/lib/actions/users'
+import { isJobberDisabledInPreview, JOBBER_DISABLED_MESSAGE } from '@/lib/jobber/environment'
 import { requireAdminPage } from '@/lib/security/page-role-guard'
 
 export default async function UsersPage() {
   await requireAdminPage()
   const users = await listUsers({})
+  const jobberEnabled = !isJobberDisabledInPreview()
 
   return (
     <main>
@@ -20,7 +22,11 @@ export default async function UsersPage() {
           <p>Manage app roles, access status, temporary passwords, and Jobber assignments.</p>
           {!users.ok ? <p className="text-[var(--danger)]">{users.error}</p> : null}
         </div>
-        <UserManagement initialUsers={users.ok ? users.data : []} />
+        <UserManagement
+          initialUsers={users.ok ? users.data : []}
+          jobberEnabled={jobberEnabled}
+          jobberNotice={jobberEnabled ? undefined : JOBBER_DISABLED_MESSAGE}
+        />
       </div>
     </main>
   )

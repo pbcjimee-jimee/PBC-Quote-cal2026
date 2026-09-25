@@ -1,5 +1,8 @@
 import type { NextConfig } from "next";
 import path from "node:path";
+import { assertPreviewEnvironment, PREVIEW_SUPABASE_URL } from './lib/deployment/preview-environment'
+
+assertPreviewEnvironment()
 
 const isProduction = process.env.NODE_ENV === 'production'
 const cspHeader = [
@@ -8,7 +11,9 @@ const cspHeader = [
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: blob:",
   "font-src 'self' data:",
-  "connect-src 'self' https://*.supabase.co https://api.getjobber.com",
+  process.env.VERCEL_ENV === 'preview'
+    ? `connect-src 'self' ${PREVIEW_SUPABASE_URL}`
+    : "connect-src 'self' https://*.supabase.co https://api.getjobber.com",
   "worker-src 'self'",
   "form-action 'self'",
   "base-uri 'self'",

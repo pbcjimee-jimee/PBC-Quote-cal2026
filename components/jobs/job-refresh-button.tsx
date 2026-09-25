@@ -8,13 +8,19 @@ type RefreshButtonProps =
   | { jobberJobId: string; supervisorProfileId?: never; month?: never }
   | { jobberJobId?: never; supervisorProfileId?: string | null; month?: string }
 
-export function JobRefreshButton(props: RefreshButtonProps) {
+type JobberAvailabilityProps = {
+  jobberEnabled?: boolean
+  jobberNotice?: string
+}
+
+export function JobRefreshButton(props: RefreshButtonProps & JobberAvailabilityProps) {
   const router = useRouter()
   const [error, setError] = useState<string | null>(null)
   const [warning, setWarning] = useState<string | null>(null)
   const [isPending, startTransition] = useTransition()
 
   function refresh() {
+    if (props.jobberEnabled === false) return
     setError(null)
     setWarning(null)
     startTransition(async () => {
@@ -34,7 +40,13 @@ export function JobRefreshButton(props: RefreshButtonProps) {
 
   return (
     <div>
-      <button type="button" className="pbc-btn pbc-btn--primary" disabled={isPending} onClick={refresh}>
+      <button
+        type="button"
+        className="pbc-btn pbc-btn--primary"
+        disabled={isPending || props.jobberEnabled === false}
+        title={props.jobberEnabled === false ? props.jobberNotice ?? 'Jobber is unavailable.' : undefined}
+        onClick={refresh}
+      >
         {isPending ? 'Refreshing…' : 'Refresh'}
       </button>
       {error ? <p className="mt-2 text-xs text-[var(--danger)]">{error}</p> : null}

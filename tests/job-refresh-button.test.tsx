@@ -73,4 +73,40 @@ describe('JobRefreshButton', () => {
       }
     }
   })
+
+  it('does not invoke a Jobber refresh when preview disables the control', async () => {
+    const { cleanup } = installTestDom()
+    let root: Root | null = null
+
+    try {
+      const { createRoot } = await import('react-dom/client')
+      const container = document.createElement('div')
+      root = createRoot(container)
+
+      await act(async () => {
+        root!.render(createElement(JobRefreshButton, {
+          supervisorProfileId: null,
+          month: '2026-08',
+          jobberEnabled: false,
+          jobberNotice: 'Jobber is disabled in this preview environment.',
+        }))
+      })
+
+      const button = container.querySelectorAll('button')[0]
+      expect(button.disabled).toBe(true)
+      expect(button.getAttribute('title')).toBe('Jobber is disabled in this preview environment.')
+
+      await act(async () => {
+        button.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      })
+      expect(mocks.refreshJobs).not.toHaveBeenCalled()
+      expect(mocks.refreshJobDetail).not.toHaveBeenCalled()
+    } finally {
+      try {
+        if (root) await act(async () => root?.unmount())
+      } finally {
+        cleanup()
+      }
+    }
+  })
 })

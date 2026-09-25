@@ -19,6 +19,16 @@
 
 ---
 
+## Jobber 없는 Preview 격리 (2026-09-25)
+
+- 사용자 승인 후 clean main `19d7051`에서 별도 worktree/`codex/preview-isolation`으로 진행했다. 최신 사용자 지시에 따라 구현·리뷰 서브에이전트는 GPT-5.6 Sol high를 사용했다.
+- Preview 서버의 Jobber OAuth·토큰·조회·전송·enqueue/claim 및 관련 UI를 차단했다. 자재/옵션/일반 Save와 운영 동작은 유지한다. 잘못된 Preview DB/key/인증/Jobber 설정은 build와 server client에서 거절한다.
+- Vercel 기존 10개 Production 레코드는 value를 보내지 않고 target만 Production으로 한정했다. 동일 ID/type/반환 값 표현 유지 확인. 테스트 DB/Auth용 Preview 전용 5개 변수 설정, Preview Jobber 변수 0개. 운영 DB/Jobber 연결은 변경하지 않았다.
+- 테스트 DB `wzntbkdkessgbgoyekir`: 합성 admin 1명·Area 3개, 인증 조회 성공. 실제 HTTP Server Action으로 일반 Save 생성/수정, 자재·옵션 가격 보존, Sync 차단 시 무변이/무enqueue 확인. Jobber token/operation 0.
+- 전체 verify와 Preview build 통과. 최종 test:run 1,095 통과/19 환경 의존 skip. 독립 코드 리뷰 blocking 0. CLI dry-run에서 비공개 파일 업로드 제외를 실제 확인했다.
+- 원격 Preview `dpl_HrmizxdhQNkPRMQH92XSDm6crSSg` READY/syd1/exact source 확인. 인증 HTTP 생성/수정·자재/옵션 보존·Sync 무변이/무enqueue 검증 통과(합성 견적 version 1→2→2, token/operation0). 운영 영향 독립 리뷰 453 tests/blocking0, 전체 재검증 1,095 통과·typecheck/lint 통과 후 사용자 승인된 main 병합·Production 재빌드를 진행한다.
+- 상세는 `docs/superpowers/reviews/2026-09-25-preview-isolation.md`. 제한 Preview를 live Jobber E2E 통과로 해석하지 않으며, Preview artifact를 Production으로 승격하지 않는다.
+
 ## 모바일 UI·UX 최종 재검토·운영 반영 준비 (2026-09-25)
 
 > 배포 완료: main `2e8c942` push 및 Production `dpl_GMccBEPGv93XZGveK7ZVKAQMd67y` READY/syd1/exact SHA, 공식 alias 연결을 확인했다. Public health 4개 HTTP200, 초기 error/fatal 로그0. local production build의 인증된 실제 Save create/update → 운영 DB 성공; UI 시험 견적 1건은 Move to Trash로 정리(version3, 복원 가능), operation/unresolved0. 운영 도메인은 인증 세션이 없어 로그인 화면만 확인했고 live Jobber 쓰기는 실행하지 않았다. 결과 문서 후속 push는 앱 source 변경 없음.

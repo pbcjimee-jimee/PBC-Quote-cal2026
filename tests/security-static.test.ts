@@ -42,7 +42,7 @@ describe('static security guardrails', () => {
     expect(violations).toEqual([])
   })
 
-  it('keeps the Supabase service role key behind the server client boundary', () => {
+  it('keeps the Supabase service role key in server client and deployment validation boundaries', () => {
     const references = sourceRoots
       .flatMap((root) => sourceFiles(join(projectRoot, root)))
       .flatMap((filePath) => {
@@ -51,6 +51,9 @@ describe('static security guardrails', () => {
         return [normalize(filePath)]
       })
 
-    expect(references).toEqual(['lib/supabase/server.ts'])
+    expect(references.sort()).toEqual([
+      'lib/deployment/preview-environment.ts',
+      'lib/supabase/server.ts',
+    ])
   })
 })

@@ -1,4 +1,5 @@
 import { JOBBER_GRAPHQL_URL } from './config'
+import { assertJobberEnabled } from './environment'
 import {
   buildJobberQuoteLineMutationItems,
   type BuildJobberQuoteLinePayloadInput,
@@ -1095,6 +1096,7 @@ async function postJobberGraphql(
   options: FetchJobberQuoteOptions,
   allowMutation = false
 ): Promise<unknown> {
+  assertJobberEnabled()
   if (!allowMutation) {
     assertJobberReadOnlyGraphqlDocument(query)
   }

@@ -2,10 +2,22 @@ import Link from 'next/link'
 import { JobDetail } from '@/components/jobs/job-detail'
 import { Icons } from '@/components/ui/icons'
 import { getJobDetail } from '@/lib/actions/jobs'
+import { isJobberDisabledInPreview, JOBBER_DISABLED_MESSAGE } from '@/lib/jobber/environment'
 
 export default async function JobDetailPage({ params }: {
   params: Promise<{ jobberJobId: string }>
 }) {
+  if (isJobberDisabledInPreview()) {
+    return (
+      <main>
+        <header className="pbc-topbar"><div className="pbc-crumb"><span>Jobs</span>{Icons.arrowDown({ size: 14 })}<b>Detail</b></div><div className="pbc-topbar__right"><Link href="/jobs" className="pbc-btn pbc-btn--ghost">{Icons.back({ size: 15 })} Back to jobs</Link></div></header>
+        <div className="pbc-page">
+          <p className="pbc-alert pbc-alert--warning" role="status">{JOBBER_DISABLED_MESSAGE}</p>
+        </div>
+      </main>
+    )
+  }
+
   const { jobberJobId } = await params
   const job = await getJobDetail({ jobberJobId: decodeJobberJobId(jobberJobId) })
 

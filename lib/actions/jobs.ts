@@ -22,6 +22,7 @@ import type {
   JobberJobVisit,
   JobberVisitRange,
 } from '@/lib/jobber/job-types'
+import { isJobberDisabledInPreview, JOBBER_DISABLED_MESSAGE } from '@/lib/jobber/environment'
 import { requireRole, type AppUserProfile } from '@/lib/security/require-app-user'
 import { createServiceClient } from '@/lib/supabase/server'
 import type { ActionResult } from './types'
@@ -95,6 +96,9 @@ interface FetchedJobSnapshots {
 export async function listMyJobs(input: unknown = {}): Promise<ActionResult<JobListData>> {
   const parsed = listJobsSchema.safeParse(input)
   if (!parsed.success) return { ok: false, error: parsed.error.message, code: 'VALIDATION' }
+  if (isJobberDisabledInPreview()) {
+    return { ok: false, error: JOBBER_DISABLED_MESSAGE, code: 'JOBBER_ERROR' }
+  }
 
   const appUser = await requireRole('any')
   if (!appUser.ok) return appUser
@@ -144,6 +148,9 @@ export async function listMyJobs(input: unknown = {}): Promise<ActionResult<JobL
 export async function refreshJobs(input: unknown = {}): Promise<ActionResult<JobListData>> {
   const parsed = listJobsSchema.safeParse(input)
   if (!parsed.success) return { ok: false, error: parsed.error.message, code: 'VALIDATION' }
+  if (isJobberDisabledInPreview()) {
+    return { ok: false, error: JOBBER_DISABLED_MESSAGE, code: 'JOBBER_ERROR' }
+  }
 
   const appUser = await requireRole('any')
   if (!appUser.ok) return appUser
@@ -193,6 +200,9 @@ export async function refreshJobs(input: unknown = {}): Promise<ActionResult<Job
 export async function getJobDetail(input: unknown): Promise<ActionResult<JobDetailData>> {
   const parsed = jobIdSchema.safeParse(input)
   if (!parsed.success) return { ok: false, error: parsed.error.message, code: 'VALIDATION' }
+  if (isJobberDisabledInPreview()) {
+    return { ok: false, error: JOBBER_DISABLED_MESSAGE, code: 'JOBBER_ERROR' }
+  }
 
   const appUser = await requireRole('any')
   if (!appUser.ok) return appUser
@@ -220,6 +230,9 @@ export async function getJobDetail(input: unknown): Promise<ActionResult<JobDeta
 export async function refreshJobDetail(input: unknown): Promise<ActionResult<JobDetailData>> {
   const parsed = jobIdSchema.safeParse(input)
   if (!parsed.success) return { ok: false, error: parsed.error.message, code: 'VALIDATION' }
+  if (isJobberDisabledInPreview()) {
+    return { ok: false, error: JOBBER_DISABLED_MESSAGE, code: 'JOBBER_ERROR' }
+  }
 
   const appUser = await requireRole('any')
   if (!appUser.ok) return appUser

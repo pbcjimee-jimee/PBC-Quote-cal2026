@@ -6,8 +6,12 @@ import { encryptTokenValue, getMissingJobberTokenStorageConfigKeys } from '@/lib
 import { requireRole } from '@/lib/security/require-app-user'
 import { createServiceClient } from '@/lib/supabase/server'
 import { isDevNoAuthMode } from '@/lib/actions/types'
+import { isJobberDisabledInPreview, JOBBER_DISABLED_MESSAGE } from '@/lib/jobber/environment'
 
 export async function GET(request: NextRequest) {
+  if (isJobberDisabledInPreview()) {
+    return NextResponse.json({ ok: false, error: JOBBER_DISABLED_MESSAGE }, { status: 503 })
+  }
   const config = getJobberConfig()
   const isDevTokenStorage = isDevNoAuthMode()
   const missing = [

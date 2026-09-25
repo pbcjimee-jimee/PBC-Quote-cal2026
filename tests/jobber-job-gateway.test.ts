@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 vi.mock('server-only', () => ({}))
 
 const mocks = vi.hoisted(() => ({
@@ -50,6 +50,17 @@ describe('Jobber job gateway', () => {
     vi.clearAllMocks()
     mocks.getToken.mockResolvedValue(token)
     mocks.refreshToken.mockResolvedValue({ ...token, accessToken: 'access-2' })
+  })
+
+  afterEach(() => vi.unstubAllEnvs())
+
+  it('blocks gateway creation before reading a cached token in preview', async () => {
+    vi.stubEnv('VERCEL_ENV', 'preview')
+
+    await expect(createJobberGateway()).rejects.toThrow(
+      'Jobber is disabled in this preview environment.'
+    )
+    expect(mocks.getToken).not.toHaveBeenCalled()
   })
 
   it('paginates team users and assigned jobs with the shared helper', async () => {

@@ -71,6 +71,8 @@ interface QuoteFormProps {
   productServices?: ProductServiceRecord[]
   quoteLineTemplates?: QuoteLineTemplateRecord[]
   initialQuote?: QuoteRecord
+  jobberEnabled?: boolean
+  jobberNotice?: string
 }
 
 type JobberQuoteResponse =
@@ -308,7 +310,15 @@ export function getNextDeletedJobberLineItemIds(
   return Array.from(merged)
 }
 
-export function QuoteForm({ settings, areas, productServices, quoteLineTemplates = [], initialQuote }: QuoteFormProps) {
+export function QuoteForm({
+  settings,
+  areas,
+  productServices,
+  quoteLineTemplates = [],
+  initialQuote,
+  jobberEnabled = true,
+  jobberNotice = 'Jobber is unavailable.',
+}: QuoteFormProps) {
   const [mobileState, setMobileState] = useState<QuoteMobileState>(() => ({
     ...createQuoteMobileState(Boolean(initialQuote)),
     activeMainScope: (initialQuote ? mapQuoteItemsToMaterials(initialQuote).find((item) => item.areaScope)?.areaScope : areas[0]?.scope) ?? 'interior',
@@ -652,8 +662,9 @@ export function QuoteForm({ settings, areas, productServices, quoteLineTemplates
   const shouldShowJobberSyncPreview = jobberQuoteId.trim().length > 0 ||
     jobberQuoteLookup.trim().length > 0 ||
     jobberQuoteLines.length > 0
-  const canSyncJobberQuote = jobberQuoteId.trim().length > 0 ||
+  const hasJobberTarget = jobberQuoteId.trim().length > 0 ||
     deletedJobberLineItemIds.length > 0
+  const canSyncJobberQuote = jobberEnabled && hasJobberTarget
   const jobberSyncPreview = useMemo(() => calculateJobberSyncPreview({
     pbcSubtotal: totals.areaBreakdown.finalSubtotal,
     jobberQuoteLines,
@@ -850,6 +861,7 @@ export function QuoteForm({ settings, areas, productServices, quoteLineTemplates
   }
 
   async function fetchJobberQuote() {
+    if (!jobberEnabled) return
     const lookup = jobberQuoteLookup.trim()
     setJobberFetchError(null)
     setJobberRefreshPreview(null)
@@ -896,6 +908,7 @@ export function QuoteForm({ settings, areas, productServices, quoteLineTemplates
   }
 
   function saveQuote(action: QuoteSaveAction = 'local') {
+    if (action === 'sync' && !jobberEnabled) return
     if (copyMaterialsRequestRef.current || saveRequestRef.current) return
 
     const input: QuoteFormSavePayloadInput = {
@@ -973,7 +986,7 @@ export function QuoteForm({ settings, areas, productServices, quoteLineTemplates
               type="button"
               onClick={() => saveQuote('sync')}
               disabled={isSaveBlocked || !canSyncJobberQuote}
-              title={canSyncJobberQuote ? 'Save app changes and update Jobber' : 'Fetch a Jobber quote before syncing'}
+              title={!jobberEnabled ? jobberNotice : canSyncJobberQuote ? 'Save app changes and update Jobber' : 'Fetch a Jobber quote before syncing'}
               className="pbc-btn pbc-btn--ghost"
             >
               {Icons.refresh({ size: 15 })} {jobberSaveLabel}
@@ -987,6 +1000,10 @@ export function QuoteForm({ settings, areas, productServices, quoteLineTemplates
         <h1>{initialQuote ? 'Edit Quote' : 'New Quote'}</h1>
         <p>Build the quote, compare formulas, and lock the final total.</p>
       </div>
+
+      {!jobberEnabled ? (
+        <p className="pbc-alert pbc-alert--warning" role="status">{jobberNotice}</p>
+      ) : null}
 
       <QuoteWorkspaceNav activeSection={mobileState.activeSection} onSectionChange={changeWorkspaceSection} issues={formIssues} />
       {formIssues.length ? <p id="quote-field-errors" className="pbc-alert pbc-alert--danger" role="alert">{formIssues.length} field {formIssues.length === 1 ? 'needs' : 'need'} attention. {formIssues[0].message}</p> : null}
@@ -1034,6 +1051,8 @@ export function QuoteForm({ settings, areas, productServices, quoteLineTemplates
             jobberQuoteDraft={jobberQuoteDraft}
             jobberActionMode={initialQuote ? 'refresh' : 'fetch'}
             jobberRefreshPreview={jobberRefreshPreview}
+            jobberEnabled={jobberEnabled}
+            jobberNotice={jobberNotice}
           />
         </section>
         <section id="quote-workspace-public" className="pbc-workspace pbc-quote-workspace-section" data-workspace-section="public" data-active={mobileState.activeSection === 'public'} tabIndex={-1} aria-label="Public quote">
@@ -1146,7 +1165,7 @@ export function QuoteForm({ settings, areas, productServices, quoteLineTemplates
         <button type="button" onClick={() => saveQuote('local')} disabled={isSaveBlocked} className="pbc-btn pbc-btn--primary pbc-btn--sm">
           {Icons.check({ size: 14 })} {mobileSaveLabel}
         </button>
-        <button type="button" onClick={() => saveQuote('sync')} disabled={isSaveBlocked || !canSyncJobberQuote} aria-label={jobberSaveLabel} className="pbc-btn pbc-btn--ghost pbc-btn--sm">
+        <button type="button" onClick={() => saveQuote('sync')} disabled={isSaveBlocked || !canSyncJobberQuote} title={!jobberEnabled ? jobberNotice : undefined} aria-label={jobberSaveLabel} className="pbc-btn pbc-btn--ghost pbc-btn--sm">
           {isPending && pendingSaveAction === 'sync' ? 'Syncing...' : 'Save & Sync'}
         </button>
       </div>

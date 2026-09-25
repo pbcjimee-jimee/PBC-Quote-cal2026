@@ -3,8 +3,10 @@ import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { cookies } from 'next/headers'
 import { requireSupabaseBrowserConfig } from './env'
 import type { Database } from './types'
+import { assertPreviewEnvironment } from '@/lib/deployment/preview-environment'
 
 export async function createClient() {
+  assertPreviewEnvironment()
   const cookieStore = await cookies()
   const { url, key } = requireSupabaseBrowserConfig()
 
@@ -31,6 +33,7 @@ export async function createClient() {
 }
 
 export async function createServiceClient() {
+  assertPreviewEnvironment()
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
 

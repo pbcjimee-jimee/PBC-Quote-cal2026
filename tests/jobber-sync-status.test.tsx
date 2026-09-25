@@ -36,13 +36,17 @@ function deferred<T>() {
   return { promise, resolve }
 }
 
-async function renderStatus(legacyFailed = false, initialQuoteId = quoteId) {
+async function renderStatus(
+  legacyFailed = false,
+  initialQuoteId = quoteId,
+  availability: { jobberEnabled?: boolean; jobberNotice?: string } = {},
+) {
   const dom = installTestDom()
   const container = dom.document.createElement('div')
   dom.document.body.appendChild(container)
   const root = createRoot(container as unknown as Element)
   await act(async () => {
-    root.render(createElement(JobberSyncStatus, { quoteId: initialQuoteId, legacyFailed }))
+    root.render(createElement(JobberSyncStatus, { quoteId: initialQuoteId, legacyFailed, ...availability }))
   })
   return {
     container,
@@ -85,6 +89,17 @@ describe('JobberSyncStatus', () => {
 
     expect(rendered.container.textContent).toContain('Queued for Jobber')
     expect(buttonByText(rendered.container, 'Retry sync')).toBeDefined()
+  })
+
+  it('does not poll durable status when Jobber is disabled in preview', async () => {
+    const notice = 'Jobber is disabled in this preview environment.'
+    const rendered = await renderStatus(false, quoteId, { jobberEnabled: false, jobberNotice: notice })
+    cleanups.push(rendered.cleanup)
+
+    expect(rendered.container.textContent).toContain(notice)
+    expect(mocks.getState).not.toHaveBeenCalled()
+    expect(buttonByText(rendered.container, 'Retry sync')).toBeUndefined()
+    expect(buttonByText(rendered.container, 'Check Jobber')).toBeUndefined()
   })
 
   it('shows an in-progress message and Check Jobber for a running operation', async () => {

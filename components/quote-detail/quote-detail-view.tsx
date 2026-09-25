@@ -20,6 +20,8 @@ import { AREA_SCOPE_LABELS } from '@/lib/areas/constants'
 
 interface QuoteDetailViewProps {
   quote: QuoteRecord
+  jobberEnabled?: boolean
+  jobberNotice?: string
 }
 
 const DETAIL_PREVIEW_LIMIT = 8
@@ -270,7 +272,11 @@ function getPreferredFormulaScopes(
   return scopes.length ? scopes : ['interior', 'exterior', 'roof']
 }
 
-export function QuoteDetailView({ quote }: QuoteDetailViewProps) {
+export function QuoteDetailView({
+  quote,
+  jobberEnabled = true,
+  jobberNotice = 'Jobber is unavailable.',
+}: QuoteDetailViewProps) {
   const materialTotal = itemMaterialTotal(quote)
   const subtotal = new Decimal(quote.subtotal)
   const labourTotal = Decimal.max(subtotal.sub(materialTotal), 0)
@@ -366,7 +372,11 @@ export function QuoteDetailView({ quote }: QuoteDetailViewProps) {
           </div>
         </div>
 
-        {quote.jobberQuoteId || quote.jobberSyncStatus === 'failed' ? (
+        {!jobberEnabled ? (
+          <p className="pbc-alert pbc-alert--warning" role="status">{jobberNotice}</p>
+        ) : null}
+
+        {jobberEnabled && (quote.jobberQuoteId || quote.jobberSyncStatus === 'failed') ? (
           <JobberSyncStatus
             quoteId={quote.id}
             legacyFailed={quote.jobberSyncStatus === 'failed'}
@@ -532,19 +542,23 @@ export function QuoteDetailView({ quote }: QuoteDetailViewProps) {
             <Card className="pbc-dspan">
               <SectionLabel icon={Icons.template({ size: 16 })}>Jobber Data</SectionLabel>
               <div className="space-y-4">
-                <JobberRefreshPanel quote={{
-                  id: quote.id,
-                  jobberQuoteId: quote.jobberQuoteId,
-                  jobberSnapshotRefreshedAt: quote.jobberSnapshotRefreshedAt,
-                  jobberSnapshotRefreshError: quote.jobberSnapshotRefreshError,
-                  jobberSnapshotChangeStatus: quote.jobberSnapshotChangeStatus,
-                  jobberSnapshotChangeSummary: quote.jobberSnapshotChangeSummary,
-                }} />
+                <JobberRefreshPanel
+                  quote={{
+                    id: quote.id,
+                    jobberQuoteId: quote.jobberQuoteId,
+                    jobberSnapshotRefreshedAt: quote.jobberSnapshotRefreshedAt,
+                    jobberSnapshotRefreshError: quote.jobberSnapshotRefreshError,
+                    jobberSnapshotChangeStatus: quote.jobberSnapshotChangeStatus,
+                    jobberSnapshotChangeSummary: quote.jobberSnapshotChangeSummary,
+                  }}
+                  jobberEnabled={jobberEnabled}
+                  jobberNotice={jobberNotice}
+                />
                 {quote.jobberSnapshot ? (
                   <details className="pbc-detailmore">
                     <summary>Show saved Jobber snapshot</summary>
                     <div className="pbc-detailmore__body pt-4">
-                      <JobberQuoteSummary quote={quote.jobberSnapshot} />
+                      <JobberQuoteSummary quote={quote.jobberSnapshot} jobberEnabled={jobberEnabled} jobberNotice={jobberNotice} />
                     </div>
                   </details>
                 ) : null}

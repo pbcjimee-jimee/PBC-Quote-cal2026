@@ -71,6 +71,7 @@ describe('quote pages require trustworthy calculation data', () => {
     root = undefined
     dom?.cleanup()
     dom = undefined
+    vi.unstubAllEnvs()
   })
 
   for (const mode of ['new', 'edit'] as const) {
@@ -155,6 +156,19 @@ describe('quote pages require trustworthy calculation data', () => {
     const html = renderToStaticMarkup(await QuoteEditPage({ params: Promise.resolve({ id: savedQuote.id }) }))
     expect(html).toContain('735.00')
     expect(html).toContain('808.50')
+  })
+
+  it.each(['new', 'edit'] as const)('%s: derives preview Jobber availability on the server while retaining local Save', async (mode) => {
+    vi.stubEnv('VERCEL_ENV', 'preview')
+
+    const page = mode === 'new'
+      ? await QuoteNewPage()
+      : await QuoteEditPage({ params: Promise.resolve({ id: savedQuote.id }) })
+    const html = renderToStaticMarkup(page)
+
+    expect(html).toContain('Jobber is disabled in this preview environment.')
+    expect(html).toContain(mode === 'new' ? 'Save quote' : 'Save changes')
+    expect(html).toContain('Save &amp; Sync')
   })
 
   it('does not turn a failed quote lookup into a missing quote', async () => {

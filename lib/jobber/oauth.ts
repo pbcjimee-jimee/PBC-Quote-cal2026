@@ -1,4 +1,5 @@
 import { assertJobberReadOnlyScopes, JOBBER_TOKEN_URL, type JobberConfig } from './config'
+import { assertJobberEnabled } from './environment'
 
 export interface JobberTokenResponse {
   accessToken: string
@@ -33,6 +34,7 @@ export async function exchangeAuthorizationCode(
   config: JobberConfig,
   fetcher: (input: string, init: RequestInit) => Promise<Response> = fetch
 ): Promise<JobberTokenResponse> {
+  assertJobberEnabled()
   const body = new URLSearchParams({
     client_id: config.clientId,
     client_secret: config.clientSecret,
@@ -62,6 +64,7 @@ export async function refreshAccessToken(
   config: JobberConfig,
   fetcher: (input: string, init: RequestInit) => Promise<Response> = fetch
 ): Promise<JobberTokenResponse> {
+  assertJobberEnabled()
   const body = new URLSearchParams({
     client_id: config.clientId,
     client_secret: config.clientSecret,

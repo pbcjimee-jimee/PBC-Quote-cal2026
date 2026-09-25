@@ -59,6 +59,29 @@ describe('jobber callback security', () => {
     delete process.env.ALLOWED_LOGIN_EMAILS
   })
 
+  it('returns 503 in Vercel Preview before exchanging or saving an OAuth token', async () => {
+    vi.stubEnv('VERCEL_ENV', 'preview')
+    const request = new NextRequest(
+      'http://localhost:3000/api/jobber/callback?code=auth-code&state=state-from-url',
+      { headers: { cookie: 'jobber_oauth_state=state-from-url' } }
+    )
+
+    try {
+      const response = await jobberCallback(request)
+      expect(response.status).toBe(503)
+      expect(await response.json()).toEqual({
+        ok: false,
+        error: 'Jobber is disabled in this preview environment.',
+      })
+    } finally {
+      vi.unstubAllEnvs()
+    }
+
+    expect(mocks.exchangeAuthorizationCode).not.toHaveBeenCalled()
+    expect(mocks.requireAllowedUser).not.toHaveBeenCalled()
+    expect(mocks.createServiceClient).not.toHaveBeenCalled()
+  })
+
   it('rejects OAuth callbacks that do not include the state cookie', async () => {
     const request = new NextRequest(
       'http://localhost:3000/api/jobber/callback?code=auth-code&state=state-from-url'
@@ -168,6 +191,26 @@ describe('jobber connect security', () => {
     process.env.JOBBER_CLIENT_SECRET = 'client-secret'
     process.env.JOBBER_REDIRECT_URI = 'http://localhost:3000/api/jobber/callback'
     process.env.NEXT_PUBLIC_DEV_NO_AUTH = 'false'
+  })
+
+  it('returns 503 in Vercel Preview before auth or OAuth state generation', async () => {
+    vi.stubEnv('VERCEL_ENV', 'preview')
+    const randomUUID = vi.spyOn(crypto, 'randomUUID')
+    const request = new NextRequest('http://localhost:3000/api/jobber/connect')
+
+    try {
+      const response = await jobberConnect(request)
+      expect(response.status).toBe(503)
+      expect(await response.json()).toEqual({
+        ok: false,
+        error: 'Jobber is disabled in this preview environment.',
+      })
+    } finally {
+      randomUUID.mockRestore()
+      vi.unstubAllEnvs()
+    }
+
+    expect(mocks.requireAllowedUser).not.toHaveBeenCalled()
   })
 
   it('redirects unauthenticated users to login before generating OAuth state', async () => {
