@@ -11,6 +11,12 @@ import { installTestDom, type TestElement } from '@/tests/helpers/test-dom'
 
 vi.mock('server-only', () => ({}))
 
+function materialRowFor(handle: TestElement | undefined): TestElement | null {
+  let element = handle?.parentElement ?? null
+  while (element && !element.getAttribute('class')?.split(' ').includes('pbc-materialrow')) element = element.parentElement
+  return element
+}
+
 type ReorderVisibleMaterials = (
   materials: MaterialItem[],
   visibleMaterialIds: string[],
@@ -236,7 +242,7 @@ describe('material drag reordering', () => {
       const dragHandles = container.querySelectorAll('button').filter((button) => (
         button.getAttribute('title') === 'Drag to reorder. Use arrow keys to move.'
       ))
-      const firstRow = dragHandles[0]?.parentElement?.parentElement as TestElement | null
+      const firstRow = materialRowFor(dragHandles[0])
       const secondHandle = dragHandles[1]
       expect(firstRow).not.toBeNull()
       expect(secondHandle).toBeDefined()
@@ -320,7 +326,7 @@ describe('material drag reordering', () => {
         button.getAttribute('title') === 'Drag to reorder. Use arrow keys to move.'
       ))
       const firstHandle = dragHandles[0]
-      const secondRow = dragHandles[1]?.parentElement?.parentElement as TestElement | null
+      const secondRow = materialRowFor(dragHandles[1])
       expect(firstHandle).toBeDefined()
       expect(secondRow).not.toBeNull()
       if (!firstHandle || !secondRow) return
@@ -460,7 +466,7 @@ describe('material drag reordering', () => {
         button.getAttribute('title') === 'Drag to reorder. Use arrow keys to move.'
       ))
       const firstHandle = dragHandles[0]
-      const secondRow = dragHandles[1]?.parentElement?.parentElement as TestElement | null
+      const secondRow = materialRowFor(dragHandles[1])
       expect(firstHandle).toBeDefined()
       expect(secondRow).not.toBeNull()
       if (!firstHandle || !secondRow) return
@@ -540,7 +546,7 @@ describe('material drag reordering', () => {
       const secondHandle = container.querySelectorAll('button').find((button) => (
         button.getAttribute('aria-label') === 'Drag Option paint two'
       ))
-      const secondRow = secondHandle?.parentElement?.parentElement as TestElement | null
+      const secondRow = materialRowFor(secondHandle)
       expect(firstHandle).toBeDefined()
       expect(secondRow).not.toBeNull()
       if (!firstHandle || !secondRow) return

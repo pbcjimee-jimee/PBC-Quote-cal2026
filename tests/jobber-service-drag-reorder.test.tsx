@@ -1,7 +1,10 @@
 import { act, createElement, useState } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { describe, expect, it, vi } from 'vitest'
-import { JobberProductServiceEditor } from '@/components/quote-form/jobber-product-service-editor'
+import {
+  JobberProductServiceEditor,
+  type JobberQuoteLinesChange,
+} from '@/components/quote-form/jobber-product-service-editor'
 import { getNextDeletedJobberLineItemIds } from '@/components/quote-form/quote-form'
 import type { JobberQuoteLineItemDraft } from '@/components/quote-form/types'
 import { installTestDom, type TestElement } from '@/tests/helpers/test-dom'
@@ -36,6 +39,33 @@ function ControlledServiceEditor() {
   return createElement('div', null,
     createElement(JobberProductServiceEditor, { value, onChange: setValue }),
     createElement('output', { 'aria-label': 'Service line order' }, value.map((line) => line.id).join(','))
+  )
+}
+
+function ControlledEditingServiceEditor({ initialLines = lines }: { initialLines?: JobberQuoteLineItemDraft[] }) {
+  const [value, setValue] = useState(initialLines)
+  const [editingLineId, setEditingLineId] = useState<string | null>(null)
+  const [deletedJobberLineItemIds, setDeletedJobberLineItemIds] = useState<string[]>([])
+
+  function handleChange(update: JobberQuoteLinesChange) {
+    setValue((currentLines) => {
+      const nextLines = typeof update === 'function' ? update(currentLines) : update
+      setDeletedJobberLineItemIds((currentIds) => (
+        getNextDeletedJobberLineItemIds(currentIds, currentLines, nextLines)
+      ))
+      return nextLines
+    })
+  }
+
+  return createElement('div', null,
+    createElement(JobberProductServiceEditor, {
+      value,
+      editingLineId,
+      onEditingLineChange: setEditingLineId,
+      onChange: handleChange,
+    }),
+    createElement('output', { 'aria-label': 'Editing service line' }, editingLineId ?? ''),
+    createElement('output', { 'aria-label': 'Deleted Jobber line ids' }, deletedJobberLineItemIds.join(','))
   )
 }
 
@@ -77,6 +107,135 @@ function createKeyboardEvent(key: string): Event {
 }
 
 describe('Jobber service line drag reordering', () => {
+  it('opens a summary for editing and clears it with Done editing', async () => {
+    const { cleanup, document: testDocument } = installTestDom()
+    const container = testDocument.createElement('div')
+    testDocument.body.appendChild(container)
+    let root: Root | null = null
+
+    try {
+      root = createRoot(container as unknown as Element)
+      await act(async () => {
+        root!.render(createElement(ControlledEditingServiceEditor))
+      })
+
+      const editAccessNotes = container.querySelectorAll('button').find((button) => (
+        button.getAttribute('aria-label') === 'Edit Access notes'
+      ))
+      expect(editAccessNotes).toBeDefined()
+      if (!editAccessNotes) return
+
+      await act(async () => {
+        editAccessNotes.dispatchEvent(new Event('click', { bubbles: true, cancelable: true }))
+      })
+
+      const editingOutput = container.querySelectorAll('output').find((element) => (
+        element.getAttribute('aria-label') === 'Editing service line'
+      ))
+      expect(editingOutput?.textContent).toBe('text-1')
+      expect(container.querySelectorAll('div').filter((element) => (
+        element.getAttribute('data-mobile-editing') === 'true'
+      ))).toHaveLength(1)
+
+      const doneEditing = container.querySelectorAll('button').find((button) => (
+        button.textContent === 'Done editing'
+      ))
+      expect(doneEditing).toBeDefined()
+      if (!doneEditing) return
+
+      await act(async () => {
+        doneEditing.dispatchEvent(new Event('click', { bubbles: true, cancelable: true }))
+      })
+
+      expect(editingOutput?.textContent).toBe('')
+    } finally {
+      if (root) await act(async () => root?.unmount())
+      cleanup()
+    }
+  })
+
+  it('opens a newly added line in the controlled editor', async () => {
+    const { cleanup, document: testDocument } = installTestDom()
+    const container = testDocument.createElement('div')
+    testDocument.body.appendChild(container)
+    let root: Root | null = null
+
+    try {
+      root = createRoot(container as unknown as Element)
+      await act(async () => {
+        root!.render(createElement(ControlledEditingServiceEditor, { initialLines: [] }))
+      })
+
+      const addLine = container.querySelectorAll('button').find((button) => button.textContent === 'Add Line Item')
+      expect(addLine).toBeDefined()
+      if (!addLine) return
+
+      await act(async () => {
+        addLine.dispatchEvent(new Event('click', { bubbles: true, cancelable: true }))
+      })
+
+      const editingOutput = container.querySelectorAll('output').find((element) => (
+        element.getAttribute('aria-label') === 'Editing service line'
+      ))
+      expect(editingOutput?.textContent).toMatch(/^jobber-line-/)
+      expect(container.querySelectorAll('div').filter((element) => (
+        element.getAttribute('data-mobile-editing') === 'true'
+      ))).toHaveLength(1)
+    } finally {
+      if (root) await act(async () => root?.unmount())
+      cleanup()
+    }
+  })
+
+  it('clears the selected line when that line is removed', async () => {
+    const { cleanup, document: testDocument } = installTestDom()
+    const container = testDocument.createElement('div')
+    testDocument.body.appendChild(container)
+    let root: Root | null = null
+
+    try {
+      root = createRoot(container as unknown as Element)
+      await act(async () => {
+        root!.render(createElement(ControlledEditingServiceEditor, {
+          initialLines: [{ ...lines[0], jobberLineItemId: 'jobber-line-1' }, lines[1]],
+        }))
+      })
+
+      const editExterior = container.querySelectorAll('button').find((button) => (
+        button.getAttribute('aria-label') === 'Edit Exterior repaint'
+      ))
+      expect(editExterior).toBeDefined()
+      if (!editExterior) return
+      await act(async () => {
+        editExterior.dispatchEvent(new Event('click', { bubbles: true, cancelable: true }))
+      })
+
+      const deleteExterior = container.querySelectorAll('button').find((button) => (
+        button.getAttribute('aria-label') === 'Delete Exterior repaint'
+      ))
+      expect(deleteExterior).toBeDefined()
+      if (!deleteExterior) return
+      await act(async () => {
+        deleteExterior.dispatchEvent(new Event('click', { bubbles: true, cancelable: true }))
+      })
+
+      const editingOutput = container.querySelectorAll('output').find((element) => (
+        element.getAttribute('aria-label') === 'Editing service line'
+      ))
+      expect(editingOutput?.textContent).toBe('')
+      const deletedIdsOutput = container.querySelectorAll('output').find((element) => (
+        element.getAttribute('aria-label') === 'Deleted Jobber line ids'
+      ))
+      expect(deletedIdsOutput?.textContent).toBe('jobber-line-1')
+      expect(container.querySelectorAll('button').some((button) => (
+        button.getAttribute('aria-label') === 'Delete Exterior repaint'
+      ))).toBe(false)
+    } finally {
+      if (root) await act(async () => root?.unmount())
+      cleanup()
+    }
+  })
+
   it('keeps the line order stable while a drag hovers', async () => {
     const { cleanup, document: testDocument } = installTestDom()
     Object.assign(window, {

@@ -24,6 +24,18 @@ export function JobsLoadingShell() {
           ))}
         </div>
       </div>
+      <div className="pbc-mobileagenda-loading" aria-hidden="true">
+        <div className="pbc-mobileagenda-loading__dates">
+          {Array.from({ length: 42 }, (_, index) => (
+            <span className="pbc-loadingbox" key={index} />
+          ))}
+        </div>
+        <div className="pbc-mobileagenda-loading__list">
+          <span className="pbc-loadingbar pbc-mobileagenda-loading__title" />
+          <span className="pbc-loadingbar pbc-mobileagenda-loading__job" />
+          <span className="pbc-loadingbar pbc-mobileagenda-loading__job" />
+        </div>
+      </div>
     </section>
   )
 }

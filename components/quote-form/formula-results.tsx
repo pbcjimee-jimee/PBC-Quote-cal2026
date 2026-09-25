@@ -33,7 +33,7 @@ export function FormulaResults({
           const isMin = selectedMin === formulaNum
           const isMax = selectedMax === formulaNum
           const tone = isBoth
-            ? 'bg-[var(--warning-soft)]'
+            ? 'bg-[var(--surface-soft)]'
             : selectedMin === formulaNum
               ? 'bg-[var(--lo-soft)]'
               : selectedMax === formulaNum
@@ -41,7 +41,7 @@ export function FormulaResults({
                 : ''
 
           return (
-            <div key={formulaNum} className={`pbc-listitem block ${tone}`}>
+            <div key={formulaNum} className={`pbc-listitem pbc-formula-row ${tone}`}>
               <div className="grid gap-3 sm:grid-cols-[1fr_auto] sm:items-center">
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
@@ -49,7 +49,7 @@ export function FormulaResults({
                     {isMin ? <span className="pbc-chip">Low selected</span> : null}
                     {isMax ? <span className="pbc-chip">High selected</span> : null}
                   </div>
-                  <div className="pbc-listitem__meta truncate">{result.name}</div>
+                  <details className="pbc-formula-description"><summary>Formula details</summary><p className="pbc-listitem__meta">{result.name}</p></details>
                 </div>
                 <div className="pbc-moneytext text-lg">
                   ${result.total.toFixed(2)}

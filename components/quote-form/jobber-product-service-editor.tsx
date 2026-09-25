@@ -2,20 +2,28 @@
 
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent, type KeyboardEvent } from 'react'
 import { Icons } from '@/components/ui/icons'
+import { JobberLineSummary } from './jobber-line-summary'
 import type { JobberQuoteLineItemDraft } from './types'
 import type { ProductServiceRecord } from '@/lib/product-services/types'
 import type { QuoteLineTemplateRecord } from '@/lib/quote-line-templates/types'
 import { listProductServices, searchProductServices } from '@/lib/actions/product-services'
 
-interface JobberProductServiceEditorProps {
+export interface JobberProductServiceEditorProps {
   value: JobberQuoteLineItemDraft[]
   productServices?: ProductServiceRecord[]
   templates?: QuoteLineTemplateRecord[]
+  editingLineId?: string | null
+  onEditingLineChange?: (id: string | null) => void
   onChange: (update: JobberQuoteLinesChange) => void
 }
 
 export type JobberQuoteLinesUpdater = (lines: JobberQuoteLineItemDraft[]) => JobberQuoteLineItemDraft[]
 export type JobberQuoteLinesChange = JobberQuoteLineItemDraft[] | JobberQuoteLinesUpdater
+export type JobberLineField = 'name' | 'description' | 'quantity' | 'unitPrice' | 'taxable' | 'clientVisible'
+
+export function getJobberLineErrorKey(lineId: string, field: JobberLineField): string {
+  return `public:${lineId}:${field}`
+}
 
 function createLineId(prefix: string) {
   return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
@@ -182,8 +190,11 @@ export function JobberProductServiceEditor({
   value,
   productServices,
   templates = [],
+  editingLineId,
+  onEditingLineChange,
   onChange,
 }: JobberProductServiceEditorProps) {
+  const [localEditingLineId, setLocalEditingLineId] = useState<string | null>(null)
   const [draggedLineId, setDraggedLineId] = useState<string | null>(null)
   const [dropTarget, setDropTarget] = useState<{ id: string; placement: DropPlacement } | null>(null)
   const [selectedTemplateId, setSelectedTemplateId] = useState('')
@@ -195,13 +206,27 @@ export function JobberProductServiceEditor({
   }>({ query: '', data: [] })
   const [reorderAnnouncement, setReorderAnnouncement] = useState('')
   const scrollListRef = useRef<HTMLDivElement | null>(null)
+  const addPricedLineButtonRef = useRef<HTMLButtonElement | null>(null)
   const dragScrollFrameRef = useRef<number | null>(null)
   const dragScrollStepRef = useRef(0)
   const pendingAnnouncementLineIdRef = useRef<string | null>(null)
+  const pendingRemovalFocusRef = useRef<string | null | undefined>(undefined)
+  const previousLinesRef = useRef(value)
+  const reportedMissingEditingLineIdRef = useRef<string | null>(null)
   const productServiceSearchRequestRef = useRef<{
     query: string
     request: ReturnType<typeof searchProductServices>
   } | null>(null)
+  const isEditingControlled = editingLineId !== undefined
+  const requestedEditingLineId = isEditingControlled ? editingLineId : localEditingLineId
+  const activeEditingLineId = requestedEditingLineId && value.some((line) => line.id === requestedEditingLineId)
+    ? requestedEditingLineId
+    : null
+
+  function changeEditingLine(id: string | null) {
+    if (!isEditingControlled) setLocalEditingLineId(id)
+    onEditingLineChange?.(id)
+  }
 
   function stopProductServiceDragScroll() {
     dragScrollStepRef.current = 0
@@ -242,6 +267,46 @@ export function JobberProductServiceEditor({
   }
 
   useEffect(() => stopProductServiceDragScroll, [])
+
+  useEffect(() => {
+    const previousLines = previousLinesRef.current
+    previousLinesRef.current = value
+
+    if (requestedEditingLineId && !activeEditingLineId) {
+      if (pendingRemovalFocusRef.current === undefined) {
+        const previousIndex = previousLines.findIndex((line) => line.id === requestedEditingLineId)
+        pendingRemovalFocusRef.current = previousIndex >= 0
+          ? value[previousIndex]?.id ?? value[previousIndex - 1]?.id ?? null
+          : null
+      }
+      if (reportedMissingEditingLineIdRef.current !== requestedEditingLineId) {
+        reportedMissingEditingLineIdRef.current = requestedEditingLineId
+        onEditingLineChange?.(null)
+      }
+    } else {
+      reportedMissingEditingLineIdRef.current = null
+    }
+
+    const targetId = pendingRemovalFocusRef.current
+    if (targetId === undefined) return
+    pendingRemovalFocusRef.current = undefined
+
+    if (targetId) {
+      const isMobile = window.matchMedia?.('(max-width: 720px)').matches ?? false
+      const attributeName = isMobile ? 'data-jobber-summary-id' : 'data-error-key'
+      const attributeValue = isMobile ? targetId : getJobberLineErrorKey(targetId, 'name')
+      const focusTarget = Array.from(scrollListRef.current?.querySelectorAll<HTMLElement>(`[${attributeName}]`) ?? [])
+        .find((element) => element.getAttribute(attributeName) === attributeValue)
+      if (focusTarget && typeof focusTarget.focus === 'function') {
+        focusTarget.focus({ preventScroll: true })
+        return
+      }
+    }
+
+    if (typeof addPricedLineButtonRef.current?.focus === 'function') {
+      addPricedLineButtonRef.current.focus({ preventScroll: true })
+    }
+  }, [activeEditingLineId, onEditingLineChange, requestedEditingLineId, value])
 
   useEffect(() => {
     const movedLineId = pendingAnnouncementLineIdRef.current
@@ -342,6 +407,12 @@ export function JobberProductServiceEditor({
   function removeLine(id: string) {
     if (activeLookupLineId === id) {
       setActiveLookupLineId(null)
+    }
+    if (activeEditingLineId === id) {
+      const currentIndex = value.findIndex((line) => line.id === id)
+      const nextLines = value.filter((line) => line.id !== id)
+      pendingRemovalFocusRef.current = nextLines[currentIndex]?.id ?? nextLines[currentIndex - 1]?.id ?? null
+      changeEditingLine(null)
     }
     onChange(value.filter((line) => line.id !== id))
   }
@@ -447,11 +518,15 @@ export function JobberProductServiceEditor({
   }
 
   function addPricedLineItem() {
-    onChange([...value, createPricedLineItem()])
+    const line = createPricedLineItem()
+    onChange([...value, line])
+    changeEditingLine(line.id)
   }
 
   function addTextLine() {
-    onChange([...value, createTextLine()])
+    const line = createTextLine()
+    onChange([...value, line])
+    changeEditingLine(line.id)
   }
 
   return (
@@ -481,6 +556,7 @@ export function JobberProductServiceEditor({
             </label>
           ) : null}
           <button
+            ref={addPricedLineButtonRef}
             type="button"
             onClick={addPricedLineItem}
             className="pbc-btn pbc-btn--ghost pbc-publiclines__button"
@@ -521,6 +597,8 @@ export function JobberProductServiceEditor({
               <PricedLineRow
                 key={line.id}
                 line={line}
+                isEditing={activeEditingLineId === line.id}
+                onEditingChange={(isEditing) => changeEditingLine(isEditing ? line.id : null)}
                 isDragging={draggedLineId === line.id}
                 dropPlacement={isDropTarget ? dropTarget.placement : null}
                 onDragStart={(event) => handleDragStart(line.id, event)}
@@ -546,6 +624,8 @@ export function JobberProductServiceEditor({
             <TextLineRow
               key={line.id}
               line={line}
+              isEditing={activeEditingLineId === line.id}
+              onEditingChange={(isEditing) => changeEditingLine(isEditing ? line.id : null)}
               isDragging={draggedLineId === line.id}
               dropPlacement={isDropTarget ? dropTarget.placement : null}
               onDragStart={(event) => handleDragStart(line.id, event)}
@@ -574,6 +654,8 @@ export function JobberProductServiceEditor({
 
 interface PricedLineRowProps {
   line: JobberQuoteLineItemDraft
+  isEditing: boolean
+  onEditingChange: (isEditing: boolean) => void
   isDragging: boolean
   dropPlacement: DropPlacement | null
   onDragStart: (event: DragEvent<HTMLButtonElement>) => void
@@ -667,6 +749,8 @@ function LineReorderControls({
 
 function PricedLineRow({
   line,
+  isEditing,
+  onEditingChange,
   isDragging,
   dropPlacement,
   onDragStart,
@@ -692,16 +776,32 @@ function PricedLineRow({
 
   return (
     <div
-      onDragOver={onDragOver}
-      onDrop={onDrop}
+      data-mobile-editing={isEditing}
       className={[
-        'pbc-inlinepanel relative transition-shadow',
+        'pbc-jobber-line pbc-inlinepanel relative transition-shadow',
         isDragging ? 'opacity-60' : '',
         getDropTargetClass(dropPlacement),
       ].join(' ')}
     >
-      {dropPlacement ? <DropInsertionMarker placement={dropPlacement} /> : null}
-      <div className="flex items-start gap-2">
+      <JobberLineSummary
+        line={line}
+        isEditing={isEditing}
+        editorId={`${line.id}-editor`}
+        onEdit={() => onEditingChange(true)}
+      />
+      <div
+        id={`${line.id}-editor`}
+        onDragOver={onDragOver}
+        onDrop={onDrop}
+        className="pbc-jobber-line-editor relative"
+      >
+        {dropPlacement ? <DropInsertionMarker placement={dropPlacement} /> : null}
+        <div className="pbc-jobber-line-done mb-3 justify-end">
+          <button type="button" onClick={() => onEditingChange(false)} className="pbc-btn pbc-btn--ghost">
+            Done editing
+          </button>
+        </div>
+        <div className="flex items-start gap-2">
         <button
           type="button"
           draggable
@@ -722,6 +822,7 @@ function PricedLineRow({
               id={`${line.id}-name`}
               aria-label="Line item name"
               value={line.name}
+              data-error-key={getJobberLineErrorKey(line.id, 'name')}
               onFocus={onLookupFocus}
               onBlur={onLookupBlur}
               onChange={(event: ChangeEvent<HTMLInputElement>) => onChange({ ...line, name: event.target.value })}
@@ -753,16 +854,18 @@ function PricedLineRow({
               id={`${line.id}-description`}
               aria-label="Line item description"
               value={line.description}
+              data-error-key={getJobberLineErrorKey(line.id, 'description')}
               onChange={(event: ChangeEvent<HTMLTextAreaElement>) => onChange({ ...line, description: event.target.value })}
               className="pbc-textarea min-h-20 w-full"
               placeholder="Description"
             />
           </div>
-          <div className="grid gap-3 sm:grid-cols-[5rem_minmax(0,8rem)] xl:grid-cols-[5rem_minmax(0,8rem)_minmax(0,1fr)] xl:items-end">
+          <div className="pbc-jobber-line-fields grid grid-cols-2 gap-3 xl:grid-cols-[5rem_minmax(0,8rem)_minmax(0,1fr)] xl:items-end">
             <label className="pbc-field min-w-0">
               <span className="pbc-field__label">Qty</span>
               <input
                 value={line.quantity}
+                data-error-key={getJobberLineErrorKey(line.id, 'quantity')}
                 onChange={(event: ChangeEvent<HTMLInputElement>) => onChange({ ...line, quantity: event.target.value })}
                 inputMode="decimal"
                 className="pbc-input min-w-0"
@@ -772,16 +875,18 @@ function PricedLineRow({
               <span className="pbc-field__label">Unit price</span>
               <input
                 value={line.unitPrice}
+                data-error-key={getJobberLineErrorKey(line.id, 'unitPrice')}
                 onChange={(event: ChangeEvent<HTMLInputElement>) => onChange({ ...line, unitPrice: event.target.value })}
                 inputMode="decimal"
                 className="pbc-input min-w-0 font-mono"
               />
             </label>
-            <div className="flex min-w-0 flex-wrap gap-3 pb-2 sm:col-span-2 xl:col-span-1">
+            <div className="col-span-2 flex min-w-0 flex-wrap gap-3 pb-2 xl:col-span-1">
               <label className="pbc-checkfield">
                 <input
                   type="checkbox"
                   checked={line.taxable}
+                  data-error-key={getJobberLineErrorKey(line.id, 'taxable')}
                   onChange={(event: ChangeEvent<HTMLInputElement>) => onChange({ ...line, taxable: event.target.checked })}
                   className="pbc-checkbox"
                 />
@@ -791,6 +896,7 @@ function PricedLineRow({
                 <input
                   type="checkbox"
                   checked={line.clientVisible}
+                  data-error-key={getJobberLineErrorKey(line.id, 'clientVisible')}
                   onChange={(event: ChangeEvent<HTMLInputElement>) => onChange({ ...line, clientVisible: event.target.checked })}
                   className="pbc-checkbox"
                 />
@@ -808,14 +914,17 @@ function PricedLineRow({
         >
           {Icons.trash({ size: 13 })}
         </button>
+        </div>
+        <LineReorderControls {...reorderControls} />
       </div>
-      <LineReorderControls {...reorderControls} />
     </div>
   )
 }
 
 interface TextLineRowProps {
   line: JobberQuoteLineItemDraft
+  isEditing: boolean
+  onEditingChange: (isEditing: boolean) => void
   isDragging: boolean
   dropPlacement: DropPlacement | null
   onDragStart: (event: DragEvent<HTMLButtonElement>) => void
@@ -837,6 +946,8 @@ interface TextLineRowProps {
 
 function TextLineRow({
   line,
+  isEditing,
+  onEditingChange,
   isDragging,
   dropPlacement,
   onDragStart,
@@ -862,16 +973,32 @@ function TextLineRow({
 
   return (
     <div
-      onDragOver={onDragOver}
-      onDrop={onDrop}
+      data-mobile-editing={isEditing}
       className={[
-        'pbc-softpanel relative transition-shadow',
+        'pbc-jobber-line pbc-softpanel relative transition-shadow',
         isDragging ? 'opacity-60' : '',
         getDropTargetClass(dropPlacement),
       ].join(' ')}
     >
-      {dropPlacement ? <DropInsertionMarker placement={dropPlacement} /> : null}
-      <div className="flex items-start gap-2">
+      <JobberLineSummary
+        line={line}
+        isEditing={isEditing}
+        editorId={`${line.id}-editor`}
+        onEdit={() => onEditingChange(true)}
+      />
+      <div
+        id={`${line.id}-editor`}
+        onDragOver={onDragOver}
+        onDrop={onDrop}
+        className="pbc-jobber-line-editor relative"
+      >
+        {dropPlacement ? <DropInsertionMarker placement={dropPlacement} /> : null}
+        <div className="pbc-jobber-line-done mb-3 justify-end">
+          <button type="button" onClick={() => onEditingChange(false)} className="pbc-btn pbc-btn--ghost">
+            Done editing
+          </button>
+        </div>
+        <div className="flex items-start gap-2">
         <button
           type="button"
           draggable
@@ -892,6 +1019,7 @@ function TextLineRow({
               id={`${line.id}-title`}
               aria-label="Text title"
               value={line.name}
+              data-error-key={getJobberLineErrorKey(line.id, 'name')}
               onFocus={onLookupFocus}
               onBlur={onLookupBlur}
               onChange={(event: ChangeEvent<HTMLInputElement>) => onChange({ ...line, name: event.target.value })}
@@ -923,6 +1051,7 @@ function TextLineRow({
               id={`${line.id}-body`}
               aria-label="Text body"
               value={line.description}
+              data-error-key={getJobberLineErrorKey(line.id, 'description')}
               onChange={(event: ChangeEvent<HTMLTextAreaElement>) => onChange({ ...line, description: event.target.value })}
               className="pbc-textarea min-h-20 w-full"
               placeholder="Description text"
@@ -932,6 +1061,7 @@ function TextLineRow({
             <input
               type="checkbox"
               checked={line.clientVisible}
+              data-error-key={getJobberLineErrorKey(line.id, 'clientVisible')}
               onChange={(event: ChangeEvent<HTMLInputElement>) => onChange({ ...line, clientVisible: event.target.checked })}
               className="pbc-checkbox"
             />
@@ -947,8 +1077,9 @@ function TextLineRow({
         >
           {Icons.trash({ size: 13 })}
         </button>
+        </div>
+        <LineReorderControls {...reorderControls} />
       </div>
-      <LineReorderControls {...reorderControls} />
     </div>
   )
 }

@@ -625,6 +625,8 @@ export function InventoryMobileList({
                   <small>Colour</small>
                   <b>{item.colour?.trim() || '-'}</b>
                 </span>
+                <span><small>Quantity</small><b>{item.quantity}</b></span>
+                <span className="pbc-inventorymobile__stock"><small>Status</small><b>{statusLabel(item.status)}</b></span>
               </span>
               <span className="pbc-inventorymobile__chevron" aria-hidden="true">
                 {Icons.arrowDown({ size: 16 })}
@@ -1004,6 +1006,31 @@ export function InventoryManager({
           <h2 className="pbc-paneltitle">Warehouse Inventory</h2>
           <p className="pbc-panelsub">{items.length} loaded filtered items</p>
         </div>
+      </div>
+
+      <div className="pbc-panelhead__actions pbc-inventoryfilters">
+        <input
+          value={query}
+          onChange={(event) => setDesiredQuery(event.target.value)}
+          className="pbc-input pbc-inventoryfilters__search"
+          placeholder="Search inventory..."
+        />
+        <select value={statusFilter} onChange={(event) => setDesiredStatus(event.target.value as 'current' | 'all' | InventoryStatus)} className="pbc-input">
+          <option value="current">Current stock</option>
+          <option value="all">All status</option>
+          <option value="in_stock">In stock</option>
+          <option value="out">Out</option>
+          <option value="unknown">Unknown</option>
+        </select>
+        <select value={categoryFilter} onChange={(event) => setDesiredCategory(event.target.value)} className="pbc-input">
+          <option value="all">All categories</option>
+          {categories.map((category) => (
+            <option key={category} value={category}>{category}</option>
+          ))}
+        </select>
+      </div>
+
+      <div className="pbc-inventorysecondary">
         {canAdminister ? (
           <button
             ref={mobileAddTriggerRef}
@@ -1018,27 +1045,6 @@ export function InventoryManager({
             {Icons.plus({ size: 14 })} Add item
           </button>
         ) : null}
-        <div className="pbc-panelhead__actions w-full sm:w-auto">
-          <input
-            value={query}
-            onChange={(event) => setDesiredQuery(event.target.value)}
-            className="pbc-input sm:max-w-xs"
-            placeholder="Search inventory..."
-          />
-          <select value={statusFilter} onChange={(event) => setDesiredStatus(event.target.value as 'current' | 'all' | InventoryStatus)} className="pbc-input sm:max-w-[160px]">
-            <option value="current">Current stock</option>
-            <option value="all">All status</option>
-            <option value="in_stock">In stock</option>
-            <option value="out">Out</option>
-            <option value="unknown">Unknown</option>
-          </select>
-          <select value={categoryFilter} onChange={(event) => setDesiredCategory(event.target.value)} className="pbc-input sm:max-w-[180px]">
-            <option value="all">All categories</option>
-            {categories.map((category) => (
-              <option key={category} value={category}>{category}</option>
-            ))}
-          </select>
-        </div>
       </div>
 
       {canAdminister ? <section
@@ -1128,26 +1134,29 @@ export function InventoryManager({
         </div>
       </section> : null}
 
-      <div className="mt-4 flex flex-wrap gap-2">
-        {canAdminister ? <><input
-          ref={fileInputRef}
-          type="file"
-          accept=".csv,text/csv"
-          onChange={(event) => {
-            void importCsv(event.target.files?.[0] ?? null)
-          }}
-          className="hidden"
-        />
-        <button type="button" onClick={() => fileInputRef.current?.click()} disabled={isPending} className="pbc-btn pbc-btn--ghost pbc-btn--sm">
-          {Icons.plus({ size: 14 })} Import CSV
-        </button></> : null}
-        <button type="button" onClick={exportCsv} disabled={items.length === 0} className="pbc-btn pbc-btn--ghost pbc-btn--sm">
-          Export loaded filtered rows
-        </button>
-        <button type="button" onClick={exportTemplate} className="pbc-btn pbc-btn--ghost pbc-btn--sm">
-          CSV Template
-        </button>
-      </div>
+      <details className="pbc-inventorycsv">
+        <summary>CSV tools</summary>
+        <div className="pbc-inventorycsv__actions">
+          {canAdminister ? <><input
+            ref={fileInputRef}
+            type="file"
+            accept=".csv,text/csv"
+            onChange={(event) => {
+              void importCsv(event.target.files?.[0] ?? null)
+            }}
+            className="hidden"
+          />
+          <button type="button" onClick={() => fileInputRef.current?.click()} disabled={isPending} className="pbc-btn pbc-btn--ghost pbc-btn--sm">
+            {Icons.plus({ size: 14 })} Import CSV
+          </button></> : null}
+          <button type="button" onClick={exportCsv} disabled={items.length === 0} className="pbc-btn pbc-btn--ghost pbc-btn--sm">
+            Export loaded filtered rows
+          </button>
+          <button type="button" onClick={exportTemplate} className="pbc-btn pbc-btn--ghost pbc-btn--sm">
+            CSV Template
+          </button>
+        </div>
+      </details>
 
       {message ? <p className="pbc-alert pbc-alert--success mt-3">{message}</p> : null}
       {error ? <p className="pbc-alert pbc-alert--danger mt-3">{error}</p> : null}

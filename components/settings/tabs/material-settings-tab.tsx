@@ -47,6 +47,9 @@ export interface MaterialSettingsTabProps {
   disabled: boolean
   message: string | null
   importError: string | null
+  isAddOpen: boolean
+  onAddOpenChange: (open: boolean) => void
+  onCancelAdd: () => void
   onQueryChange: (value: string) => void
   onPageChange: (page: number) => void
   onImport: (file: File | null) => void
@@ -114,21 +117,21 @@ export function MaterialProductsTable({
   disabled = false,
 }: MaterialProductsTableProps) {
   return (
-    <div className="pbc-tablewrap">
-      <table className="pbc-table">
+    <div className="pbc-tablewrap pbc-settings-tablewrap">
+      <table className="pbc-table pbc-settings-table">
         <thead><tr><th className="px-3 py-2 font-semibold">Brand</th><th className="px-3 py-2 font-semibold">Kind</th><th className="px-3 py-2 font-semibold">Base</th><th className="px-3 py-2 font-semibold">Sheen/Finish</th><th className="px-3 py-2 font-semibold">Volume (L)</th><th className="px-3 py-2 text-right font-semibold">Price (RRP)</th><th className="px-3 py-2 text-right font-semibold">Actions</th></tr></thead>
         <tbody className="divide-y divide-slate-100">
           {products.map((product) => {
             const isEditing = editingProductId === product.id
             return (
-              <tr key={product.id} className="align-top">
-                <td className="px-3 py-2">{isEditing ? <input value={editForm.manufacturer} onChange={(event) => onFieldChange('manufacturer', event.target.value)} className="pbc-tableinput" /> : <span className="pbc-tabletext pbc-tabletext--strong">{product.manufacturer ?? '-'}</span>}</td>
-                <td className="px-3 py-2">{isEditing ? <input value={editForm.productLine} onChange={(event) => onFieldChange('productLine', event.target.value)} className="pbc-tableinput" /> : <span className="pbc-tabletext pbc-tabletext--strong">{product.productLine ?? product.type ?? '-'}</span>}</td>
-                <td className="px-3 py-2">{isEditing ? <input value={editForm.base} onChange={(event) => onFieldChange('base', event.target.value)} className="pbc-tableinput" /> : <span className="pbc-tabletext">{product.base ?? '-'}</span>}</td>
-                <td className="px-3 py-2">{isEditing ? <input value={editForm.sheen} onChange={(event) => onFieldChange('sheen', event.target.value)} className="pbc-tableinput" /> : <span className="pbc-tabletext">{product.sheen ?? '-'}</span>}</td>
-                <td className="px-3 py-2">{isEditing ? <input value={editForm.volumeLitres} onChange={(event) => onFieldChange('volumeLitres', event.target.value)} className="pbc-tableinput" /> : <span className="pbc-tabletext">{product.volumeLitres ? `${product.volumeLitres}L` : product.unit}</span>}</td>
-                <td className="px-3 py-2 text-right">{isEditing ? <input value={editForm.rrpPrice} onChange={(event) => onFieldChange('rrpPrice', event.target.value)} inputMode="decimal" className="pbc-tableinput text-right" /> : <span className="pbc-tabletext--money">${product.rrpPrice ?? product.marketPrice}</span>}</td>
-                <td className="px-3 py-2">
+              <tr key={product.id} className="pbc-settings-row align-top" data-editing={isEditing}>
+                <td className="px-3 py-2 pbc-settings-cell--secondary" data-label="Brand">{isEditing ? <input aria-label="Brand" value={editForm.manufacturer} onChange={(event) => onFieldChange('manufacturer', event.target.value)} className="pbc-tableinput" /> : <span className="pbc-tabletext pbc-tabletext--strong">{product.manufacturer ?? '-'}</span>}</td>
+                <td className="px-3 py-2" data-label="Kind">{isEditing ? <input aria-label="Kind" value={editForm.productLine} onChange={(event) => onFieldChange('productLine', event.target.value)} className="pbc-tableinput" /> : <span className="pbc-tabletext pbc-tabletext--strong">{product.productLine ?? product.type ?? '-'}</span>}</td>
+                <td className="px-3 py-2 pbc-settings-cell--secondary" data-label="Base">{isEditing ? <input aria-label="Base" value={editForm.base} onChange={(event) => onFieldChange('base', event.target.value)} className="pbc-tableinput" /> : <span className="pbc-tabletext">{product.base ?? '-'}</span>}</td>
+                <td className="px-3 py-2 pbc-settings-cell--secondary" data-label="Sheen/Finish">{isEditing ? <input aria-label="Sheen/Finish" value={editForm.sheen} onChange={(event) => onFieldChange('sheen', event.target.value)} className="pbc-tableinput" /> : <span className="pbc-tabletext">{product.sheen ?? '-'}</span>}</td>
+                <td className="px-3 py-2 pbc-settings-cell--secondary" data-label="Volume">{isEditing ? <input aria-label="Volume (L)" value={editForm.volumeLitres} onChange={(event) => onFieldChange('volumeLitres', event.target.value)} className="pbc-tableinput" /> : <span className="pbc-tabletext">{product.volumeLitres ? `${product.volumeLitres}L` : product.unit}</span>}</td>
+                <td className="px-3 py-2 text-right" data-label="Price (RRP)">{isEditing ? <input aria-label="Price (RRP)" value={editForm.rrpPrice} onChange={(event) => onFieldChange('rrpPrice', event.target.value)} inputMode="decimal" className="pbc-tableinput text-right" /> : <span className="pbc-tabletext--money">${product.rrpPrice ?? product.marketPrice}</span>}</td>
+                <td className="px-3 py-2 pbc-settings-row__actions" data-label="Actions">
                   <div className="pbc-tableactions">
                     {isEditing ? <><button type="button" onClick={onSave} disabled={disabled} className="pbc-btn pbc-btn--primary pbc-btn--sm">Save</button><button type="button" onClick={onCancel} disabled={disabled} className="pbc-btn pbc-btn--ghost pbc-btn--sm">Cancel</button></> : <><button type="button" onClick={() => onEdit(product)} disabled={disabled} className="pbc-btn pbc-btn--ghost pbc-btn--sm">Edit</button><button type="button" onClick={() => onDelete(product.id)} disabled={disabled} className="pbc-btn pbc-btn--danger pbc-btn--sm">Delete</button></>}
                   </div>
@@ -159,7 +162,23 @@ export default function MaterialSettingsTab(props: MaterialSettingsTabProps) {
           </div>
         </div>
       </div>
-      <MaterialAddItemForm form={props.newMaterialForm} onFieldChange={props.onNewFieldChange} onAdd={props.onAdd} disabled={props.disabled} />
+      <div className="pbc-settings-add">
+        <button
+          type="button"
+          className="pbc-btn pbc-btn--ghost pbc-settings-add__toggle"
+          aria-expanded={props.isAddOpen}
+          onClick={() => props.onAddOpenChange(!props.isAddOpen)}
+          disabled={props.disabled}
+        >
+          {props.isAddOpen ? 'Close add material' : 'Add material'}
+        </button>
+        {props.isAddOpen ? (
+          <div className="pbc-settings-add__body">
+            <MaterialAddItemForm form={props.newMaterialForm} onFieldChange={props.onNewFieldChange} onAdd={props.onAdd} disabled={props.disabled} />
+            <button type="button" onClick={props.onCancelAdd} disabled={props.disabled} className="pbc-btn pbc-btn--ghost mt-3">Cancel add material</button>
+          </div>
+        ) : null}
+      </div>
       <MaterialProductsTable products={props.products} editingProductId={props.editingProductId} editForm={props.editForm} onEdit={props.onEdit} onCancel={props.onCancelEdit} onSave={props.onSave} onDelete={props.onDelete} onFieldChange={props.onEditFieldChange} disabled={props.disabled} />
       <SettingsTablePager pagination={props.pagination} onPageChange={props.onPageChange} />
       {props.message ? <p className="pbc-alert pbc-alert--success mt-3">{props.message}</p> : null}

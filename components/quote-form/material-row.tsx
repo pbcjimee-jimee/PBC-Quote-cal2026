@@ -3,6 +3,8 @@ import type { AreaCreateResult, AreaScope, MaterialItem } from './types'
 import type { AreaRecord } from '@/lib/areas/types'
 import { AREA_SCOPE_LABELS } from '@/lib/areas/constants'
 import { DecimalInput } from './decimal-input'
+import { MaterialSummary } from './material-summary'
+import { getQuoteErrorKey } from './quote-mobile-state'
 
 interface MaterialRowProps {
   item: MaterialItem
@@ -21,6 +23,9 @@ interface MaterialRowProps {
   canMoveDown?: boolean
   onMoveUp?: () => void
   onMoveDown?: () => void
+  isEditing?: boolean
+  onEditingChange?: (editing: boolean) => void
+  optionId?: string
 }
 
 function getMaterialDropTargetClass(dropPlacement: MaterialRowProps['dropPlacement']): string {
@@ -145,12 +150,16 @@ export function MaterialRow({
   canMoveDown = false,
   onMoveUp,
   onMoveDown,
+  isEditing = true,
+  onEditingChange,
+  optionId,
 }: MaterialRowProps) {
   const [isAddingArea, setIsAddingArea] = useState(false)
   const [areaQuery, setAreaQuery] = useState('')
   const [areaError, setAreaError] = useState<string | null>(null)
   const [isCreatingArea, setIsCreatingArea] = useState(false)
   const areaInputRef = useRef<HTMLInputElement>(null)
+  const errorKey = (field: string) => getQuoteErrorKey({ section: 'work', entityId: item.id, optionId, field })
   const createScope = areaScope ?? item.areaScope ?? areas[0]?.scope ?? 'interior'
   const selectedArea = item.areaId ? areas.find((area) => area.id === item.areaId) : undefined
   const selectedAreaLabel = selectedArea
@@ -268,6 +277,7 @@ export function MaterialRow({
 
   return (
     <div
+      data-editing={isEditing}
       onDragOver={onDragOver}
       onDrop={onDrop}
       className={[
@@ -285,6 +295,9 @@ export function MaterialRow({
           ].join(' ')}
         />
       ) : null}
+      {onEditingChange ? <MaterialSummary item={item} onEdit={() => onEditingChange(true)} /> : null}
+      <div className="pbc-materialrow__editor">
+      {onEditingChange ? <button type="button" className="pbc-btn pbc-btn--ghost pbc-btn--sm pbc-mobile-only" onClick={() => onEditingChange(false)}>Done editing</button> : null}
       <div className="pbc-materialrow__head">
         {onDragStart ? (
           <button
@@ -306,6 +319,7 @@ export function MaterialRow({
           value={item.name}
           onChange={(event) => onChange({ ...item, name: event.target.value })}
           aria-label="Material name"
+          data-error-key={errorKey('name')}
           className="pbc-input pbc-materialrow__name min-w-0 flex-1 font-bold"
         />
         <button
@@ -349,6 +363,7 @@ export function MaterialRow({
       <div className="pbc-materialrow__fields pbc-materialrow__fields--pricing">
         <DecimalInput
           label="Qty"
+          data-error-key={errorKey('quantity')}
           value={item.quantity}
           onValueChange={(value) => onChange({ ...item, quantity: value })}
           labelClassName="pbc-field min-w-0"
@@ -357,6 +372,7 @@ export function MaterialRow({
         />
         <DecimalInput
           label="RRP"
+          data-error-key={errorKey('marketPrice')}
           value={item.marketPrice}
           onValueChange={(value) => onChange(updateMaterialRrp(item, value))}
           labelClassName="pbc-field min-w-0"
@@ -380,6 +396,7 @@ export function MaterialRow({
               className="pbc-input min-w-0"
               placeholder={areaPlaceholder}
               aria-label="Area"
+              data-error-key={errorKey('area')}
               autoComplete="off"
             />
             {isAddingArea ? (
@@ -399,6 +416,7 @@ export function MaterialRow({
         </div>
         <DecimalInput
           label="Working Days"
+          data-error-key={errorKey('workingDays')}
           value={item.workingDays}
           onValueChange={(value) => onChange({ ...item, workingDays: value })}
           labelClassName="pbc-field min-w-0"
@@ -407,6 +425,7 @@ export function MaterialRow({
         />
         <DecimalInput
           label="Labour / Day"
+          data-error-key={errorKey('labourPerDay')}
           value={item.labourPerDay}
           onValueChange={(value) => onChange({ ...item, labourPerDay: value })}
           labelClassName="pbc-field min-w-0"
@@ -414,6 +433,8 @@ export function MaterialRow({
           warningClassName="block text-[11px] font-normal text-amber-600"
         />
       </div>
+      <details className="pbc-materialrow__memo-disclosure">
+      <summary>{item.memo ? 'Edit memo · note added' : 'Add item memo'}</summary>
       <label className="pbc-field pbc-materialrow__memo">
         <span className="pbc-field__label">Item memo</span>
         <textarea
@@ -423,10 +444,13 @@ export function MaterialRow({
           rows={2}
           maxLength={4000}
           aria-label="Material memo"
+          data-error-key={errorKey('memo')}
           placeholder="Add a note for this item"
         />
         <span className="pbc-field__hint">Name, RRP and memo apply to this quote only.</span>
       </label>
+      </details>
+      </div>
     </div>
   )
 }

@@ -11,9 +11,10 @@ import {
   savePricingSettingsForm,
   SettingsForm,
 } from '@/components/settings/settings-form'
-import { MaterialAddItemForm, MaterialProductsTable } from '@/components/settings/tabs/material-settings-tab'
+import MaterialSettingsTab, { MaterialAddItemForm, MaterialProductsTable } from '@/components/settings/tabs/material-settings-tab'
 import { ProductServiceAddItemForm, ProductServicesTable } from '@/components/settings/tabs/product-service-settings-tab'
 import { QuoteLineTemplateEditor } from '@/components/settings/tabs/template-settings-tab'
+import AreaSettingsTab, { filterSettingsAreas } from '@/components/settings/tabs/area-settings-tab'
 import type { ProductRecord } from '@/lib/products/types'
 import type { ProductServiceRecord } from '@/lib/product-services/types'
 import { DEFAULT_PRICING_SETTINGS } from '@/lib/calculator'
@@ -22,6 +23,7 @@ import { installTestDom } from '@/tests/helpers/test-dom'
 
 const settingsDataMocks = vi.hoisted(() => ({
   listAreas: vi.fn(),
+  createProduct: vi.fn(),
   deleteProduct: vi.fn(),
   listProducts: vi.fn(),
   listProductServices: vi.fn(),
@@ -69,6 +71,7 @@ vi.mock('@/lib/actions/areas', async (importOriginal) => ({
 
 vi.mock('@/lib/actions/products', async (importOriginal) => ({
   ...await importOriginal<typeof import('@/lib/actions/products')>(),
+  createProduct: settingsDataMocks.createProduct,
   deleteProduct: settingsDataMocks.deleteProduct,
   listProducts: settingsDataMocks.listProducts,
 }))
@@ -111,6 +114,16 @@ function deferred<T>() {
     resolve = next
   })
   return { promise, resolve }
+}
+
+function submitTestForm(form: Element): void {
+  const propsKey = Object.keys(form).find((key) => key.startsWith('__reactProps$'))
+  if (!propsKey) throw new Error('React form props were not attached')
+  const props = (form as unknown as Record<string, unknown>)[propsKey] as {
+    onSubmit?: (event: { preventDefault: () => void }) => void
+  }
+  if (!props.onSubmit) throw new Error('React form submit handler was not attached')
+  props.onSubmit({ preventDefault: () => undefined })
 }
 
 function productFixture(index: number): ProductRecord {
@@ -284,6 +297,207 @@ function inspectStaticModuleGraph(_options: {
 }
 
 describe('settings material UI', () => {
+  it('offers every settings section as a direct button with its selected state', () => {
+    const markup = renderToStaticMarkup(createElement(SettingsForm, {
+      initialAreas: [],
+      initialProducts: [],
+      initialProductServices: [],
+      initialQuoteLineTemplates: [],
+      initialSettings: DEFAULT_PRICING_SETTINGS,
+    }))
+
+    const navigation = markup.match(/<nav[^>]*aria-label="Settings sections"[\s\S]*?<\/nav>/)?.[0] ?? ''
+    expect(navigation.match(/<button/g)).toHaveLength(5)
+    expect(navigation.match(/aria-pressed="true"/g)).toHaveLength(1)
+    expect(navigation).toContain('Labour Rates')
+    expect(navigation).toContain('Material')
+    expect(navigation).toContain('Product &amp; Service')
+    expect(navigation).toContain('Template')
+    expect(navigation).toContain('Area')
+    expect(navigation).toContain('aria-controls="settings-active-section"')
+    expect(markup).toContain('aria-labelledby="settings-section-labour"')
+    expect(markup).not.toContain('pbc-settings-selector')
+  })
+
+  it('keeps add controls collapsed until requested and exposes an explicit reset action', () => {
+    const markup = renderToStaticMarkup(createElement(MaterialSettingsTab, {
+      products: [],
+      pagination: { page: 1, pageCount: 1, start: 0, end: 0, total: 0, canPrevious: false, canNext: false },
+      activeProductCount: 0,
+      query: '',
+      newMaterialForm: { manufacturer: 'Dulux', productLine: 'Wash & Wear', base: '', sheen: '', unit: '15L', rrpPrice: '199.00' },
+      editingProductId: null,
+      editForm: { manufacturer: '', productLine: '', base: '', sheen: '', volumeLitres: '', unit: '', rrpPrice: '' },
+      disabled: false,
+      message: null,
+      importError: null,
+      isAddOpen: false,
+      onAddOpenChange: () => undefined,
+      onCancelAdd: () => undefined,
+      onQueryChange: () => undefined,
+      onPageChange: () => undefined,
+      onImport: () => undefined,
+      onExport: () => undefined,
+      onExportTemplate: () => undefined,
+      onNewFieldChange: () => undefined,
+      onAdd: () => undefined,
+      onEdit: () => undefined,
+      onCancelEdit: () => undefined,
+      onSave: () => undefined,
+      onDelete: () => undefined,
+      onEditFieldChange: () => undefined,
+    }))
+
+    expect(markup).toContain('Add material')
+    expect(markup).toContain('aria-expanded="false"')
+    expect(markup).not.toContain('value="Wash &amp; Wear"')
+    expect(markup).not.toContain('Cancel add material')
+  })
+
+  it('preserves a collapsed Add value, locks pending controls, keeps failures open, and resets cancel or success', async () => {
+    dynamicTabMocks.requested.fill(0)
+    dynamicTabMocks.mounted.fill(0)
+    dynamicTabMocks.pending.fill(null)
+    const failedRequest = deferred<{ ok: false; error: string }>()
+    settingsDataMocks.createProduct.mockReset().mockReturnValueOnce(failedRequest.promise)
+    const { cleanup } = installTestDom()
+    let root: Root | null = null
+
+    try {
+      const { createRoot } = await import('react-dom/client')
+      const container = document.createElement('div')
+      root = createRoot(container)
+      await act(async () => {
+        root!.render(createElement(SettingsForm, {
+          initialProducts: [],
+          initialSettings: DEFAULT_PRICING_SETTINGS,
+        }))
+      })
+
+      const buttons = () => Array.from(container.querySelectorAll('button'))
+      await act(async () => { buttons().find((button) => button.textContent.includes('Material'))!.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
+      await act(async () => { await dynamicTabMocks.pending[0] })
+
+      await act(async () => { buttons().find((button) => button.textContent === 'Add material')!.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
+      const getInput = (placeholder: string) => Array.from(container.querySelectorAll('input')).find((input) => input.getAttribute('placeholder') === placeholder)
+      await act(async () => {
+        const name = getInput('e.g. Minor drywall repair')!
+        name.value = 'Wash & Wear'
+        name.dispatchEvent(new Event('input', { bubbles: true }))
+        const price = getInput('0.00')!
+        price.value = '199.00'
+        price.dispatchEvent(new Event('input', { bubbles: true }))
+      })
+
+      await act(async () => { buttons().find((button) => button.textContent === 'Close add material')!.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
+      expect(getInput('e.g. Minor drywall repair')).toBeUndefined()
+      await act(async () => { buttons().find((button) => button.textContent === 'Add material')!.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
+      expect(getInput('e.g. Minor drywall repair')?.value).toBe('Wash & Wear')
+
+      await act(async () => {
+        submitTestForm(Array.from(container.querySelectorAll('form'))[0]!)
+        await Promise.resolve()
+      })
+      expect(settingsDataMocks.createProduct).toHaveBeenCalledTimes(1)
+      expect(buttons().find((button) => button.textContent === 'Close add material')?.disabled).toBe(true)
+
+      failedRequest.resolve({ ok: false, error: 'Material save failed' })
+      await act(async () => { await failedRequest.promise })
+      expect(container.textContent).toContain('Material save failed')
+      expect(getInput('e.g. Minor drywall repair')?.value).toBe('Wash & Wear')
+
+      await act(async () => { buttons().find((button) => button.textContent === 'Cancel add material')!.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
+      await act(async () => { buttons().find((button) => button.textContent === 'Add material')!.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
+      expect(getInput('e.g. Minor drywall repair')?.value).toBe('')
+
+      settingsDataMocks.createProduct.mockResolvedValueOnce({ ok: true, data: productFixture(1) })
+      await act(async () => {
+        const name = getInput('e.g. Minor drywall repair')!
+        name.value = 'Paint 01'
+        name.dispatchEvent(new Event('input', { bubbles: true }))
+        const price = getInput('0.00')!
+        price.value = '100.00'
+        price.dispatchEvent(new Event('input', { bubbles: true }))
+      })
+      await act(async () => {
+        submitTestForm(Array.from(container.querySelectorAll('form'))[0]!)
+        await Promise.resolve()
+      })
+      expect(container.textContent).toContain('Material item added.')
+      expect(buttons().some((button) => button.textContent === 'Add material')).toBe(true)
+      expect(getInput('e.g. Minor drywall repair')).toBeUndefined()
+    } finally {
+      try {
+        if (root) await act(async () => root?.unmount())
+      } finally {
+        cleanup()
+      }
+    }
+  })
+
+  it('keeps mobile settings rows semantic while opening only the selected editor input tree', () => {
+    const product = productFixture(1)
+    const markup = renderToStaticMarkup(createElement(MaterialProductsTable, {
+      products: [product, productFixture(2)],
+      editingProductId: product.id,
+      editForm: {
+        manufacturer: 'Dulux',
+        productLine: 'Paint 01',
+        base: 'White',
+        sheen: 'Low Sheen',
+        volumeLitres: '15',
+        unit: '15L',
+        rrpPrice: '100.00',
+      },
+    }))
+
+    expect(markup).toContain('class="pbc-table pbc-settings-table"')
+    expect(markup).toContain('data-editing="true"')
+    expect(markup).toContain('data-editing="false"')
+    expect(markup).toContain('data-label="Kind"')
+    expect(markup.match(/class="pbc-tableinput/g)).toHaveLength(6)
+    for (const label of ['Brand', 'Kind', 'Base', 'Sheen/Finish', 'Volume (L)', 'Price (RRP)']) {
+      expect(markup).toContain(`aria-label="${label}"`)
+    }
+  })
+
+  it('filters Areas by list scope and search without changing the Add scope', () => {
+    const areas = [
+      { id: 'area-1', scope: 'interior' as const, name: 'Hallway', active: true, position: 1 },
+      { id: 'area-2', scope: 'exterior' as const, name: 'Eaves', active: true, position: 1 },
+      { id: 'area-3', scope: 'roof' as const, name: 'Roof edge', active: true, position: 1 },
+    ]
+
+    expect(filterSettingsAreas(areas, 'exterior', 'eav').map((area) => area.id)).toEqual(['area-2'])
+    expect(filterSettingsAreas(areas, 'all', 'roof').map((area) => area.id)).toEqual(['area-3'])
+
+    const markup = renderToStaticMarkup(createElement(AreaSettingsTab, {
+      areas,
+      areaScope: 'interior',
+      areaName: '',
+      editingAreaId: null,
+      areaEditForm: { scope: 'interior', name: '' },
+      message: null,
+      disabled: false,
+      isAddOpen: false,
+      onAddOpenChange: () => undefined,
+      onCancelAdd: () => undefined,
+      onAreaScopeChange: () => undefined,
+      onAreaNameChange: () => undefined,
+      onAdd: () => undefined,
+      onStartEdit: () => undefined,
+      onEditFormChange: () => undefined,
+      onSave: () => undefined,
+      onCancel: () => undefined,
+      onDelete: () => undefined,
+    }))
+
+    expect(markup).toContain('aria-label="Filter areas by scope"')
+    expect(markup).toContain('placeholder="Search areas..."')
+    expect(markup).toContain('Add area')
+    expect(markup).not.toContain('Area name</span><input')
+  })
+
   it.each([
     ['Material', 0, 'listProducts'],
     ['Product & Service', 1, 'listProductServices'],
@@ -1090,6 +1304,10 @@ const { cleanup } = installTestDom()
     ]
     const addMarkup = renderToStaticMarkup(createElement(ProductServiceAddItemForm))
     const tableMarkup = renderToStaticMarkup(createElement(ProductServicesTable, { productServices }))
+    const editMarkup = renderToStaticMarkup(createElement(ProductServicesTable, { productServices, editingProductServiceId: 'service-1' }))
+    for (const label of ['Name', 'Description', 'Category', 'Unit Price', 'Unit Cost', 'Taxable']) {
+      expect(editMarkup).toContain(`aria-label="${label}"`)
+    }
 
     expect(addMarkup).toContain('pbc-checkbox')
     expect(addMarkup).toContain('pbc-input')

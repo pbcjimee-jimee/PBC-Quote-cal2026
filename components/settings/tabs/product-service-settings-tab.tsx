@@ -36,6 +36,9 @@ export interface ProductServiceSettingsTabProps {
   disabled: boolean
   message: string | null
   importError: string | null
+  isAddOpen: boolean
+  onAddOpenChange: (open: boolean) => void
+  onCancelAdd: () => void
   onQueryChange: (value: string) => void
   onPageChange: (page: number) => void
   onImport: (file: File | null) => void
@@ -108,21 +111,21 @@ export function ProductServicesTable({
   disabled = false,
 }: ProductServicesTableProps) {
   return (
-    <div className="pbc-tablewrap">
-      <table className="pbc-table">
+    <div className="pbc-tablewrap pbc-settings-tablewrap">
+      <table className="pbc-table pbc-settings-table">
         <thead><tr><th className="px-3 py-2 font-semibold">Name</th><th className="px-3 py-2 font-semibold">Description</th><th className="px-3 py-2 font-semibold">Category</th><th className="px-3 py-2 text-right font-semibold">Unit Price</th><th className="px-3 py-2 text-right font-semibold">Unit Cost</th><th className="px-3 py-2 font-semibold">Tax</th><th className="px-3 py-2 text-right font-semibold">Actions</th></tr></thead>
         <tbody className="divide-y divide-slate-100">
           {productServices.map((item) => {
             const isEditing = editingProductServiceId === item.id
             return (
-              <tr key={item.id} className="align-top">
-                <td className="px-3 py-2">{isEditing ? <input value={editForm.name} onChange={(event) => onFieldChange('name', event.target.value)} className="pbc-tableinput" /> : <span className="pbc-tabletext pbc-tabletext--strong">{item.name}</span>}</td>
-                <td className="max-w-md px-3 py-2">{isEditing ? <textarea value={editForm.description} onChange={(event) => onFieldChange('description', event.target.value)} className="pbc-tableinput min-h-20" /> : <span className="line-clamp-3 pbc-tabletext">{item.description ?? '-'}</span>}</td>
-                <td className="px-3 py-2">{isEditing ? <input value={editForm.category} onChange={(event) => onFieldChange('category', event.target.value)} className="pbc-tableinput" /> : <span className="pbc-tabletext">{item.category ?? '-'}</span>}</td>
-                <td className="px-3 py-2 text-right">{isEditing ? <input value={editForm.unitPrice} onChange={(event) => onFieldChange('unitPrice', event.target.value)} inputMode="decimal" className="pbc-tableinput text-right" /> : <span className="pbc-tabletext--money">${item.unitPrice}</span>}</td>
-                <td className="px-3 py-2 text-right">{isEditing ? <input value={editForm.unitCost} onChange={(event) => onFieldChange('unitCost', event.target.value)} inputMode="decimal" className="pbc-tableinput text-right" /> : <span className="pbc-tabletext--money">{item.unitCost ? `$${item.unitCost}` : '-'}</span>}</td>
-                <td className="px-3 py-2">{isEditing ? <input type="checkbox" checked={editForm.taxable} onChange={(event) => onFieldChange('taxable', event.target.checked)} className="pbc-checkbox" /> : <span className="pbc-tabletext">{item.taxable ? 'Taxable' : 'No tax'}</span>}</td>
-                <td className="px-3 py-2"><div className="pbc-tableactions">{isEditing ? <><button type="button" onClick={onSave} disabled={disabled} className="pbc-btn pbc-btn--primary pbc-btn--sm">Save</button><button type="button" onClick={onCancel} disabled={disabled} className="pbc-btn pbc-btn--ghost pbc-btn--sm">Cancel</button></> : <><button type="button" onClick={() => onEdit(item)} disabled={disabled} className="pbc-btn pbc-btn--ghost pbc-btn--sm">Edit</button><button type="button" onClick={() => onDelete(item.id)} disabled={disabled} className="pbc-btn pbc-btn--danger pbc-btn--sm">Delete</button></>}</div></td>
+              <tr key={item.id} className="pbc-settings-row align-top" data-editing={isEditing}>
+                <td className="px-3 py-2" data-label="Name">{isEditing ? <input aria-label="Name" value={editForm.name} onChange={(event) => onFieldChange('name', event.target.value)} className="pbc-tableinput" /> : <span className="pbc-tabletext pbc-tabletext--strong">{item.name}</span>}</td>
+                <td className="max-w-md px-3 py-2 pbc-settings-cell--secondary" data-label="Description">{isEditing ? <textarea aria-label="Description" value={editForm.description} onChange={(event) => onFieldChange('description', event.target.value)} className="pbc-tableinput min-h-20" /> : <span className="line-clamp-3 pbc-tabletext">{item.description ?? '-'}</span>}</td>
+                <td className="px-3 py-2" data-label="Category">{isEditing ? <input aria-label="Category" value={editForm.category} onChange={(event) => onFieldChange('category', event.target.value)} className="pbc-tableinput" /> : <span className="pbc-tabletext">{item.category ?? '-'}</span>}</td>
+                <td className="px-3 py-2 text-right" data-label="Unit Price">{isEditing ? <input aria-label="Unit Price" value={editForm.unitPrice} onChange={(event) => onFieldChange('unitPrice', event.target.value)} inputMode="decimal" className="pbc-tableinput text-right" /> : <span className="pbc-tabletext--money">${item.unitPrice}</span>}</td>
+                <td className="px-3 py-2 text-right pbc-settings-cell--secondary" data-label="Unit Cost">{isEditing ? <input aria-label="Unit Cost" value={editForm.unitCost} onChange={(event) => onFieldChange('unitCost', event.target.value)} inputMode="decimal" className="pbc-tableinput text-right" /> : <span className="pbc-tabletext--money">{item.unitCost ? `$${item.unitCost}` : '-'}</span>}</td>
+                <td className="px-3 py-2" data-label="Tax">{isEditing ? <input aria-label="Taxable" type="checkbox" checked={editForm.taxable} onChange={(event) => onFieldChange('taxable', event.target.checked)} className="pbc-checkbox" /> : <span className="pbc-tabletext">{item.taxable ? 'Taxable' : 'No tax'}</span>}</td>
+                <td className="px-3 py-2 pbc-settings-row__actions" data-label="Actions"><div className="pbc-tableactions">{isEditing ? <><button type="button" onClick={onSave} disabled={disabled} className="pbc-btn pbc-btn--primary pbc-btn--sm">Save</button><button type="button" onClick={onCancel} disabled={disabled} className="pbc-btn pbc-btn--ghost pbc-btn--sm">Cancel</button></> : <><button type="button" onClick={() => onEdit(item)} disabled={disabled} className="pbc-btn pbc-btn--ghost pbc-btn--sm">Edit</button><button type="button" onClick={() => onDelete(item.id)} disabled={disabled} className="pbc-btn pbc-btn--danger pbc-btn--sm">Delete</button></>}</div></td>
               </tr>
             )
           })}
@@ -149,7 +152,17 @@ export default function ProductServiceSettingsTab(props: ProductServiceSettingsT
           </div>
         </div>
       </div>
-      <ProductServiceAddItemForm form={props.newForm} onFieldChange={props.onNewFieldChange} onAdd={props.onAdd} disabled={props.disabled} />
+      <div className="pbc-settings-add">
+        <button type="button" className="pbc-btn pbc-btn--ghost pbc-settings-add__toggle" aria-expanded={props.isAddOpen} onClick={() => props.onAddOpenChange(!props.isAddOpen)} disabled={props.disabled}>
+          {props.isAddOpen ? 'Close add product or service' : 'Add product or service'}
+        </button>
+        {props.isAddOpen ? (
+          <div className="pbc-settings-add__body">
+            <ProductServiceAddItemForm form={props.newForm} onFieldChange={props.onNewFieldChange} onAdd={props.onAdd} disabled={props.disabled} />
+            <button type="button" onClick={props.onCancelAdd} disabled={props.disabled} className="pbc-btn pbc-btn--ghost mt-3">Cancel add product or service</button>
+          </div>
+        ) : null}
+      </div>
       <ProductServicesTable productServices={props.productServices} editingProductServiceId={props.editingId} editForm={props.editForm} onEdit={props.onEdit} onCancel={props.onCancelEdit} onSave={props.onSave} onDelete={props.onDelete} onFieldChange={props.onEditFieldChange} disabled={props.disabled} />
       <SettingsTablePager pagination={props.pagination} onPageChange={props.onPageChange} />
       {props.message ? <p className="pbc-alert pbc-alert--success mt-3">{props.message}</p> : null}

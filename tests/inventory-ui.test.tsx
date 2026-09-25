@@ -55,7 +55,7 @@ const mobileCallbacks = {
 }
 
 describe('inventory UI', () => {
-  it('shows category, size and colour in the collapsed mobile card', () => {
+  it('shows compact identity, quantity and status in the collapsed mobile card', () => {
     const markup = renderToStaticMarkup(createElement(InventoryMobileList, {
       items: [mobileItem],
       categories: ['Tools'],
@@ -78,13 +78,13 @@ describe('inventory UI', () => {
     expect(markup).toContain(
       '<small>Colour</small><b>Lexicon Quarter Extra Long Colour Name</b>'
     )
+    expect(markup).toContain('<small>Quantity</small><b>1.00</b>')
+    expect(markup).toContain('<small>Status</small><b>In stock</b>')
     for (const omitted of [
       'Brand / Spec',
-      'Quantity',
       'Purchase Date',
       'Used Date',
       'Used Location',
-      'Status',
       'Notes',
       'Save row',
       'Delete',
@@ -205,6 +205,10 @@ describe('inventory UI', () => {
     expect(markup).toContain('Add Item')
     expect(markup).toContain('Import CSV')
     expect(markup).toContain('Export loaded filtered rows')
+    expect(markup).toContain('<summary>CSV tools</summary>')
+    expect(markup).toContain('pbc-inventoryfilters')
+    expect(markup.indexOf('Search inventory...')).toBeLessThan(markup.indexOf('Add inventory item'))
+    expect(markup.indexOf('Search inventory...')).toBeLessThan(markup.indexOf('CSV tools'))
     expect(markup).toContain('<option value="Paint">Paint</option>')
     expect(markup).toContain('<option value="paint">paint</option>')
     expect(markup).toContain('<option value=" Paint "> Paint </option>')

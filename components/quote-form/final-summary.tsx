@@ -57,15 +57,20 @@ export function FinalSummary({
       </div>
       <div className="pbc-summary__rows">
         <div className="pbc-srow pbc-srow--strong"><span>Final subtotal</span><span className="mono">${visibleSubtotal.toFixed(2)}</span></div>
-        <div className="pbc-srow"><span>Labour total</span><span className="mono">${labourTotal.toFixed(2)}</span></div>
-        <div className="pbc-srow"><span>Material total</span><span className="mono">${materialTotal.toFixed(2)}</span></div>
         <div className="pbc-srow"><span>GST 10%</span><span className="mono">${gstTotal.toFixed(2)}</span></div>
+        <div className="pbc-srow pbc-srow--strong"><span>Inc GST</span><span className="mono">${visibleFinalTotal.toFixed(2)}</span></div>
         {areaBreakdown.unassigned.count > 0 ? (
           <p className="pbc-alert pbc-alert--warning mt-3">
             {areaBreakdown.unassigned.count} {unassignedLabel} an Interior, Exterior, or Roof area before being included in grouped subtotals.
           </p>
         ) : null}
       </div>
+      <details className="pbc-summary-breakdown">
+        <summary>Labour, materials and area breakdown</summary>
+        <div className="pbc-summary__rows">
+          <div className="pbc-srow"><span>Labour total</span><span className="mono">${labourTotal.toFixed(2)}</span></div>
+          <div className="pbc-srow"><span>Material total</span><span className="mono">${materialTotal.toFixed(2)}</span></div>
+        </div>
       <div className="pbc-summary__chips">
         <span className="pbc-statchip">Interior subtotal <b className="mono">${areaBreakdown.interior.subtotal.toFixed(2)}</b></span>
         <span className="pbc-statchip">Exterior subtotal <b className="mono">${areaBreakdown.exterior.subtotal.toFixed(2)}</b></span>
@@ -107,6 +112,7 @@ export function FinalSummary({
           </div>
         </div>
       ) : null}
+      </details>
     </section>
   )
 }

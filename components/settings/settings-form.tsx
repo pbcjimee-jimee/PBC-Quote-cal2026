@@ -389,12 +389,15 @@ export function SettingsForm({
   const [materialQuery, setMaterialQuery] = useState('')
   const [materialPage, setMaterialPage] = useState(1)
   const [materialProducts, setMaterialProducts] = useState(initialProducts ?? [])
+  const [materialAddOpen, setMaterialAddOpen] = useState(false)
   const [editingProductId, setEditingProductId] = useState<string | null>(null)
   const [materialMessage, setMaterialMessage] = useState<string | null>(null)
   const [productServiceQuery, setProductServiceQuery] = useState('')
   const [productServicePage, setProductServicePage] = useState(1)
   const [productServices, setProductServices] = useState(initialProductServices ?? [])
+  const [productServiceAddOpen, setProductServiceAddOpen] = useState(false)
   const [quoteLineTemplates, setQuoteLineTemplates] = useState(initialQuoteLineTemplates ?? [])
+  const [templateEditorOpen, setTemplateEditorOpen] = useState(false)
   const [editingTemplateId, setEditingTemplateId] = useState<string | null>(null)
   const [templateName, setTemplateName] = useState('')
   const [templateLines, setTemplateLines] = useState<JobberQuoteLineItemDraft[]>([])
@@ -439,6 +442,7 @@ export function SettingsForm({
   const [materialImportError, setMaterialImportError] = useState<string | null>(null)
   const [areaMessage, setAreaMessage] = useState<string | null>(null)
   const [areas, setAreas] = useState(initialAreas ?? [])
+  const [areaAddOpen, setAreaAddOpen] = useState(false)
   const [areaScope, setAreaScope] = useState<AreaScope>('interior')
   const [areaName, setAreaName] = useState('')
   const [editingAreaId, setEditingAreaId] = useState<string | null>(null)
@@ -592,6 +596,7 @@ export function SettingsForm({
         setMaterialQuery('')
         setMaterialPage(1)
         resetNewMaterialForm()
+        setMaterialAddOpen(false)
         setMaterialMessage('Material item added.')
       } else {
         setMaterialMessage(result.error)
@@ -698,6 +703,7 @@ export function SettingsForm({
         setProductServiceQuery('')
         setProductServicePage(1)
         resetNewProductServiceForm()
+        setProductServiceAddOpen(false)
         setProductServiceMessage('Product & Service item added.')
       } else {
         setProductServiceMessage(result.error)
@@ -754,6 +760,7 @@ export function SettingsForm({
     setEditingTemplateId(template.id)
     setTemplateName(template.name)
     setTemplateLines(template.items.map(templateItemToDraft))
+    setTemplateEditorOpen(true)
   }
 
   function saveTemplate() {
@@ -776,6 +783,7 @@ export function SettingsForm({
           : [result.data, ...current]
         )
         resetTemplateForm()
+        setTemplateEditorOpen(false)
         setTemplateMessage('Template saved.')
       } else {
         setTemplateMessage(result.error)
@@ -889,6 +897,8 @@ export function SettingsForm({
             return [...current, result.data]
           })
           setAreaName('')
+          setAreaScope('interior')
+          setAreaAddOpen(false)
           setAreaMessage('Area added.')
         } else {
           setAreaMessage(result.error)
@@ -969,6 +979,32 @@ export function SettingsForm({
     setProductServicePage(1)
   }
 
+  function activateTab(tab: SettingsTab) {
+    setActiveTab(tab)
+    void ensureTabData(tab)
+  }
+
+  function cancelMaterialAdd() {
+    resetNewMaterialForm()
+    setMaterialAddOpen(false)
+  }
+
+  function cancelProductServiceAdd() {
+    resetNewProductServiceForm()
+    setProductServiceAddOpen(false)
+  }
+
+  function cancelTemplateEdit() {
+    resetTemplateForm()
+    setTemplateEditorOpen(false)
+  }
+
+  function cancelAreaAdd() {
+    setAreaName('')
+    setAreaScope('interior')
+    setAreaAddOpen(false)
+  }
+
   const filteredProducts = materialProducts.filter((product) => {
     const needle = materialQuery.trim().toLowerCase()
     if (!needle) return true
@@ -1021,25 +1057,23 @@ export function SettingsForm({
 
   return (
     <div className="pbc-settings">
-      <div className="pbc-tabs" role="tablist" aria-label="Settings sections">
+      <nav className="pbc-tabs" aria-label="Settings sections">
         {tabs.map((tab) => (
           <button
             key={tab.key}
+            id={`settings-section-${tab.key}`}
             type="button"
-            role="tab"
-            aria-selected={activeTab === tab.key}
-            onClick={() => {
-              setActiveTab(tab.key)
-              void ensureTabData(tab.key)
-            }}
+            aria-pressed={activeTab === tab.key}
+            aria-controls="settings-active-section"
+            onClick={() => activateTab(tab.key)}
             className={`pbc-tab ${activeTab === tab.key ? 'is-on' : ''}`}
           >
-            {tab.icon} {tab.label}
+            <span className="pbc-settings-tab-icon">{tab.icon}</span><span>{tab.label}</span>
           </button>
         ))}
-      </div>
+      </nav>
 
-      <div className="pbc-card">
+      <div id="settings-active-section" role="region" aria-labelledby={`settings-section-${activeTab}`} className="pbc-card">
       {activeLoadError ? (
         <div className="pbc-formsection pbc-formsection--center pbc-formsection--narrow" role="alert">
           <p className="pbc-alert pbc-alert--danger">{activeLoadError}</p>
@@ -1130,6 +1164,9 @@ export function SettingsForm({
           disabled={isPending}
           message={materialMessage}
           importError={materialImportError}
+          isAddOpen={materialAddOpen}
+          onAddOpenChange={setMaterialAddOpen}
+          onCancelAdd={cancelMaterialAdd}
           onQueryChange={changeMaterialQuery}
           onPageChange={setMaterialPage}
           onImport={importMaterials}
@@ -1155,6 +1192,9 @@ export function SettingsForm({
           disabled={isPending}
           message={productServiceMessage}
           importError={productServiceImportError}
+          isAddOpen={productServiceAddOpen}
+          onAddOpenChange={setProductServiceAddOpen}
+          onCancelAdd={cancelProductServiceAdd}
           onQueryChange={changeProductServiceQuery}
           onPageChange={setProductServicePage}
           onImport={importProductServices}
@@ -1177,10 +1217,12 @@ export function SettingsForm({
           templateLines={templateLines}
           message={templateMessage}
           disabled={isPending}
+          editorOpen={templateEditorOpen}
+          onEditorOpenChange={setTemplateEditorOpen}
           onTemplateNameChange={setTemplateName}
           onTemplateLinesChange={setTemplateLines}
           onSave={saveTemplate}
-          onCancel={resetTemplateForm}
+          onCancel={cancelTemplateEdit}
           onEdit={editTemplate}
           onDelete={removeTemplate}
         />
@@ -1193,6 +1235,9 @@ export function SettingsForm({
           areaEditForm={areaEditForm}
           message={areaMessage}
           disabled={isPending}
+          isAddOpen={areaAddOpen}
+          onAddOpenChange={setAreaAddOpen}
+          onCancelAdd={cancelAreaAdd}
           onAreaScopeChange={setAreaScope}
           onAreaNameChange={setAreaName}
           onAdd={addArea}

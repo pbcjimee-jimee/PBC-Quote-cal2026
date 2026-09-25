@@ -1,7 +1,33 @@
 # UI-QUOTE-FORM.md — 견적 작성 페이지 (`/quotes/new`)
 
-> 앱의 메인 작업 화면. 2-column 레이아웃, 한 페이지에서 모든 작업 완결.
+> 앱의 메인 작업 화면. 모바일은 작업 영역 선택, 넓은 화면은 함께 표시하는 단일 입력 트리.
 > 전체 UI 개요: `docs/UI-DESIGN.md`. 계산 공식: `docs/CALCULATION.md`.
+
+---
+
+## 현행 모바일 견적 구조 (2026-09-25)
+
+아래 기존 데스크톱 도식보다 이 절과 [UI-DESIGN-SYSTEM](UI-DESIGN-SYSTEM.md)의 현행 규칙을 우선한다.
+
+| 영역 | 내용 | 진입 |
+|---|---|---|
+| Details | 고객·주소·Jobber 연결·기본정보 | 새 견적 기본 |
+| Work & materials | Area·Main 자재·옵션 가져오기·Options | 수정 견적 기본 |
+| Public quote | 고객 공개 항목·설명·템플릿 | 요약 → 한 행 편집 |
+| Review | Main 금액·Options 별도 합계·Area별 공식·메모·동기화 미리보기 | 선택한 입력 영역 아래 마지막에 항상 표시 |
+
+- `≤720px`에서 상단 sticky 카테고리 버튼 `Details` / `Work & materials` / `Public quote`로 입력 영역 하나를 선택한다. 세 버튼은 360px에서도 가로 overflow 없이 44px 이상이어야 한다. `Review`는 선택 버튼이 아니며 현재 입력 영역 아래 마지막에 항상 표시한다.
+- Review의 오류나 Review 이동 동작은 Review로 스크롤·포커스하되 현재 입력 카테고리를 숨기거나 바꾸지 않는다. 더 넓은 화면은 같은 입력 트리의 모든 영역을 표시한다. 721–1080px에서는 한 열, 넓은 화면에서는 계산 영역을 곁에 둔다.
+- Details의 Fetch 바로 아래 `Products & pricing` 버튼으로 Public quote에 바로 이동할 수 있다. 기존 고객/가져온 항목과 draft를 유지하고 이동한 영역에 focus한다. Fetch/Refresh를 자동 실행하거나 저장 payload를 바꾸지 않는다.
+- `QuoteForm`이 도메인 입력을 소유한다. `quote-mobile-state.ts`의 영역/Area/편집 ID/옵션 펼침/포커스는 저장값이 아니다. UI 이동으로 draft 저장이나 이탈 경고가 발생하지 않는다.
+- 자재는 이름·Area·수량×RRP·금액·노무·메모를 요약한다. Main 한 행, 열린 Option 한 행만 편집하고 `Done editing`으로 요약으로 돌아간다. 다른 scope와 미배정 항목은 개수/이동 버튼으로 접근한다.
+- Options는 모바일에서 한 개씩, 721px 이상에서는 여러 개를 독립적으로 펼친다. 두 화면의 펼침 상태는 UI state이며 새 옵션·복사 옵션과 오류 대상은 해당 화면에서 자동으로 열린다.
+- 공개 항목은 종류·금액·Taxable/Visible 상태를 요약한다. 모바일 목록의 높이 제한/내부 세로 스크롤은 제거한다. 정렬/템플릿/삭제는 기존 functional updater와 Jobber 삭제 ID 추적을 유지한다.
+- Review의 Main Final subtotal은 Ex GST이며 GST 10%와 Inc GST를 함께 표시한다. Options는 별도 Ex GST이고 Main에 더하지 않는다. Low/High 공식은 수동 선택이고 값의 대소관계로 자동 교체하지 않는다.
+- 하단에는 local `Save`와 명시적인 `Save & Sync`를 나란히 표시하며 `More` 메뉴를 두지 않는다. 기존 pending·복사 잠금·서버 version 검사를 유지한다. client preflight는 기존 schema/payload 결과를 UI 주소로 변환할 뿐 서버 검증을 대체하지 않는다. 숨은 오류의 영역/옵션/scope/행을 열고 필드를 focus한다.
+- 새 draft writer는 version 2이며 parser는 1/2를 지원한다. `options[].isExpanded`는 저장/dirty 비교에서 제외한다. 기존 storage key·7일 만료·300ms 지연 저장·pagehide flush·민감값 제거를 유지한다. 구버전 앱으로 rollback하면 v2 draft를 읽지 못하므로 사용자 draft를 임의 삭제하지 않는다.
+
+이전 구현의 검증 결과와 미검증 기기 조건은 [모바일 검증 기록](superpowers/reviews/2026-09-24-mobile-ux-verification.md)을 참고한다. 최신 sticky 카테고리 버튼·Review 상시 표시·직접 Save & Sync 정정도 로컬 코드·브라우저 검증을 완료했다. 검증 기록의 후속 정정 절을 참고한다.
 
 ---
 

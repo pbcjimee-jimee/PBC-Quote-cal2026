@@ -177,11 +177,22 @@ export default async function QuotesPage({ searchParams }: QuotesPageProps) {
           {!result.ok ? <p className="text-[var(--danger)]">{result.error}</p> : null}
         </div>
 
-        <div className="pbc-stats">
+        <div className="pbc-listbar pbc-overview-tools">
+          <SearchInput />
+          <MonthFilterSelect
+            currentYear={selectedYear}
+            currentMonth={selectedMonth}
+            currentSearch={currentSearch}
+            yearOptions={yearFilterOptions}
+            options={monthFilterOptions}
+          />
+        </div>
+
+        <div className="pbc-stats pbc-overview-metrics">
           <div className="pbc-stat">
-            <span className="pbc-stat__label">Total quotes</span>
+            <span className="pbc-stat__label">Loaded quotes</span>
             <span className="pbc-stat__value mono">{visibleQuotes.length}</span>
-            <span className="pbc-stat__sub">{selectedMonth || selectedYear ? 'selected range' : 'all time'}</span>
+            <span className="pbc-stat__sub">Latest up to {QUOTES_OVERVIEW_LIMIT} · current filters</span>
           </div>
           <div className="pbc-stat">
             <span className="pbc-stat__label">Pipeline value</span>
@@ -201,19 +212,9 @@ export default async function QuotesPage({ searchParams }: QuotesPageProps) {
         </div>
 
         <div className="pbc-listcard">
-          <div className="pbc-listbar">
-            <SearchInput />
-            <MonthFilterSelect
-              currentYear={selectedYear}
-              currentMonth={selectedMonth}
-              currentSearch={currentSearch}
-              yearOptions={yearFilterOptions}
-              options={monthFilterOptions}
-            />
-          </div>
           {result.ok ? (
             <p className="px-4 pb-3 text-sm text-[var(--muted)]">
-              Showing latest {QUOTES_OVERVIEW_LIMIT} quotes.
+              Latest up to {QUOTES_OVERVIEW_LIMIT} quotes · current filters
             </p>
           ) : null}
 

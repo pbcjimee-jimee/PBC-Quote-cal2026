@@ -182,6 +182,8 @@ F5 margin   [30] %
 
 Settings is admin-only and also includes Material, Product & Service, Template, and Area tabs. The Template tab stores reusable Product / Service line item and text item sets. Those templates appear in `/quotes/new` and quote edit Product / Service sections and copy their saved rows into the current quote when selected.
 
+All five settings sections are direct buttons, including on mobile. At `≤720px`, show three buttons in the first row and two in the second, allow labels to wrap and keep targets at least 48px high. Mark the active button with `aria-pressed` and connect it to the labelled content region. Reuse the existing lazy loading, retry and form state. The page header has Users and Back to quote; its duplicate Inventory shortcut is removed, while global Inventory navigation remains.
+
 `/settings/users` is an admin-only user management page. It lists email, display name, role, active state, and Jobber user connection. Admin actions create an Auth user plus profile, change role/active state, and connect a profile to a Jobber team user; role decisions always come from the current server session rather than client payloads.
 
 ---

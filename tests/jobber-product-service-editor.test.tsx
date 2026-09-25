@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest'
 import {
   applyQuoteLineTemplateToDrafts,
   applyProductServiceToLine,
+  getJobberLineErrorKey,
   getProductServiceDragScrollStep,
   getProductServiceMatches,
   JobberProductServiceEditor,
@@ -65,6 +66,52 @@ describe('JobberProductServiceEditor', () => {
     expect(markup).toContain('Access notes')
     expect(markup).toContain('Crew needs side gate access.')
     expect(markup).not.toContain('aria-label="Text unit price"')
+  })
+
+  it('marks one controlled mobile editor and summarizes the other public rows', () => {
+    const markup = renderToStaticMarkup(createElement(JobberProductServiceEditor, {
+      value: lines,
+      editingLineId: 'line-1',
+      onEditingLineChange: () => undefined,
+      onChange: () => undefined,
+    }))
+
+    expect(markup.match(/data-mobile-editing="true"/g)).toHaveLength(1)
+    expect(markup.match(/data-mobile-editing="false"/g)).toHaveLength(1)
+    expect(markup).toContain('aria-label="Edit Access notes"')
+    expect(markup).toContain('Done editing')
+  })
+
+  it('keeps controlled editing attached to the same line id after a functional reorder', () => {
+    const reordered = reorderJobberQuoteLines(lines, 'line-1', 'text-1', 'after')
+    const markup = renderToStaticMarkup(createElement(JobberProductServiceEditor, {
+      value: reordered,
+      editingLineId: 'line-1',
+      onEditingLineChange: () => undefined,
+      onChange: () => undefined,
+    }))
+
+    const selectedRow = markup.match(/<div data-mobile-editing="true"[\s\S]*?<div data-mobile-editing="false"/)?.[0]
+      ?? markup.match(/<div data-mobile-editing="true"[\s\S]*$/)?.[0]
+    expect(selectedRow).toContain('Exterior repaint')
+    expect(selectedRow).not.toContain('aria-label="Edit Access notes"')
+  })
+
+  it('adds stable public line and field error keys to every rendered editor field', () => {
+    const markup = renderToStaticMarkup(createElement(JobberProductServiceEditor, {
+      value: lines,
+      onChange: () => undefined,
+    }))
+
+    expect(markup).toContain(`data-error-key="${getJobberLineErrorKey('line-1', 'name')}"`)
+    expect(markup).toContain(`data-error-key="${getJobberLineErrorKey('line-1', 'description')}"`)
+    expect(markup).toContain(`data-error-key="${getJobberLineErrorKey('line-1', 'quantity')}"`)
+    expect(markup).toContain(`data-error-key="${getJobberLineErrorKey('line-1', 'unitPrice')}"`)
+    expect(markup).toContain(`data-error-key="${getJobberLineErrorKey('line-1', 'taxable')}"`)
+    expect(markup).toContain(`data-error-key="${getJobberLineErrorKey('line-1', 'clientVisible')}"`)
+    expect(markup).toContain(`data-error-key="${getJobberLineErrorKey('text-1', 'name')}"`)
+    expect(markup).toContain(`data-error-key="${getJobberLineErrorKey('text-1', 'description')}"`)
+    expect(markup).toContain(`data-error-key="${getJobberLineErrorKey('text-1', 'clientVisible')}"`)
   })
 
   it('keeps the Product Service row list scrollable for long saved Jobber quotes', () => {

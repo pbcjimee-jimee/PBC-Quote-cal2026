@@ -102,7 +102,7 @@ describe('quote form draft persistence', () => {
       updatedAt: '2026-05-15T00:00:00.000Z',
     }
 
-    expect(parseQuoteFormDraft(JSON.stringify(draft), new Date('2026-05-16T00:00:00.000Z'))).toEqual(draft)
+    expect(parseQuoteFormDraft(JSON.stringify(draft), new Date('2026-05-16T00:00:00.000Z'))).toEqual({ ...draft, options: draft.options.map((option) => ({ ...option, isExpanded: false })) })
     expect(parseQuoteFormDraft('not json')).toBeNull()
     expect(parseQuoteFormDraft(JSON.stringify({ ...draft, workingDays: '/' }))).toBeNull()
     expect(parseQuoteFormDraft(JSON.stringify({
@@ -323,7 +323,7 @@ describe('quote form draft persistence', () => {
     const storedJson = JSON.stringify(storedDraft)
 
     expect(storedDraft).toMatchObject({
-      version: 1,
+      version: 2,
       customerName: 'Jane Customer',
       customerAddress: '10 Main St',
       workType: 'Exterior repaint',

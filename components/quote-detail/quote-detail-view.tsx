@@ -318,6 +318,9 @@ export function QuoteDetailView({ quote }: QuoteDetailViewProps) {
   })
 
   const finalSubtotal = areaBreakdown.finalSubtotal
+  const finalTotal = areaBreakdown.finalTotal
+  const gstTotal = Decimal.max(finalTotal.sub(finalSubtotal), 0)
+  const optionsSubtotal = optionSummaries.reduce((sum, option) => sum.add(option.subtotal), new Decimal(0))
   const lineItemsTotal = quoteLineItemsTotal(quote.jobberQuoteLines)
   const visibleJobberLines = quote.jobberQuoteLines.slice(0, DETAIL_PREVIEW_LIMIT)
   const hiddenJobberLines = quote.jobberQuoteLines.slice(DETAIL_PREVIEW_LIMIT)
@@ -326,7 +329,6 @@ export function QuoteDetailView({ quote }: QuoteDetailViewProps) {
   const formulaScopes = getPreferredFormulaScopes(quote, areaBreakdown)
   const totalWorkingDays = new Decimal(quote.workingDays)
   const labourPerDay = new Decimal(quote.labourPerDay)
-  const totalManDays = totalWorkingDays.mul(labourPerDay)
   const jobberSummaryId = formatJobberSummaryId(quote)
   const jobberSummaryStatus = formatJobberSummaryStatus(quote)
   const latestPriceRevision = quote.priceRevisions.at(-1)
@@ -371,6 +373,36 @@ export function QuoteDetailView({ quote }: QuoteDetailViewProps) {
           />
         ) : null}
 
+        <div className="pbc-detailtotal">
+          <section className="pbc-card pbc-detailtotal__primary" aria-labelledby="quote-main-total-title">
+            <div className="pbc-detailtotal__head">
+              <div>
+                <span className="pbc-detailtotal__eyebrow">Main quote</span>
+                <h2 id="quote-main-total-title">Final total</h2>
+              </div>
+              <span className="pbc-chip">Read-only</span>
+            </div>
+            <div className="pbc-detailtotal__amounts">
+              <div>
+                <span>Final subtotal (Ex GST)</span>
+                <b className="mono">${finalSubtotal.toFixed(2)}</b>
+              </div>
+              <div>
+                <span>GST 10%</span>
+                <b className="mono">${gstTotal.toFixed(2)}</b>
+              </div>
+              <div className="pbc-detailtotal__grand">
+                <span>Total (Inc GST)</span>
+                <b className="mono">${finalTotal.toFixed(2)}</b>
+              </div>
+            </div>
+            <p className="pbc-detailtotal__note">
+              Options are excluded from the main total
+              {optionSummaries.length ? ` · ${optionSummaries.length} option${optionSummaries.length === 1 ? '' : 's'} · $${optionsSubtotal.toFixed(2)} Ex GST` : ''}.
+            </p>
+          </section>
+        </div>
+
         <div className="pbc-dgrid">
           <div className="pbc-dlead pbc-dspan">
             {/* Summary */}
@@ -382,32 +414,18 @@ export function QuoteDetailView({ quote }: QuoteDetailViewProps) {
                 {quote.workType ? <DRow label="Work type">{quote.workType}</DRow> : null}
                 <DRow label="Created by">{creatorName}</DRow>
                 <DRow label="Created on">{formatQuoteDate(quote.createdAt)}</DRow>
-                <DRow label="Total working days" mono>{quote.workingDays}</DRow>
-                <DRow label="Labour per day" mono>{quote.labourPerDay}</DRow>
-                <DRow label="Total man-days" mono>{totalManDays.toFixed(2)}</DRow>
               </dl>
-              <div className="pbc-dexgst">
-                <span>Final subtotal ex GST</span>
-                <b className="mono">${finalSubtotal.toFixed(2)}</b>
-              </div>
-              <dl className="pbc-dlist mt-3">
-                <DRow label="Material total" mono>${materialTotal.toFixed(2)}</DRow>
-                <DRow label="Total Labour" mono>${labourTotal.toFixed(2)}</DRow>
-              </dl>
-              <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
-                <div className="flex justify-between gap-2">
-                  <span className="text-[var(--muted)]">Interior</span>
-                  <span className="mono font-semibold">${areaBreakdown.interior.subtotal.toFixed(2)}</span>
-                </div>
-                <div className="flex justify-between gap-2">
-                  <span className="text-[var(--muted)]">Exterior</span>
-                  <span className="mono font-semibold">${areaBreakdown.exterior.subtotal.toFixed(2)}</span>
-                </div>
-                <div className="flex justify-between gap-2">
-                  <span className="text-[var(--muted)]">Roof</span>
-                  <span className="mono font-semibold">${areaBreakdown.roof.subtotal.toFixed(2)}</span>
-                </div>
-              </div>
+              <details className="pbc-detailtotal__breakdown">
+                <summary>Labour and material totals</summary>
+                <dl className="pbc-dlist">
+                  <DRow label="Total working days" mono>{quote.workingDays}</DRow>
+                  <DRow label="Labour per day" mono>{quote.labourPerDay}</DRow>
+                  <DRow label="Total man-days" mono>{totalWorkingDays.mul(labourPerDay).toFixed(2)}</DRow>
+                  <DRow label="Material total" mono>${materialTotal.toFixed(2)}</DRow>
+                  <DRow label="Total Labour" mono>${labourTotal.toFixed(2)}</DRow>
+                </dl>
+                <div className="pbc-dexgst"><span>Final subtotal ex GST</span><b className="mono">${finalSubtotal.toFixed(2)}</b></div>
+              </details>
             </Card>
 
             <div className="pbc-dstack">
@@ -477,13 +495,15 @@ export function QuoteDetailView({ quote }: QuoteDetailViewProps) {
             </div>
           </div>
 
-          <FinalSummary
-            labourTotal={labourTotal}
-            materialTotal={materialTotal}
-            areaBreakdown={areaBreakdown}
-            jobberFinancialSummary={jobberFinancialSummary}
-            className="pbc-dspan"
-          />
+          <details className="pbc-detailtotal__breakdown pbc-dspan">
+            <summary>Show calculation and profit breakdown</summary>
+            <FinalSummary
+              labourTotal={labourTotal}
+              materialTotal={materialTotal}
+              areaBreakdown={areaBreakdown}
+              jobberFinancialSummary={jobberFinancialSummary}
+            />
+          </details>
 
           {quote.priceRevisions.length > 0 ? (
             <Card className="pbc-dspan">
@@ -552,42 +572,36 @@ export function QuoteDetailView({ quote }: QuoteDetailViewProps) {
           </Card>
 
           {/* Product / service lines */}
-          <Card className="pbc-dspan">
-            <SectionLabel
-              icon={Icons.template({ size: 16 })}
-              aside={<span className="pbc-chip">{quote.jobberQuoteLines.length} items</span>}
-            >
-              App Product / Service
-            </SectionLabel>
-            <div className="pbc-dlines">
-              {quote.jobberQuoteLines.length === 0 ? <p className="pbc-empty">No product or service lines saved.</p> : null}
-              {visibleJobberLines.map((line) => <JobberLineDetail key={line.id} line={line} />)}
-              <DetailMore count={hiddenJobberLines.length}>
-                {hiddenJobberLines.map((line) => <JobberLineDetail key={line.id} line={line} />)}
-              </DetailMore>
-            </div>
-          </Card>
+          <details className="pbc-detailcollection pbc-dspan">
+            <summary>App Product / Service <span>{quote.jobberQuoteLines.length} items</span></summary>
+            <Card>
+              <div className="pbc-dlines">
+                {quote.jobberQuoteLines.length === 0 ? <p className="pbc-empty">No product or service lines saved.</p> : null}
+                {visibleJobberLines.map((line) => <JobberLineDetail key={line.id} line={line} />)}
+                <DetailMore count={hiddenJobberLines.length}>
+                  {hiddenJobberLines.map((line) => <JobberLineDetail key={line.id} line={line} />)}
+                </DetailMore>
+              </div>
+            </Card>
+          </details>
 
           {/* Materials */}
-          <Card className="pbc-dspan">
-            <SectionLabel
-              icon={Icons.palette({ size: 16 })}
-              aside={<span className="pbc-chip">{quote.items.length} materials</span>}
-            >
-              Materials
-            </SectionLabel>
-            <div className="pbc-dmats">
-              {quote.items.length === 0 ? <p className="pbc-empty">No materials saved.</p> : null}
-              {visibleItems.map((item) => <MaterialDetail key={item.id} item={item} />)}
-              <DetailMore count={hiddenItems.length}>
-                {hiddenItems.map((item) => <MaterialDetail key={item.id} item={item} />)}
-              </DetailMore>
-              <div className="pbc-dlines__total">
-                <span>Material total (RRP)</span>
-                <b className="mono">${materialTotal.toFixed(2)}</b>
+          <details className="pbc-detailcollection pbc-dspan">
+            <summary>Materials <span>{quote.items.length} materials</span></summary>
+            <Card>
+              <div className="pbc-dmats">
+                {quote.items.length === 0 ? <p className="pbc-empty">No materials saved.</p> : null}
+                {visibleItems.map((item) => <MaterialDetail key={item.id} item={item} />)}
+                <DetailMore count={hiddenItems.length}>
+                  {hiddenItems.map((item) => <MaterialDetail key={item.id} item={item} />)}
+                </DetailMore>
+                <div className="pbc-dlines__total">
+                  <span>Material total (RRP)</span>
+                  <b className="mono">${materialTotal.toFixed(2)}</b>
+                </div>
               </div>
-            </div>
-          </Card>
+            </Card>
+          </details>
 
           {optionSummaries.length ? (
             <Card className="pbc-dspan">

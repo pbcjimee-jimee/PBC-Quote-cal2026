@@ -43,6 +43,8 @@ export function QuoteMemosPanel({ memos, onAddMemo, onChangeMemo, onRemoveMemo }
                 </button>
               </div>
               <textarea
+                data-error-key={`review:${memo.id}:body`}
+                aria-label={`Memo ${index + 1}`}
                 value={memo.body}
                 onChange={(event) => onChangeMemo({ ...memo, body: event.target.value })}
                 rows={3}

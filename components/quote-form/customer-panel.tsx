@@ -20,6 +20,7 @@ interface CustomerPanelProps {
   onJobberLookupTypeChange: (value: 'quote' | 'job') => void
   onJobberQuoteIdChange: (value: string) => void
   onFetchJobberQuote: () => void
+  onEditPublicQuote?: () => void
   onApplyJobberRefreshChanges?: () => void
   onKeepCurrentJobberQuote?: () => void
   onWorkTypeChange: (value: string) => void
@@ -313,11 +314,11 @@ export function CustomerPanel(props: CustomerPanelProps) {
       <div className="pbc-customerline">
         <label className="pbc-field pbc-customerline__customer">
           <span className="pbc-field__label">Customer</span>
-          <input value={props.customerName} onChange={(event) => props.onCustomerNameChange(event.target.value)} className="pbc-input" />
+          <input data-error-key="details:form:customerName" value={props.customerName} onChange={(event) => props.onCustomerNameChange(event.target.value)} className="pbc-input" />
         </label>
         <label className="pbc-field pbc-customerline__lookup">
           <span className="pbc-field__label">{lookupLabel}</span>
-          <input value={props.jobberQuoteId} onChange={(event) => props.onJobberQuoteIdChange(event.target.value)} className="pbc-input" />
+          <input data-error-key="details:form:jobberQuoteId" value={props.jobberQuoteId} onChange={(event) => props.onJobberQuoteIdChange(event.target.value)} className="pbc-input" />
         </label>
         <div className="pbc-toggle pbc-customerline__mode" role="group" aria-label="Jobber lookup type">
           {(['quote', 'job'] as const).map((type) => (
@@ -334,6 +335,11 @@ export function CustomerPanel(props: CustomerPanelProps) {
         <button type="button" onClick={props.onFetchJobberQuote} disabled={props.isFetchingJobberQuote} className="pbc-btn pbc-btn--ghost pbc-customerline__action">
           {props.isFetchingJobberQuote ? loadingLabel : actionLabel}
         </button>
+        {props.onEditPublicQuote ? (
+          <button type="button" onClick={props.onEditPublicQuote} className="pbc-btn pbc-btn--ghost pbc-mobile-only col-span-full">
+            Products &amp; pricing
+          </button>
+        ) : null}
         {actionMode === 'refresh' ? (
           <span className="pbc-field__hint pbc-customerline__hint">
             Preview Jobber changes before applying them to this saved quote.
@@ -352,7 +358,7 @@ export function CustomerPanel(props: CustomerPanelProps) {
       </div>
       <label className="pbc-field">
         <span className="pbc-field__label">Address</span>
-        <input value={props.customerAddress} onChange={(event) => props.onCustomerAddressChange(event.target.value)} className="pbc-input" />
+        <input data-error-key="details:form:customerAddress" value={props.customerAddress} onChange={(event) => props.onCustomerAddressChange(event.target.value)} className="pbc-input" />
       </label>
       {props.jobberRefreshPreview ? (
         <JobberRefreshPreviewPanel
@@ -365,7 +371,7 @@ export function CustomerPanel(props: CustomerPanelProps) {
       <div className="grid gap-4 sm:grid-cols-2">
         <label className="pbc-field">
           <span className="pbc-field__label">Work Type</span>
-          <input value={props.workType} onChange={(event) => props.onWorkTypeChange(event.target.value)} className="pbc-input" placeholder="Interior, exterior..." />
+          <input data-error-key="details:form:workType" value={props.workType} onChange={(event) => props.onWorkTypeChange(event.target.value)} className="pbc-input" placeholder="Interior, exterior..." />
         </label>
         <label className="pbc-field">
           <span className="pbc-field__label">Customer Type</span>
