@@ -54,3 +54,13 @@
 - Vercel의 앱 환경변수 10개는 `type=sensitive`, `decrypted=false`다. `vercel env pull --environment production`의 빈 값은 비밀 값 조회 제한이며 실제 runtime 값이 비어 있다는 증거가 아니다. 이 파일로 환경변수를 덮어쓰거나 local production build를 수행하지 않는다. Vercel 원격 빌드는 기존 저장된 값을 주입받는다.
 - 기존 Production/Preview 공유 target은 변경하지 않았다. Preview 격리 조건은 미충족이므로 향후 Preview 실행은 계속 금지한다. 오늘은 Preview를 경유하지 않는 명시 승인된 Production 배포에 범위를 한정한다.
 - 배포 후 실제 Save 및 public health를 확인한다. live Jobber 쓰기는 실행하지 않는다. 첫 durable operation 이후 pre-journal 앱으로 되돌리지 않는 기존 rollback gate를 유지한다.
+
+## 저장 화면 및 Production 배포 결과
+
+- 같은 앱 소스의 local production build에서 기존 admin 세션으로 일반 Save create → Edit → Save changes가 실제 운영 DB에 성공했다. 시험 견적 `11125609-48c3-4abf-8597-349ccabd47da`의 version=2를 확인한 뒤 앱의 Move to Trash로 정리했다(version=3, deleted_at 있음). 영구 삭제는 하지 않았다. 기존 고객 견적은 수정하지 않았다.
+- wrapper rollback fixture와 달리 이 UI 시험 견적 1건은 복원 가능한 Trash에 남는다. 운영 quote 총 row는 따라서 112이며, 기존 111건은 그대로다. durable operation 및 unresolved=0.
+- `main`의 `2e8c942750ea514966f372a7fe129efdad42c692`를 push했다. 자동 Production 배포 `dpl_GMccBEPGv93XZGveK7ZVKAQMd67y`가 01:13:23 UTC 조회에서 READY, region `syd1`, exact SHA 일치였다. 공식 alias `pbc-quote-cal2026-v2.vercel.app`가 이 배포에 연결됐다.
+- 01:14 UTC `/login`, `/manifest.webmanifest`, `/sw.js`, `/offline` 모두 HTTP 200. service worker Cache-Control은 `public, must-revalidate, max-age=0`. 해당 deployment error/fatal runtime 로그 0건.
+- Production 도메인의 임시 브라우저 탭은 로그인 화면으로 정상 이동했다. 그 도메인의 인증 세션이 없어 배포된 도메인에서의 로그인 후 Save는 실행하지 않았다. 인증 Save 검증은 위 local production build → Production DB 경로로 수행했다.
+- DB mismatch로 일반 Save가 실패하던 원인은 해소됐다. live Jobber mutation/Save & Sync는 이번 검증에서 실행하지 않았다. API 필드 계약과 durable RPC/권한 및 기존 automated tests를 검증했다.
+- 이 결과 문서의 후속 push는 앱 source 변경을 포함하지 않는다. 마지막 배포 여부는 Vercel의 해당 commit 상태를 별도로 확인한다.

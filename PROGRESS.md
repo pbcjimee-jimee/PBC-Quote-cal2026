@@ -21,6 +21,8 @@
 
 ## 모바일 UI·UX 최종 재검토·운영 반영 준비 (2026-09-25)
 
+> 배포 완료: main `2e8c942` push 및 Production `dpl_GMccBEPGv93XZGveK7ZVKAQMd67y` READY/syd1/exact SHA, 공식 alias 연결을 확인했다. Public health 4개 HTTP200, 초기 error/fatal 로그0. local production build의 인증된 실제 Save create/update → 운영 DB 성공; UI 시험 견적 1건은 Move to Trash로 정리(version3, 복원 가능), operation/unresolved0. 운영 도메인은 인증 세션이 없어 로그인 화면만 확인했고 live Jobber 쓰기는 실행하지 않았다. 결과 문서 후속 push는 앱 source 변경 없음.
+
 > 후속 갱신: 사용자 “맞춰줘” 승인과 전체 저장 중지 확인 후, 운영 DB 누락 schema/grant를 2026-09-25 01:06 UTC 적용했다. remote version `20260925010625`/`20260925010633`; 새 save/sync RPC 10개 및 RLS/grant 정상. 기존 활성 admin 역할의 unlinked/linked create+update 모두 version=2·operation0으로 통과하고 ROLLBACK했다. 기존 견적 111건을 포함한 9개 테이블의 백업 전후 checksum 동일. Jobber `2025-04-16` 필드 `taxable`/`textOnly`: `Boolean!` read-only 확인. 상세는 `docs/superpowers/reviews/2026-09-25-production-db-alignment.md`. 아래 미적용 상태는 이 후속 작업 이전의 기록이다.
 
 - **Model:** GPT-6 Astra. 독립 견적/다른 UI/운영 호환성 검토와 오류 수정·회귀 검증은 모두 high. 사용자 요청에 따라 변경 전체를 다시 검토하고 main 통합을 준비했다.

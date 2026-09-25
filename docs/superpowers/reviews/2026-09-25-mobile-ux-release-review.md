@@ -1,5 +1,7 @@
 # 모바일 UI·UX 최종 검토와 운영 반영 준비
 
+> 후속 결과: 2026-09-25 운영 DB schema/grant 정렬 및 Save 검증 완료 후 main push·Production READY 배포를 마쳤다. 아래 HOLD는 그 이전 검토 시점의 상태다. 적용 버전·백업·실제 저장 검증·배포 상세는 `2026-09-25-production-db-alignment.md`를 참조한다.
+
 [태스크 #11] 모바일 변경 재검토·main 통합·배포 준비
 
 **Model:** GPT-6 Astra. 코드·오류·회귀·독립 검토는 high.
