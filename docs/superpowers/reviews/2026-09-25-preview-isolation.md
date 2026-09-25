@@ -30,7 +30,7 @@ Base: clean local main/origin/main `19d705109ba0f097d995041db650c5db17ea24e9`. W
 
 Existing immutable Preview deployments do not receive new environment values. They must not be used as evidence of isolation, and must be separately inspected before reuse. This task does not delete old deployments or rotate Production keys.
 
-## Evidence (in progress)
+## Evidence
 
 - Fresh isolated baseline: 119 test files / 1,040 tests passed; 3 files / 19 tests skipped.
 - Production dependencies: npm audit --omit=dev reports zero vulnerabilities.
@@ -42,7 +42,19 @@ Existing immutable Preview deployments do not receive new environment values. Th
 - Vercel scope switch complete: 10 original Production-only record IDs/types/returned value representations unchanged; zero Production value fields sent. Five Preview-only test variables; zero Preview Jobber variables. Resumable script/inventory recovery reviewed independently before execution. Sensitive values are not decryptable and no plaintext-hash comparison is claimed.
 - Authenticated local production-build HTTP Server Actions passed create/update Save, material/option snapshot preservation and rejected Sync with unchanged version/data and zero operations. Test quote `26401694-6bb5-4b33-8826-3eb48653596a` reached version 2. An earlier harness decode failure happened after another synthetic create; test records remain in the isolated test DB for inspection, not in Production.
 - Local Preview routes: login HTTP200; Jobber connect/callback/quote HTTP503 with the fixed disable response.
-- Deployed Preview checks: pending.
+- Deployed Preview: `dpl_HrmizxdhQNkPRMQH92XSDm6crSSg`, READY, exact source `30186ba842fd468e005487eecf1b09844fc391a5`, syd1. Authenticated quote-page rendering and connect/callback/quote HTTP503 checks passed.
+- Remote authenticated HTTP Server Actions passed create/update, main material/copied-option preservation and rejected Sync with no mutation/enqueue. Quote `b6ecf073-29fa-4f5d-853e-226e604db633` advanced 1 → 2 and remained 2 after rejected Sync; Jobber tokens/operations stayed zero. This synthetic quote remains in the test DB for inspection.
+- Harness-only failures were corrected without changing app code: Windows `.cmd` query escaping, and curl's implicit URL-encoded Content-Type (Next.js rejects URL-encoded fetch actions with 404). The transport now sends query parameters through stdin curl configuration and mirrors native fetch's `text/plain;charset=UTF-8` for string bodies. The same deployed action IDs then passed. No secrets are included in tracked files or diagnostic output.
+- Pre-merge re-run: full test suite 1,095 passed / 19 skipped; typecheck and lint passed. Original Production env inventory remains unchanged (10 records, zero comparison mismatches), Preview five variables/no Jobber variables. Production public health 4/4 HTTP200; anonymous quote/Jobber connect redirect to login. Login browser console errors zero.
+
+## Main merge app-impact review
+
+- User authorized main merge and a fresh Production build after checking app impact. No Production DB/config/Jobber connection changes are authorized as part of this step.
+- A separate read-only reviewer compared `19d7051..30186ba`: no blocking Production regression findings. Fresh focused run: 22 files / 453 tests passed; diff check passed.
+- `VERCEL_ENV=production` and unset environments bypass both new guard modules. Login/auth/proxy files, ordinary Save RPC/payload paths, dependencies and migrations are unchanged. Save & Sync/Retry/token/query paths retain existing behavior outside Preview.
+- Production CSP retains its existing Supabase and Jobber connection directives. Existing durable RPC/schema alignment is documented in `2026-09-25-production-db-alignment.md`; this change requires no migration.
+- PR #2 targets main. GitHub reports no conflicts, successful Vercel deployment and Preview Comments checks; automatic Supabase Preview check is skipped. There is no repository GitHub Actions test workflow, so the local full verification remains the test gate.
+- Remote Save verification is complete; app-impact review recommends GO for the authorized merge/rebuild. After merge, check the exact merge SHA in a READY Production build and its official alias; never promote the test Preview artifact. Read-only health/browser/log checks do not establish live Jobber write correctness.
 
 ## Out of scope / limits
 

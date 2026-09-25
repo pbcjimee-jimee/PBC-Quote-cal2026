@@ -26,7 +26,8 @@
 - Vercel 기존 10개 Production 레코드는 value를 보내지 않고 target만 Production으로 한정했다. 동일 ID/type/반환 값 표현 유지 확인. 테스트 DB/Auth용 Preview 전용 5개 변수 설정, Preview Jobber 변수 0개. 운영 DB/Jobber 연결은 변경하지 않았다.
 - 테스트 DB `wzntbkdkessgbgoyekir`: 합성 admin 1명·Area 3개, 인증 조회 성공. 실제 HTTP Server Action으로 일반 Save 생성/수정, 자재·옵션 가격 보존, Sync 차단 시 무변이/무enqueue 확인. Jobber token/operation 0.
 - 전체 verify와 Preview build 통과. 최종 test:run 1,095 통과/19 환경 의존 skip. 독립 코드 리뷰 blocking 0. CLI dry-run에서 비공개 파일 업로드 제외를 실제 확인했다.
-- 원격 Preview 배포/검증 결과는 `docs/superpowers/reviews/2026-09-25-preview-isolation.md`에서 후속 기록한다. 제한 Preview를 live Jobber E2E 통과로 해석하지 않는다.
+- 원격 Preview `dpl_HrmizxdhQNkPRMQH92XSDm6crSSg` READY/syd1/exact source 확인. 인증 HTTP 생성/수정·자재/옵션 보존·Sync 무변이/무enqueue 검증 통과(합성 견적 version 1→2→2, token/operation0). 운영 영향 독립 리뷰 453 tests/blocking0, 전체 재검증 1,095 통과·typecheck/lint 통과 후 사용자 승인된 main 병합·Production 재빌드를 진행한다.
+- 상세는 `docs/superpowers/reviews/2026-09-25-preview-isolation.md`. 제한 Preview를 live Jobber E2E 통과로 해석하지 않으며, Preview artifact를 Production으로 승격하지 않는다.
 
 ## 모바일 UI·UX 최종 재검토·운영 반영 준비 (2026-09-25)
 
