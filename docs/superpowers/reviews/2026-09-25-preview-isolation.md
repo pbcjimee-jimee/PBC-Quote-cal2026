@@ -54,7 +54,18 @@ Existing immutable Preview deployments do not receive new environment values. Th
 - `VERCEL_ENV=production` and unset environments bypass both new guard modules. Login/auth/proxy files, ordinary Save RPC/payload paths, dependencies and migrations are unchanged. Save & Sync/Retry/token/query paths retain existing behavior outside Preview.
 - Production CSP retains its existing Supabase and Jobber connection directives. Existing durable RPC/schema alignment is documented in `2026-09-25-production-db-alignment.md`; this change requires no migration.
 - PR #2 targets main. GitHub reports no conflicts, successful Vercel deployment and Preview Comments checks; automatic Supabase Preview check is skipped. There is no repository GitHub Actions test workflow, so the local full verification remains the test gate.
-- Remote Save verification is complete; app-impact review recommends GO for the authorized merge/rebuild. After merge, check the exact merge SHA in a READY Production build and its official alias; never promote the test Preview artifact. Read-only health/browser/log checks do not establish live Jobber write correctness.
+- Remote Save verification is complete; app-impact review recommended GO for the authorized merge/rebuild. Read-only health/browser/log checks do not establish live Jobber write correctness.
+
+## Main merge and Production result
+
+- PR [#2](https://github.com/pbcjimee-jimee/PBC-Quote-cal2026/pull/2) merged with merge commit `de76893bc68e9734b591d3b589bf25258b1c8657`. Local main fast-forwarded to the same commit; its tree exactly matched the reviewed branch. No force push, reset or worktree deletion.
+- Documentation commit `b3f367c` changed no app source; its final Preview `dpl_Hc4XiiwCiFXiA65KRnvR7YSRYhWD` was READY before merge. GitHub reported two successful checks and the automatic Supabase Preview check skipped.
+- Main triggered a new Production build, not Preview promotion. Deployment `dpl_GQ2WCCvAqFFKk6f6H4jzMFWEyzLu` reached READY at 2026-09-25 03:09:47 UTC, target `production`, exact merge SHA, region `syd1`, official alias `pbc-quote-cal2026-v2.vercel.app`.
+- Post-deploy public `/login`, `/manifest.webmanifest`, `/sw.js`, `/offline` all returned HTTP200. Login HTTP response took 1.36 seconds in this sample; this is not a Core Web Vitals measurement. Anonymous `/quotes/new` and `/api/jobber/connect` returned the expected HTTP307 login redirect. Production CSP retained its previous Supabase/Jobber connect directives.
+- Browser autofill permitted actual Production login without handling or printing a password. Login → quote list → new quote succeeded. Materials/options/formulas rendered, ordinary Save and Jobber Fetch were available; Save & Sync retained its normal fetch-first condition rather than a Preview-disabled notice. Browser console errors: zero. No customer quote was created, edited or sent to Jobber.
+- First post-deploy runtime scan: one `refresh_token_not_found` error on `/login`, fatal zero. The previous Production deployment also logged the same expired-session error on `/quotes/new` before this merge. Successful re-login restored the session; no further errors appeared during the authenticated new-quote check. This is not reported as an all-time zero-error deployment.
+- Original Production environment records were rechecked before merge: 10 baseline records, zero ID/type/returned-value-representation/scope mismatches. Production DB/schema, keys and Jobber connection were unchanged by this release. All synthetic Save tests targeted the isolated Preview DB.
+- This report's follow-up main commit changes documentation only. Its automatic deployment must still be checked for READY/exact SHA separately; the application source remains the same reviewed and deployed code.
 
 ## Out of scope / limits
 
