@@ -11,6 +11,8 @@ import { retryJobberQuoteSync } from '@/lib/actions/quotes'
 export interface JobberSyncStatusProps {
   quoteId: string
   legacyFailed?: boolean
+  jobberEnabled?: boolean
+  jobberNotice?: string
 }
 
 type LookupState =
@@ -47,7 +49,19 @@ function alertClass(sync: SyncState | null, failed: boolean): string {
   return 'pbc-alert pbc-alert--stack'
 }
 
-export function JobberSyncStatus(props: JobberSyncStatusProps) {
+export function JobberSyncStatus({
+  jobberEnabled = true,
+  jobberNotice = 'Jobber is unavailable.',
+  ...props
+}: JobberSyncStatusProps) {
+  if (!jobberEnabled) {
+    return (
+      <div className="pbc-alert pbc-alert--stack pbc-alert--warning" role="status">
+        <span>{jobberNotice}</span>
+      </div>
+    )
+  }
+
   return <JobberSyncStatusScope key={props.quoteId} {...props} />
 }
 

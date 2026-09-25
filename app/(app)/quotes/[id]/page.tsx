@@ -1,12 +1,14 @@
 import { notFound } from 'next/navigation'
 import { getQuote } from '@/lib/actions/quotes'
 import { QuoteDetailView } from '@/components/quote-detail/quote-detail-view'
+import { isJobberDisabledInPreview, JOBBER_DISABLED_MESSAGE } from '@/lib/jobber/environment'
 
 interface QuoteDetailPageProps {
   params: Promise<{ id: string }>
 }
 
 export default async function QuoteDetailPage({ params }: QuoteDetailPageProps) {
+  const jobberEnabled = !isJobberDisabledInPreview()
   const { id } = await params
   const result = await getQuote(id)
   if (!result.ok) {
@@ -26,5 +28,11 @@ export default async function QuoteDetailPage({ params }: QuoteDetailPageProps) 
 
   const quote = result.data
 
-  return <QuoteDetailView quote={quote} />
+  return (
+    <QuoteDetailView
+      quote={quote}
+      jobberEnabled={jobberEnabled}
+      jobberNotice={jobberEnabled ? undefined : JOBBER_DISABLED_MESSAGE}
+    />
+  )
 }

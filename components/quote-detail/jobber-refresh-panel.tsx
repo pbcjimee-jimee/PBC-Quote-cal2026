@@ -16,13 +16,22 @@ export type JobberRefreshQuote = Pick<
   | 'jobberSnapshotChangeSummary'
 >
 
-export function JobberRefreshPanel({ quote }: { quote: JobberRefreshQuote }) {
+export function JobberRefreshPanel({
+  quote,
+  jobberEnabled = true,
+  jobberNotice = 'Jobber is unavailable.',
+}: {
+  quote: JobberRefreshQuote
+  jobberEnabled?: boolean
+  jobberNotice?: string
+}) {
   const [isPending, startTransition] = useTransition()
   const [error, setError] = useState<string | null>(null)
 
   if (!quote.jobberQuoteId) return null
 
   function refresh() {
+    if (!jobberEnabled) return
     setError(null)
     startTransition(async () => {
       try {
@@ -47,7 +56,8 @@ export function JobberRefreshPanel({ quote }: { quote: JobberRefreshQuote }) {
         <button
           type="button"
           onClick={refresh}
-          disabled={isPending}
+          disabled={isPending || !jobberEnabled}
+          title={!jobberEnabled ? jobberNotice : undefined}
           className="pbc-btn pbc-btn--ghost pbc-btn--sm"
         >
           {Icons.refresh({ size: 14 })} {isPending ? 'Refreshing...' : 'Refresh from Jobber'}

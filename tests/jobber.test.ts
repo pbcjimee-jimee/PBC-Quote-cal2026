@@ -21,6 +21,32 @@ import { mapJobberJobToDraft, mapJobberQuoteToDraft } from '@/lib/jobber/mapper'
 import { getVisibleJobberQuoteLookupAfterFetch } from '@/lib/jobber/quote-lookup'
 
 describe('jobber config', () => {
+  it('rejects valid Jobber configuration in a Vercel preview environment', () => {
+    expect(() => getJobberConfig({
+      VERCEL_ENV: 'preview',
+      JOBBER_CLIENT_ID: 'client-123',
+      JOBBER_CLIENT_SECRET: 'secret-456',
+      JOBBER_REDIRECT_URI: 'https://example.com/api/jobber/callback',
+      JOBBER_GRAPHQL_VERSION: '2025-04-16',
+    })).toThrow('Jobber is disabled in this preview environment.')
+  })
+
+  it('rejects OAuth URL construction with explicit configuration in preview', () => {
+    vi.stubEnv('VERCEL_ENV', 'preview')
+
+    try {
+      expect(() => buildJobberAuthorizationUrl({
+        clientId: 'client-123',
+        clientSecret: 'secret-456',
+        redirectUri: 'https://example.com/api/jobber/callback',
+        graphqlVersion: '2025-04-16',
+        accessToken: '',
+      }, 'state-abc')).toThrow('Jobber is disabled in this preview environment.')
+    } finally {
+      vi.unstubAllEnvs()
+    }
+  })
+
   it('reports missing OAuth env keys when credentials are not configured', () => {
     const config = getJobberConfig({})
 
@@ -68,12 +94,22 @@ describe('jobber config', () => {
 
   it('ignores static Jobber access tokens in production', () => {
     const config = getJobberConfig({
+      VERCEL_ENV: 'production',
       NODE_ENV: 'production',
+      JOBBER_CLIENT_ID: 'client-123',
+      JOBBER_CLIENT_SECRET: 'secret-456',
+      JOBBER_REDIRECT_URI: 'https://example.com/api/jobber/callback',
       JOBBER_GRAPHQL_VERSION: '2025-04-16',
       JOBBER_ACCESS_TOKEN: 'static-production-token',
     })
 
-    expect(config.accessToken).toBe('')
+    expect(config).toEqual({
+      clientId: 'client-123',
+      clientSecret: 'secret-456',
+      redirectUri: 'https://example.com/api/jobber/callback',
+      graphqlVersion: '2025-04-16',
+      accessToken: '',
+    })
   })
 
   it('uses the default Jobber GraphQL version when the env key is not configured', () => {
@@ -107,6 +143,35 @@ describe('jobber config', () => {
 })
 
 describe('jobber oauth', () => {
+  it.each([
+    ['authorization code exchange', (fetcher: typeof fetch) => exchangeAuthorizationCode('auth-code', {
+      clientId: 'client-123',
+      clientSecret: 'secret-456',
+      redirectUri: 'https://example.com/api/jobber/callback',
+      graphqlVersion: '2025-04-16',
+      accessToken: '',
+    }, fetcher)],
+    ['refresh token exchange', (fetcher: typeof fetch) => refreshAccessToken('refresh-token', {
+      clientId: 'client-123',
+      clientSecret: 'secret-456',
+      redirectUri: 'https://example.com/api/jobber/callback',
+      graphqlVersion: '2025-04-16',
+      accessToken: '',
+    }, fetcher)],
+  ])('blocks %s before contacting Jobber in preview', async (_name, requestToken) => {
+    vi.stubEnv('VERCEL_ENV', 'preview')
+    const fetcher = vi.fn<typeof fetch>()
+
+    try {
+      await expect(requestToken(fetcher)).rejects.toThrow(
+        'Jobber is disabled in this preview environment.'
+      )
+      expect(fetcher).not.toHaveBeenCalled()
+    } finally {
+      vi.unstubAllEnvs()
+    }
+  })
+
   it('exchanges an authorization code for tokens without exposing credentials in the URL', async () => {
     const fetcher = vi.fn(async () => new Response(JSON.stringify({
       access_token: 'access-token',
@@ -196,6 +261,22 @@ describe('jobber oauth', () => {
 })
 
 describe('jobber client', () => {
+  it('blocks a configured GraphQL query before fetch in preview', async () => {
+    vi.stubEnv('VERCEL_ENV', 'preview')
+    const fetcher = vi.fn<typeof fetch>()
+
+    try {
+      await expect(fetchJobberQuote('encoded-quote-id', {
+        accessToken: 'access-token',
+        graphqlVersion: '2025-04-16',
+        fetcher,
+      })).rejects.toThrow('Jobber is disabled in this preview environment.')
+      expect(fetcher).not.toHaveBeenCalled()
+    } finally {
+      vi.unstubAllEnvs()
+    }
+  })
+
   it('rejects GraphQL mutation documents before sending requests', () => {
     expect(() => assertJobberReadOnlyGraphqlDocument(`
       mutation PbcWrite($id: EncodedId!) {

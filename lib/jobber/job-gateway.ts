@@ -1,6 +1,7 @@
 import 'server-only'
 
 import { getJobberConfig } from './config'
+import { assertJobberEnabled } from './environment'
 import {
   fetchJobberJobAssignmentVisitsPage,
   fetchJobberJobExpensesPage,
@@ -39,6 +40,7 @@ export interface JobberGateway {
 }
 
 export async function createJobberGateway(): Promise<JobberGateway> {
+  assertJobberEnabled()
   const config = getJobberConfig()
   const initialToken = await getUsableSharedJobberConnectionToken(config)
   if (!initialToken) throw new Error('Jobber is not connected. Connect Jobber first.')

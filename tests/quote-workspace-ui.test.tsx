@@ -158,6 +158,8 @@ async function mountQuoteForm(options: {
   initialQuote?: QuoteRecord
   areas?: { id: string; scope: 'interior' | 'exterior' | 'roof'; name: string; active: boolean; position: number }[]
   viewportWidth?: number
+  jobberEnabled?: boolean
+  jobberNotice?: string
 } = {}) {
   const installed = installTestDom()
   const restoreElementRuntime = installElementRuntime()
@@ -194,6 +196,8 @@ async function mountQuoteForm(options: {
       settings: DEFAULT_PRICING_SETTINGS,
       areas: options.areas ?? [], productServices: [], quoteLineTemplates: [],
       initialQuote: options.initialQuote,
+      jobberEnabled: options.jobberEnabled,
+      jobberNotice: options.jobberNotice,
     }))
   })
   await settle()
@@ -361,6 +365,45 @@ describe('quote workspace structure', () => {
         await Promise.resolve()
       })
       await settle()
+    } finally {
+      await mounted.cleanup()
+    }
+  })
+
+  it('keeps local quote editing and Save available while preview blocks Jobber actions', async () => {
+    const updateQuoteMock = vi.mocked(updateQuote)
+    updateQuoteMock.mockReset()
+    updateQuoteMock.mockResolvedValueOnce({ ok: false, error: 'Save held for inspection.' })
+    const notice = 'Jobber is disabled in this preview environment.'
+    const mounted = await mountQuoteForm({
+      initialQuote: createQuoteRecord({ jobberQuoteId: 'jobber-quote-1' }),
+      jobberEnabled: false,
+      jobberNotice: notice,
+    })
+
+    try {
+      const localSave = findButton(mounted.container, 'Save')
+      const syncSave = findButton(mounted.container, 'Save & Sync')
+      const refresh = findButton(mounted.container, 'Refresh from Jobber')
+      const addOption = findButton(mounted.container, 'Add Option')
+      const addLineItem = findButton(mounted.container, 'Add Line Item')
+
+      expect(mounted.container.textContent).toContain(notice)
+      expect(localSave?.disabled).toBe(false)
+      expect(syncSave?.disabled).toBe(true)
+      expect(refresh?.disabled).toBe(true)
+      expect(addOption?.disabled).toBe(false)
+      expect(addLineItem?.disabled).toBe(false)
+
+      await act(async () => {
+        syncSave?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
+      })
+      expect(updateQuoteMock).not.toHaveBeenCalled()
+
+      await act(async () => {
+        localSave?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
+      })
+      expect(updateQuoteMock).toHaveBeenCalledWith(expect.objectContaining({ syncJobber: false }))
     } finally {
       await mounted.cleanup()
     }

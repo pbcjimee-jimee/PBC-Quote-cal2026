@@ -74,6 +74,28 @@ describe('jobber tokens', () => {
 
   afterEach(() => {
     delete process.env.JOBBER_TOKEN_ENCRYPTION_KEY
+    vi.unstubAllEnvs()
+  })
+
+  it('blocks shared token reads before creating a database client in preview', async () => {
+    vi.stubEnv('VERCEL_ENV', 'preview')
+
+    await expect(getSharedJobberConnectionToken()).rejects.toThrow(
+      'Jobber is disabled in this preview environment.'
+    )
+    expect(mocks.createServiceClient).not.toHaveBeenCalled()
+  })
+
+  it('blocks token refresh before contacting Jobber or creating a database client in preview', async () => {
+    vi.stubEnv('VERCEL_ENV', 'preview')
+
+    await expect(refreshSharedJobberConnectionToken(
+      'refresh-token',
+      config,
+      'owner-id'
+    )).rejects.toThrow('Jobber is disabled in this preview environment.')
+    expect(mocks.refreshAccessToken).not.toHaveBeenCalled()
+    expect(mocks.createServiceClient).not.toHaveBeenCalled()
   })
 
   it('uses the most recently updated Jobber connection for every logged-in app user', async () => {

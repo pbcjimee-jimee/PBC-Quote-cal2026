@@ -1,5 +1,5 @@
 import { renderToStaticMarkup } from 'react-dom/server'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({
   getJobDetail: vi.fn(),
@@ -52,6 +52,10 @@ describe('Jobs page', () => {
     mocks.listUsers.mockResolvedValue({ ok: true, data: [] })
   })
 
+  afterEach(() => {
+    vi.unstubAllEnvs()
+  })
+
   it('renders the authenticated jobs shell without waiting for Jobber', async () => {
     mocks.listMyJobs.mockReturnValueOnce(new Promise(() => undefined))
 
@@ -69,6 +73,16 @@ describe('Jobs page', () => {
     expect(markup).toContain('aria-label="Loading job calendar"')
     expect(markup).toContain('pbc-jobcalendar-loading')
     expect(markup.match(/pbc-jobcalendar-loading__day/g)).toHaveLength(42)
+  })
+
+  it('renders a preview notice without loading Jobber jobs', async () => {
+    vi.stubEnv('VERCEL_ENV', 'preview')
+
+    const markup = renderToStaticMarkup(await JobsPage({ searchParams: Promise.resolve({}) }))
+
+    expect(markup).toContain('Jobber is disabled in this preview environment.')
+    expect(markup).not.toContain('aria-label="Loading job calendar"')
+    expect(mocks.listMyJobs).not.toHaveBeenCalled()
   })
 
   it('shows a partial refresh warning returned during the initial jobs load', async () => {
@@ -174,5 +188,35 @@ describe('Jobs page', () => {
 
     expect(markup).toContain('Job #3103')
     expect(markup).not.toContain('Encoded Jobber ID was not decoded')
+  })
+
+  it('does not load a Jobber job detail in preview', async () => {
+    vi.stubEnv('VERCEL_ENV', 'preview')
+    mocks.getJobDetail.mockResolvedValue({
+      ok: true,
+      data: {
+        id: 'job-1',
+        jobNumber: '3103',
+        title: 'Preview job',
+        jobStatus: 'upcoming',
+        total: '100.00',
+        jobberWebUri: 'https://secure.getjobber.com/jobs/job-1',
+        financialSummary: {
+          revenue: '100.00',
+          expensesTotal: '0.00',
+          profit: '100.00',
+          profitMarginPercent: '100.00',
+        },
+        refreshedAt: '2026-08-02T02:30:09.555Z',
+        expenses: [],
+      },
+    })
+
+    const markup = renderToStaticMarkup(await JobDetailPage({
+      params: Promise.resolve({ jobberJobId: 'job-1' }),
+    }))
+
+    expect(markup).toContain('Jobber is disabled in this preview environment.')
+    expect(mocks.getJobDetail).not.toHaveBeenCalled()
   })
 })

@@ -7,8 +7,12 @@ import {
 import { isDevNoAuthMode } from '@/lib/actions/types'
 import { USER_NOT_ALLOWED_ERROR } from '@/lib/security/auth-policy'
 import { requireRole } from '@/lib/security/require-app-user'
+import { isJobberDisabledInPreview, JOBBER_DISABLED_MESSAGE } from '@/lib/jobber/environment'
 
 export async function GET(request: NextRequest) {
+  if (isJobberDisabledInPreview()) {
+    return NextResponse.json({ ok: false, error: JOBBER_DISABLED_MESSAGE }, { status: 503 })
+  }
   if (!isDevNoAuthMode()) {
     const allowedUser = await requireRole('admin')
     if (!allowedUser.ok) {

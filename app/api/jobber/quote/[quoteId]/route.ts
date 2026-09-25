@@ -14,6 +14,7 @@ import { mapJobberJobToDraft, mapJobberQuoteToDraft } from '@/lib/jobber/mapper'
 import { getUsableSharedJobberConnectionToken, refreshSharedJobberConnectionToken, requireSharedJobberConnectionOwnerId, type StoredJobberToken } from '@/lib/jobber/tokens'
 import { requireRole } from '@/lib/security/require-app-user'
 import { isDevNoAuthMode } from '@/lib/actions/types'
+import { isJobberDisabledInPreview, JOBBER_DISABLED_MESSAGE } from '@/lib/jobber/environment'
 
 interface RouteContext {
   params: Promise<{
@@ -29,6 +30,9 @@ class JobberAuthError extends Error {
 }
 
 export async function GET(request: NextRequest, context: RouteContext) {
+  if (isJobberDisabledInPreview()) {
+    return NextResponse.json({ ok: false, error: JOBBER_DISABLED_MESSAGE }, { status: 503 })
+  }
   const config = getJobberConfig()
   const missing = getMissingGraphqlConfigKeys(config)
   if (missing.length > 0) {

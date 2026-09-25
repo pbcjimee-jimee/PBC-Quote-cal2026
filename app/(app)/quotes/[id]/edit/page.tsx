@@ -5,12 +5,14 @@ import { listAreas } from '@/lib/actions/areas'
 import { listQuoteLineTemplates } from '@/lib/actions/quote-line-templates'
 import { getQuote } from '@/lib/actions/quotes'
 import { getPricingSettings } from '@/lib/actions/settings'
+import { isJobberDisabledInPreview, JOBBER_DISABLED_MESSAGE } from '@/lib/jobber/environment'
 
 interface QuoteEditPageProps {
   params: Promise<{ id: string }>
 }
 
 export default async function QuoteEditPage({ params }: QuoteEditPageProps) {
+  const jobberEnabled = !isJobberDisabledInPreview()
   const { id } = await params
   const [quote, settings, areas, quoteLineTemplates] = await Promise.allSettled([
     getQuote(id),
@@ -48,6 +50,8 @@ export default async function QuoteEditPage({ params }: QuoteEditPageProps) {
         quoteLineTemplates={templates ?? []}
         initialQuote={quote.value.data}
         settings={quote.value.data.pricingSettingsSnapshot ?? settings.value.data}
+        jobberEnabled={jobberEnabled}
+        jobberNotice={jobberEnabled ? undefined : JOBBER_DISABLED_MESSAGE}
       />
     </>
   )

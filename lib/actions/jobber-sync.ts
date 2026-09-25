@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache'
 import { z } from 'zod'
 import { requireRole } from '@/lib/security/require-app-user'
 import { createClient } from '@/lib/supabase/server'
+import { isJobberDisabledInPreview, JOBBER_DISABLED_MESSAGE } from '@/lib/jobber/environment'
 import type { SyncOperation, SyncOperationStatus, SyncRunResult } from '@/lib/jobber/sync-types'
 import {
   checkJobberSyncOperation,
@@ -100,6 +101,9 @@ export async function getJobberSyncState(
 ): Promise<ActionResult<SyncState | null>> {
   const validated = validateQuoteId(quoteId)
   if (!validated.ok) return validated
+  if (isJobberDisabledInPreview()) {
+    return { ok: false, error: JOBBER_DISABLED_MESSAGE }
+  }
   if (isDevNoAuthMode()) {
     return { ok: false, error: 'Jobber sync status is unavailable in preview mode' }
   }
@@ -122,6 +126,9 @@ export async function checkJobberQuoteSync(
 ): Promise<ActionResult<{ id: string }>> {
   const validated = validateQuoteId(quoteId)
   if (!validated.ok) return validated
+  if (isJobberDisabledInPreview()) {
+    return { ok: false, error: JOBBER_DISABLED_MESSAGE }
+  }
   if (isDevNoAuthMode()) {
     return { ok: false, error: 'Jobber sync checking is unavailable in preview mode' }
   }

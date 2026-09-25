@@ -6,6 +6,7 @@ import { JobsList } from '@/components/jobs/jobs-list'
 import { Icons } from '@/components/ui/icons'
 import { listMyJobs } from '@/lib/actions/jobs'
 import { listUsers } from '@/lib/actions/users'
+import { isJobberDisabledInPreview, JOBBER_DISABLED_MESSAGE } from '@/lib/jobber/environment'
 import { requireRole, type AppRole } from '@/lib/security/require-app-user'
 
 type JobsSearchParams = { supervisor?: string; month?: string }
@@ -22,21 +23,26 @@ export default async function JobsPage({
   const supervisorProfileId = appUser.profile.role === 'admin' && query.supervisor
     ? query.supervisor
     : null
+  const jobberEnabled = !isJobberDisabledInPreview()
   return (
     <main>
       <header className="pbc-topbar">
         <div className="pbc-crumb"><span>{appUser.profile.role === 'admin' ? 'Admin' : 'Supervisor'}</span>{Icons.arrowDown({ size: 14 })}<b>Jobs</b></div>
-        <div className="pbc-topbar__right"><JobRefreshButton supervisorProfileId={supervisorProfileId} month={query.month} /></div>
+        <div className="pbc-topbar__right"><JobRefreshButton supervisorProfileId={supervisorProfileId} month={query.month} jobberEnabled={jobberEnabled} jobberNotice={jobberEnabled ? undefined : JOBBER_DISABLED_MESSAGE} /></div>
       </header>
       <div className="pbc-page">
         <div className="pbc-pagehead"><h1>Jobs</h1><p>Select a scheduled job to review its expenses and profit.</p></div>
-        <Suspense fallback={<JobsLoadingShell />}>
-          <JobsContent
-            query={query}
-            role={appUser.profile.role}
-            supervisorProfileId={supervisorProfileId}
-          />
-        </Suspense>
+        {jobberEnabled ? (
+          <Suspense fallback={<JobsLoadingShell />}>
+            <JobsContent
+              query={query}
+              role={appUser.profile.role}
+              supervisorProfileId={supervisorProfileId}
+            />
+          </Suspense>
+        ) : (
+          <p className="pbc-alert pbc-alert--warning" role="status">{JOBBER_DISABLED_MESSAGE}</p>
+        )}
       </div>
     </main>
   )
@@ -46,11 +52,19 @@ export async function JobsContent({
   query,
   role,
   supervisorProfileId,
+  jobberEnabled = true,
+  jobberNotice = 'Jobber is unavailable.',
 }: {
   query: JobsSearchParams
   role: AppRole
   supervisorProfileId: string | null
+  jobberEnabled?: boolean
+  jobberNotice?: string
 }) {
+  if (!jobberEnabled) {
+    return <p className="pbc-alert pbc-alert--warning" role="status">{jobberNotice}</p>
+  }
+
   const [jobs, users] = await Promise.all([
     listMyJobs({ supervisorProfileId, month: query.month }),
     role === 'admin' ? listUsers({}) : Promise.resolve(null),

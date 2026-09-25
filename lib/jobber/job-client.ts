@@ -2,6 +2,7 @@ import 'server-only'
 
 import Decimal from 'decimal.js'
 import { JOBBER_GRAPHQL_URL } from './config'
+import { assertJobberEnabled } from './environment'
 import type { JobberConnectionPage, JobberPageRequest } from './pagination'
 import type {
   JobberExpense,
@@ -200,6 +201,7 @@ async function request(
   variables: Readonly<Record<string, unknown>>,
   options: JobberJobClientOptions,
 ): Promise<Record<string, unknown>> {
+  assertJobberEnabled()
   const maxRetries = options.maxThrottleRetries ?? 2
   if (!Number.isInteger(maxRetries) || maxRetries < 0 || maxRetries > MAX_THROTTLE_RETRIES) {
     throw new Error(`maxThrottleRetries must be an integer between 0 and ${MAX_THROTTLE_RETRIES}`)

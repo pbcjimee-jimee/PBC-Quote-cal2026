@@ -105,6 +105,31 @@ describe('jobber quote route token refresh', () => {
     })
   })
 
+  it('returns 503 in Vercel Preview before auth, token, or GraphQL access', async () => {
+    vi.stubEnv('VERCEL_ENV', 'preview')
+    const request = new NextRequest(
+      'http://localhost:3000/api/jobber/quote/Z2lkOi8vSm9iYmVyL1F1b3RlLzE='
+    )
+
+    try {
+      const response = await jobberQuoteRoute(request, {
+        params: Promise.resolve({ quoteId: 'Z2lkOi8vSm9iYmVyL1F1b3RlLzE=' }),
+      })
+      expect(response.status).toBe(503)
+      expect(await response.json()).toEqual({
+        ok: false,
+        error: 'Jobber is disabled in this preview environment.',
+      })
+    } finally {
+      vi.unstubAllEnvs()
+    }
+
+    expect(mocks.requireRole).not.toHaveBeenCalled()
+    expect(mocks.getUsableSharedJobberConnectionToken).not.toHaveBeenCalled()
+    expect(mocks.fetchJobberQuote).not.toHaveBeenCalled()
+    expect(mocks.fetchJobberQuoteJobs).not.toHaveBeenCalled()
+  })
+
   it('uses the refreshed access token for quote job expenses after quote fetch refreshes', async () => {
     const request = new NextRequest(
       'http://localhost:3000/api/jobber/quote/Z2lkOi8vSm9iYmVyL1F1b3RlLzE='

@@ -58,14 +58,17 @@ git ls-remote origin main
 
 | 변수 | 환경 | 용도 |
 |---|---|---|
-| `NEXT_PUBLIC_SUPABASE_URL` | All | Supabase 프로젝트 URL |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | All | Supabase anon key (브라우저 OK) |
-| `SUPABASE_SERVICE_ROLE_KEY` | Server only | Supabase service role key (Server Actions 전용) |
-| `JOBBER_REDIRECT_URI` | Server only | Jobber OAuth callback. Production value: `https://pbc-quote-cal2026-v2.vercel.app/api/jobber/callback` |
+| `NEXT_PUBLIC_SUPABASE_URL` | Production / Preview 별도 | 환경별 Supabase 프로젝트 URL |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | Production / Preview 별도 | 해당 프로젝트의 브라우저용 키 |
+| `SUPABASE_SERVICE_ROLE_KEY` | Production / Preview 별도, server only | 해당 프로젝트의 service-role key |
+| `NEXT_PUBLIC_DEV_NO_AUTH` | Production / Preview 별도 | Preview는 반드시 `false` |
+| `JOBBER_*` | Production only | Preview에서는 자격증명·callback 미설정, 서버에서 모든 Jobber 기능 차단 |
 
 **주의:** `SERVICE_ROLE_KEY`는 절대 `NEXT_PUBLIC_` prefix 붙이지 말 것 (브라우저 노출 위험).
 
 ### Preview 환경 격리 준비 기록 (2026-09-18)
+
+> 아래는 9월 18일 당시 기록이다. 9월 25일 승인된 제한 Preview와 최신 전환 결과는 다음 섹션 및 `docs/superpowers/reviews/2026-09-25-preview-isolation.md`를 우선한다.
 
 - 사용자 승인 범위: Production의 기존 연결값을 유지하고 Preview만 테스트 환경으로 분리한다. 아직 환경변수를 변경하지 않았으며 아래는 전환 준비 상태다.
 - 현재 Vercel에 등록된 Supabase URL·anon/publishable/service-role, `NEXT_PUBLIC_DEV_NO_AUTH`, Jobber client ID/secret·redirect URI·GraphQL version·token encryption key 10개는 모두 Production/Preview 공통 레코드다. 위 표의 `All`은 테스트 환경 격리 완료를 뜻하지 않는다.
@@ -87,6 +90,18 @@ git ls-remote origin main
 - 아직 Vercel 변수 변경·Preview 실행·운영 DB 변경·원격 main 병합·운영 배포는 하지 않았다. Jobber 없는 제한 Preview를 허용하려면 기존 전체 격리 게이트를 임의로 건너뛰지 말고 별도 차단 설계와 사용자 승인을 먼저 확보한다.
 
 ---
+
+## Jobber 없는 제한 Preview (2026-09-25 승인)
+
+- 사용자 승인: 별도 테스트 DB/Auth로 견적·자재·옵션·일반 Save를 검증하고, Jobber 연결·조회·토큰 갱신·전송은 모두 서버에서 차단한다. 운영 DB 설정·Jobber 연결은 변경하지 않는다.
+- 고정 테스트 프로젝트: `wzntbkdkessgbgoyekir`. `VERCEL_ENV=preview`에서 build와 server Supabase client는 이 URL, 올바른 역할/프로젝트의 키, 로그인 필수 설정을 검사한다. Jobber 자격증명/callback이 있으면 build를 거절한다. opaque modern key는 실제 테스트 endpoint 인증으로 별도 확인한다.
+- Vercel의 `Automatically expose System Environment Variables`는 활성 상태여야 한다. 프로젝트에 `VERCEL_ENV` override를 만들지 않는다.
+- 기존 Production 환경변수는 ID와 값을 유지하고 target만 Production으로 한정한다. Preview는 테스트 Supabase URL·anon·publishable·service-role 및 `NEXT_PUBLIC_DEV_NO_AUTH=false`의 5개 전용 변수만 사용한다. 원래 Production value 필드는 PATCH에 보내지 않는다. Sensitive 값은 복호화 비교할 수 없으므로 ID/type/반환 표현의 불변성과 target-only 요청, 운영 health를 검증한다.
+- 테스트 Auth 관리자와 합성 Area 3개를 준비했다. 사용자/고객/Jobber 토큰을 운영에서 복사하지 않는다. 생성된 테스트 비밀번호와 키는 ignored 로컬 파일에만 보관하고 로그/문서/배포 소스에 넣지 않는다.
+- `.vercelignore`로 `.env*`·`.superpowers`·자격증명·백업·작업 폴더를 제외한다. 수동 배포 전 `vercel deploy --dry --format=json`으로 실제 업로드 목록을 검사한다. Git ignore만으로 비공개 파일이 빠진다고 가정하지 않는다.
+- 기존 immutable Preview는 환경변수 변경을 소급 적용받지 않는다. 새로 검증한 Preview만 사용한다. 이 작업에서 기존 deployment를 삭제하거나 Production 키를 회전하지 않는다.
+- **Preview artifact를 Production으로 promote하지 않는다.** 공개 Supabase URL/key가 빌드에 고정되므로 Production은 main + Production 환경변수로 새로 build해야 한다.
+- 이 제한 Preview는 live Jobber E2E 검증을 대체하지 않는다. 새 Jobber 동작 변경은 별도 테스트 계정/명시 승인 절차가 필요하다. 원격 DB migration 이력의 날짜 차이를 이유로 재적용/repair하지 않는다.
 
 ## 배포 훅 & 체크
 
@@ -137,6 +152,7 @@ Promotion 전 확인:
 #### 1. Preview 격리 선행 조건
 
 - PR preview는 Production과 분리된 Supabase DB·Auth data·service-role key·Jobber credential/account를 사용해야 한다. Preview에 Production Supabase 또는 Production Jobber credential이 주입될 수 있으면 preview 실행·Jobber 조회·merge를 중단한다.
+- 예외: 2026-09-25 승인된 위 **Jobber 없는 제한 Preview**는 모든 Jobber 서버 경로 차단과 별도 DB/Auth 검증을 전제로 사용할 수 있다. 이 예외는 live Jobber 검증이나 운영 migration 게이트를 면제하지 않는다.
 - 격리된 preview DB에 schema를 먼저 적용한 후 새 앱 preview를 연다. 새 앱은 일반 Save도 새 wrapper RPC를 호출하므로 app-before-schema preview는 사용하지 않는다.
 - 격리 환경이 준비되지 않았거나 이를 제어할 권한/절차가 없으면 운영 배포를 진행하지 않는다. 환경 변수·Vercel 설정 변경은 사용자 명시 승인 후 별도로 수행한다.
 

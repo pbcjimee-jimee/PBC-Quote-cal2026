@@ -1,5 +1,6 @@
 import { createServiceClient } from '@/lib/supabase/server'
 import { assertJobberReadOnlyScopes, type JobberConfig } from './config'
+import { assertJobberEnabled } from './environment'
 import { getTokenExpiresAt, refreshAccessToken } from './oauth'
 import { assertJobberTokenStorageConfigured, decryptTokenValue, encryptTokenValue } from './token-encryption'
 
@@ -31,6 +32,7 @@ export function requireSharedJobberConnectionOwnerId(token: StoredJobberToken): 
 }
 
 export async function getSharedJobberConnectionToken(): Promise<StoredJobberToken | null> {
+  assertJobberEnabled()
   const service = await createServiceClient()
   const { data, error } = await service
     .from('jobber_tokens')
@@ -59,6 +61,7 @@ export async function refreshSharedJobberConnectionToken(
   config: JobberConfig,
   ownerUserId: string
 ): Promise<StoredJobberToken> {
+  assertJobberEnabled()
   assertJobberTokenStorageConfigured()
 
   let token
@@ -104,6 +107,7 @@ export async function refreshSharedJobberConnectionToken(
 export async function getUsableSharedJobberConnectionToken(
   config: JobberConfig
 ): Promise<StoredJobberToken | null> {
+  assertJobberEnabled()
   const token = await getSharedJobberConnectionToken()
   if (!token) return null
 

@@ -24,6 +24,21 @@ function compact(value: string): string {
 afterEach(() => vi.unstubAllGlobals())
 
 describe('Jobber job query client', () => {
+  it('blocks a configured Jobber job query before fetch in preview', async () => {
+    vi.stubEnv('VERCEL_ENV', 'preview')
+    const fetchMock = vi.fn<typeof fetch>()
+    vi.stubGlobal('fetch', fetchMock)
+
+    try {
+      await expect(fetchJobberTeamUsersPage({ first: 50, after: null }, options)).rejects.toThrow(
+        'Jobber is disabled in this preview environment.'
+      )
+      expect(fetchMock).not.toHaveBeenCalled()
+    } finally {
+      vi.unstubAllEnvs()
+    }
+  })
+
   it('uses the confirmed PbcTeamUsers contract and maps team members', async () => {
     const fetchMock = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
       void input

@@ -70,6 +70,28 @@ describe('Jobber sync status actions', () => {
     mocks.createClient.mockResolvedValue(quoteVersionClient().client)
   })
 
+  it('blocks status and Check Jobber in Vercel Preview before quote or operation reads', async () => {
+    vi.stubEnv('VERCEL_ENV', 'preview')
+
+    try {
+      await expect(getJobberSyncState(quoteId)).resolves.toEqual({
+        ok: false,
+        error: 'Jobber is disabled in this preview environment.',
+      })
+      await expect(checkJobberQuoteSync(quoteId)).resolves.toEqual({
+        ok: false,
+        error: 'Jobber is disabled in this preview environment.',
+      })
+    } finally {
+      vi.unstubAllEnvs()
+    }
+
+    expect(mocks.requireRole).not.toHaveBeenCalled()
+    expect(mocks.createClient).not.toHaveBeenCalled()
+    expect(mocks.getOperation).not.toHaveBeenCalled()
+    expect(mocks.checkOperation).not.toHaveBeenCalled()
+  })
+
   it('returns a minimal retryable state only when quote identity and version both match', async () => {
     await expect(getJobberSyncState(quoteId)).resolves.toEqual({
       ok: true,

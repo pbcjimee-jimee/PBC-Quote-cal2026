@@ -2711,6 +2711,35 @@ describe('quote form pricing UI', () => {
     expect(markup).toContain('/api/jobber/connect')
   })
 
+  it('blocks Jobber lookup and reconnect controls when Jobber is disabled', () => {
+    const notice = 'Jobber is disabled in this preview environment.'
+    const markup = renderToStaticMarkup(
+      createElement(CustomerPanel, {
+        customerName: 'Jane Customer',
+        customerAddress: '10 Main St',
+        jobberLookupType: 'quote',
+        jobberQuoteId: '2345',
+        workType: 'Exterior',
+        customerType: 'Residential',
+        onCustomerNameChange: () => undefined,
+        onCustomerAddressChange: () => undefined,
+        onJobberLookupTypeChange: () => undefined,
+        onJobberQuoteIdChange: () => undefined,
+        onFetchJobberQuote: () => undefined,
+        onWorkTypeChange: () => undefined,
+        isFetchingJobberQuote: false,
+        jobberFetchError: 'Jobber connection expired. Reconnect Jobber from Settings.',
+        jobberQuoteDraft: null,
+        jobberEnabled: false,
+        jobberNotice: notice,
+      })
+    )
+
+    expect(markup).toContain(notice)
+    expect(markup).not.toContain('/api/jobber/connect')
+    expect(markup).toContain('disabled="" title="Jobber is disabled in this preview environment."')
+  })
+
   it('keeps the customer and Jobber lookup fields aligned in the first customer row', () => {
     const markup = renderToStaticMarkup(
       createElement(CustomerPanel, {
@@ -3089,6 +3118,24 @@ describe('quote form pricing UI', () => {
     expect(markup).toContain('Paint supplies')
     expect(markup).toContain('Jobber profit')
     expect(markup).toContain('90.2%')
+  })
+
+  it('does not mount Jobber status or refresh controls on quote detail in preview', () => {
+    const notice = 'Jobber is disabled in this preview environment.'
+    const markup = renderToStaticMarkup(
+      createElement(QuoteDetailView, {
+        quote: {
+          ...quoteRecord,
+          jobberQuoteId: 'encoded-quote-id',
+        },
+        jobberEnabled: false,
+        jobberNotice: notice,
+      })
+    )
+
+    expect(markup).toContain(notice)
+    expect(markup).not.toContain('Loading Jobber sync status')
+    expect(markup).toContain('disabled="" title="Jobber is disabled in this preview environment."')
   })
 
   it('shows the Jobber refresh timestamp on quote detail pages in Sydney time', () => {

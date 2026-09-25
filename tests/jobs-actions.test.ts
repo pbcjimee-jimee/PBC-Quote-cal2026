@@ -107,6 +107,32 @@ describe('job actions', () => {
     expect(mocks.requireRole).not.toHaveBeenCalled()
   })
 
+  it('blocks every Jobber jobs query in Vercel Preview before auth, cache, or network access', async () => {
+    vi.stubEnv('VERCEL_ENV', 'preview')
+
+    try {
+      for (const result of await Promise.all([
+        listMyJobs({}),
+        refreshJobs({}),
+        getJobDetail({ jobberJobId: 'job-1' }),
+        refreshJobDetail({ jobberJobId: 'job-1' }),
+      ])) {
+        expect(result).toEqual({
+          ok: false,
+          error: 'Jobber is disabled in this preview environment.',
+          code: 'JOBBER_ERROR',
+        })
+      }
+    } finally {
+      vi.unstubAllEnvs()
+    }
+
+    expect(mocks.requireRole).not.toHaveBeenCalled()
+    expect(mocks.getSnapshot).not.toHaveBeenCalled()
+    expect(mocks.listSnapshotsByIds).not.toHaveBeenCalled()
+    expect(mocks.createJobberGateway).not.toHaveBeenCalled()
+  })
+
   it('resolves an official supervisor by unique Jobber team name when the saved link is empty', async () => {
     mocks.requireRole.mockResolvedValueOnce(appUser('supervisor', null))
 

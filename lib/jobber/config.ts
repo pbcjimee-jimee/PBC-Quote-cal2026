@@ -1,3 +1,9 @@
+import {
+  assertJobberEnabled,
+  isJobberDisabledInPreview,
+  JOBBER_DISABLED_MESSAGE,
+} from './environment'
+
 export const JOBBER_AUTHORIZATION_URL = 'https://api.getjobber.com/api/oauth/authorize'
 export const JOBBER_TOKEN_URL = 'https://api.getjobber.com/api/oauth/token'
 export const JOBBER_GRAPHQL_URL = 'https://api.getjobber.com/api/graphql'
@@ -18,6 +24,9 @@ function envValue(env: Env, key: string): string {
 }
 
 export function getJobberConfig(env: Env = process.env): JobberConfig {
+  if (isJobberDisabledInPreview(env)) {
+    throw new Error(JOBBER_DISABLED_MESSAGE)
+  }
   const isProduction = envValue(env, 'NODE_ENV') === 'production'
 
   return {
@@ -75,6 +84,7 @@ export function assertJobberReadOnlyScopes(scope: string | null): void {
 }
 
 export function buildJobberAuthorizationUrl(config: JobberConfig, state: string): URL {
+  assertJobberEnabled()
   const url = new URL(JOBBER_AUTHORIZATION_URL)
   url.searchParams.set('response_type', 'code')
   url.searchParams.set('client_id', config.clientId)
