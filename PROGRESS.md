@@ -19,6 +19,53 @@
 
 ---
 
+## 모바일 UI·UX 최종 재검토·운영 반영 준비 (2026-09-25)
+
+- **Model:** GPT-6 Astra. 독립 견적/다른 UI/운영 호환성 검토와 오류 수정·회귀 검증은 모두 high. 사용자 요청에 따라 변경 전체를 다시 검토하고 main 통합을 준비했다.
+- 네 항목 수정: 공개 항목의 CAD/number helper 사용을 Decimal cents 보존 표시로 교체, 데스크톱 옵션 독립 다중 펼침 복구, Jobs 미정의 focus 색상 보완, 모바일 견적 목록 금액 왼쪽 정렬의 CSS 순서 수정. 추가/복사/오류 옵션 공개와 UI-only dirty/draft 계약을 유지했다.
+- 마지막 `npm.cmd run verify` exit0: 119 files/1,040 tests 통과·환경 조건 19 tests skip, TypeScript·ESLint·coverage·build 19/19·production audit0. Coverage S/B/F/L=85.34/72.88/93.56/90.34%. 생성 타입 참조 복구 후 typecheck 통과. 마지막 수정 교차 검토에서 남은 P0–P2 회귀 없음.
+- 브라우저: 합성 옵션 360/1280의 단일/다중 펼침 및 값 보존, 날짜 키보드 focus 3px. 실제 인증 Jobs 360/721 전환·빈/4건 일정·44px 클릭 영역, Overview 360/1280 금액 왼쪽/오른쪽·overflow0, 상세 360 overflow0을 확인했다. 실제 데이터 쓰기·Jobber 전송은 하지 않았다.
+- fresh 운영 조회: Production DB에는 durable migration 2개·일반 Save wrapper RPC가 여전히 없고 Vercel Preview 변수 10개가 Production과 공유된다. 현재 Production은 `a48bab8`/READY, 공개 health4개 HTTP200이다. 현재 main의 전체 앱을 Push하면 일반 Save가 실패하므로 원격 Push/배포는 미실행이다. 기존 DB·환경변수 승인과 별개로 Preview 격리/Jobber read-only 계약/점검·callback drain/백업/스키마 선적용 조건이 남았다.
+- 변경·실측·승인 기록을 구분한 후속 실행 순서는 `docs/superpowers/reviews/2026-09-25-mobile-ux-release-review.md`에 정리했다. 실제 main 통합 결과는 완료 후 아래에 추가한다.
+
+## 설정 직접 이동 버튼·상단 바로가기 정리 (2026-09-25)
+
+- **Model:** GPT-6 Astra, 상태 검증·독립 리뷰 high. 사용자 요청에 따라 Settings section select를 제거하고 기존 5개 설정 버튼을 모바일에서도 표시한다. 3+2 두 줄, 최소 48px, 라벨 줄바꿈, 파란 선택 상태와 `aria-pressed`/내용 영역 연결을 적용했다. 설정 페이지 상단의 Inventory 링크만 제거했다.
+- 기존 `activateTab`/lazy resource/module loading/Retry/페이지 상태/입력 state를 유지했다. 합성 화면에서 모든 설정 본문 전환과 미저장 Labour 값의 복귀를 확인했다. 360/486/768px 모두 가로 overflow 0; 모바일 버튼 48–50.4px. 실제 인증 설정 페이지 486px에서도 버튼5개·select0개·header Users/Back to quote·전역 Inventory1개를 확인했다.
+- 관련 테스트 48건, typecheck·lint·build 19/19 통과. 수정 전 기대값2건 실패를 확인했다. CSS·settings-form·settings/page와 테스트2개, UI 명세/계획/검증 문서를 갱신했다. 로컬 서버 재시작 완료. 실제 설정 저장·운영 배포·DB 변경 없음.
+
+## 모바일 견적 카드 폭 회귀 수정 (2026-09-25)
+
+- **Model:** GPT-6 Astra high. 사용자 466px 캡처의 오른쪽 빈 공간을 실제 DOM에서 재현했다. 419px workspace 안의 Details는 256px, Review는 362.875px였다. 세로 flex 전환 뒤 데스크톱 `align-items: start`가 남은 것이 원인이었다.
+- `≤720px`의 `.pbc-quote-workspace`에 `align-items: stretch`를 적용했다. 합성 빈 견적의 Details/Work/Public 각각과 Review가 360/466/720px에서 workspace 폭 313/419/673px와 같고 overflow 0임을 확인했다. 721px에서는 기존 grid와 네 영역이 유지된다.
+- 관련 UI 테스트 124건·build 19/19 통과. 로컬 서버를 새 빌드로 재시작했다. 이번 수정은 CSS 정렬 규칙 한 줄과 검증/지침 문서이며 금액·입력·저장 동작은 변경하지 않았다.
+
+## 모바일 견적 카테고리·Review·저장 바 후속 수정 (2026-09-25)
+
+- **Model:** GPT-6 Astra, 상태/회귀 테스트/독립 검토 high. 사용자 최신 요청에 따라 Work area select를 상단 sticky 카테고리 세 개로 교체했다. Details / Work & materials / Public quote 중 하나를 열고 Review는 그 아래 마지막에 항상 표시한다.
+- Review 바로가기와 저장 오류는 선택한 입력 카테고리를 유지하며 Review로 focus한다. 하단 More를 제거하고 Save 옆에 Save & Sync를 직접 배치했다. 기존 local/sync 구분과 pending/copy 잠금은 유지했다. Fetch 아래 Products & pricing 바로가기도 추가했다.
+- fresh focused 129건, 전체 119 files/1,036 tests 통과와 환경 조건 19 tests skip, TypeScript·ESLint·build 19/19 통과. 생성 파일 경로 복구 후 typecheck도 재통과했다. 합성 harness 360/621/768/1280px와 실제 인증 앱의 새 빈 견적 360/621px에서 가로 overflow 0, 카테고리/header 겹침 없음, Save/Sync 44px, Review 포커스와 선택 유지 확인.
+- 관련 source는 quote-workspace-nav / quote-mobile-state / quote-form / customer-panel / components.css, 회귀는 quote-workspace-ui / quote-mobile-state다. UI 문서·명세·계획·검증 기록을 동기화했다. 기존 사용자 견적은 새로고침/저장/동기화하지 않고 별도 임시 탭에서 읽기·화면 전환만 확인했다. localhost:3000 서버는 새 빌드로 재시작했다.
+- 실제 iPhone/PWA·키보드·스크린리더·live save/sync와 기존 운영 릴리스 HOLD는 별도다. 커밋·Push·배포·DB·환경 변수·의존성 변경 없음.
+
+## 모바일 UI·UX 코드 구현·로컬 검증 완료 (2026-09-25)
+
+- **Model:** 최신 사용자 지시에 따라 GPT-6 Astra. 복잡한 구현·테스트·독립 리뷰 서브에이전트는 모두 `gpt-6-astra/high`로 진행했다. 브랜치 `codex/mobile-ux-redesign`, 기준 `e4970ad`.
+- 작성된 모바일 분석/계획의 #1–#10을 코드에 반영했다. 견적 네 작업 영역·자재/공개 항목 단일 편집·Review 금액 우선·오류 자동 이동·draft v1/v2 호환, 목록/상세 우선순위, Inventory 검색/짧은 카드/CSV 접힘, Settings 선택/추가 접힘/Area 필터, Jobs 날짜 agenda와 비용 라벨, 공통 색상 대비를 개선했다.
+- fresh `npm.cmd run verify` exit0: 119 files/1,035 tests 통과, 환경 조건 3 files/19 tests skip. TypeScript·ESLint·coverage 기준·build19/19·production audit0. Coverage S/B/F/L=85.39/72.91/93.68/90.40%. DB·live Jobber E2E는 이번에 재실행하지 않았다.
+- 합성 컴포넌트 harness를 Chrome/CUA로 확인했다. 견적360/390/640/768/1024/1080/1280, 설정·재고390–1280, Jobs390에서 문서 가로 overflow0. 설정 입력44px/16px, 재고 첫 카드118.5px, 공개19행 목록 scrollHeight=clientHeight2798px로 별도 세로 스크롤 없음. 인증 app-shell·실제 iPhone/PWA·스크린리더·실제200% zoom은 미검증이다.
+- 독립 리뷰에서 Settings 입력 이름/헤더 접근성과 Jobs 작은 글자를 수정하고 재검증했다. 항목 삭제 포커스와 Review GST/Inc GST 표기를 보완했다. 기존 Area 그룹 합계·미배정 제외·저장값 불일치 계약은 유지하고 돈/권한/정렬 테스트를 제거하지 않았다. 최종 코드 리뷰의 남은 P0–P2 코드 결함은 없다.
+- 현행 UI 문서 4개와 계획의 진행 상태를 갱신했다. 상세 증거·R01–R18 연결·미실행 조건은 `docs/superpowers/reviews/2026-09-24-mobile-ux-verification.md`에 남겼다. 코드/공용 문서 외 브라우저 harness·로그·합성 캡처는 ignored `.superpowers/sdd/2026-09-24-mobile-ux-redesign/`에 있다.
+- 로컬 작업 트리 반영까지이며 커밋·Push·배포·DB·환경변수·새 의존성·BACKLOG/DECISIONS 변경은 없다. 기존 Preview/Jobber 격리와 운영 릴리스 HOLD 조건은 유지한다.
+
+## 모바일 UI·UX 분석 명세·순차 구현 지침 작성 완료 (2026-09-24)
+
+- **Model:** GPT-6 Astra (설계·문서), 상태/화면별 코드 근거 확인 `gpt-5.6-sol/high` 2명.
+- 사용자 요청에 따라 기존 모바일 관측을 공용 분석 명세 `docs/superpowers/specs/2026-09-24-mobile-ux-redesign.md`와 실행 계획 `docs/superpowers/plans/2026-09-24-mobile-ux-redesign.md`로 정리했다. 관측값과 구현 목표를 구분하고 고객 캡처는 기존 로컬 ignored 감사 폴더에 유지했다.
+- 실행 순서는 공통 시각 규칙 → 견적 영역/상태 → 자재 → 공개 항목 → 공식/옵션 → 오류/저장 → Overview/상세 → Inventory → Settings/Areas → Jobs → 통합 검증의 11단계다. 단계별 파일·인터페이스·체크리스트·완료 조건·focused test와 실제 모바일 검증 행렬을 포함한다.
+- 기존 draft 호환, UI-only 상태의 dirty 제외, 단일 입력 트리, 미배정/숨은 행 오류 이동, 수동 공식/Decimal/GST, Jobber 삭제 ID와 저장 잠금, 역할 권한, Sydney 방문 일정 규칙을 보존 조건으로 명시했다. 문서 기준 코드는 로컬 `main`의 `e4970ad`이며 운영 화면과 소스가 동일 버전이라고 가정하지 않는다.
+- 이번 작업은 위 문서 2개와 이 진행 기록만 변경했다. 앱 구현·앱 테스트·DB·환경변수·Push·배포는 실행하지 않았다. 문서 경로/요구사항 연결·색상 대비 계산·공백 검사를 수행했으며 구현 체크박스는 미착수 상태다. 핵심 결정·백로그·현행 UI 규칙은 아직 변경하지 않았다.
+
 ## 로컬 main 병합·재검증 — 운영 반영 선행 조건 유지 (2026-09-24)
 
 - 사용자가 필요한 변경과 전체 변경사항의 main 병합·커밋 및 오류 재검토를 요청했다. 기존 승인된 변경을 통합하되 원격 main Push의 자동 운영 배포를 우회하지 않는다. 운영 DB·환경변수 변경 승인이 있어도 아래 릴리스 선행 조건은 먼저 충족해야 한다.

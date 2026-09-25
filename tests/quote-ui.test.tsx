@@ -439,6 +439,9 @@ describe('quote form pricing UI', () => {
       expect(secondCards).toHaveLength(2)
       expect(secondTitle?.value).toBe('Option 2')
       expect(secondTitle?.getAttribute('id')).not.toBe(firstTitle?.getAttribute('id'))
+      expect(secondCards[0]?.querySelectorAll('div').some((element) => (
+        element.getAttribute('class')?.split(' ').includes('pbc-optioncard__body')
+      ))).toBe(true)
       expect(secondCards[1]?.querySelectorAll('div').some((element) => (
         element.getAttribute('class')?.split(' ').includes('pbc-optioncard__body')
       ))).toBe(true)
@@ -872,7 +875,7 @@ describe('quote form pricing UI', () => {
     expect(source.indexOf('setJobberRefreshPreview({')).toBeLessThan(source.indexOf('applyJobberDraftToForm(payload.data, lookup)'))
   })
 
-  it('renders the quote editor in the design-system page-scroll layout', () => {
+  it('renders one quote editor tree with responsive work areas', () => {
     const markup = renderToStaticMarkup(
       createElement(QuoteForm, {
         settings: quoteRecord.pricingSettingsSnapshot,
@@ -887,7 +890,8 @@ describe('quote form pricing UI', () => {
     expect(markup).toContain('pbc-workspace')
     expect(markup).toContain('pbc-calcstack')
     expect(markup).toContain('pbc-card pbc-card--pad pbc-calcpanel')
-    expect(markup).not.toContain('quote-workspace')
+    expect(markup).toContain('pbc-quote-workspace')
+    expect(markup).toContain('data-workspace-section="work" data-active="true"')
     expect(markup).not.toContain('quote-input-flow')
     expect(markup).not.toContain('quote-scroll-section')
     expect(markup).not.toContain('quote-info-section')
@@ -1907,7 +1911,7 @@ describe('quote form pricing UI', () => {
     expect(getQuoteUnexpectedSaveErrorMessage(new Error('Jobber sync failed'))).toBe('Jobber sync failed')
   })
 
-  it('shows the app final total as the GST-exclusive subtotal with GST at the end', () => {
+  it('shows the GST-exclusive subtotal, GST and inclusive total before the expandable breakdown', () => {
     const markup = renderToStaticMarkup(
       createElement(FinalSummary, {
         labourTotal: new Decimal('1200'),
@@ -1926,8 +1930,10 @@ describe('quote form pricing UI', () => {
     expect(markup).toContain('Final subtotal')
     expect(markup).toContain('$1455.74')
     expect(markup).toContain('Ex GST')
-    expect(markup).not.toContain('$1601.31')
-    expect(markup.lastIndexOf('GST 10%')).toBeGreaterThan(markup.lastIndexOf('Material total'))
+    expect(markup).toContain('Inc GST')
+    expect(markup).toContain('$1601.31')
+    expect(markup.indexOf('GST 10%')).toBeLessThan(markup.indexOf('Inc GST'))
+    expect(markup.indexOf('Inc GST')).toBeLessThan(markup.indexOf('Material total'))
   })
 
   it('uses the shared design-system card styling for final subtotal', () => {
@@ -3863,6 +3869,7 @@ describe('quote form pricing UI', () => {
     expect(cardMarkup).not.toContain('$1601.31')
     expect(detailMarkup).toContain('$1455.74')
     expect(detailMarkup).not.toContain('$1601.31')
+    expect(detailMarkup).toContain('Total (Inc GST)')
   })
 
   it('uses the final subtotal summary as the only detail total hero', () => {

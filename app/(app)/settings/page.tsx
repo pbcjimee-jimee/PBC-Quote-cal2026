@@ -41,7 +41,6 @@ export default async function SettingsPage() {
         <div className="pbc-crumb"><span>Admin</span>{Icons.arrowDown({ size: 14 })}<b>Settings</b></div>
         <div className="pbc-topbar__right">
           <Link href="/settings/users" className="pbc-btn pbc-btn--ghost">{Icons.user({ size: 15 })} Users</Link>
-          <Link href="/inventory" className="pbc-btn pbc-btn--ghost">{Icons.layers({ size: 15 })} Inventory</Link>
           <Link href="/quotes/new" className="pbc-btn pbc-btn--ghost">{Icons.back({ size: 15 })} Back to quote</Link>
         </div>
       </header>

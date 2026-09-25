@@ -9,8 +9,15 @@ import type { AreaSubtotalBreakdown } from './quote-calculation-totals'
 import type { AreaRecord, AreaScope } from '@/lib/areas/types'
 import { AREA_SCOPE_LABELS, AREA_SCOPES } from '@/lib/areas/constants'
 import { Icons } from '@/components/ui/icons'
+import { getQuoteErrorKey, type MaterialScopeView } from './quote-mobile-state'
 
 interface MaterialsPanelProps {
+  activeScope?: MaterialScopeView
+  onActiveScopeChange?: (scope: MaterialScopeView) => void
+  editingItemId?: string | null
+  onEditingItemChange?: (id: string | null) => void
+  optionId?: string
+  onReview?: () => void
   materials: MaterialItem[]
   areas: AreaRecord[]
   areaBreakdown?: AreaSubtotalBreakdown
@@ -174,6 +181,12 @@ function HiddenMaterialSummary({ item, onRemove }: { item: MaterialItem; onRemov
 }
 
 export function MaterialsPanel({
+  activeScope,
+  onActiveScopeChange,
+  editingItemId,
+  onEditingItemChange,
+  optionId,
+  onReview,
   materials,
   areas,
   areaBreakdown,
@@ -185,7 +198,11 @@ export function MaterialsPanel({
   onCreateArea,
   onAreaFormulaSelectionChange,
 }: MaterialsPanelProps) {
-  const [areaScope, setAreaScope] = useState<AreaScope>(() => getInitialAreaScope(materials, areas))
+  const [localScope, setAreaScope] = useState<MaterialScopeView>(() => getInitialAreaScope(materials, areas))
+  const [localEditingId, setLocalEditingId] = useState<string | null>(null)
+  const areaScope = activeScope ?? localScope
+  const currentEditingId = editingItemId === undefined ? localEditingId : editingItemId
+  const changeEditingId = (id: string | null) => { setLocalEditingId(id); onEditingItemChange?.(id) }
   const [isExpanded, setIsExpanded] = useState(true)
   const [draggedMaterialId, setDraggedMaterialId] = useState<string | null>(null)
   const [dropTarget, setDropTarget] = useState<{ id: string; placement: MaterialDropPlacement } | null>(null)
@@ -193,16 +210,19 @@ export function MaterialsPanel({
   const dragScrollFrameRef = useRef<number | null>(null)
   const dragScrollStepRef = useRef(0)
   const reorderAnnouncementTimerRef = useRef<number | null>(null)
+  const panelRef = useRef<HTMLElement | null>(null)
+  const paintSearchRef = useRef<HTMLDivElement | null>(null)
+  const pendingRemovalFocusRef = useRef<string | null | undefined>(undefined)
   const hasAreaSections = areas.length > 0 || materials.some((item) => item.areaScope && AREA_SCOPES.includes(item.areaScope))
-  const filteredAreas = useMemo(() => areas.filter((area) => area.scope === areaScope), [areaScope, areas])
+  const filteredAreas = useMemo(() => areaScope === 'unassigned' ? areas : areas.filter((area) => area.scope === areaScope), [areaScope, areas])
   const visibleMaterials = useMemo(
-    () => hasAreaSections ? materials.filter((item) => item.areaScope === areaScope) : materials,
+    () => areaScope === 'unassigned' ? materials.filter((item) => !item.areaScope) : hasAreaSections ? materials.filter((item) => item.areaScope === areaScope) : materials,
     [areaScope, hasAreaSections, materials]
   )
   const latestVisibleMaterialsRef = useRef(visibleMaterials)
   const hiddenMaterials = useMemo(
-    () => hasAreaSections ? materials.filter((item) => item.areaScope !== areaScope) : [],
-    [areaScope, hasAreaSections, materials]
+    () => materials.filter((item) => !visibleMaterials.some((visible) => visible.id === item.id)),
+    [visibleMaterials, materials]
   )
   const visibleMaterialTotal = visibleMaterials.reduce((total, item) => total.add(lineTotal(item.marketPrice, item.quantity)), new Decimal(0))
   const labourByArea = useMemo(() => ({
@@ -210,22 +230,49 @@ export function MaterialsPanel({
     exterior: calculateLabourTotals(materials.filter((item) => item.areaScope === 'exterior')),
     roof: calculateLabourTotals(materials.filter((item) => item.areaScope === 'roof')),
   }), [materials])
-  const activeLabourTotals = labourByArea[areaScope]
+  const activeLabourTotals = areaScope === 'unassigned' ? calculateLabourTotals(visibleMaterials) : labourByArea[areaScope]
   const hiddenMaterialCount = hiddenMaterials.length
-  const activeScopeLabel = AREA_SCOPE_LABELS[areaScope]
-  const activeAreaSubtotal = areaBreakdown?.[areaScope].subtotal
+  const activeScopeLabel = areaScope === 'unassigned' ? 'Unassigned' : AREA_SCOPE_LABELS[areaScope]
+  const activeAreaSubtotal = areaScope === 'unassigned' ? undefined : areaBreakdown?.[areaScope].subtotal
   const hasVisibleMaterials = visibleMaterials.length > 0
 
   useEffect(() => {
     latestVisibleMaterialsRef.current = visibleMaterials
   }, [visibleMaterials])
 
-  function changeAreaScope(nextScope: AreaScope) {
+  useEffect(() => {
+    const targetId = pendingRemovalFocusRef.current
+    if (targetId === undefined) return
+    pendingRemovalFocusRef.current = undefined
+
+    if (targetId) {
+      const isMobile = window.matchMedia?.('(max-width: 720px)').matches ?? false
+      const attributeName = isMobile ? 'data-material-summary-id' : 'data-error-key'
+      const attributeValue = isMobile
+        ? targetId
+        : getQuoteErrorKey({ section: 'work', optionId, entityId: targetId, field: 'name' })
+      const focusTarget = Array.from(panelRef.current?.querySelectorAll<HTMLElement>(`[${attributeName}]`) ?? [])
+        .find((element) => element.getAttribute(attributeName) === attributeValue)
+      if (focusTarget && typeof focusTarget.focus === 'function') {
+        focusTarget.focus({ preventScroll: true })
+        return
+      }
+    }
+
+    const paintSearchInput = paintSearchRef.current?.querySelector<HTMLInputElement>('input')
+    if (paintSearchInput && typeof paintSearchInput.focus === 'function') {
+      paintSearchInput.focus({ preventScroll: true })
+    }
+  }, [currentEditingId, optionId, visibleMaterials])
+
+  function changeAreaScope(nextScope: MaterialScopeView) {
     setAreaScope(nextScope)
+    onActiveScopeChange?.(nextScope)
   }
 
   function addMaterialToActiveArea(item: MaterialItem) {
-    onAdd(hasAreaSections ? assignMaterialToActiveArea(item, areaScope, areas) : item)
+    onAdd(hasAreaSections && areaScope !== 'unassigned' ? assignMaterialToActiveArea(item, areaScope, areas) : item)
+    changeEditingId(item.id)
   }
 
   function stopMaterialDragScroll() {
@@ -286,7 +333,7 @@ export function MaterialsPanel({
       (item) => item.areaScope && AREA_SCOPES.includes(item.areaScope)
     )
     return currentMaterials
-      .filter((item) => !currentHasAreaSections || item.areaScope === areaScope)
+      .filter((item) => areaScope === 'unassigned' ? !item.areaScope : !currentHasAreaSections || item.areaScope === areaScope)
       .map((item) => item.id)
   }
 
@@ -384,7 +431,7 @@ export function MaterialsPanel({
   }
 
   return (
-    <section>
+    <section ref={panelRef}>
       {onReorder ? (
         <p className="sr-only" role="status" aria-live="polite" aria-atomic="true">
           {reorderAnnouncement}
@@ -412,7 +459,7 @@ export function MaterialsPanel({
           ) : null}
           <button
             type="button"
-            onClick={() => setIsExpanded((current) => !current)}
+            onClick={() => { changeEditingId(null); setIsExpanded((current) => !current) }}
             className="pbc-btn pbc-btn--ghost pbc-btn--sm"
           >
             {isExpanded ? 'Collapse' : 'Expand'}
@@ -420,7 +467,7 @@ export function MaterialsPanel({
         </div>
       </div>
 
-      {isExpanded ? (
+      {isExpanded || currentEditingId !== null ? (
         <>
           {hasAreaSections ? (
             <div className="pbc-ministats pbc-ministats--3 mt-4">
@@ -438,7 +485,9 @@ export function MaterialsPanel({
               </div>
             </div>
           ) : null}
-          <PaintSearch onAdd={addMaterialToActiveArea} />
+          <div ref={paintSearchRef}>
+            <PaintSearch onAdd={addMaterialToActiveArea} />
+          </div>
           {areas.length > 0 && filteredAreas.length === 0 ? (
             <p className="pbc-alert pbc-alert--warning">
               No {areaScope} areas yet. {onCreateArea ? 'Add one from an area field.' : 'Add them in Settings.'}
@@ -466,10 +515,20 @@ export function MaterialsPanel({
                   key={item.id}
                   item={item}
                   areas={getAreasForMaterial(item, filteredAreas, areas)}
-                  areaScope={areaScope}
+                  areaScope={areaScope === 'unassigned' ? undefined : areaScope}
+                  isEditing={currentEditingId === item.id}
+                  onEditingChange={(editing) => changeEditingId(editing ? item.id : null)}
+                  optionId={optionId}
                   onCreateArea={onCreateArea}
                   onChange={onChange}
-                  onRemove={() => onRemove(item.id)}
+                  onRemove={() => {
+                    if (currentEditingId === item.id) {
+                      const nextMaterials = visibleMaterials.filter((material) => material.id !== item.id)
+                      pendingRemovalFocusRef.current = nextMaterials[index]?.id ?? nextMaterials[index - 1]?.id ?? null
+                      changeEditingId(null)
+                    }
+                    onRemove(item.id)
+                  }}
                   isDragging={draggedMaterialId === item.id}
                   dropPlacement={dropTarget?.id === item.id ? dropTarget.placement : null}
                   onDragStart={onReorder ? (event) => handleDragStart(item.id, event) : undefined}
@@ -489,14 +548,21 @@ export function MaterialsPanel({
               <p className="m-0">
                 {hiddenMaterialCount} material {hiddenMaterialCount === 1 ? 'row is' : 'rows are'} hidden by the {activeScopeLabel} filter.
               </p>
-              <ul className="pbc-hiddenmatlist">
+              <ul className="pbc-hiddenmatlist pbc-desktop-only">
                 {hiddenMaterials.map((item) => (
                   <HiddenMaterialSummary key={item.id} item={item} onRemove={() => onRemove(item.id)} />
                 ))}
               </ul>
+              <div className="pbc-mobile-only pbc-scope-shortcuts">
+                {([...AREA_SCOPES, 'unassigned'] as const).map((scope) => {
+                  const count = hiddenMaterials.filter((item) => scope === 'unassigned' ? !item.areaScope : item.areaScope === scope).length
+                  return count ? <button key={scope} type="button" className="pbc-btn pbc-btn--ghost pbc-btn--sm" onClick={() => changeAreaScope(scope)}>{scope === 'unassigned' ? 'Unassigned — assign area' : AREA_SCOPE_LABELS[scope]} · {count}</button> : null
+                })}
+              </div>
             </div>
           ) : null}
-          {hasVisibleMaterials && hasAreaSections && areaBreakdown && areaFormulaSelections && onAreaFormulaSelectionChange ? (
+          {onReview ? <button type="button" onClick={onReview} className="pbc-btn pbc-btn--ghost pbc-btn--full">Review formulas & totals</button> : null}
+          {!onReview && areaScope !== 'unassigned' && hasVisibleMaterials && hasAreaSections && areaBreakdown && areaFormulaSelections && onAreaFormulaSelectionChange ? (
             <div className="pbc-materialformula">
               <FormulaResults
                 title={`${activeScopeLabel} Formula Results`}

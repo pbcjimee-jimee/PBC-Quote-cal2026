@@ -3,6 +3,18 @@
 > 페이지 목록·공통 레이아웃·디자인 토큰·구현 우선순위.
 > 각 페이지 상세: `docs/UI-QUOTE-FORM.md`, `docs/UI-PAGES.md`.
 
+## 2026-09-25 모바일 작업 흐름
+
+현행 UI는 [UI-DESIGN-SYSTEM](UI-DESIGN-SYSTEM.md)의 반응형 규칙을 따른다. 아래 v1.0 토큰·초기 파일 구조는 역사적 설계이며 신규 작업의 구현 기준이 아니다.
+
+- 견적: 720px 이하에서 sticky `Details` / `Work & materials` / `Public quote` 버튼으로 입력 영역을 바꾸고 Review는 선택 영역 아래 마지막에 항상 표시한다. 자재·공개 항목 요약과 단일 행 편집, Options 한 개씩 펼침, Review 금액 우선이다. 하단에는 Save와 Save & Sync를 직접 나란히 둔다.
+- Overview·상세: 검색/필터를 통계보다 먼저, 상세는 Ex GST·GST·Inc GST와 옵션 별도 금액을 먼저 표시.
+- Inventory: 검색·필터 우선, CSV 접힘, 필수 카드 정보 보존. Settings: 5개 설정 버튼·추가 폼 접힘·목록 요약. 모바일 버튼은 3+2 두 줄이며 페이지 상단은 Users/Back to quote만 표시한다. Areas: 독립 scope/검색 필터.
+- Jobs: 모바일 날짜/개수 달력과 선택 날짜 작업 목록. 비용은 Estimated/Actual을 구별한다.
+- 셸은 1024px, 좁은 카드/견적 작업 영역 전환은 720px 기준이다. 768px는 모바일 셸과 표가 함께 표시된다.
+
+이전 구현의 근거·확인 결과·기기 검증 한계: [모바일 검증 기록](superpowers/reviews/2026-09-24-mobile-ux-verification.md). 최신 sticky 카테고리 버튼과 직접 Save & Sync 정정의 로컬 검증은 해당 기록의 후속 정정 절을 참고한다.
+
 ---
 
 ## 확정 결정사항

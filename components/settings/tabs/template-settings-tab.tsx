@@ -13,6 +13,8 @@ export interface TemplateSettingsTabProps {
   templateLines: JobberQuoteLineItemDraft[]
   message: string | null
   disabled: boolean
+  editorOpen: boolean
+  onEditorOpenChange: (open: boolean) => void
   onTemplateNameChange: (value: string) => void
   onTemplateLinesChange: (update: JobberQuoteLinesChange) => void
   onSave: () => void
@@ -31,6 +33,8 @@ export function QuoteLineTemplateEditor({
   templateLines = [],
   message = null,
   disabled = false,
+  editorOpen = true,
+  onEditorOpenChange = () => undefined,
   onTemplateNameChange = () => undefined,
   onTemplateLinesChange = () => undefined,
   onSave = () => undefined,
@@ -45,9 +49,12 @@ export function QuoteLineTemplateEditor({
           <h2 className="pbc-paneltitle">Template</h2>
           <p className="pbc-panelsub">Save reusable Product / Service line item and text item sets for new quotes.</p>
         </div>
+        <button type="button" className="pbc-btn pbc-btn--ghost" aria-expanded={editorOpen} onClick={() => onEditorOpenChange(!editorOpen)} disabled={disabled}>
+          {editorOpen ? 'Close template editor' : 'Add template'}
+        </button>
       </div>
 
-      <div className="pbc-formgroup">
+      {editorOpen ? <div className="pbc-formgroup pbc-template-editor">
         <label className="pbc-field">
           <span className="pbc-field__label">Template name</span>
           <input value={templateName} onChange={(event) => onTemplateNameChange(event.target.value)} className="pbc-input" placeholder="e.g. Standard interior quote" />
@@ -55,15 +62,15 @@ export function QuoteLineTemplateEditor({
         <JobberProductServiceEditor value={templateLines} productServices={productServices} onChange={onTemplateLinesChange} />
         <div className="pbc-panelhead__actions mt-4">
           <button type="button" onClick={onSave} disabled={disabled || !templateName.trim()} className="pbc-btn pbc-btn--primary">{disabled ? 'Saving...' : 'Save Template'}</button>
-          {editingTemplateId ? <button type="button" onClick={onCancel} disabled={disabled} className="pbc-btn pbc-btn--ghost">Cancel</button> : null}
+          <button type="button" onClick={onCancel} disabled={disabled} className="pbc-btn pbc-btn--ghost">Cancel</button>
           {message ? <p className="pbc-panelsub">{message}</p> : null}
         </div>
-      </div>
+      </div> : null}
 
       <div className="pbc-list">
         {templates.length === 0 ? <p className="pbc-empty">No templates saved yet.</p> : null}
         {templates.map((template) => (
-          <div key={template.id} className="pbc-listitem">
+          <div key={template.id} className={`pbc-listitem pbc-templateitem${editingTemplateId === template.id ? ' pbc-templateitem--editing' : ''}`}>
             <div className="pbc-listitem__main">
               <p className="pbc-listitem__title">{template.name}</p>
               <p className="pbc-listitem__meta">{template.items.length} line items</p>

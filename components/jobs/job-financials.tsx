@@ -38,13 +38,15 @@ export function JobFinancials({ summary, labourEstimate, compact = false }: {
 
   return (
     <section className="pbc-card pbc-card--pad" aria-label="Jobber profit">
-      <div className="flex items-center justify-between gap-3"><h2 className="pbc-paneltitle">Jobber profit</h2></div>
+      <div className="flex items-center justify-between gap-3">
+        <div><h2 className="pbc-paneltitle">Jobber profit</h2><p className="pbc-panelsub">AUD · Jobber totals</p></div>
+      </div>
       <div className="mt-4 space-y-2 text-sm">
         <div className="pbc-jobfinancial__row pbc-jobfinancial__row--revenue"><span>Job revenue</span><b className="pbc-moneytext">{formatAud(summary.revenue)}</b></div>
         {labourEstimate ? (
           <div className="pbc-jobfinancial__row pbc-jobfinancial__row--labour">
             <span className="pbc-jobfinancial__label">
-              <span>Estimate labour</span>
+              <span>Estimated labour</span>
               <small>
                 {labourEstimate.assignmentCount} scheduled assignments ×{' '}
                 {formatAud(labourEstimate.ratePerAssignment)}
@@ -55,16 +57,16 @@ export function JobFinancials({ summary, labourEstimate, compact = false }: {
         ) : null}
         {estimatedProfit ? (
           <div className="pbc-jobfinancial__row pbc-jobfinancial__row--estimated-profit">
-            <span>Estimate profit</span>
+            <span>Estimated profit</span>
             <span className="pbc-jobfinancial__values">
               <b className="pbc-moneytext">{formatAud(estimatedProfit.profit)}</b>
               <b>{formatProfitMargin(estimatedProfit.profitMarginPercent)}</b>
             </span>
           </div>
         ) : null}
-        <div className="pbc-jobfinancial__row pbc-jobfinancial__row--expenses"><span>Expenses total</span><b className="pbc-moneytext">{formatAud(summary.expensesTotal)}</b></div>
+        <div className="pbc-jobfinancial__row pbc-jobfinancial__row--expenses"><span>Actual expenses</span><b className="pbc-moneytext">{formatAud(summary.expensesTotal)}</b></div>
         <div className="pbc-jobfinancial__row pbc-jobfinancial__row--profit">
-          <span>Profit</span>
+          <span>Actual profit</span>
           <span className="pbc-jobfinancial__values">
             <b className="pbc-moneytext">{formatAud(summary.profit)}</b>
             <b>{formatProfitMargin(summary.profitMarginPercent)}</b>

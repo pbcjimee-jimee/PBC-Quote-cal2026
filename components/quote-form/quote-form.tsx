@@ -9,12 +9,17 @@ import { resolveQuoteProductPrices } from '@/lib/actions/products'
 import { Icons } from '@/components/ui/icons'
 import { CustomerPanel, type JobberRefreshPreview } from './customer-panel'
 import { MaterialsPanel, type MaterialReorderUpdater } from './materials-panel'
+import { FormulaResults } from './formula-results'
+import { QuoteWorkspaceNav } from './quote-workspace-nav'
+import { createQuoteMobileState, revealQuoteUiTarget, getQuoteErrorKey, type QuoteFormIssue, type QuoteWorkspaceSection, type QuoteMobileState } from './quote-mobile-state'
+import { getQuoteFormIssues } from './quote-form-preflight'
 import { FinalSummary } from './final-summary'
 import {
   clearLocalQuoteDrafts,
   createEmptyQuoteFormDraft,
   getQuoteDraftStorageKey,
   hasMeaningfulQuoteDraft,
+  getComparableQuoteDraftValue,
   sanitizeQuoteFormDraftForStorage,
   type QuoteFormDraft,
 } from './quote-draft'
@@ -45,9 +50,9 @@ import {
   mapQuoteMemosToState,
   mapQuoteOptionsToState,
 } from './quote-record-mappers'
-import { calculateJobberSyncPreview, saveQuoteFormPayload } from './quote-save-payload'
+import { calculateJobberSyncPreview, saveQuoteFormPayload, type QuoteFormSavePayloadInput } from './quote-save-payload'
 import type { AreaRecord } from '@/lib/areas/types'
-import { AREA_SCOPE_SORT_ORDER } from '@/lib/areas/constants'
+import { AREA_SCOPE_SORT_ORDER, AREA_SCOPES, AREA_SCOPE_LABELS } from '@/lib/areas/constants'
 import type {
   JobberQuoteDraft,
   JobberQuoteDraftExpense,
@@ -76,7 +81,7 @@ type JobberLookupType = 'quote' | 'job'
 type QuoteSaveAction = 'local' | 'sync'
 
 function getComparableDraftValue(draft: QuoteFormDraft): string {
-  return JSON.stringify({ ...draft, updatedAt: '' })
+  return getComparableQuoteDraftValue(draft)
 }
 
 export function shouldRunDraftGuard(isDirty: boolean, isNavigating: boolean): boolean {
@@ -252,12 +257,8 @@ function JobberSyncPreviewCard({ preview }: { preview: JobberSyncPreviewValue })
     : `$${difference.toFixed(2)}`
 
   return (
-    <section className="pbc-card pbc-card--pad">
-      <div className="pbc-panelhead">
-        <div className="pbc-panelhead__copy">
-          <h2 className="pbc-paneltitle">Jobber sync preview</h2>
-        </div>
-      </div>
+    <details className="pbc-card pbc-card--pad pbc-sync-preview">
+      <summary>Jobber sync preview · Difference {differenceLabel}</summary>
       <div className="pbc-summary__rows">
         <div className="pbc-srow">
           <span>PBC subtotal ex GST</span>
@@ -272,7 +273,7 @@ function JobberSyncPreviewCard({ preview }: { preview: JobberSyncPreviewValue })
           <span className="mono">{differenceLabel}</span>
         </div>
       </div>
-    </section>
+    </details>
   )
 }
 
@@ -308,6 +309,14 @@ export function getNextDeletedJobberLineItemIds(
 }
 
 export function QuoteForm({ settings, areas, productServices, quoteLineTemplates = [], initialQuote }: QuoteFormProps) {
+  const [mobileState, setMobileState] = useState<QuoteMobileState>(() => ({
+    ...createQuoteMobileState(Boolean(initialQuote)),
+    activeMainScope: (initialQuote ? mapQuoteItemsToMaterials(initialQuote).find((item) => item.areaScope)?.areaScope : areas[0]?.scope) ?? 'interior',
+  }))
+  const [formIssues, setFormIssues] = useState<QuoteFormIssue[]>([])
+  const formRootRef = useRef<HTMLElement>(null)
+  const saveRequestRef = useRef(false)
+  const knownOptionIdsRef = useRef(new Set(initialQuote?.options.map((option) => option.id) ?? []))
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
   const [quoteAreas, setQuoteAreas] = useState(() => sortQuoteAreas(areas))
@@ -351,6 +360,63 @@ export function QuoteForm({ settings, areas, productServices, quoteLineTemplates
   const [hasCheckedStoredDraft, setHasCheckedStoredDraft] = useState(false)
   const isNavigatingRef = useRef(false)
   const copyMaterialsRequestRef = useRef(false)
+
+  function changeWorkspaceSection(section: QuoteWorkspaceSection) {
+    setMobileState((current) => ({ ...current, activeSection: section === 'review' ? current.activeSection : section, focusTarget: { section, field: 'section' } }))
+  }
+
+  useEffect(() => {
+    const target = mobileState.focusTarget
+    if (!target) return
+    const timeoutId = window.setTimeout(() => {
+      const root = formRootRef.current
+      const key = getQuoteErrorKey(target)
+      const field = root ? Array.from(root.querySelectorAll<HTMLElement>('[data-error-key]')).find((element) => element.getAttribute('data-error-key') === key) : null
+      const section = root?.querySelector<HTMLElement>(`[data-workspace-section="${target.section}"]`)
+      const element = field ?? section
+      let ancestor = element?.parentElement
+      while (ancestor && ancestor !== root) {
+        if (ancestor.tagName === 'DETAILS') (ancestor as HTMLDetailsElement).open = true
+        ancestor = ancestor.parentElement
+      }
+      element?.focus({ preventScroll: true })
+      element?.scrollIntoView?.({ block: 'start', behavior: 'auto' })
+      setMobileState((current) => current.focusTarget === target ? { ...current, focusTarget: null } : current)
+    }, 0)
+    return () => window.clearTimeout(timeoutId)
+  }, [mobileState.focusTarget])
+
+  useEffect(() => {
+    const added = options.find((option) => !knownOptionIdsRef.current.has(option.id))
+    knownOptionIdsRef.current = new Set(options.map((option) => option.id))
+    if (!added) return
+    let cancelled = false
+    queueMicrotask(() => {
+      if (!cancelled) {
+        setMobileState((current) => ({
+          ...current,
+          expandedOptionId: added.id,
+          expandedOptionIds: current.expandedOptionIds.includes(added.id)
+            ? current.expandedOptionIds
+            : [...current.expandedOptionIds, added.id],
+        }))
+      }
+    })
+    return () => { cancelled = true }
+  }, [options])
+
+  useEffect(() => {
+    const invalidKeys = new Set(formIssues.map(getQuoteErrorKey))
+    formRootRef.current?.querySelectorAll<HTMLElement>('[data-error-key]').forEach((element) => {
+      const invalid = invalidKeys.has(element.getAttribute('data-error-key') ?? '')
+      if (invalid) element.setAttribute('data-preflight-invalid', 'true')
+      else element.removeAttribute('data-preflight-invalid')
+      const descriptions = (element.getAttribute('aria-describedby') ?? '').split(' ').filter((id) => id && id !== 'quote-field-errors')
+      if (invalid) descriptions.push('quote-field-errors')
+      if (descriptions.length) element.setAttribute('aria-describedby', descriptions.join(' '))
+      else element.removeAttribute('aria-describedby')
+    })
+  }, [formIssues, mobileState])
 
   const draftStorageKey = useMemo(() => getQuoteDraftStorageKey(initialQuote?.id), [initialQuote?.id])
   const quoteTargetPath = initialQuote ? `/quotes/${initialQuote.id}` : '/quotes'
@@ -830,35 +896,30 @@ export function QuoteForm({ settings, areas, productServices, quoteLineTemplates
   }
 
   function saveQuote(action: QuoteSaveAction = 'local') {
-    if (copyMaterialsRequestRef.current) return
+    if (copyMaterialsRequestRef.current || saveRequestRef.current) return
+
+    const input: QuoteFormSavePayloadInput = {
+      settings, initialQuoteId: initialQuote?.id, initialQuoteVersion: initialQuote?.version,
+      syncJobber: action === 'sync', customerName, customerAddress, jobberQuoteId, jobberQuoteLookup,
+      jobberQuoteDraft, jobberSnapshotRefreshedAt: jobberRefreshMetadata?.refreshedAt ?? null,
+      jobberSnapshotChangeStatus: jobberRefreshMetadata?.status, jobberSnapshotChangeSummary: jobberRefreshMetadata?.summary,
+      deletedJobberLineItemIds, jobberQuoteLines, workType, selectedMin, selectedMax,
+      areaFormulaSelections, materials, options, memos,
+    }
+    const issues = getQuoteFormIssues(input)
+    setFormIssues(issues)
+    if (issues.length) {
+      setSaveError('Check the highlighted quote fields before saving.')
+      setMobileState((current) => revealQuoteUiTarget(current, issues[0]))
+      return
+    }
+    saveRequestRef.current = true
 
     setSaveError(null)
     setPendingSaveAction(action)
     startTransition(async () => {
       try {
-        const result = await saveQuoteFormPayload({
-          settings,
-          initialQuoteId: initialQuote?.id,
-          initialQuoteVersion: initialQuote?.version,
-          syncJobber: action === 'sync',
-          customerName,
-          customerAddress,
-          jobberQuoteId,
-          jobberQuoteLookup,
-          jobberQuoteDraft,
-          jobberSnapshotRefreshedAt: jobberRefreshMetadata?.refreshedAt ?? null,
-          jobberSnapshotChangeStatus: jobberRefreshMetadata?.status,
-          jobberSnapshotChangeSummary: jobberRefreshMetadata?.summary,
-          deletedJobberLineItemIds,
-          jobberQuoteLines,
-          workType,
-          selectedMin,
-          selectedMax,
-          areaFormulaSelections,
-          materials,
-          options,
-          memos,
-        })
+        const result = await saveQuoteFormPayload(input)
 
         if (result.ok) {
           clearDraft()
@@ -866,11 +927,14 @@ export function QuoteForm({ settings, areas, productServices, quoteLineTemplates
           router.push(initialQuote ? quoteTargetPath : `/quotes/${result.data.id}`)
         } else {
           setSaveError(result.error)
+          setMobileState((current) => revealQuoteUiTarget(current, { section: 'review', field: 'summary' }))
         }
       } catch (error) {
         setSaveError(getQuoteUnexpectedSaveErrorMessage(error))
+        setMobileState((current) => revealQuoteUiTarget(current, { section: 'review', field: 'summary' }))
       } finally {
         setPendingSaveAction(null)
+        saveRequestRef.current = false
       }
     })
   }
@@ -885,7 +949,7 @@ export function QuoteForm({ settings, areas, productServices, quoteLineTemplates
   const isSaveBlocked = isPending || isCopyingMaterials
 
   return (
-    <main>
+    <main ref={formRootRef} className="pbc-quote-form">
       <header className="pbc-topbar">
         <div className="pbc-crumb">
           <button type="button" onClick={() => requestNavigation('/quotes')}>Quotes</button>
@@ -924,7 +988,8 @@ export function QuoteForm({ settings, areas, productServices, quoteLineTemplates
         <p>Build the quote, compare formulas, and lock the final total.</p>
       </div>
 
-      {saveError ? <p className="pbc-alert pbc-alert--danger">{saveError}</p> : null}
+      <QuoteWorkspaceNav activeSection={mobileState.activeSection} onSectionChange={changeWorkspaceSection} issues={formIssues} />
+      {formIssues.length ? <p id="quote-field-errors" className="pbc-alert pbc-alert--danger" role="alert">{formIssues.length} field {formIssues.length === 1 ? 'needs' : 'need'} attention. {formIssues[0].message}</p> : null}
       {availableDraft ? (
         <div className="pbc-alert pbc-alert--warning">
           <span>Unsaved draft found from {new Date(availableDraft.updatedAt).toLocaleString('en-AU')}.</span>
@@ -939,14 +1004,15 @@ export function QuoteForm({ settings, areas, productServices, quoteLineTemplates
         </div>
       ) : null}
       {draftMessage ? <p className="pbc-alert pbc-alert--success">{draftMessage}</p> : null}
-      <div className="mb-4 flex justify-end">
+      <details className="pbc-draft-tools">
+        <summary>Draft tools</summary>
         <button type="button" onClick={clearAllLocalDrafts} className="pbc-btn pbc-btn--ghost pbc-btn--sm">
           Clear local drafts
         </button>
-      </div>
+      </details>
 
-      <div className="pbc-editgrid">
-        <div className="pbc-workspace">
+      <div className="pbc-editgrid pbc-quote-workspace">
+        <section id="quote-workspace-details" className="pbc-workspace pbc-quote-workspace-section" data-workspace-section="details" data-active={mobileState.activeSection === 'details'} tabIndex={-1} aria-label="Details">
           <CustomerPanel
             customerName={customerName}
             customerAddress={customerAddress}
@@ -959,6 +1025,7 @@ export function QuoteForm({ settings, areas, productServices, quoteLineTemplates
             onJobberLookupTypeChange={setJobberLookupType}
             onJobberQuoteIdChange={setJobberQuoteLookup}
             onFetchJobberQuote={fetchJobberQuote}
+            onEditPublicQuote={() => changeWorkspaceSection('public')}
             onApplyJobberRefreshChanges={applyJobberRefreshChanges}
             onKeepCurrentJobberQuote={keepCurrentJobberQuote}
             onWorkTypeChange={setWorkType}
@@ -968,18 +1035,29 @@ export function QuoteForm({ settings, areas, productServices, quoteLineTemplates
             jobberActionMode={initialQuote ? 'refresh' : 'fetch'}
             jobberRefreshPreview={jobberRefreshPreview}
           />
+        </section>
+        <section id="quote-workspace-public" className="pbc-workspace pbc-quote-workspace-section" data-workspace-section="public" data-active={mobileState.activeSection === 'public'} tabIndex={-1} aria-label="Public quote">
           <JobberProductServiceEditor
+            editingLineId={mobileState.editingPublicLineId}
+            onEditingLineChange={(id) => setMobileState((current) => ({ ...current, editingPublicLineId: id }))}
             value={jobberQuoteLines}
             productServices={productServices}
             templates={quoteLineTemplates}
             onChange={changeJobberQuoteLines}
           />
+        </section>
+        <section id="quote-workspace-work" className="pbc-workspace pbc-quote-workspace-section" data-workspace-section="work" data-active={mobileState.activeSection === 'work'} tabIndex={-1} aria-label="Work and materials">
           <JobberOptionImport
             candidates={jobberOptionCandidates}
             existingOptions={options}
             onImportCandidate={importJobberOptionCandidate}
           />
           <MaterialsPanel
+            activeScope={mobileState.activeMainScope}
+            onActiveScopeChange={(scope) => setMobileState((current) => ({ ...current, activeMainScope: scope }))}
+            editingItemId={mobileState.editingMainMaterialId}
+            onEditingItemChange={(id) => setMobileState((current) => ({ ...current, editingMainMaterialId: id }))}
+            onReview={() => changeWorkspaceSection('review')}
             materials={materials}
             areas={quoteAreas}
             areaBreakdown={totals.areaBreakdown}
@@ -992,6 +1070,14 @@ export function QuoteForm({ settings, areas, productServices, quoteLineTemplates
             onAreaFormulaSelectionChange={changeAreaFormulaSelection}
           />
           <QuoteOptionsPanel
+            expandedOptionId={mobileState.expandedOptionId}
+            onExpandedOptionChange={(id) => setMobileState((current) => ({ ...current, expandedOptionId: id }))}
+            expandedOptionIds={mobileState.expandedOptionIds}
+            onExpandedOptionIdsChange={(ids) => setMobileState((current) => ({ ...current, expandedOptionIds: ids }))}
+            optionScopes={mobileState.optionScopes}
+            onOptionScopeChange={(id, scope) => setMobileState((current) => ({ ...current, optionScopes: { ...current.optionScopes, [id]: scope } }))}
+            editingOptionMaterial={mobileState.editingOptionMaterial}
+            onEditingOptionMaterialChange={(value) => setMobileState((current) => ({ ...current, editingOptionMaterial: value }))}
             options={options}
             optionTotals={optionPanelTotals}
             areas={quoteAreas}
@@ -1001,14 +1087,37 @@ export function QuoteForm({ settings, areas, productServices, quoteLineTemplates
             onCopyMaterials={copyMaterialsToOption}
             onAddOption={addOption}
             onChangeOption={changeOption}
+            onUpdateOption={(id, update) => setOptions((current) => current.map((option) => option.id === id ? update(option) : option))}
             onReorderOptionMaterials={reorderOptionMaterials}
             onRemoveOption={removeOption}
             onCreateArea={createQuoteArea}
           />
-          <QuoteMemosPanel memos={memos} onAddMemo={addMemo} onChangeMemo={changeMemo} onRemoveMemo={removeMemo} />
-        </div>
+        </section>
 
-        <aside className="pbc-calcstack">
+        <aside className="pbc-calcstack pbc-quote-workspace-section" data-workspace-section="review" data-active="true" tabIndex={-1} aria-label="Review">
+          {saveError ? <div role="alert" tabIndex={-1} data-error-key="review:form:summary" className="pbc-alert pbc-alert--danger">{saveError}</div> : null}
+          <FinalSummary
+            labourTotal={totals.subtotalLabour}
+            materialTotal={totals.materialMarket}
+            areaBreakdown={totals.areaBreakdown}
+            jobberFinancialSummary={jobberQuoteDraft && !jobberQuoteDraft.jobExpensesError ? jobberQuoteDraft.financialSummary : null}
+          />
+          <OptionTotalsSummary options={optionSummaryItems} />
+          <section className="pbc-card pbc-card--pad">
+            <h2 className="pbc-paneltitle">Review formulas</h2>
+            <div className="pbc-toggle" aria-label="Formula area">
+              {AREA_SCOPES.map((scope) => <button key={scope} type="button" aria-pressed={mobileState.activeMainScope === scope} className={mobileState.activeMainScope === scope ? 'is-on' : ''} onClick={() => setMobileState((current) => ({ ...current, activeMainScope: scope }))}>{AREA_SCOPE_LABELS[scope]}</button>)}
+            </div>
+            {mobileState.activeMainScope === 'unassigned' ? <button type="button" className="pbc-btn pbc-btn--ghost" onClick={() => changeWorkspaceSection('work')}>Assign material areas to review formulas</button> : <FormulaResults
+              title={`${AREA_SCOPE_LABELS[mobileState.activeMainScope]} Formula Results`}
+              results={totals.areaBreakdown[mobileState.activeMainScope].results}
+              selectedMin={areaFormulaSelections[mobileState.activeMainScope].selectedMin}
+              selectedMax={areaFormulaSelections[mobileState.activeMainScope].selectedMax}
+              onSelectedMinChange={(value) => { if (mobileState.activeMainScope !== 'unassigned') changeAreaFormulaSelection(mobileState.activeMainScope, 'selectedMin', value) }}
+              onSelectedMaxChange={(value) => { if (mobileState.activeMainScope !== 'unassigned') changeAreaFormulaSelection(mobileState.activeMainScope, 'selectedMax', value) }}
+              namePrefix={`materials-${mobileState.activeMainScope}`}
+            />}
+          </section>
           <section className="pbc-card pbc-card--pad pbc-calcpanel">
             <h2 className="pbc-paneltitle">Calculation</h2>
             <div className="grid gap-4 sm:grid-cols-2">
@@ -1021,30 +1130,24 @@ export function QuoteForm({ settings, areas, productServices, quoteLineTemplates
                 <b className="mono">{totals.totalLabourPerDay.toFixed(2)}</b>
               </div>
             </div>
-            {totals.totalWorkingDays.gt(365) ? <p className="text-sm text-amber-600">Over 365 days - double check.</p> : null}
+            {totals.totalWorkingDays.gt(365) ? <p className="text-sm text-[var(--warning)]">Over 365 days - double check.</p> : null}
           </section>
 
-          <FinalSummary
-            labourTotal={totals.subtotalLabour}
-            materialTotal={totals.materialMarket}
-            areaBreakdown={totals.areaBreakdown}
-            jobberFinancialSummary={jobberQuoteDraft && !jobberQuoteDraft.jobExpensesError ? jobberQuoteDraft.financialSummary : null}
-          />
           {shouldShowJobberSyncPreview ? <JobberSyncPreviewCard preview={jobberSyncPreview} /> : null}
-          <OptionTotalsSummary options={optionSummaryItems} />
+          <details className="pbc-quote-memos"><summary>Internal memos · {memos.length}</summary><QuoteMemosPanel memos={memos} onAddMemo={addMemo} onChangeMemo={changeMemo} onRemoveMemo={removeMemo} /></details>
         </aside>
       </div>
-      <div className="pbc-mobile-totalbar">
-        <div className="min-w-0">
+      <div className="pbc-mobile-totalbar pbc-mobile-totalbar--workspace">
+        <button type="button" className="pbc-totalbar-review" aria-label="Review totals" onClick={() => changeWorkspaceSection('review')}>
           <span>Final subtotal</span>
           <b className="mono">${totals.areaBreakdown.finalSubtotal.toFixed(2)}</b>
-        </div>
-        <div className="min-w-0">
-          <span>Inc GST</span>
-          <b className="mono">${totals.areaBreakdown.finalTotal.toFixed(2)}</b>
-        </div>
+          <span>Inc GST ${totals.areaBreakdown.finalTotal.toFixed(2)}</span>
+        </button>
         <button type="button" onClick={() => saveQuote('local')} disabled={isSaveBlocked} className="pbc-btn pbc-btn--primary pbc-btn--sm">
           {Icons.check({ size: 14 })} {mobileSaveLabel}
+        </button>
+        <button type="button" onClick={() => saveQuote('sync')} disabled={isSaveBlocked || !canSyncJobberQuote} aria-label={jobberSaveLabel} className="pbc-btn pbc-btn--ghost pbc-btn--sm">
+          {isPending && pendingSaveAction === 'sync' ? 'Syncing...' : 'Save & Sync'}
         </button>
       </div>
       {pendingNavigation ? (

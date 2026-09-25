@@ -42,9 +42,13 @@ describe('jobs UI', () => {
 
     expect(markup).toContain('aria-label="August 2026 job calendar"')
     expect(markup).toContain('pbc-jobcalendar__day--today')
-    expect(markup.match(/href="\/jobs\/job-1"/g)).toHaveLength(3)
+    const desktopCalendar = markup.slice(markup.indexOf('pbc-jobcalendar__desktop'), markup.indexOf('pbc-mobileagenda'))
+    expect(desktopCalendar.match(/href="\/jobs\/job-1"/g)).toHaveLength(3)
     expect(markup).not.toContain('Unscheduled')
     expect(markup).not.toContain('href="/jobs/job-2"')
+    expect(markup).toContain('pbc-mobileagenda')
+    expect(markup).toContain('3 August 2026 · 1 job · selected')
+    expect(markup).toContain('Belrose')
   })
 
   it('marks dates before today as past without marking today', () => {
@@ -76,6 +80,18 @@ describe('jobs UI', () => {
     expect(markup).toContain('class="pbc-jobcalendar__mobilelabel" aria-hidden="true">#3103</span>')
   })
 
+  it('preserves the supervisor filter in calendar month navigation', () => {
+    const markup = renderToStaticMarkup(createElement(JobsList, {
+      jobs: [job],
+      month: '2026-08',
+      today: '2026-08-03',
+      supervisorProfileId: '00000000-0000-4000-8000-000000000081',
+    }))
+
+    expect(markup).toContain('/jobs?month=2026-07&amp;supervisor=00000000-0000-4000-8000-000000000081')
+    expect(markup).toContain('/jobs?month=2026-09&amp;supervisor=00000000-0000-4000-8000-000000000081')
+  })
+
   it('renders the shared profit panel, expense lines, refresh, and Jobber source link', () => {
     const markup = renderToStaticMarkup(createElement(JobDetail, {
       job: {
@@ -89,21 +105,23 @@ describe('jobs UI', () => {
 
     expect(markup).toContain('aria-label="Jobber profit"')
     expect(markup).toContain('Job revenue')
-    expect(markup).toContain('Estimate labour')
+    expect(markup).toContain('Estimated labour')
     expect(markup).toContain('$6,300.00')
     expect(markup).toContain('14 scheduled assignments × $450.00')
-    expect(markup).toContain('Estimate profit')
+    expect(markup).toContain('Estimated profit')
     expect(markup).toContain('$6,137.02')
     expect(markup).toContain('49.3%')
-    expect(markup.indexOf('Job revenue')).toBeLessThan(markup.indexOf('Estimate labour'))
-    expect(markup.indexOf('Estimate labour')).toBeLessThan(markup.indexOf('Estimate profit'))
-    expect(markup.indexOf('Estimate profit')).toBeLessThan(markup.indexOf('Expenses total'))
-    expect(markup).toContain('Expenses total')
+    expect(markup.indexOf('Job revenue')).toBeLessThan(markup.indexOf('Estimated labour'))
+    expect(markup.indexOf('Estimated labour')).toBeLessThan(markup.indexOf('Estimated profit'))
+    expect(markup.indexOf('Estimated profit')).toBeLessThan(markup.indexOf('Actual expenses'))
+    expect(markup).toContain('Actual expenses')
+    expect(markup).toContain('Actual profit')
+    expect(markup).toContain('AUD · Jobber totals')
     expect(markup).toContain('$10,943.13')
     expect(markup).toContain('88.0%')
     expect(markup.match(/88\.0%/g)).toHaveLength(1)
     expect(markup).not.toContain('<h2 class="pbc-paneltitle">Jobber profit</h2><b>88.0%</b>')
-    expect(markup).toContain('<div class="pbc-jobfinancial__row pbc-jobfinancial__row--profit"><span>Profit</span><span class="pbc-jobfinancial__values"><b class="pbc-moneytext">$10,943.13</b><b>88.0%</b></span></div>')
+    expect(markup).toContain('<div class="pbc-jobfinancial__row pbc-jobfinancial__row--profit"><span>Actual profit</span><span class="pbc-jobfinancial__values"><b class="pbc-moneytext">$10,943.13</b><b>88.0%</b></span></div>')
     expect(markup).toContain('paint')
     expect(markup).toContain('Dulux')
     expect(markup).toContain('Sanggi')
@@ -148,9 +166,9 @@ describe('jobs UI', () => {
       compact: true,
     }))
 
-    expect(markup).not.toContain('Estimate labour')
+    expect(markup).not.toContain('Estimated labour')
     expect(markup).not.toContain('$6,300.00')
-    expect(markup).not.toContain('Estimate profit')
+    expect(markup).not.toContain('Estimated profit')
     expect(markup).not.toContain('$6,137.02')
   })
 

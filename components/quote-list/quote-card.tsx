@@ -40,7 +40,10 @@ export function OverviewQuoteRow({ quote }: { quote: QuoteRecord }) {
       </span>
       <span className="pbc-qrow__days">{quote.workingDays} <i>days</i></span>
       <span className="pbc-qrow__date">{savedDate}</span>
-      <span className="pbc-qrow__amt mono">${quote.subtotal}</span>
+      <span className="pbc-qrow__amt">
+        <span className="mono">${quote.subtotal}</span>
+        <small>ex GST</small>
+      </span>
       <span className="pbc-qrow__go">{Icons.arrowDown({ size: 16 })}</span>
     </IntentLink>
   )

@@ -3,7 +3,7 @@ import type { JobberQuoteDraft, JobberQuoteDraftLineItem } from '@/lib/jobber/ma
 import type { AreaFormulaSelections, FormulaSelection, JobberQuoteLineItemDraft, JobberSaveMode, MaterialItem, QuoteMemoItem, QuoteOptionItem } from './types'
 import { isDecimalInputValue } from './decimal-input-utils'
 
-const QUOTE_DRAFT_VERSION = 1
+const QUOTE_DRAFT_VERSION = 2
 const QUOTE_DRAFT_STORAGE_PREFIX = 'pbc-quote-draft:'
 export const QUOTE_DRAFT_EXPIRY_MS = 7 * 24 * 60 * 60 * 1000
 const LOCAL_DRAFT_JOBBER_PRIVATE_FIELDS_MESSAGE = 'Jobber expense and financial details are not stored in local drafts. Fetch Jobber again to refresh them.'
@@ -23,7 +23,8 @@ type LocalJobberQuoteDraft = Pick<
   | 'productsAndServices'
 >
 
-export type QuoteFormStorageDraft = Omit<QuoteFormDraft, 'jobberQuoteDraft'> & {
+export type QuoteFormStorageDraft = Omit<QuoteFormDraft, 'jobberQuoteDraft' | 'options'> & {
+  options: Omit<QuoteOptionItem, 'isExpanded'>[]
   jobberQuoteDraft: LocalJobberQuoteDraft | null
 }
 
@@ -209,7 +210,7 @@ function parseOption(value: unknown): QuoteOptionItem | null {
     title === null ||
     selectedMin === null ||
     selectedMax === null ||
-    typeof isExpanded !== 'boolean' ||
+    (isExpanded !== undefined && typeof isExpanded !== 'boolean') ||
     sourceJobberLineItemIds === null ||
     materials === null ||
     materials.some((item) => item === null)
@@ -223,7 +224,7 @@ function parseOption(value: unknown): QuoteOptionItem | null {
     materials: materials as MaterialItem[],
     selectedMin,
     selectedMax,
-    isExpanded,
+    isExpanded: false,
   }
   if (sourceJobberLineItemIds !== undefined) {
     option.sourceJobberLineItemIds = sourceJobberLineItemIds
@@ -327,9 +328,21 @@ function sanitizeJobberQuoteDraftForStorage(draft: JobberQuoteDraft): LocalJobbe
   }
 }
 
+function withoutOptionExpansion(option: QuoteOptionItem): Omit<QuoteOptionItem, 'isExpanded'> {
+  const { isExpanded, ...values } = option
+  void isExpanded
+  return values
+}
+
+export function getComparableQuoteDraftValue(draft: QuoteFormDraft): string {
+  return JSON.stringify({ ...draft, version: QUOTE_DRAFT_VERSION, updatedAt: '', options: draft.options.map(withoutOptionExpansion) })
+}
+
 export function sanitizeQuoteFormDraftForStorage(draft: QuoteFormDraft): QuoteFormStorageDraft {
   return {
     ...draft,
+    version: QUOTE_DRAFT_VERSION,
+    options: draft.options.map(withoutOptionExpansion),
     jobberQuoteDraft: draft.jobberQuoteDraft
       ? sanitizeJobberQuoteDraftForStorage(draft.jobberQuoteDraft)
       : null,
@@ -479,7 +492,7 @@ export function parseQuoteFormDraft(value: string | null, now: Date = new Date()
     return null
   }
 
-  if (!isRecord(parsed) || parsed.version !== QUOTE_DRAFT_VERSION) return null
+  if (!isRecord(parsed) || (parsed.version !== 1 && parsed.version !== QUOTE_DRAFT_VERSION)) return null
 
   const customerName = readString(parsed, 'customerName')
   const customerAddress = readString(parsed, 'customerAddress')

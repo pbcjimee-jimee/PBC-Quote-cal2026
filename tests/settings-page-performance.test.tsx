@@ -55,6 +55,9 @@ describe('Settings page initial performance', () => {
     const markup = renderToStaticMarkup(await SettingsPage())
 
     expect(markup).toContain('Labour Rates')
+    expect(markup).toContain('href="/settings/users"')
+    expect(markup).toContain('href="/quotes/new"')
+    expect(markup).not.toContain('href="/inventory"')
     expect(mocks.getPricingSettings).toHaveBeenCalledTimes(1)
     expect(mocks.listProducts).not.toHaveBeenCalled()
     expect(mocks.listProductServices).not.toHaveBeenCalled()
