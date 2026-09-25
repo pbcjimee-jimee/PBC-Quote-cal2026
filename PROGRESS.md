@@ -21,6 +21,8 @@
 
 ## 모바일 UI·UX 최종 재검토·운영 반영 준비 (2026-09-25)
 
+> 후속 갱신: 사용자 “맞춰줘” 승인과 전체 저장 중지 확인 후, 운영 DB 누락 schema/grant를 2026-09-25 01:06 UTC 적용했다. remote version `20260925010625`/`20260925010633`; 새 save/sync RPC 10개 및 RLS/grant 정상. 기존 활성 admin 역할의 unlinked/linked create+update 모두 version=2·operation0으로 통과하고 ROLLBACK했다. 기존 견적 111건을 포함한 9개 테이블의 백업 전후 checksum 동일. Jobber `2025-04-16` 필드 `taxable`/`textOnly`: `Boolean!` read-only 확인. 상세는 `docs/superpowers/reviews/2026-09-25-production-db-alignment.md`. 아래 미적용 상태는 이 후속 작업 이전의 기록이다.
+
 - **Model:** GPT-6 Astra. 독립 견적/다른 UI/운영 호환성 검토와 오류 수정·회귀 검증은 모두 high. 사용자 요청에 따라 변경 전체를 다시 검토하고 main 통합을 준비했다.
 - 네 항목 수정: 공개 항목의 CAD/number helper 사용을 Decimal cents 보존 표시로 교체, 데스크톱 옵션 독립 다중 펼침 복구, Jobs 미정의 focus 색상 보완, 모바일 견적 목록 금액 왼쪽 정렬의 CSS 순서 수정. 추가/복사/오류 옵션 공개와 UI-only dirty/draft 계약을 유지했다.
 - 마지막 `npm.cmd run verify` exit0: 119 files/1,040 tests 통과·환경 조건 19 tests skip, TypeScript·ESLint·coverage·build 19/19·production audit0. Coverage S/B/F/L=85.34/72.88/93.56/90.34%. 생성 타입 참조 복구 후 typecheck 통과. 마지막 수정 교차 검토에서 남은 P0–P2 회귀 없음.

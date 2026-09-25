@@ -8,6 +8,8 @@
 
 ## 테이블 관계도
 
+운영 적용 기록 (2026-09-25): durable save/sync schema와 helper grant를 순서대로 적용했다. Connector remote version은 `20260925010625` / `20260925010633`이며, 각각 canonical `20260917025111` / `20260918020411` 파일에 대응한다. 일반 Save create/update의 authenticated rollback 검증을 통과했다. 상세 백업·권한·데이터 보존 결과는 `docs/superpowers/reviews/2026-09-25-production-db-alignment.md`에 기록했다. 이미 적용된 파일을 CLI로 중복 실행하거나 migration history를 임의 repair하지 않는다.
+
 ```
 auth.users        pricing_settings(singleton)     jobber_tokens(공유 커넥션, 암호화)
     │                     │ snapshot
