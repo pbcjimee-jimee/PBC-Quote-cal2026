@@ -221,9 +221,9 @@ export function QuoteOptionsPanel({
                     areaBreakdown={totals?.areaBreakdown}
                     onCreateArea={onCreateArea}
                     onAdd={(item) => updateOption((current) => ({ ...current, materials: [...current.materials, item] }))}
-                    onChange={(item: MaterialItem) => updateOption((current) => ({
+                    onChange={(item: MaterialItem, previousId = item.id) => updateOption((current) => ({
                       ...current,
-                      materials: current.materials.map((existing) => existing.id === item.id ? item : existing),
+                      materials: current.materials.map((existing) => existing.id === previousId ? item : existing),
                     }))}
                     onRemove={(id) => updateOption((current) => ({
                       ...current,

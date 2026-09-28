@@ -1122,7 +1122,7 @@
 }
 
 .pbc-mobile-only, .pbc-quote-workspace-nav, .pbc-material-summary, .pbc-option-summary-title { display: none; }
-.pbc-quote-workspace { grid-template-areas: "details review" "work review" "public review"; align-items: start; }
+.pbc-quote-workspace { grid-template-areas: "details review" "public review" "work review"; align-items: start; }
 .pbc-quote-workspace-section { min-width: 0; scroll-margin-top: 124px; }
 .pbc-quote-form [data-error-key] { scroll-margin-top: 132px; scroll-margin-bottom: 120px; }
 .pbc-sync-preview > summary { cursor: pointer; font-weight: 750; }
@@ -1153,7 +1153,7 @@
 .pbc-totalbar-review { min-width: 0; text-align: left; border: 0; background: none; cursor: pointer; min-height: 44px; }
 
 @media (min-width: 721px) and (max-width: 1080px) {
-  .pbc-quote-workspace { grid-template-columns: minmax(0, 1fr); grid-template-areas: "details" "work" "public" "review"; }
+  .pbc-quote-workspace { grid-template-columns: minmax(0, 1fr); grid-template-areas: "details" "public" "work" "review"; }
 }
 
 @media (max-width: 1023.98px) {
@@ -1197,7 +1197,7 @@
   .pbc-optioncard[data-expanded="false"] .pbc-option-summary-title { display: block; overflow-wrap: anywhere; }
   .pbc-option-summary-title small { display: block; color: var(--muted); font-size: 12px; font-weight: 500; margin-top: 4px; }
   .pbc-materialrow__head { flex-wrap: wrap; }
-  .pbc-materialrow .pbc-materialrow__name { flex-basis: 100%; order: -1; width: 100%; }
+  .pbc-materialrow .pbc-material-name-search { flex-basis: 100%; order: -1; width: 100%; }
   .pbc-materialrow .pbc-materialrow__fields--pricing { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .pbc-materialrow__fields--pricing .pbc-materialrow__area { grid-column: 1 / -1; }
   .pbc-materialrow__fields--pricing > :nth-child(3) { order: 1; }

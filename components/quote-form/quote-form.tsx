@@ -706,8 +706,8 @@ export function QuoteForm({
     setMaterials((current) => [...current, item])
   }
 
-  function changeMaterial(item: MaterialItem) {
-    setMaterials((current) => current.map((existing) => existing.id === item.id ? item : existing))
+  function changeMaterial(item: MaterialItem, previousId = item.id) {
+    setMaterials((current) => current.map((existing) => existing.id === previousId ? item : existing))
   }
 
   function removeMaterial(id: string) {

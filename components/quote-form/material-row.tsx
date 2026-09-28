@@ -4,6 +4,8 @@ import type { AreaRecord } from '@/lib/areas/types'
 import { AREA_SCOPE_LABELS } from '@/lib/areas/constants'
 import { DecimalInput } from './decimal-input'
 import { MaterialSummary } from './material-summary'
+import { MaterialNameSearch } from './material-name-search'
+import { replaceMaterialProduct } from './material-item-factory'
 import { getQuoteErrorKey } from './quote-mobile-state'
 
 interface MaterialRowProps {
@@ -314,13 +316,11 @@ export function MaterialRow({
             ::
           </button>
         ) : null}
-        <input
-          type="text"
+        <MaterialNameSearch
           value={item.name}
-          onChange={(event) => onChange({ ...item, name: event.target.value })}
-          aria-label="Material name"
-          data-error-key={errorKey('name')}
-          className="pbc-input pbc-materialrow__name min-w-0 flex-1 font-bold"
+          onChange={(name) => onChange({ ...item, name })}
+          onSelect={(product) => onChange(replaceMaterialProduct(item, product))}
+          errorKey={errorKey('name')}
         />
         <button
           type="button"

@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { QuoteForm } from '@/components/quote-form/quote-form'
 import { getQuoteDraftStorageKey } from '@/components/quote-form/quote-draft'
 import { createQuote, updateQuote } from '@/lib/actions/quotes'
+import { searchProducts } from '@/lib/actions/products'
 import { DEFAULT_PRICING_SETTINGS } from '@/lib/calculator'
 import type { QuoteRecord } from '@/lib/dev-data'
 import { installTestDom, TestElement } from '@/tests/helpers/test-dom'
@@ -20,6 +21,7 @@ vi.mock('@/lib/actions/quotes', () => ({
   refreshJobberQuoteSnapshot: vi.fn(),
   updateQuote: vi.fn(),
 }))
+vi.mock('@/lib/actions/products', () => ({ searchProducts: vi.fn() }))
 
 class MemoryStorage {
   private readonly values = new Map<string, string>()
@@ -213,6 +215,62 @@ async function mountQuoteForm(options: {
 }
 
 describe('quote workspace structure', () => {
+  it.each(['main', 'option'] as const)('replaces a saved %s material in place and saves the new product price', async (scope) => {
+    const item = {
+      id: 'saved-material', quoteId: 'quote-workspace-1', productId: 'old-product',
+      productNameSnapshot: 'Dulux Ceiling White 15L', marketPriceSnapshot: '180', actualPriceSnapshot: '180',
+      quantity: '2', workingDays: '1', labourPerDay: '2', areaId: '00000000-0000-4000-8000-000000000301',
+      areaNameSnapshot: 'Ceiling', areaScopeSnapshot: 'interior' as const,
+      memo: 'Keep two coats', isCustom: false, position: 0,
+    }
+    const option = { ...createOptionRecord('option-1', 'Optional ceiling', 0), items: [{ ...item, optionId: 'option-1' }] }
+    vi.mocked(searchProducts).mockReset().mockResolvedValue({ ok: true, data: [{
+      id: '00000000-0000-4000-8000-000000000302', name: 'Dulux Ceiling White 1L', manufacturer: 'Dulux', type: 'Paint',
+      unit: '1L', marketPrice: '45.90', actualPrice: '20', colorCode: null, active: true,
+    }] })
+    vi.mocked(updateQuote).mockReset().mockResolvedValue({ ok: false, error: 'Save held for inspection.' })
+    const mounted = await mountQuoteForm({
+      viewportWidth: 360,
+      initialQuote: createQuoteRecord(scope === 'main' ? { items: [item] } : { options: [option] }),
+      areas: [{ id: '00000000-0000-4000-8000-000000000301', scope: 'interior', name: 'Ceiling', active: true, position: 0 }],
+    })
+    try {
+      if (scope === 'option') {
+        const expand = findButton(findOptionCard(mounted.container, 'Optional ceiling')!, 'Expand')!
+        await act(async () => expand.dispatchEvent(new Event('click', { bubbles: true })))
+      }
+      const edit = findElement(mounted.container, 'button', (button) => button.getAttribute('aria-label') === 'Edit Dulux Ceiling White 15L')!
+      await act(async () => edit.dispatchEvent(new Event('click', { bubbles: true })))
+      const name = findElement(mounted.container, 'input', (input) => input.getAttribute('aria-label') === 'Material name')!
+      name.value = 'Dulux Ceiling White 1'
+      await act(async () => name.dispatchEvent(new Event('input', { bubbles: true })))
+      await act(async () => new Promise((resolve) => setTimeout(resolve, 230)))
+      expect(searchProducts).toHaveBeenLastCalledWith({ query: 'Dulux Ceiling White 1', limit: 8 })
+      const match = findElement(mounted.container, 'button', (button) => button.getAttribute('role') === 'option')!
+      expect(match.textContent).toContain('Dulux Ceiling White 1L')
+      await act(async () => match.dispatchEvent(new Event('click', { bubbles: true })))
+      const replacementName = findElement(mounted.container, 'input', (input) => input.getAttribute('aria-label') === 'Material name')!
+      expect(replacementName.value).toBe('Dulux Ceiling White 1L')
+      expect(findAncestorWithAttribute(replacementName, 'data-editing')?.getAttribute('data-editing')).toBe('true')
+      const save = findButton(mounted.container, 'Save changes')!
+      await act(async () => save.dispatchEvent(new Event('click', { bubbles: true, cancelable: true })))
+      expect(updateQuote).toHaveBeenCalledTimes(1)
+      const payload = vi.mocked(updateQuote).mock.calls[0]?.[0] as {
+        items: Record<string, unknown>[]; options: { items: Record<string, unknown>[] }[]
+      }
+      const savedItems = scope === 'main' ? payload.items : payload.options[0].items
+      expect(savedItems).toHaveLength(1)
+      expect(savedItems[0]).toMatchObject({
+        productId: '00000000-0000-4000-8000-000000000302', productNameSnapshot: 'Dulux Ceiling White 1L',
+        marketPriceSnapshot: 45.9, actualPriceSnapshot: 45.9,
+        quantity: 2, workingDays: 1, labourPerDay: 2,
+        areaId: '00000000-0000-4000-8000-000000000301', memo: 'Keep two coats',
+      })
+      expect(savedItems[0].sourceItemId).not.toBe('saved-material')
+    } finally {
+      await mounted.cleanup()
+    }
+  })
   it('offers three category buttons, permanent Review and direct footer save actions', () => {
     const html = renderToStaticMarkup(createElement(QuoteForm, { settings: DEFAULT_PRICING_SETTINGS, areas: [], productServices: [] }))
     for (const section of ['details', 'work', 'public', 'review']) {

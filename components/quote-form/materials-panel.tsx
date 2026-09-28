@@ -23,7 +23,7 @@ interface MaterialsPanelProps {
   areaBreakdown?: AreaSubtotalBreakdown
   areaFormulaSelections?: AreaFormulaSelections
   onAdd: (item: MaterialItem) => void
-  onChange: (item: MaterialItem) => void
+  onChange: (item: MaterialItem, previousId?: string) => void
   onRemove: (id: string) => void
   onReorder?: (update: MaterialReorderUpdater) => void
   onCreateArea?: (scope: AreaScope, name: string) => Promise<AreaCreateResult>
@@ -520,7 +520,10 @@ export function MaterialsPanel({
                   onEditingChange={(editing) => changeEditingId(editing ? item.id : null)}
                   optionId={optionId}
                   onCreateArea={onCreateArea}
-                  onChange={onChange}
+                  onChange={(nextItem) => {
+                    onChange(nextItem, item.id)
+                    if (nextItem.id !== item.id && currentEditingId === item.id) changeEditingId(nextItem.id)
+                  }}
                   onRemove={() => {
                     if (currentEditingId === item.id) {
                       const nextMaterials = visibleMaterials.filter((material) => material.id !== item.id)

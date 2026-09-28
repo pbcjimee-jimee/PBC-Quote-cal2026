@@ -5,6 +5,14 @@
 
 ---
 
+## Material 제품 재선택·공개 항목 순서 (2026-09-28)
+
+- Main·Option Material의 제목을 입력하면 제품 검색 드롭다운이 열린다. 제품을 선택하면 해당 행의 제품 연결·이름·RRP·가격 기준값과 계산 합계가 갱신된다.
+- 수량·Working Days·Labour / Day·Area·메모·행 순서는 유지한다. 이름만 입력하고 제품을 선택하지 않으면 기존 견적별 이름 편집 동작을 유지한다.
+- 교체 행은 새 identity로 저장하여 서버가 새 제품의 신뢰 가능한 가격을 조회한다. 기존 저장 행의 스냅샷 보존·제품 identity 검증 정책은 유지한다.
+- 검색은 200ms debounce, 이전 요청 응답 무시, 방향키·Enter 선택, Escape·외부 포커스 이동 닫기를 지원한다.
+- 모든 섹션을 표시하는 화면에서 Customer Info → Public Product / Service Lines → Materials / Options 순서다. 모바일의 기존 카테고리 선택과 Review 위치는 유지한다.
+
 ## 현행 모바일 견적 구조 (2026-09-25)
 
 아래 기존 데스크톱 도식보다 이 절과 [UI-DESIGN-SYSTEM](UI-DESIGN-SYSTEM.md)의 현행 규칙을 우선한다.

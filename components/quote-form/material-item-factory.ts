@@ -40,3 +40,17 @@ export function createCustomMaterialItem(name: string): MaterialItem {
     isCustom: true,
   }
 }
+
+export function replaceMaterialProduct(item: MaterialItem, product: ProductRecord): MaterialItem {
+  // A fresh identity lets saved quotes obtain the replacement's trusted price snapshot.
+  return {
+    ...createProductMaterialItem(product),
+    quantity: item.quantity,
+    workingDays: item.workingDays,
+    labourPerDay: item.labourPerDay,
+    areaId: item.areaId,
+    areaName: item.areaName,
+    areaScope: item.areaScope,
+    memo: item.memo,
+  }
+}

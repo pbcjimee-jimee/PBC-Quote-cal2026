@@ -19,6 +19,16 @@
 
 ---
 
+## [태스크 2026-09-28] Material 제품 재선택·공개 항목 배치
+
+- **Model:** GPT-6 Astra (구현·검증). 서브에이전트 사용 없음.
+- **Input docs to read first:** `docs/DECISIONS.md`, `docs/AGENT-MAP.md`, `docs/BACKLOG.md`, `docs/UI-DESIGN-SYSTEM.md`, `docs/UI-QUOTE-FORM.md`, `docs/CODING-STYLE.md`, `docs/CALCULATION.md`, `docs/CALCULATION-API.md`, Next.js 로컬 `use-client` 가이드.
+- **Task:** Main·Option Material 제목에 제품 검색 드롭다운을 연결하고 선택 시 제품·RRP·신뢰 가격 기준값을 교체한다. 수량·작업일수·인원·Area·메모·행 위치는 보존한다. 새 행 identity를 사용하여 기존 서버 스냅샷 검증을 유지한다. Customer Info 바로 다음에 Public Product / Service Lines가 표시되도록 데스크톱·태블릿 grid 순서를 변경했다.
+- **Out of scope:** 운영 배포·실제 견적 저장·Jobber 전송·DB/설정/외부 의존성 변경. 모바일 카테고리 흐름은 유지했다.
+- **Acceptance criteria:** 전체 1,098 tests 통과/환경 조건 19 skip, 관련 81 tests 통과. 마지막 키보드 경계 보정 후 UI/factory 17 tests 재통과. TypeScript·production build 19/19 통과. 기본 lint는 기존 `.superpowers/sdd/2026-09-25-db-alignment` 보조 스크립트 3개의 require 규칙 15건으로 실패; `.superpowers/**`·`.codex/**` 제외 앱 lint 통과. `git diff --check` 통과.
+- **브라우저:** 실제 컴포넌트+합성 제품 mock 미리보기에서 1280px의 Customer→Public→Work 순서, 15L→1L 제목 검색·선택 후 RRP/합계 180→45.90, 모바일 360px 키보드 선택·편집 유지·가로 overflow 없음 확인. 실제 DB/Jobber 호출 없음.
+- **When done / 변경 파일:** `material-name-search.tsx` 신규; `material-item-factory.ts`, `material-row.tsx`, `materials-panel.tsx`, `quote-form.tsx`, `quote-options-panel.tsx`, `components.css` 수정; factory/workspace 테스트 2개와 UI 명세·진행 문서 갱신. 로컬 코드 반영 완료, 배포 미실행.
+
 ## Jobber 없는 Preview 격리 (2026-09-25)
 
 - 사용자 승인 후 clean main `19d7051`에서 별도 worktree/`codex/preview-isolation`으로 진행했다. 최신 사용자 지시에 따라 구현·리뷰 서브에이전트는 GPT-5.6 Sol high를 사용했다.
