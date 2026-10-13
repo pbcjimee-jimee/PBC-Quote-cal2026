@@ -1,4 +1,7 @@
 import Decimal from 'decimal.js'
+import type { PaintComparison, PaintComparisonWritePolicy, TimberRole } from './paint-comparison-types'
+import { calculatePaintComparison, reconcilePaintComparison } from './quote-paint-comparison'
+
 import {
   DEFAULT_PRICING_SETTINGS,
   calculateAllFormulas,
@@ -21,15 +24,81 @@ import type { JobberQuoteDraft } from './jobber/mapper'
 import { normalizeQuoteSearchQuery } from './quote-search'
 import { TRASH_PAGE_SIZE, type DeletedQuotePage, type QuoteLifecycleInput } from './quotes/lifecycle'
 
+export function prepareQuotePaintComparison(input: QuoteInput, settings: PricingSettings):
+  { ok: true; data: QuoteInput } | { ok: false; error: string } {
+  const comparison = input.paintComparisons[0]
+  const generated = input.jobberQuoteLines.filter((line) => line.paintComparisonKey)
+  if (!comparison) return generated.length
+    ? { ok: false, error: 'Generated Optional item must belong to this quote comparison' }
+    : { ok: true, data: input }
+  if (generated.length > 1 || generated.some((line) => line.paintComparisonKey !== comparison.key)) {
+    return { ok: false, error: 'Only one Optional item may belong to this quote comparison' }
+  }
+  if (generated.length && input.jobberSaveMode === 'description_total') {
+    return { ok: false, error: 'Timber Optional requires priced line items mode' }
+  }
+  const materials = input.items.map((item, index) => ({
+    id: item.sourceItemId ?? item.logicalKey ?? `material-${index}`, logicalKey: item.logicalKey,
+    timberRole: item.timberRole, productId: item.productId, name: item.productNameSnapshot,
+    marketPrice: String(item.marketPriceSnapshot), actualPrice: String(item.actualPriceSnapshot),
+    quantity: String(item.quantity), workingDays: String(item.workingDays ?? 0),
+    labourPerDay: String(item.labourPerDay ?? 0), areaId: item.areaId,
+    areaName: item.areaNameSnapshot, areaScope: item.areaScopeSnapshot, isCustom: item.isCustom,
+  }))
+  const reconciled = reconcilePaintComparison(materials, comparison)
+  const calculated = calculatePaintComparison({ materials, comparison: reconciled, settings,
+    selectedMin: input.selectedMin, selectedMax: input.selectedMax,
+    areaFormulaSelections: input.areaFormulaSelections ? { ...input.areaFormulaSelections,
+      roof: input.areaFormulaSelections.roof ?? { selectedMin: input.selectedMin, selectedMax: input.selectedMax } } : undefined })
+  if (calculated.status === 'invalid' || (generated.length && calculated.status !== 'ready')) {
+    return { ok: false, error: 'Timber comparison needs correction or Optional removal before saving' }
+  }
+  const resolved: PaintComparison = { ...reconciled, result: {
+    superSubtotal: calculated.superSubtotal.toFixed(2),
+    aquaSubtotal: calculated.aquaSubtotal?.toFixed(2) ?? null,
+    differenceSubtotal: calculated.differenceSubtotal?.toFixed(2) ?? null,
+  } }
+  const difference = calculated.differenceSubtotal?.toNumber()
+  return { ok: true, data: { ...input, paintComparisons: [resolved],
+    jobberQuoteLines: input.jobberQuoteLines.map((line) => !line.paintComparisonKey ? line : ({
+      ...line, kind: 'line_item', quantity: 1, unitPrice: difference, totalPrice: difference,
+      optional: true, optionalWritePolicy: 'set_true',
+      recommended: line.jobberLineItemId ? line.recommended ?? null : false,
+      recommendedWritePolicy: line.jobberLineItemId ? 'preserve' : 'set_false',
+      selected: line.jobberLineItemId ? line.selected ?? null : false,
+      taxable: true, clientVisible: true,
+    })),
+  } }
+}
+
+export function resolveDevQuotePaintComparison(input: QuoteInput, current?: QuoteRecord | null) {
+  const comparisons: PaintComparison[] = []
+  for (const comparison of input.paintComparisons) {
+    const alternatives = []
+    for (const alternative of comparison.alternatives) {
+      if (!alternative.product) { alternatives.push(alternative); continue }
+      const saved = current?.paintComparisons?.find((saved) => saved.key === comparison.key)?.alternatives.find((saved) =>
+        saved.targetLogicalKey === alternative.targetLogicalKey && saved.product?.productId === alternative.product?.productId)?.product
+      const product = products.find((product) => product.id === alternative.product?.productId)
+      if (!saved && !product) return { ok: false as const, error: 'Unable to verify linked Aquanamel pricing. Select an available product.' }
+      const price = saved?.actualPrice ?? product?.rrpPrice ?? product?.marketPrice ?? product?.price ?? product?.actualPrice ?? '0'
+      alternatives.push({ ...alternative, product: { ...alternative.product, actualPrice: new Decimal(price).toFixed(2) } })
+    }
+    comparisons.push({ ...comparison, alternatives })
+  }
+  return prepareQuotePaintComparison({ ...input, paintComparisons: comparisons }, current?.pricingSettingsSnapshot ?? getDevPricingSettings())
+}
 export type { ProductRecord }
 
-type DevQuoteInput = Omit<QuoteInput, 'deletedJobberLineItemIds' | 'jobberQuoteLines' | 'options' | 'memos'> & {
+type DevQuoteInput = Omit<QuoteInput, 'deletedJobberLineItemIds' | 'jobberQuoteLines' | 'options' | 'memos' | 'paintComparisons'> & {
+  paintComparisons?: PaintComparison[]
   jobberQuoteLines?: JobberQuoteLineInput[]
   options?: QuoteInput['options']
   memos?: QuoteInput['memos']
 }
 
 export interface QuoteRecord {
+  paintComparisons?: PaintComparison[]
   id: string
   version: number
   customerName: string | null
@@ -83,6 +152,8 @@ export interface JobberSnapshotChangeSummaryItem {
 }
 
 export interface QuoteItemRecord {
+  logicalKey?: string
+  timberRole?: TimberRole
   id: string
   quoteId: string
   productId: string | null
@@ -159,6 +230,12 @@ export interface QuotePriceRevisionRecord {
 export type JobberSyncStatus = 'not_synced' | 'synced' | 'failed'
 
 export interface JobberQuoteLineRecord {
+  optional?: boolean | null
+  recommended?: boolean | null
+  selected?: boolean | null
+  optionalWritePolicy?: PaintComparisonWritePolicy
+  recommendedWritePolicy?: PaintComparisonWritePolicy
+  paintComparisonKey?: string | null
   id: string
   quoteId: string
   kind: 'line_item' | 'text'
@@ -915,6 +992,7 @@ function buildDevQuoteRecord(id: string, createdAt: string, input: DevQuoteInput
   const finalTotal = calculateFinal(subtotal)
 
   return {
+    paintComparisons: input.paintComparisons ?? [],
     id,
     version: input.expectedVersion ? input.expectedVersion + 1 : 1,
     customerName: input.customerName?.trim() || null,
@@ -954,6 +1032,8 @@ function buildDevQuoteRecord(id: string, createdAt: string, input: DevQuoteInput
     createdByName: 'Dev User',
     createdByEmail: 'dev@example.com',
     items: input.items.map((item, index) => ({
+      logicalKey: item.logicalKey ?? crypto.randomUUID(),
+      timberRole: item.timberRole ?? 'none',
       id: nextId('item'),
       quoteId: id,
       productId: item.productId ?? null,
@@ -1004,6 +1084,7 @@ function calculateDevJobberLinesTotal(lines: JobberQuoteLineInput[]): Decimal | 
   if (lines.length === 0) return undefined
 
   return lines.reduce((total, line) => {
+    if (!line.clientVisible || (line.optional === true && line.selected !== true)) return total
     const lineTotal = line.totalPrice === undefined && line.quantity !== undefined && line.unitPrice !== undefined
       ? new Decimal(line.quantity).mul(line.unitPrice)
       : line.totalPrice
@@ -1053,6 +1134,12 @@ function buildDevJobberQuoteLineRecord(
     : line.totalPrice
 
   return {
+    optional: line.optional ?? (line.jobberLineItemId ? null : false),
+    recommended: line.recommended ?? (line.jobberLineItemId ? null : false),
+    selected: line.selected ?? null,
+    optionalWritePolicy: line.optionalWritePolicy ?? (line.jobberLineItemId ? 'preserve' : 'set_false'),
+    recommendedWritePolicy: line.recommendedWritePolicy ?? (line.jobberLineItemId ? 'preserve' : 'set_false'),
+    paintComparisonKey: line.paintComparisonKey ?? null,
     id: nextId('jobber-line'),
     quoteId,
     kind: line.kind,
@@ -1173,10 +1260,16 @@ export function updateDevQuote(id: string, input: DevQuoteInput): QuoteRecord | 
   const previousOptionsFinalTotal = sumDevQuoteOptionTotals(current.options, 'finalTotal')
   const newOptionsSubtotal = sumDevQuoteOptionTotals(quote.options, 'subtotal')
   const newOptionsFinalTotal = sumDevQuoteOptionTotals(quote.options, 'finalTotal')
+  const newPublicTotal = optionalPublicMoney(calculateDevJobberLinesTotal(input.jobberQuoteLines ?? []))
+  const previousPublicTotal = optionalPublicMoney(calculateDevJobberLinesTotal(current.jobberQuoteLines.map((line) => ({
+    kind: line.kind, name: line.name, quantity: line.quantity === null ? undefined : Number(line.quantity),
+    unitPrice: line.unitPrice === null ? undefined : Number(line.unitPrice), totalPrice: line.totalPrice === null ? undefined : Number(line.totalPrice),
+    optional: line.optional, selected: line.selected, taxable: line.taxable, clientVisible: line.clientVisible, position: line.position,
+  }))))
   const priceChanged = current.subtotal !== quote.subtotal ||
     current.finalTotal !== quote.finalTotal ||
     previousOptionsSubtotal !== newOptionsSubtotal ||
-    previousOptionsFinalTotal !== newOptionsFinalTotal
+    previousOptionsFinalTotal !== newOptionsFinalTotal || previousPublicTotal !== newPublicTotal
   quote.priceRevisions = priceChanged
     ? [
         ...current.priceRevisions,
@@ -1189,8 +1282,8 @@ export function updateDevQuote(id: string, input: DevQuoteInput): QuoteRecord | 
           previousFinalTotal: current.finalTotal,
           newSubtotal: quote.subtotal,
           newFinalTotal: quote.finalTotal,
-          previousJobberLinesTotal: current.priceRevisions.at(-1)?.newJobberLinesTotal ?? null,
-          newJobberLinesTotal: optionalPublicMoney(calculateDevJobberLinesTotal(input.jobberQuoteLines ?? [])),
+          previousJobberLinesTotal: previousPublicTotal,
+          newJobberLinesTotal: newPublicTotal,
           previousOptionsSubtotal,
           newOptionsSubtotal,
           previousOptionsFinalTotal,

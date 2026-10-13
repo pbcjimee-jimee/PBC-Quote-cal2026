@@ -31,6 +31,9 @@ export interface JobberQuoteDraftLineItem {
   totalPrice: number
   linkedName: string | null
   textOnly?: boolean
+  optional?: boolean | null
+  recommended?: boolean | null
+  selected?: boolean | null
 }
 
 export interface JobberQuoteDraftJobExpenses {
@@ -207,6 +210,9 @@ function mapLineItems(items: JobberQuote['lineItems']['nodes']): JobberQuoteDraf
     totalPrice: item.totalPrice,
     linkedName: item.linkedProductOrService?.name ?? null,
     textOnly: item.textOnly,
+    optional: item.optional,
+    recommended: item.recommended,
+    selected: item.selected,
   }))
 }
 

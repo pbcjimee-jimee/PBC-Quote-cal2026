@@ -1,4 +1,5 @@
 import Decimal from 'decimal.js'
+import type { PaintComparisonWritePolicy } from '@/lib/paint-comparison-types'
 
 export type JobberSaveMode = 'priced_line_items' | 'description_total'
 export type JobberQuoteLineKind = 'line_item' | 'text'
@@ -11,6 +12,12 @@ export interface JobberQuoteLineInput {
   quantity?: DecimalInput | null
   unitPrice?: DecimalInput | null
   taxable?: boolean | null
+  optional?: boolean | null
+  recommended?: boolean | null
+  selected?: boolean | null
+  optionalWritePolicy?: PaintComparisonWritePolicy
+  recommendedWritePolicy?: PaintComparisonWritePolicy
+  paintComparisonKey?: string | null
   clientVisible?: boolean | null
   jobberLineItemId?: string | null
   linkedProductOrServiceId?: string | null
@@ -49,6 +56,8 @@ export interface JobberQuoteLineMutationItem {
   unitPrice?: number
   totalPrice?: number
   taxable?: boolean
+  optional?: boolean
+  recommended?: boolean
   productOrServiceId?: string
   jobberLineItemId?: string
   sourcePosition?: number
@@ -135,6 +144,14 @@ function buildPricedMutationLine(line: JobberQuoteLineInput): JobberQuoteLineMut
   const jobberLineItemId = cleanText(line.jobberLineItemId)
   if (jobberLineItemId) {
     payload.jobberLineItemId = jobberLineItemId
+  }
+
+  for (const [field, policy] of [
+    ['optional', line.optionalWritePolicy],
+    ['recommended', line.recommendedWritePolicy],
+  ] as const) {
+    if (policy === 'set_true') payload[field] = true
+    else if (policy === 'set_false' || (!jobberLineItemId && policy === 'preserve')) payload[field] = false
   }
 
   if (typeof line.position === 'number') {

@@ -17,6 +17,7 @@ import { QuoteDuplicateButton } from '@/components/quote-list/quote-duplicate-bu
 import { Card, SectionLabel } from '@/components/ui/card'
 import { Icons } from '@/components/ui/icons'
 import { AREA_SCOPE_LABELS } from '@/lib/areas/constants'
+import { calculatePaintComparison } from '@/lib/quote-paint-comparison'
 
 interface QuoteDetailViewProps {
   quote: QuoteRecord
@@ -41,6 +42,7 @@ function jobberLineTotal(line: QuoteRecord['jobberQuoteLines'][number]): string 
 
 function quoteLineItemsTotal(lines: QuoteRecord['jobberQuoteLines']): Decimal {
   return lines.reduce((total, line) => {
+    if (line.clientVisible === false || (line.optional === true && line.selected !== true)) return total
     const lineTotal = jobberLineTotal(line)
     return lineTotal ? total.add(lineTotal) : total
   }, new Decimal(0))
@@ -157,6 +159,8 @@ function JobberLineDetail({ line }: { line: QuoteRecord['jobberQuoteLines'][numb
           <span className={`pbc-titem__tag ${line.kind === 'text' ? 'pbc-titem__tag--text' : ''}`}>
             {line.kind === 'text' ? 'TEXT' : 'LINE'}
           </span>
+          {line.optional === true ? <span className="pbc-chip">Optional · {line.selected === true ? 'Selected' : line.selected === false ? 'Not selected' : 'Selection unknown'}</span> : null}
+          {line.paintComparisonKey ? <span className="pbc-chip">Calculated Optional</span> : null}
         </span>
         {line.description ? <DetailDescription>{line.description}</DetailDescription> : null}
       </div>
@@ -536,6 +540,12 @@ export function QuoteDetailView({
               </div>
             </Card>
           ) : null}
+          {(quote.paintComparisons ?? []).map(comparison => {
+            const calculation = calculatePaintComparison({ comparison, materials: mapSavedItemsToMaterials(quote.items), selectedMin: quote.selectedMin, selectedMax: quote.selectedMax, areaFormulaSelections: { interior: { selectedMin: quote.interiorSelectedMin ?? quote.selectedMin, selectedMax: quote.interiorSelectedMax ?? quote.selectedMax }, exterior: { selectedMin: quote.exteriorSelectedMin ?? quote.selectedMin, selectedMax: quote.exteriorSelectedMax ?? quote.selectedMax }, roof: { selectedMin: quote.roofSelectedMin ?? quote.selectedMin, selectedMax: quote.roofSelectedMax ?? quote.selectedMax } }, settings: quote.pricingSettingsSnapshot })
+            const result = comparison.result ?? { superSubtotal: calculation.superSubtotal.toFixed(2), aquaSubtotal: calculation.aquaSubtotal?.toFixed(2) ?? null, differenceSubtotal: calculation.differenceSubtotal?.toFixed(2) ?? null }
+            const difference = result.differenceSubtotal === null ? null : new Decimal(result.differenceSubtotal)
+            return <Card key={comparison.key} className="pbc-dspan pbc-paint-comparison"><SectionLabel>Timber paint comparison · Read-only</SectionLabel><div className="pbc-paint-totals"><div className="pbc-ministat"><span>Super Enamel · Base / Main</span><b className="mono">${result.superSubtotal}</b><span>Full quote · Ex GST</span></div><div className="pbc-ministat"><span>Aquanamel · Alternative</span><b className="mono">{result.aquaSubtotal !== null ? `$${result.aquaSubtotal}` : 'Not calculated'}</b><span>Full quote · Ex GST</span></div><div className="pbc-ministat pbc-paint-difference"><span>{difference?.isNegative() ? 'Discount' : difference?.isZero() ? 'No price difference' : 'Additional cost'}</span><b className="mono">{difference ? `${difference.isNegative() ? '−' : difference.isZero() ? '' : '+'}$${difference.abs().toFixed(2)}` : 'Not calculated'}</b><span>Aqua − Super · Ex GST</span></div></div><p className="pbc-field__hint">Base public price remains manual. The calculated Optional applies only the difference.</p><details><summary>Timber details</summary>{quote.items.filter(item => item.timberRole === 'shared' || item.timberRole === 'finish').map(item => { const alternative = comparison.alternatives.find(entry => entry.targetLogicalKey === (item.logicalKey ?? item.id)); return <div className="pbc-srow" key={item.id}><span>{item.productNameSnapshot} · {item.timberRole === 'shared' ? 'Shared in both paints' : `Aqua: ${alternative?.product?.name ?? 'Product required'}`}</span></div> })}<div className="pbc-srow"><span>Timber subtotal · Super / Aqua · Ex GST</span><span className="mono">${calculation.timberSuperSubtotal.toFixed(2)} / {calculation.timberAquaSubtotal ? `$${calculation.timberAquaSubtotal.toFixed(2)}` : 'Not calculated'}</span></div></details></Card>
+          })}
 
           {/* Jobber data */}
           {quote.jobberSnapshot || quote.jobberQuoteId ? (

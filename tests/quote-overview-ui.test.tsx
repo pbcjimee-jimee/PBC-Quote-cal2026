@@ -116,6 +116,14 @@ const quote: QuoteRecord = {
 }
 
 describe('quote overview and detail priorities', () => {
+  it('restores the saved read-only comparison and excludes unselected signed optional from base subtotal', () => {
+    const markup = renderToStaticMarkup(createElement(QuoteDetailView, { quote: { ...quote, paintComparisons: [{ version: 1, key: 'comparison', alternatives: [], result: { superSubtotal: '600.00', aquaSubtotal: '590.00', differenceSubtotal: '-10.00' } }], jobberQuoteLines: [{ id: 'base', quoteId: quote.id, kind: 'line_item', name: 'Manual base', description: '', quantity: '1', unitPrice: '900.00', totalPrice: '900.00', taxable: true, clientVisible: true, position: 0, jobberLineItemId: null, linkedProductOrServiceId: null, createdAt: '2026-10-14T00:00:00Z', updatedAt: '2026-10-14T00:00:00Z' }, { id: 'aqua', quoteId: quote.id, kind: 'line_item', name: 'Aqua adjustment', description: '', quantity: '1', unitPrice: '-10.00', totalPrice: '-10.00', taxable: true, clientVisible: true, position: 1, jobberLineItemId: null, linkedProductOrServiceId: null, paintComparisonKey: 'comparison', optional: true, selected: false, createdAt: '2026-10-14T00:00:00Z', updatedAt: '2026-10-14T00:00:00Z' }] } }))
+    expect(markup).toContain('Timber paint comparison')
+    expect(markup).toContain('−$10.00')
+    expect(markup).toContain('Optional · Not selected')
+    expect(markup).toContain('Calculated Optional')
+    expect(markup).toMatch(/Line items subtotal[\s\S]{0,100}\$900\.00/)
+  })
   it('puts quote finding before truthful loaded-range metrics and separates GST bases', async () => {
     mocks.searchQuotes.mockResolvedValueOnce({ ok: true, data: [quote] })
 

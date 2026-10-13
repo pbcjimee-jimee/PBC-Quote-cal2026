@@ -19,8 +19,44 @@
 
 ---
 
+## [후속 UI 2026-10-14] 마감재 행 비교·Collapse / Expand
+
+- **Model:** 구현·독립 리뷰 `gpt-6.1-sol/high`, 기존 승인 범위와 모델 지정 유지.
+- **사용자 요청/결과:** 별개 두 열의 높이가 어긋난 상세를 Product·Quantity·Working days·Labour/day 공통 행 비교로 바꾸고 항목별 Collapse / Expand를 추가했다. 컨테이너 기준 반응형에서도 같은 항목의 두 값을 나란히 유지한다. 모드는 Linked / Separate로 간결하게 표시한다.
+- **입력 보존:** 본문은 mounted+hidden이며 고유 aria-controls/expanded를 제공한다. 제품 검색어·별도 입력·draft·적용 차액은 보존하고 접기는 견적 데이터를 변경하지 않는다. 계산·서버·DB·운영 배포 변경 없음.
+- **검증:** 관련 50 tests·TypeScript·담당 lint·diff 통과. 실제 Chrome360~1691px 및 컨테이너 경계에서 4행 top 차이1px 미만·가로 넘침0, 개별/키보드 접기·다중 항목·긴 이름·상품 dropdown 확인. 좁은 모드 문구를 한 번 보정 후 재확인, 독립 리뷰 P1/P2 없음. 전체 suite/build 중복 실행 없음.
+- **파일:** 비교 패널·해당 CSS·UI 테스트 및 명세/검증 기록. 샘플 localhost3014에 반영했다.
+
+## [태스크 2026-10-14] Timber 자동 연결·Super Enamel/Aquanamel 구현
+
+- **Model:** 사용자 지정대로 구현·테스트·오류 수정·독립 리뷰 서브에이전트 모두 `gpt-6.1-sol/high`. 승인한 Sol ultra 설계를 재사용했다.
+- **Task / 결과:** 현재 `codex/enamel-upgrade-option`에 Main Interior Timber checkbox·shared/finish 용도·양쪽 자동 연결을 구현했다. Super는 전체 Main, Aqua는 같은 Main의 마감 상품·수량·노무 대안이며 기본은 Main 연동/필드별 직접 입력이다. Prep·Quick Dry는 공유하고, 전체 Ex GST 금액·차액은 크게, Timber 내역은 세부로 표시한다.
+- **Public Optional:** 수동 기본 가격은 유지하고 signed Aqua−Super만 실제 Optional 한 행에 적용·자동 갱신한다. 미선택 기본합계/선택 예상합계를 구분하고 이름·설명은 편집 가능하다. 금액·수량·과세·고객 공개 상태는 계산이 관리한다. 원격 observation과 write policy를 분리하고 selected는 mutation에 보내지 않는다.
+- **저장:** stable logical key·trusted snapshot·비활성 입력·제품 변경 확인·draft v3 및 v1/v2 복원, 원자적 version 저장과 새 키/현재 가격 복제를 지원한다. 리뷰에서 inactive 입력 저장 차단, 일반 Optional 복제 의도 손실, 계산행 체크 상태 불일치를 수정했다.
+- **검증:** 전체 coverage **1,226 pass / 19 환경 skip**, threshold 통과(S/B/F/L 86.34/75.24/94.56/91.12%, calculator100%). TypeScript·build19/19·앱 lint·diff 통과. 최종 안내 문구 보정 후 기존 UI5 tests 재통과. 독립 리뷰 남은 P0–P2 없음. 새 SQL은 기존 설치된 PGlite에서 실제 migration/RPC로 실행했다.
+- **화면:** 실제 QuoteForm+CSS를 합성 action/product 환경에서 360/390/768/1280px로 렌더링했다. signed 차액·기본 가격 보존·재체크·삭제·키보드 검색·draft 복원·긴 한글/영문·640px 확대 등가 폭·합성 touch·44px actions·28px 총액·3px focus 확인. 실제 인증 Supabase 저장·물리 기기·live Jobber는 미검증이다.
+- **제한:** 기본 lint는 기존 2026-09-25 보조 스크립트 require 오류15건, production audit는 기존 의존성2 high/1 critical. package/lock은 변경하지 않았다. 운영 DB 적용·배포·Jobber write·commit/push 미실행, 기존 운영 배포 기록 보존.
+- **산출물:** 비교 domain/UI/client helpers, 저장/Jobber 경계, additive SQL2개, 관련 회귀와 공용 UI/DB/계산/architecture 문서. 자세한 결과는 `docs/superpowers/reviews/2026-10-14-enamel-upgrade-option-verification.md`.
+
+## [태스크 2026-10-14] Interior Timber 자동 연결·UI/UX 계획 개정
+
+- **Model:** 사용자 최신 라우팅 설계 GPT-6.1 Sol ultra, 구현·테스트·오류 수정·리뷰 GPT-6.1 Sol high. 읽기 전용 UI/상태 탐색 서브에이전트 2명은 `gpt-6.1-sol/high`로 실행했다.
+- **확정:** Main Interior 행마다 Timber 전용 checkbox를 추가한다. 체크 행은 기존 Main 계산에 남고 Super/Aqua 비교에 자동 등장한다. 상단에는 두 전체 견적·차액, Timber subtotal는 세부로 표시한다. Aqua 상품은 직접 선택하며 같은 원본 행을 다시 추가하지 않는다.
+- **계획:** Super=Main 원본, shared Prep/Quick Dry 참조, Aqua의 field별 Main 연동/별도 입력, stable key·marker/role 저장, 미완료/삭제/체크 해제/제품 교체/Area 이동·공개 Optional 연결 상태를 구분했다. 일반 Options/Copy에는 Timber 비교 연결을 상속하지 않는다.
+- **산출물:** 기존 2026-10-13 설계/구현 계획 개정 및 `docs/superpowers/specs/2026-10-14-timber-enamel-ui-ux.md` 신규. 데스크톱/모바일 배치·copy·공유/편집 표·상태 표·수용 기준을 작성했다.
+- **검증/범위:** 현재 코드 구조의 읽기 전용 확인과 문서 일관성 검토. 실제 UI 구현·앱 테스트·브라우저 검증·DB/Jobber write·commit/push/배포 없음.
+
+## [태스크 2026-10-13] Super Enamel / Aquanamel 차액 Optional 계획
+
+- **Model:** 사용자 후속 요청(2026-10-13)에 따라 이 기능 계획의 라우팅을 설계 `GPT-6.1 Sol ultra`, 구현·테스트·오류 수정·리뷰 `GPT-6.1 Sol high`, 서브에이전트 `gpt-6.1-sol/high`로 변경했다. 변경 전 실제 읽기 전용 코드 탐색·검토 서브에이전트 2명은 `gpt-6-astra/high`로 실행한 이력을 보존한다.
+- **Task:** 사용자 요청에 따라 구현 계획부터 작성했다. Super Enamel 기본 견적과 Aquanamel 대안을 공통 Prep/Quick Dry·동일 공식으로 계산하고 차액을 실제 Public quote / Jobber Optional line item에 넣는 흐름이다. 사용자에게 페인트별 Working Days/인원 직접 입력, 음수 할인 지원, 기본 공개 가격은 수동 입력하고 차액만 자동 반영하는 조건을 확인했다.
+- **결과:** `main`의 `eb74fba`에서 `codex/enamel-upgrade-option`을 만들고 `docs/superpowers/specs/2026-10-13-enamel-upgrade-option-design.md`, `docs/superpowers/plans/2026-10-13-enamel-upgrade-option.md`에 검토용 초안을 작성했다. 기존 이 문서의 미커밋 운영 배포 기록은 보존했다.
+- **확인:** 실제 Optional 필드 부재, 공개 가격의 unsigned parser/DB 제약, snapshot·durable sync 변경 경계를 확인했다. Jobber 공식 Optional/음수 할인 안내와 공개 스키마 필드를 확인했으나 설정 API 버전·계정의 음수 Optional 조합 및 생략 필드 보존은 미검증이다.
+- **Out of scope / 현재 상태:** 계획 검토 단계. 제품 코드·마이그레이션 적용·테스트 실행·운영 Jobber write·commit/push/배포·BACKLOG/핵심 DECISIONS 변경 없음.
+
 ## [태스크 2026-09-28] Material 제품 재선택·공개 항목 배치
 
+- **후속 운영 배포 (사용자 승인 2026-09-28):** main `eb74fba0194ef5e84ac3ca257638f3b66a71f75b` push로 Production `dpl_6mjZbVJ4Y8u5UiTMWPQkjYX5xU17` READY/syd1 및 공식 alias 연결을 확인했다. 배포 SHA 일치, 공개 health 4개 HTTP200, 서비스 워커 `public, must-revalidate, max-age=0`, 실제 인증 New Quote에서 Customer→Public→Work 배치·콘솔 오류0, 초기 runtime error/fatal0 확인. 실제 견적 저장·Jobber 전송·DB/환경변수 변경 없음. 아래 배포 미실행 문구는 최초 구현 완료 시점의 기록이다.
 - **Model:** GPT-6 Astra (구현·검증). 서브에이전트 사용 없음.
 - **Input docs to read first:** `docs/DECISIONS.md`, `docs/AGENT-MAP.md`, `docs/BACKLOG.md`, `docs/UI-DESIGN-SYSTEM.md`, `docs/UI-QUOTE-FORM.md`, `docs/CODING-STYLE.md`, `docs/CALCULATION.md`, `docs/CALCULATION-API.md`, Next.js 로컬 `use-client` 가이드.
 - **Task:** Main·Option Material 제목에 제품 검색 드롭다운을 연결하고 선택 시 제품·RRP·신뢰 가격 기준값을 교체한다. 수량·작업일수·인원·Area·메모·행 위치는 보존한다. 새 행 identity를 사용하여 기존 서버 스냅샷 검증을 유지한다. Customer Info 바로 다음에 Public Product / Service Lines가 표시되도록 데스크톱·태블릿 grid 순서를 변경했다.

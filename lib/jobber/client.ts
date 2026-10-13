@@ -144,6 +144,9 @@ export interface JobberQuoteLineItem {
   unitPrice: number
   totalPrice: number
   taxable?: boolean
+  optional?: boolean | null
+  recommended?: boolean | null
+  selected?: boolean | null
   textOnly?: boolean
   linkedProductOrService: {
     id: string
@@ -335,6 +338,8 @@ const JOBBER_QUOTE_QUERY = `
           unitPrice
           totalPrice
           textOnly
+          optional
+          recommended
           linkedProductOrService {
             id
             name
@@ -390,6 +395,8 @@ const JOBBER_QUOTE_LITE_QUERY = `
           unitPrice
           totalPrice
           textOnly
+          optional
+          recommended
           linkedProductOrService {
             id
             name
@@ -428,6 +435,8 @@ const JOBBER_QUOTE_LINE_ITEMS_QUERY = `
           unitPrice
           totalPrice
           textOnly
+          optional
+          recommended
           linkedProductOrService {
             id
             name
@@ -455,6 +464,8 @@ const JOBBER_DURABLE_QUOTE_LINE_ITEMS_QUERY = `
           totalPrice
           taxable
           textOnly
+          optional
+          recommended
           linkedProductOrService {
             id
             name
@@ -780,7 +791,16 @@ function getQuoteFromPayload(payload: unknown): JobberQuote {
     throw new Error('Jobber quote not found')
   }
 
-  return data.quote as unknown as JobberQuote
+  const quote = data.quote as unknown as JobberQuote
+  if (!quote.lineItems?.nodes) return quote
+
+  return {
+    ...quote,
+    lineItems: {
+      ...quote.lineItems,
+      nodes: quote.lineItems.nodes.map(item => ({ ...item, selected: item.selected ?? null })),
+    },
+  }
 }
 
 function getQuoteSearchResultFromPayload(payload: unknown, searchTerm: string): JobberQuoteSearchResult {
@@ -834,7 +854,8 @@ function getQuoteLineItemsFromPayload(payload: unknown): JobberQuoteLineItem[] {
     return []
   }
 
-  return lineItems.nodes.filter(isRecord) as unknown as JobberQuoteLineItem[]
+  return lineItems.nodes.filter(isRecord)
+    .map(item => ({ ...item, selected: item.selected ?? null })) as unknown as JobberQuoteLineItem[]
 }
 
 function getStrictQuoteLineItemsPage(payload: unknown): JobberConnectionPage<JobberQuoteLineItem> {
@@ -871,6 +892,11 @@ function getStrictQuoteLineItemsPage(payload: unknown): JobberConnectionPage<Job
     ) {
       throw new Error('Invalid Jobber quote line item')
     }
+    for (const field of ['optional', 'recommended', 'selected']) {
+      if (value[field] !== undefined && value[field] !== null && typeof value[field] !== 'boolean') {
+        throw new Error('Invalid Jobber quote line item')
+      }
+    }
     const linked = value.linkedProductOrService
     if (!(linked === null || (isRecord(linked) && typeof linked.id === 'string' && linked.id.trim()))) {
       throw new Error('Invalid Jobber linked product or service')
@@ -878,6 +904,7 @@ function getStrictQuoteLineItemsPage(payload: unknown): JobberConnectionPage<Job
     return {
       ...value,
       id,
+      selected: value.selected ?? null,
       linkedProductOrService: linked as JobberQuoteLineItem['linkedProductOrService'],
     } as JobberQuoteLineItem
   })
@@ -1238,6 +1265,8 @@ function toQuoteCreateLineItemAttributes(item: JobberQuoteLineMutationItem) {
     description: item.description,
     category: 'SERVICE',
     taxable: item.taxable ?? true,
+    ...(item.optional !== undefined ? { optional: item.optional } : {}),
+    ...(item.recommended !== undefined ? { recommended: item.recommended } : {}),
     saveToProductsAndServices: false,
     quantity: item.quantity ?? 1,
     unitPrice: item.unitPrice ?? 0,
@@ -1271,6 +1300,8 @@ function toQuoteEditLineItemAttributes(item: JobberQuoteLineMutationItem) {
     description: item.description,
     category: 'SERVICE',
     taxable: item.taxable ?? true,
+    ...(item.optional !== undefined ? { optional: item.optional } : {}),
+    ...(item.recommended !== undefined ? { recommended: item.recommended } : {}),
     quantity: item.quantity ?? 1,
     unitPrice: item.unitPrice ?? 0,
     totalPrice: item.totalPrice ?? (item.quantity ?? 1) * (item.unitPrice ?? 0),

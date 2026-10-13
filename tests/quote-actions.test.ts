@@ -10,6 +10,42 @@ vi.mock('next/cache', () => ({
 vi.mock('server-only', () => ({}))
 
 describe('quote actions', () => {
+  it('round-trips Timber comparisons and duplicates with fresh keys and current Aqua pricing', async () => {
+    const product = await createProduct({ productLine: 'Synthetic Aquanamel', rrpPrice: 30 })
+    if (!product.ok) throw new Error(product.error)
+    const logicalKey = '00000000-0000-4000-8000-000000000231'
+    const key = '00000000-0000-4000-8000-000000000431'
+    const input = { customerName: 'Timber round trip', workingDays: 0, labourPerDay: 0,
+      materialMarket: 10, materialActual: 10, selectedMin: 1, selectedMax: 1, jobberSaveMode: 'priced_line_items',
+      items: [{ logicalKey, timberRole: 'finish', productNameSnapshot: 'Base trim', marketPriceSnapshot: 10,
+        actualPriceSnapshot: 10, quantity: 1, workingDays: 0, labourPerDay: 0, areaId: 'interior-1', areaScopeSnapshot: 'interior', isCustom: true }],
+      paintComparisons: [{ version: 1, key, alternatives: [{ targetLogicalKey: logicalKey, previousRole: 'finish', acknowledgedSourceProductId: null,
+        product: { productId: product.data.id, name: 'Aqua', marketPrice: '30', actualPrice: '999' },
+        quantity: { mode: 'inherit', value: '1' }, workingDays: { mode: 'inherit', value: '0' }, labourPerDay: { mode: 'inherit', value: '0' } }] }],
+      jobberQuoteLines: [{ kind: 'line_item', name: 'Choose Aqua', quantity: 1, unitPrice: 999, paintComparisonKey: key, jobberLineItemId: 'old-remote' }],
+    }
+    const created = await createQuote(input)
+    if (!created.ok) throw new Error(created.error)
+    await updateProduct({ id: product.data.id, rrpPrice: 50 })
+    const updated = await updateQuote({ ...input, id: created.data.id, expectedVersion: 1 })
+    if (!updated.ok) throw new Error(updated.error)
+    const saved = await getQuote(created.data.id)
+    if (!saved.ok || !saved.data) throw new Error('Missing quote')
+    expect(saved.data.paintComparisons?.[0].alternatives[0].product?.actualPrice).toBe('30.00')
+    expect(saved.data.paintComparisons?.[0].result?.differenceSubtotal).toBe('20.00')
+    expect(saved.data.jobberQuoteLines[0].unitPrice).toBe('20.00')
+    const duplicated = await duplicateQuote(created.data.id)
+    if (!duplicated.ok) throw new Error(duplicated.error)
+    const copy = await getQuote(duplicated.data.id)
+    if (!copy.ok || !copy.data) throw new Error('Missing copy')
+    expect(copy.data.items[0].logicalKey).not.toBe(logicalKey)
+    expect(copy.data.items[0].timberRole).toBe('finish')
+    expect(copy.data.paintComparisons?.[0].key).not.toBe(key)
+    expect(copy.data.paintComparisons?.[0].alternatives[0].targetLogicalKey).toBe(copy.data.items[0].logicalKey)
+    expect(copy.data.paintComparisons?.[0].alternatives[0].product?.actualPrice).toBe('50.00')
+    expect(copy.data.jobberQuoteLines[0]).toMatchObject({ jobberLineItemId: null,
+      paintComparisonKey: copy.data.paintComparisons?.[0].key, unitPrice: '40.00', optional: true, selected: false })
+  })
   beforeEach(() => {
     resetDevData()
     vi.mocked(revalidatePath).mockClear()

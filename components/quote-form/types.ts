@@ -1,4 +1,5 @@
 import type { AreaRecord } from '@/lib/areas/types'
+import type { PaintComparisonWritePolicy, TimberRole } from '@/lib/paint-comparison-types'
 
 export type FormulaNumber = 1 | 2 | 3 | 4 | 5
 export type AreaScope = 'interior' | 'exterior' | 'roof'
@@ -28,10 +29,18 @@ export interface JobberQuoteLineItemDraft {
   clientVisible: boolean
   jobberLineItemId?: string
   linkedProductOrServiceId?: string
+  optional?: boolean | null
+  recommended?: boolean | null
+  selected?: boolean | null
+  optionalWritePolicy?: PaintComparisonWritePolicy
+  recommendedWritePolicy?: PaintComparisonWritePolicy
+  paintComparisonKey?: string
 }
 
 export interface MaterialItem {
   id: string
+  logicalKey?: string
+  timberRole?: TimberRole
   productId?: string
   name: string
   manufacturer?: string | null

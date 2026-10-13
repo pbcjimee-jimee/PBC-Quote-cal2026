@@ -9,6 +9,10 @@ import { resolveQuoteProductPrices } from '@/lib/actions/products'
 import { Icons } from '@/components/ui/icons'
 import { CustomerPanel, type JobberRefreshPreview } from './customer-panel'
 import { MaterialsPanel, type MaterialReorderUpdater } from './materials-panel'
+import { PaintComparisonPanel } from './paint-comparison-panel'
+import { applyPaintComparisonLine, refreshPaintComparisonLines, mergePaintComparisonLinesAfterFetch } from './paint-comparison-lines'
+import { calculatePaintComparison, reconcilePaintComparison, restoreMaterialTimberRole, setMaterialTimberRole } from '@/lib/quote-paint-comparison'
+import type { PaintComparison, TimberRole } from '@/lib/paint-comparison-types'
 import { FormulaResults } from './formula-results'
 import { QuoteWorkspaceNav } from './quote-workspace-nav'
 import { createQuoteMobileState, revealQuoteUiTarget, getQuoteErrorKey, type QuoteFormIssue, type QuoteWorkspaceSection, type QuoteMobileState } from './quote-mobile-state'
@@ -270,6 +274,14 @@ function JobberSyncPreviewCard({ preview }: { preview: JobberSyncPreviewValue })
           <span>Jobber public line total</span>
           <span className="mono">${preview.jobberPublicLineTotal.toFixed(2)}</span>
         </div>
+        <div className="pbc-srow">
+          <span>Unselected Optional difference · Ex GST</span>
+          <span className="mono">{preview.optionalLineTotal.isNegative() ? '−' : '+'}${preview.optionalLineTotal.abs().toFixed(2)}</span>
+        </div>
+        <div className="pbc-srow pbc-srow--strong">
+          <span>Public total with Optional selected · Ex GST</span>
+          <span className="mono">${preview.withOptionalTotal.toFixed(2)}</span>
+        </div>
         <div className="pbc-srow pbc-srow--strong">
           <span>Difference</span>
           <span className="mono">{differenceLabel}</span>
@@ -337,9 +349,11 @@ export function QuoteForm({
   const [jobberQuoteId, setJobberQuoteId] = useState(initialQuote?.jobberQuoteId ?? '')
   const [workType, setWorkType] = useState(initialQuote?.workType ?? '')
   const [customerType, setCustomerType] = useState(initialQuote?.jobberSnapshot?.customerType ?? '')
-  const [jobberQuoteLines, setJobberQuoteLines] = useState<JobberQuoteLineItemDraft[]>(initialQuote ? mapJobberQuoteLinesToState(initialQuote) : [])
+  const [rawJobberQuoteLines, setJobberQuoteLines] = useState<JobberQuoteLineItemDraft[]>(initialQuote ? mapJobberQuoteLinesToState(initialQuote) : [])
   const [deletedJobberLineItemIds, setDeletedJobberLineItemIds] = useState<string[]>([])
   const [materials, setMaterials] = useState<MaterialItem[]>(initialQuote ? mapQuoteItemsToMaterials(initialQuote) : [])
+  const [rawPaintComparison, setPaintComparison] = useState<PaintComparison | null>(initialQuote?.paintComparisons?.[0] ?? null)
+  const [timberAnnouncement, setTimberAnnouncement] = useState('')
   const [workingDays, setWorkingDays] = useState(initialQuote?.workingDays ?? '0')
   const [labourPerDay, setLabourPerDay] = useState(initialQuote?.labourPerDay ?? '0')
   const [options, setOptions] = useState<QuoteOptionItem[]>(initialQuote ? mapQuoteOptionsToState(initialQuote) : [])
@@ -370,6 +384,9 @@ export function QuoteForm({
   const [hasCheckedStoredDraft, setHasCheckedStoredDraft] = useState(false)
   const isNavigatingRef = useRef(false)
   const copyMaterialsRequestRef = useRef(false)
+  const paintComparison = useMemo(() => rawPaintComparison ? reconcilePaintComparison(materials, rawPaintComparison) : null, [materials, rawPaintComparison])
+  const paintCalculation = useMemo(() => paintComparison ? calculatePaintComparison({ materials, comparison: paintComparison, settings, selectedMin, selectedMax, areaFormulaSelections }) : null, [materials, paintComparison, settings, selectedMin, selectedMax, areaFormulaSelections])
+  const jobberQuoteLines = useMemo(() => paintComparison && paintCalculation?.status === 'ready' && paintCalculation.differenceSubtotal ? refreshPaintComparisonLines(rawJobberQuoteLines, paintComparison.key, paintCalculation.differenceSubtotal.toFixed(2)) : rawJobberQuoteLines, [rawJobberQuoteLines, paintComparison, paintCalculation])
 
   function changeWorkspaceSection(section: QuoteWorkspaceSection) {
     setMobileState((current) => ({ ...current, activeSection: section === 'review' ? current.activeSection : section, focusTarget: { section, field: 'section' } }))
@@ -443,6 +460,8 @@ export function QuoteForm({
     customerType,
     jobberSaveMode: 'priced_line_items',
     jobberQuoteLines,
+    paintComparison,
+    deletedJobberLineItemIds,
     materials,
     options,
     memos,
@@ -459,6 +478,8 @@ export function QuoteForm({
     customerName,
     customerType,
     jobberQuoteLines,
+    paintComparison,
+    deletedJobberLineItemIds,
     jobberLookupType,
     jobberQuoteDraft,
     jobberQuoteId,
@@ -608,7 +629,8 @@ export function QuoteForm({
     setWorkType(draft.workType)
     setCustomerType(draft.customerType)
     setJobberQuoteLines(draft.jobberQuoteLines)
-    setDeletedJobberLineItemIds([])
+    setPaintComparison(draft.paintComparison)
+    setDeletedJobberLineItemIds(draft.deletedJobberLineItemIds ?? [])
     setMaterials(draft.materials)
     setOptions(draft.options)
     setMemos(draft.memos)
@@ -704,6 +726,19 @@ export function QuoteForm({
 
   function addMaterial(item: MaterialItem) {
     setMaterials((current) => [...current, item])
+  }
+
+  function changeTimberRole(item: MaterialItem, role: TimberRole | 'restore') {
+    const source = { ...item, logicalKey: item.logicalKey ?? crypto.randomUUID() }
+    const comparison = paintComparison ?? { version: 1 as const, key: crypto.randomUUID(), alternatives: [] }
+    const next = role === 'restore' ? restoreMaterialTimberRole(source, comparison) : setMaterialTimberRole(source, comparison, role)
+    setMaterials(current => current.map(existing => existing.id === item.id ? next.material : existing))
+    setPaintComparison(next.comparison)
+    setTimberAnnouncement(role === 'none' ? 'Excluded from Timber comparison. Main material and Aqua inputs retained.' : 'Added to Timber comparison. Main calculation unchanged.')
+  }
+
+  function viewPaintComparison() {
+    setMobileState(current => revealQuoteUiTarget(current, { section: 'work', field: 'comparison' }))
   }
 
   function changeMaterial(item: MaterialItem, previousId = item.id) {
@@ -818,15 +853,9 @@ export function QuoteForm({
   }
 
   function changeJobberQuoteLines(update: JobberQuoteLinesChange) {
-    setJobberQuoteLines((currentLines) => {
-      const nextLines = typeof update === 'function' ? update(currentLines) : update
-      setDeletedJobberLineItemIds((currentDeletedIds) => getNextDeletedJobberLineItemIds(
-        currentDeletedIds,
-        currentLines,
-        nextLines
-      ))
-      return nextLines
-    })
+    const nextLines = typeof update === 'function' ? update(jobberQuoteLines) : update
+    setDeletedJobberLineItemIds(current => getNextDeletedJobberLineItemIds(current, jobberQuoteLines, nextLines))
+    setJobberQuoteLines(nextLines)
   }
 
   function applyJobberDraftToForm(draft: JobberQuoteDraft, lookup: string) {
@@ -841,8 +870,11 @@ export function QuoteForm({
     setCustomerType(draft.customerType)
     setJobberQuoteDraft(draft)
     setJobberRefreshMetadata(null)
-    setDeletedJobberLineItemIds([])
-    setJobberQuoteLines(mapJobberDraftLineItemsToState(draft.productsAndServices))
+    const fetchedLines = mapJobberDraftLineItemsToState(draft.productsAndServices)
+    const sameQuote = draft.jobberQuoteId === jobberQuoteId
+    const refreshedLines = mergePaintComparisonLinesAfterFetch(sameQuote ? jobberQuoteLines : jobberQuoteLines.map(line => line.paintComparisonKey ? { ...line, jobberLineItemId: undefined, optional: true, recommended: false, selected: false, optionalWritePolicy: 'set_true', recommendedWritePolicy: 'set_false' } : line), fetchedLines, sameQuote ? deletedJobberLineItemIds : [])
+    if (!sameQuote) setDeletedJobberLineItemIds([])
+    setJobberQuoteLines(refreshedLines)
   }
 
   function applyJobberRefreshChanges() {
@@ -917,7 +949,7 @@ export function QuoteForm({
       jobberQuoteDraft, jobberSnapshotRefreshedAt: jobberRefreshMetadata?.refreshedAt ?? null,
       jobberSnapshotChangeStatus: jobberRefreshMetadata?.status, jobberSnapshotChangeSummary: jobberRefreshMetadata?.summary,
       deletedJobberLineItemIds, jobberQuoteLines, workType, selectedMin, selectedMax,
-      areaFormulaSelections, materials, options, memos,
+      areaFormulaSelections, materials, options, memos, paintComparison,
     }
     const issues = getQuoteFormIssues(input)
     setFormIssues(issues)
@@ -1072,6 +1104,8 @@ export function QuoteForm({
             onImportCandidate={importJobberOptionCandidate}
           />
           <MaterialsPanel
+            onTimberRoleChange={changeTimberRole}
+            onViewComparison={viewPaintComparison}
             activeScope={mobileState.activeMainScope}
             onActiveScopeChange={(scope) => setMobileState((current) => ({ ...current, activeMainScope: scope }))}
             editingItemId={mobileState.editingMainMaterialId}
@@ -1088,6 +1122,18 @@ export function QuoteForm({
             onCreateArea={createQuoteArea}
             onAreaFormulaSelectionChange={changeAreaFormulaSelection}
           />
+          <p className="sr-only" role="status" aria-live="polite">{timberAnnouncement}</p>
+          {paintComparison ? <PaintComparisonPanel
+            materials={materials} comparison={paintComparison} settings={settings} selectedMin={selectedMin} selectedMax={selectedMax} areaFormulaSelections={areaFormulaSelections} lines={jobberQuoteLines}
+            onChange={setPaintComparison}
+            onApply={amount => changeJobberQuoteLines(applyPaintComparisonLine(jobberQuoteLines, paintComparison.key, amount, () => createClientId('paint-line')))}
+            onRemoveOptional={() => changeJobberQuoteLines(jobberQuoteLines.filter(line => line.paintComparisonKey !== paintComparison.key))}
+            onRemoveComparison={() => { changeJobberQuoteLines(jobberQuoteLines.filter(line => line.paintComparisonKey !== paintComparison.key)); setMaterials(current => current.map(item => ({ ...item, timberRole: 'none' }))); setPaintComparison(null) }}
+            onEditMain={item => setMobileState(current => revealQuoteUiTarget(current, { section: 'work', entityId: item.id, scope: item.areaScope ?? 'unassigned', field: 'name' }))}
+            onViewFormulas={() => setMobileState(current => ({ ...current, activeMainScope: 'interior', focusTarget: { section: 'review', field: 'section' } }))}
+            onExcludeMaterial={item => changeTimberRole(item, 'none')}
+            onReturnToInterior={item => { const area = quoteAreas.find(area => area.scope === 'interior'); changeMaterial({ ...item, areaScope: 'interior', areaId: area?.id, areaName: area?.name }) }}
+          /> : null}
           <QuoteOptionsPanel
             expandedOptionId={mobileState.expandedOptionId}
             onExpandedOptionChange={(id) => setMobileState((current) => ({ ...current, expandedOptionId: id }))}

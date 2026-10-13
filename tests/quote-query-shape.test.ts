@@ -2,6 +2,12 @@ import { describe, expect, it } from 'vitest'
 import { QUOTE_DETAIL_SELECT, QUOTE_DETAIL_WITHOUT_MEMOS_SELECT, QUOTES_LIST_SELECT } from '@/lib/quote-query-shape'
 
 describe('quote query shape', () => {
+  it('loads comparison identity and nullable optional policy only in quote detail', () => {
+    expect(QUOTE_DETAIL_SELECT).toContain('paint_comparisons')
+    expect(QUOTE_DETAIL_SELECT).toMatch(/quote_items\([^)]*logical_key[^)]*timber_role/)
+    expect(QUOTE_DETAIL_SELECT).toMatch(/jobber_quote_lines\([^)]*optional_write_policy[^)]*paint_comparison_key/)
+    expect(QUOTES_LIST_SELECT).not.toContain('paint_comparisons')
+  })
   it('keeps the quotes list query lightweight', () => {
     expect(QUOTES_LIST_SELECT).toBe([
       'id',

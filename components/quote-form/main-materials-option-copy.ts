@@ -45,6 +45,8 @@ export function createMainMaterialsOption(
     materials: materials.map((material) => ({
       ...material,
       id: createId('option-item'),
+      logicalKey: crypto.randomUUID(),
+      timberRole: 'none',
     })),
     selectedMin: 4,
     selectedMax: 1,

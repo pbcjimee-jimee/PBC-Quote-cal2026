@@ -7,6 +7,8 @@ import { MaterialSummary } from './material-summary'
 import { MaterialNameSearch } from './material-name-search'
 import { replaceMaterialProduct } from './material-item-factory'
 import { getQuoteErrorKey } from './quote-mobile-state'
+import { TimberMaterialControl } from './timber-material-control'
+import type { TimberRole } from '@/lib/paint-comparison-types'
 
 interface MaterialRowProps {
   item: MaterialItem
@@ -28,6 +30,7 @@ interface MaterialRowProps {
   isEditing?: boolean
   onEditingChange?: (editing: boolean) => void
   optionId?: string
+  onTimberRoleChange?: (role: TimberRole | 'restore') => void
 }
 
 function getMaterialDropTargetClass(dropPlacement: MaterialRowProps['dropPlacement']): string {
@@ -155,6 +158,7 @@ export function MaterialRow({
   isEditing = true,
   onEditingChange,
   optionId,
+  onTimberRoleChange,
 }: MaterialRowProps) {
   const [isAddingArea, setIsAddingArea] = useState(false)
   const [areaQuery, setAreaQuery] = useState('')
@@ -297,8 +301,9 @@ export function MaterialRow({
           ].join(' ')}
         />
       ) : null}
-      {onEditingChange ? <MaterialSummary item={item} onEdit={() => onEditingChange(true)} /> : null}
+      {onEditingChange ? <MaterialSummary item={item} onEdit={() => onEditingChange(true)} onTimberRoleChange={!optionId && item.areaScope === 'interior' ? onTimberRoleChange : undefined} /> : null}
       <div className="pbc-materialrow__editor">
+      {!optionId && item.areaScope === 'interior' && onTimberRoleChange ? <TimberMaterialControl item={item} onChange={onTimberRoleChange} /> : null}
       {onEditingChange ? <button type="button" className="pbc-btn pbc-btn--ghost pbc-btn--sm pbc-mobile-only" onClick={() => onEditingChange(false)}>Done editing</button> : null}
       <div className="pbc-materialrow__head">
         {onDragStart ? (

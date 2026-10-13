@@ -183,6 +183,87 @@ describe('product actions against Supabase', () => {
     }
   })
 
+  it('returns string numeric fields when PostgREST sends JSON numbers for quote products', async () => {
+    const numericRow: unknown = {
+      ...productRow,
+      market_price: 180,
+      actual_price: 70,
+      price: 90,
+      rrp_price: 199.5,
+      volume_litres: 10,
+    }
+    const request = createThenableProductsRequest({ data: [numericRow], error: null })
+    mocks.createClient.mockResolvedValueOnce({ from: vi.fn(() => request) })
+
+    const result = await searchProducts({ query: 'weathershield', limit: 8 })
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) throw new Error('Product search failed')
+    expect(typeof result.data[0].actualPrice).toBe('string')
+    expect(result.data[0].actualPrice === '70').toBe(true)
+    expect(result.data[0]).toMatchObject({
+      marketPrice: '199.5',
+      price: '90',
+      rrpPrice: '199.5',
+      volumeLitres: '10',
+    })
+  })
+
+  it('preserves zero RRP and null optional fields for public numeric product rows', async () => {
+    const numericRow: unknown = {
+      ...productRow,
+      market_price: 180,
+      price: null,
+      rrp_price: 0,
+      volume_litres: null,
+    }
+    const request = createThenableProductsRequest({ data: [numericRow], error: null })
+    mocks.createClient.mockResolvedValueOnce({ from: vi.fn(() => request) })
+
+    const result = await listProducts({ limit: 8 })
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) throw new Error('Product listing failed')
+    expect(result.data[0]).toMatchObject({
+      marketPrice: '0',
+      rrpPrice: '0',
+      actualPrice: '180',
+      price: null,
+      volumeLitres: null,
+    })
+  })
+
+  it('does not round numeric product values into valid stored precision', async () => {
+    const numericRow: unknown = { ...productRow, rrp_price: 1.234 }
+    const request = createThenableProductsRequest({ data: [numericRow], error: null })
+    mocks.createClient.mockResolvedValueOnce({ from: vi.fn(() => request) })
+
+    const result = await searchProducts({ query: 'weathershield', limit: 8 })
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) throw new Error('Product search failed')
+    expect(result.data[0].marketPrice).toBe('1.234')
+  })
+
+  it.each([
+    { rrp_price: 199.5, market_price: 180, price: 90, expected: '199.5' },
+    { rrp_price: 0, market_price: 180, price: 90, expected: '0' },
+    { rrp_price: null, market_price: 180, price: 90, expected: '180' },
+    { rrp_price: null, market_price: null, price: 90, expected: '90' },
+    { rrp_price: null, market_price: null, price: null, expected: '70' },
+  ])('resolves numeric trusted prices as strings with existing fallback priority ($expected)', async ({ expected, ...prices }) => {
+    const numericRow: unknown = { ...productRow, ...prices, actual_price: 70 }
+    const request = createThenableProductsRequest({ data: [numericRow], error: null })
+    mocks.createClient.mockResolvedValueOnce({ from: vi.fn(() => request) })
+
+    const result = await resolveQuoteProductPrices({ productIds: [productRow.id] })
+
+    expect(result).toEqual({
+      ok: true,
+      data: [{ productId: productRow.id, trustedPrice: expected }],
+    })
+  })
+
   it('resolves current trusted quote prices by exact product IDs', async () => {
     const request = createThenableProductsRequest({
       data: [{

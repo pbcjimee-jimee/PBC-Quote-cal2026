@@ -1,5 +1,6 @@
 import type { JobberQuoteLineItemDraft } from './types'
 import { decimalFromInput } from '@/lib/quote-labour'
+import { signedPublicDecimalFromInput } from '@/lib/public-line-money'
 
 interface JobberLineSummaryProps {
   line: JobberQuoteLineItemDraft
@@ -16,7 +17,7 @@ export function JobberLineSummary({
 }: JobberLineSummaryProps) {
   const label = line.name.trim() || (line.kind === 'line_item' ? 'Untitled line item' : 'Untitled text')
   const amount = line.kind === 'line_item'
-    ? `$${decimalFromInput(line.quantity).mul(decimalFromInput(line.unitPrice)).toFixed(2)}`
+    ? `$${decimalFromInput(line.quantity).mul(signedPublicDecimalFromInput(line.unitPrice)).toFixed(2)}`
     : null
 
   return (
@@ -44,6 +45,8 @@ export function JobberLineSummary({
         </span>
       </span>
       <span className="mt-2 flex flex-wrap gap-2 text-xs font-semibold text-[var(--muted)]">
+        {line.optionalWritePolicy === 'set_true' || (line.optionalWritePolicy !== 'set_false' && line.optional === true) ? <span>Optional · {line.selected === true ? 'Selected' : line.selected === false ? 'Not selected' : 'Selection unknown'}</span> : null}
+        {line.paintComparisonKey ? <span>Calculated Optional</span> : null}
         <span>{line.taxable ? 'Taxable' : 'Not taxable'}</span>
         <span aria-hidden="true">·</span>
         <span>{line.clientVisible ? 'Client visible' : 'Hidden from client'}</span>

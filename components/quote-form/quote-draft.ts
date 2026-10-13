@@ -2,8 +2,28 @@ import Decimal from 'decimal.js'
 import type { JobberQuoteDraft, JobberQuoteDraftLineItem } from '@/lib/jobber/mapper'
 import type { AreaFormulaSelections, FormulaSelection, JobberQuoteLineItemDraft, JobberSaveMode, MaterialItem, QuoteMemoItem, QuoteOptionItem } from './types'
 import { isDecimalInputValue } from './decimal-input-utils'
+import { z } from 'zod'
+import type { PaintComparison } from '@/lib/paint-comparison-types'
 
-const QUOTE_DRAFT_VERSION = 2
+const draftComparisonFieldSchema = z.object({ mode: z.enum(['inherit', 'override']), value: z.string() })
+const draftPaintComparisonSchema = z.object({
+  version: z.literal(1), key: z.string().uuid(),
+  alternatives: z.array(z.object({
+    targetLogicalKey: z.string(), previousRole: z.enum(['shared', 'finish']),
+    acknowledgedSourceProductId: z.string().nullable(),
+    product: z.object({ productId: z.string(), name: z.string(), marketPrice: z.string(), actualPrice: z.string() }).optional(),
+    quantity: draftComparisonFieldSchema, workingDays: draftComparisonFieldSchema, labourPerDay: draftComparisonFieldSchema,
+  })),
+  result: z.object({ superSubtotal: z.string(), aquaSubtotal: z.string().nullable(), differenceSubtotal: z.string().nullable() }).optional(),
+})
+
+function parseDraftPaintComparison(value: unknown): { ok: true; value: PaintComparison | null } | { ok: false } {
+  if (value === null || value === undefined) return { ok: true, value: null }
+  const parsed = draftPaintComparisonSchema.safeParse(value)
+  return parsed.success ? { ok: true, value: parsed.data } : { ok: false }
+}
+
+const QUOTE_DRAFT_VERSION = 3
 const QUOTE_DRAFT_STORAGE_PREFIX = 'pbc-quote-draft:'
 export const QUOTE_DRAFT_EXPIRY_MS = 7 * 24 * 60 * 60 * 1000
 const LOCAL_DRAFT_JOBBER_PRIVATE_FIELDS_MESSAGE = 'Jobber expense and financial details are not stored in local drafts. Fetch Jobber again to refresh them.'
@@ -64,6 +84,8 @@ export interface QuoteFormDraft {
   areaFormulaSelections: AreaFormulaSelections
   jobberQuoteDraft: JobberQuoteDraft | null
   updatedAt: string
+  paintComparison: import('@/lib/paint-comparison-types').PaintComparison | null
+  deletedJobberLineItemIds?: string[]
 }
 
 type UnknownRecord = Record<string, unknown>
@@ -98,6 +120,8 @@ export function createEmptyQuoteFormDraft(): QuoteFormDraft {
     },
     jobberQuoteDraft: null,
     updatedAt: new Date(0).toISOString(),
+    paintComparison: null,
+    deletedJobberLineItemIds: [],
   }
 }
 
@@ -168,6 +192,8 @@ function parseMaterial(value: unknown): MaterialItem | null {
 
   return {
     id,
+    logicalKey: readOptionalString(value, 'logicalKey'),
+    timberRole: value.timberRole === 'none' || value.timberRole === 'shared' || value.timberRole === 'finish' ? value.timberRole : undefined,
     productId: readOptionalString(value, 'productId'),
     name,
     manufacturer: readOptionalString(value, 'manufacturer'),
@@ -267,7 +293,7 @@ function parseJobberQuoteLine(value: unknown): JobberQuoteLineItemDraft | null {
   const name = readString(value, 'name')
   const description = readString(value, 'description')
   const quantity = readDecimalString(value, 'quantity')
-  const unitPrice = readDecimalString(value, 'unitPrice')
+  const unitPrice = readString(value, 'unitPrice')
   const taxable = value.taxable
   const clientVisible = value.clientVisible
 
@@ -295,6 +321,12 @@ function parseJobberQuoteLine(value: unknown): JobberQuoteLineItemDraft | null {
     clientVisible,
     jobberLineItemId: readOptionalString(value, 'jobberLineItemId'),
     linkedProductOrServiceId: readOptionalString(value, 'linkedProductOrServiceId'),
+    optional: typeof value.optional === 'boolean' ? value.optional : value.optional === null ? null : undefined,
+    recommended: typeof value.recommended === 'boolean' ? value.recommended : value.recommended === null ? null : undefined,
+    selected: typeof value.selected === 'boolean' ? value.selected : value.selected === null ? null : undefined,
+    optionalWritePolicy: value.optionalWritePolicy === 'set_true' || value.optionalWritePolicy === 'set_false' || value.optionalWritePolicy === 'preserve' ? value.optionalWritePolicy : undefined,
+    recommendedWritePolicy: value.recommendedWritePolicy === 'set_true' || value.recommendedWritePolicy === 'set_false' || value.recommendedWritePolicy === 'preserve' ? value.recommendedWritePolicy : undefined,
+    paintComparisonKey: readOptionalString(value, 'paintComparisonKey'),
   }
 }
 
@@ -309,6 +341,9 @@ function sanitizeJobberQuoteLineForStorage(line: JobberQuoteDraftLineItem): Jobb
     totalPrice: line.totalPrice,
     linkedName: line.linkedName,
     textOnly: line.textOnly,
+    optional: line.optional,
+    recommended: line.recommended,
+    selected: line.selected,
   }
 }
 
@@ -402,6 +437,9 @@ function parseJobberQuoteDraftLineItem(value: unknown): JobberQuoteDraftLineItem
     totalPrice,
     linkedName,
     textOnly,
+    optional: typeof value.optional === 'boolean' ? value.optional : value.optional === null ? null : undefined,
+    recommended: typeof value.recommended === 'boolean' ? value.recommended : value.recommended === null ? null : undefined,
+    selected: typeof value.selected === 'boolean' ? value.selected : value.selected === null ? null : undefined,
   }
 }
 
@@ -492,7 +530,11 @@ export function parseQuoteFormDraft(value: string | null, now: Date = new Date()
     return null
   }
 
-  if (!isRecord(parsed) || (parsed.version !== 1 && parsed.version !== QUOTE_DRAFT_VERSION)) return null
+  if (!isRecord(parsed) || (parsed.version !== 1 && parsed.version !== 2 && parsed.version !== QUOTE_DRAFT_VERSION)) return null
+  const comparisonResult = parseDraftPaintComparison(parsed.paintComparison)
+  if (!comparisonResult.ok) return null
+  const deletedJobberLineItemIds = readOptionalStringArray(parsed, 'deletedJobberLineItemIds')
+  if (deletedJobberLineItemIds === null) return null
 
   const customerName = readString(parsed, 'customerName')
   const customerAddress = readString(parsed, 'customerAddress')
@@ -575,6 +617,8 @@ export function parseQuoteFormDraft(value: string | null, now: Date = new Date()
     areaFormulaSelections,
     jobberQuoteDraft,
     updatedAt,
+    paintComparison: comparisonResult.value,
+    deletedJobberLineItemIds: deletedJobberLineItemIds ?? [],
   }
 }
 
@@ -594,6 +638,7 @@ export function readQuoteFormDraftFromStorage(
 export function hasMeaningfulQuoteDraft(draft: QuoteFormDraft): boolean {
   return Boolean(
     draft.customerName.trim() ||
+    draft.paintComparison ||
     draft.customerAddress.trim() ||
     draft.jobberQuoteLookup.trim() ||
     draft.jobberQuoteId.trim() ||

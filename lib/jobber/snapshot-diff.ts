@@ -88,6 +88,15 @@ function pushLineItemChange(
   if (arraysEqual(previousSignatures, nextSignatures)) return
 
   const initialSummaryLength = summary.length
+  for (const line of previous) {
+    const nextLine = next.find((candidate) => candidate.id === line.id)
+    if (!nextLine) continue
+    if (lineStatusSignature(line) !== lineStatusSignature(nextLine)) {
+      summary.push({ field: 'lineItems', label: 'Product / Service line status changed',
+        before: `${normalizeText(line.name)} (${lineStatusSignature(line)})`,
+        after: `${normalizeText(nextLine.name)} (${lineStatusSignature(nextLine)})` })
+    }
+  }
   const previousTotal = sumLineTotals(previous)
   const nextTotal = sumLineTotals(next)
   if (!previousTotal.eq(nextTotal)) {
@@ -142,7 +151,14 @@ function lineSignature(line: JobberQuoteDraftLineItem): string {
     new Decimal(line.unitPrice).toFixed(2),
     new Decimal(line.totalPrice).toFixed(2),
     line.textOnly === true ? 'text' : 'line',
+    lineStatusSignature(line),
   ].join('|')
+}
+
+function lineStatusSignature(line: JobberQuoteDraftLineItem): string {
+  return (['optional', 'recommended', 'selected'] as const)
+    .map((field) => `${field}: ${typeof line[field] === 'boolean' ? String(line[field]) : 'unknown'}`)
+    .join(', ')
 }
 
 function lineStructureSignature(line: JobberQuoteDraftLineItem): string {

@@ -38,9 +38,9 @@ describe('mobile quote navigation', () => {
   it('reads legacy expanded options, omits expansion from new storage and dirty comparison', () => {
     const draft = { ...createEmptyQuoteFormDraft(), updatedAt: new Date().toISOString(), version: 1, customerName: 'Sample', options: [{ id: 'opt-1', title: 'Option', materials: [], selectedMin: 4 as const, selectedMax: 1 as const, isExpanded: true }] }
     const restored = parseQuoteFormDraft(JSON.stringify(draft))
-    expect(restored?.version).toBe(2)
+    expect(restored?.version).toBe(3)
     const stored = sanitizeQuoteFormDraftForStorage(draft)
-    expect(stored.version).toBe(2)
+    expect(stored.version).toBe(3)
     expect(stored.options[0]).not.toHaveProperty('isExpanded')
     expect(parseQuoteFormDraft(JSON.stringify(stored))?.options[0].id).toBe('opt-1')
     expect(getComparableQuoteDraftValue(draft)).toBe(getComparableQuoteDraftValue({ ...draft, options: [{ ...draft.options[0], isExpanded: false }] }))

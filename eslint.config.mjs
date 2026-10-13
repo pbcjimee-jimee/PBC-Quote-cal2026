@@ -11,6 +11,8 @@ const eslintConfig = defineConfig([
     ".next/**",
     ".worktrees/**",
     ".claude/**",
+    ".superpowers/**",
+    ".codex/**",
     "coverage/**",
     "out/**",
     "build/**",

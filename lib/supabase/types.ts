@@ -57,6 +57,12 @@ export type Database = {
       }
       jobber_quote_lines: {
         Row: {
+          optional: boolean | null
+          recommended: boolean | null
+          selected: boolean | null
+          optional_write_policy: 'preserve' | 'set_true' | 'set_false'
+          recommended_write_policy: 'preserve' | 'set_true' | 'set_false'
+          paint_comparison_key: string | null
           id: string
           quote_id: string
           kind: 'line_item' | 'text'
@@ -258,6 +264,8 @@ export type Database = {
       }
       quote_items: {
         Row: {
+          logical_key: string
+          timber_role: 'none' | 'shared' | 'finish'
           id: string
           quote_id: string
           product_id: string | null
@@ -274,8 +282,10 @@ export type Database = {
           is_custom: boolean
           position: number
         }
-        Insert: Omit<Database['public']['Tables']['quote_items']['Row'], 'id'> & {
+        Insert: Omit<Database['public']['Tables']['quote_items']['Row'], 'id' | 'logical_key' | 'timber_role'> & {
           id?: string
+          logical_key?: string
+          timber_role?: 'none' | 'shared' | 'finish'
         }
         Update: Partial<Database['public']['Tables']['quote_items']['Insert']>
         Relationships: [
@@ -498,6 +508,7 @@ export type Database = {
       }
       quotes: {
         Row: {
+          paint_comparisons: Json
           id: string
           customer_name: string | null
           customer_address: string | null
@@ -553,7 +564,9 @@ export type Database = {
           | 'version'
           | 'deleted_at'
           | 'deleted_by'
+          | 'paint_comparisons'
         > & {
+          paint_comparisons?: Json
           id?: string
           jobber_snapshot_refreshed_at?: string | null
           jobber_snapshot_change_status?: 'unknown' | 'unchanged' | 'changed'
