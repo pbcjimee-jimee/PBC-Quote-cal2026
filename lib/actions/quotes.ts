@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache'
 import { after } from 'next/server'
 import { z } from 'zod'
 import {
+  prepareQuotePaintComparison,
   type JobberSnapshotChangeSummaryItem,
   type QuoteRecord,
 } from '@/lib/dev-data'
@@ -18,6 +19,8 @@ import {
   type PricingSettings,
 } from '@/lib/calculator'
 import Decimal from 'decimal.js'
+import { randomUUID } from 'node:crypto'
+import { paintComparisonSchema } from '@/lib/validators'
 import { calculateDisplayLabourTotals, calculateFormulaLabourDays, calculateLabourTotals } from '@/lib/quote-labour'
 import { requireRole } from '@/lib/security/require-app-user'
 import { createClient } from '@/lib/supabase/server'
@@ -44,6 +47,10 @@ import { moveQuoteToTrash } from './quote-lifecycle'
 import { quoteLifecycleError } from '@/lib/quotes/lifecycle'
 import type { JobberQuoteLineInput, JobberSaveModeInput } from '@/lib/validators'
 
+const storedPaintComparisonsSchema = z.array(paintComparisonSchema.extend({
+  result: z.object({ superSubtotal: z.string(), aquaSubtotal: z.string().nullable(), differenceSubtotal: z.string().nullable() }).optional(),
+})).max(1)
+
 type JobberSyncStatus = 'not_synced' | 'synced' | 'failed'
 type QuoteRow = Database['public']['Tables']['quotes']['Row'] & {
   jobber_save_mode?: JobberSaveModeInput | null
@@ -61,6 +68,12 @@ type ProductPriceRow = Pick<
   'id' | 'name' | 'market_price' | 'actual_price' | 'price' | 'rrp_price'
 >
 type JobberQuoteLineRow = {
+  optional?: boolean | null
+  recommended?: boolean | null
+  selected?: boolean | null
+  optional_write_policy?: JobberQuoteLineInput['optionalWritePolicy']
+  recommended_write_policy?: JobberQuoteLineInput['recommendedWritePolicy']
+  paint_comparison_key?: string | null
   id: string
   quote_id: string
   kind: 'line_item' | 'text'
@@ -260,7 +273,7 @@ type QuoteSavePayload = {
 type ExistingQuoteItemSnapshotRow = Pick<
   QuoteItemRow,
   'id' | 'product_id' | 'actual_price_snapshot'
->
+> & { logical_key?: string }
 type ExistingQuoteOptionItemSnapshotRow = Pick<
   QuoteOptionItemRow,
   'id' | 'product_id' | 'actual_price_snapshot'
@@ -281,6 +294,7 @@ function collectQuoteProductIds(quote: QuoteRecord): string[] {
   return Array.from(new Set([
     ...quote.items.map((item) => item.productId),
     ...quote.options.flatMap((option) => option.items.map((item) => item.productId)),
+    ...(quote.paintComparisons ?? []).flatMap((comparison) => comparison.alternatives.map((alternative) => alternative.product?.productId)),
   ].filter((id): id is string => typeof id === 'string' && id.trim().length > 0)))
 }
 
@@ -308,6 +322,8 @@ function duplicateQuoteItem(
   const price = currentProduct?.price
 
   return {
+    logicalKey: randomUUID(),
+    timberRole: item.timberRole ?? 'none',
     productId: item.productId ?? undefined,
     productNameSnapshot: currentProduct?.name ?? item.productNameSnapshot,
     memo: item.memo ?? '',
@@ -367,14 +383,35 @@ function buildDuplicateQuoteInput(
   currentProducts: Map<string, CurrentProductSnapshot>
 ): QuoteInput {
   const items = quote.items.map((item) => duplicateQuoteItem(item, currentProducts))
+  const logicalKeys = new Map(quote.items.map((item, index) => [item.logicalKey ?? item.id, items[index].logicalKey!]))
+  const comparisonKeys = new Map((quote.paintComparisons ?? []).map((comparison) => [comparison.key, randomUUID()]))
+  const paintComparisons = (quote.paintComparisons ?? []).map((comparison) => ({ ...comparison,
+    key: comparisonKeys.get(comparison.key)!, result: undefined,
+    alternatives: comparison.alternatives.map((alternative) => {
+      const currentProduct = alternative.product ? currentProducts.get(alternative.product.productId) : undefined
+      return { ...alternative, targetLogicalKey: logicalKeys.get(alternative.targetLogicalKey)!,
+        acknowledgedSourceProductId: items.find((item) => item.logicalKey === logicalKeys.get(alternative.targetLogicalKey))?.productId ?? null,
+        product: alternative.product ? { ...alternative.product,
+          name: currentProduct?.name ?? alternative.product.name,
+          marketPrice: currentProduct?.price ?? alternative.product.marketPrice,
+          actualPrice: currentProduct?.price ?? alternative.product.actualPrice } : undefined }
+    }),
+  }))
 
   return {
+    paintComparisons,
     customerName: quote.customerName ?? undefined,
     customerAddress: quote.customerAddress ?? undefined,
     jobberSaveMode: quote.jobberSaveMode ?? undefined,
     jobberQuoteLines: quote.jobberQuoteLines
       .filter((line) => line.clientVisible)
       .map((line) => ({
+        optional: line.paintComparisonKey ? true : line.optional ?? false,
+        recommended: line.paintComparisonKey ? false : line.recommended ?? false,
+        selected: false,
+        optionalWritePolicy: (line.paintComparisonKey || line.optional === true ? 'set_true' : 'set_false') as 'set_true' | 'set_false',
+        recommendedWritePolicy: (line.paintComparisonKey || line.recommended !== true ? 'set_false' : 'set_true') as 'set_true' | 'set_false',
+        paintComparisonKey: line.paintComparisonKey ? comparisonKeys.get(line.paintComparisonKey) : undefined,
         kind: line.kind,
         name: line.name,
         description: line.description ?? undefined,
@@ -444,6 +481,7 @@ function calculateJobberQuoteLinesTotal(lines: JobberQuoteLineInput[]): Decimal 
   if (lines.length === 0) return null
 
   return lines.reduce((total, line) => {
+    if (!line.clientVisible || (line.optional === true && line.selected !== true)) return total
     const lineTotal = calculateJobberLineTotal(line)
     return lineTotal === undefined ? total : total.add(lineTotal)
   }, new Decimal(0))
@@ -518,6 +556,7 @@ function toQuoteRecord(row: QuoteWithItemsRow, userProfiles: Map<string, UserPro
   const selectedMax = formulaNumber(row.selected_max, 1)
 
   return {
+    paintComparisons: storedPaintComparisonsSchema.parse(row.paint_comparisons ?? []),
     id: row.id,
     version: row.version,
     customerName: row.customer_name,
@@ -557,6 +596,8 @@ function toQuoteRecord(row: QuoteWithItemsRow, userProfiles: Map<string, UserPro
     createdByName: creatorProfile?.displayName ?? null,
     createdByEmail: creatorProfile?.email ?? null,
     items: quoteItems.map((item) => ({
+      logicalKey: item.logical_key ?? item.id,
+      timberRole: item.timber_role ?? 'none',
       id: item.id,
       quoteId: item.quote_id,
       productId: item.product_id,
@@ -574,6 +615,12 @@ function toQuoteRecord(row: QuoteWithItemsRow, userProfiles: Map<string, UserPro
       position: item.position,
     })),
     jobberQuoteLines: jobberQuoteLines.map((line) => ({
+      optional: line.optional ?? (line.jobber_line_item_id ? null : false),
+      recommended: line.recommended ?? (line.jobber_line_item_id ? null : false),
+      selected: line.selected ?? null,
+      optionalWritePolicy: line.optional_write_policy ?? 'preserve',
+      recommendedWritePolicy: line.recommended_write_policy ?? 'preserve',
+      paintComparisonKey: line.paint_comparison_key ?? null,
       id: line.id,
       quoteId: line.quote_id,
       kind: line.kind,
@@ -804,6 +851,7 @@ async function resolveQuoteInputSnapshots(
   const existingMainSnapshots = new Map<string, ExistingItemSnapshot>()
   const existingOptionSnapshots = new Map<string, ExistingItemSnapshot>()
   const allExistingSnapshots = new Map<string, ExistingItemSnapshot>()
+  let savedComparisons: QuoteInput['paintComparisons'] = []
   const sourceItemIds = Array.from(new Set([
     ...input.items,
     ...input.options.flatMap((option) => option.items),
@@ -815,21 +863,26 @@ async function resolveQuoteInputSnapshots(
     ...input.options.flatMap((option) => option.items),
   ]
     .filter((item) => item.productId)
-    .map((item) => item.productId as string)))
+    .map((item) => item.productId as string).concat(input.paintComparisons.flatMap((comparison) =>
+      comparison.alternatives.flatMap((alternative) => alternative.product ? [alternative.product.productId] : [])))))
 
-  if (quoteId && (productIds.length > 0 || sourceItemIds.length > 0)) {
+  if (quoteId && (productIds.length > 0 || sourceItemIds.length > 0 || input.items.some((item) => item.logicalKey) || input.paintComparisons.length)) {
     const { data, error } = await supabase
       .from('quotes')
-      .select('quote_items(id, product_id, actual_price_snapshot), quote_options(quote_option_items(id, product_id, actual_price_snapshot))')
+      .select('paint_comparisons, quote_items(id, logical_key, product_id, actual_price_snapshot), quote_options(quote_option_items(id, product_id, actual_price_snapshot))')
       .is('deleted_at', null)
       .eq('id', quoteId)
       .single()
 
     if (error) return { ok: false, error: error.message }
     const existing = data as unknown as {
+      paint_comparisons?: unknown
       quote_items?: ExistingQuoteItemSnapshotRow[]
       quote_options?: ExistingQuoteOptionSnapshotRow[]
     } | null
+    const comparisonResult = z.array(paintComparisonSchema).max(1).safeParse(existing?.paint_comparisons ?? [])
+    if (!comparisonResult.success) return { ok: false, error: 'Unsupported saved Timber comparison. Refresh and restore it before saving.' }
+    savedComparisons = comparisonResult.data
 
     for (const item of existing?.quote_items ?? []) {
       existingMainSnapshots.set(item.id, item)
@@ -844,6 +897,16 @@ async function resolveQuoteInputSnapshots(
     }
   }
 
+  const ownLogicalKeys = new Set(Array.from(existingMainSnapshots.values(), (item) =>
+    (item as ExistingQuoteItemSnapshotRow).logical_key ?? item.id))
+  const newLogicalKeys = input.items.flatMap((item) => item.logicalKey && !ownLogicalKeys.has(item.logicalKey) ? [item.logicalKey] : [])
+  if (newLogicalKeys.length) {
+    const { data, error } = await supabase.from('quote_items').select('logical_key, quote_id').in('logical_key', newLogicalKeys)
+    if (error) return { ok: false, error: error.message }
+    if ((data ?? []).some((row) => row.quote_id !== quoteId)) {
+      return { ok: false, error: 'Material logical key belongs to another quote. Refresh before saving.' }
+    }
+  }
   const currentProducts = new Map<string, CurrentProductSnapshot>()
   if (productIds.length > 0) {
     const { data, error } = await supabase
@@ -870,7 +933,9 @@ async function resolveQuoteInputSnapshots(
     if (snapshot === null) {
       return { ok: false, error: 'Unable to verify linked material pricing. Refresh the quote and try again.' }
     }
-    items.push(applySnapshotToItem(item, snapshot))
+    const ownSource = (item.sourceItemId ? existingMainSnapshots.get(item.sourceItemId) : undefined) as ExistingQuoteItemSnapshotRow | undefined
+    items.push({ ...applySnapshotToItem(item, snapshot), logicalKey: item.logicalKey ??
+      (ownSource ? ownSource.logical_key ?? ownSource.id : randomUUID()) })
   }
 
   const options: QuoteInput['options'] = []
@@ -891,6 +956,15 @@ async function resolveQuoteInputSnapshots(
     options.push({ ...option, items: optionItems })
   }
 
+  for (const comparison of input.paintComparisons) {
+    for (const alternative of comparison.alternatives) {
+      if (!alternative.product) continue
+      const stored = savedComparisons.find((saved) => saved.key === comparison.key)?.alternatives.find((saved) =>
+        saved.targetLogicalKey === alternative.targetLogicalKey && saved.product?.productId === alternative.product?.productId)
+      if (!stored?.product && !currentProducts.has(alternative.product.productId)) return { ok: false, error: 'Unable to verify linked Aquanamel pricing. Select an available product.' }
+    }
+  }
+
   return {
     ok: true,
     data: {
@@ -899,12 +973,24 @@ async function resolveQuoteInputSnapshots(
       materialActual: sumInputMaterialTotal(items, 'actualPriceSnapshot'),
       items,
       options,
+      paintComparisons: input.paintComparisons.map((comparison) => ({ ...comparison,
+        alternatives: comparison.alternatives.map((alternative) => {
+          if (!alternative.product) return alternative
+          const existingProduct = savedComparisons.find((saved) => saved.key === comparison.key)?.alternatives
+            .find((saved) => saved.targetLogicalKey === alternative.targetLogicalKey && saved.product?.productId === alternative.product?.productId)?.product
+          const currentProduct = currentProducts.get(alternative.product.productId)
+          return { ...alternative, product: { ...alternative.product,
+            actualPrice: existingProduct?.actualPrice ?? currentProduct?.price ?? alternative.product.actualPrice } }
+        }),
+      })),
     },
   }
 }
 
 function buildQuoteItemRows(items: QuoteInput['items']): QuoteSaveItemRow[] {
   return items.map((item, index) => ({
+    logical_key: item.logicalKey ?? randomUUID(),
+    timber_role: item.timberRole ?? 'none',
     product_id: item.productId ?? null,
     product_name_snapshot: item.productNameSnapshot,
     memo: (item.memo ?? '').trim(),
@@ -955,6 +1041,12 @@ function buildJobberQuoteLineRows(lines: JobberQuoteLineInput[]): QuoteSaveJobbe
   return lines.map((line, index) => {
     const row = toJobberQuoteLineInsert('', line, index)
     return {
+      optional: row.optional,
+      recommended: row.recommended,
+      selected: row.selected,
+      optional_write_policy: row.optional_write_policy,
+      recommended_write_policy: row.recommended_write_policy,
+      paint_comparison_key: row.paint_comparison_key,
       kind: row.kind,
       name: row.name,
       description: row.description,
@@ -995,6 +1087,7 @@ function buildQuoteSavePayload(params: {
 }): QuoteSavePayload {
   const areaFormulaSelections = getAreaFormulaSelections(params.input)
   const quote: Database['public']['Tables']['quotes']['Insert'] | Database['public']['Tables']['quotes']['Update'] = {
+    paint_comparisons: params.input.paintComparisons as unknown as Json,
     customer_name: params.input.customerName || null,
     customer_address: params.input.customerAddress || null,
     jobber_quote_id: params.input.jobberQuoteId || null,
@@ -1109,10 +1202,12 @@ export async function createQuote(input: unknown): Promise<ActionResult<{ id: st
   }
 
   if (isDevNoAuthMode()) {
-    const { createDevQuote, findDevQuoteByJobberIdentity, updateDevQuote } = await import('@/lib/dev-data')
+    const { createDevQuote, findDevQuoteByJobberIdentity, updateDevQuote, resolveDevQuotePaintComparison } = await import('@/lib/dev-data')
     const match = findDevQuoteByJobberIdentity(parsed.data)
     if (match.error) return { ok: false, error: quoteLifecycleError(match.error) }
-    const quote = match.quote ? updateDevQuote(match.quote.id, { ...parsed.data, expectedVersion: match.quote.version }) : createDevQuote(parsed.data)
+    const prepared = resolveDevQuotePaintComparison(parsed.data, match.quote)
+    if (!prepared.ok) return prepared
+    const quote = match.quote ? updateDevQuote(match.quote.id, { ...prepared.data, expectedVersion: match.quote.version }) : createDevQuote(prepared.data)
     if (!quote) return { ok: false, error: 'Unable to save quote' }
     return { ok: true, data: { id: quote.id } }
   }
@@ -1138,7 +1233,9 @@ export async function createQuote(input: unknown): Promise<ActionResult<{ id: st
 
   const snapshotInputResult = await resolveQuoteInputSnapshots(supabase, parsed.data)
   if (!snapshotInputResult.ok) return snapshotInputResult
-  const quoteInput = snapshotInputResult.data
+  const comparisonResult = prepareQuotePaintComparison(snapshotInputResult.data, settingsResult.data)
+  if (!comparisonResult.ok) return comparisonResult
+  const quoteInput = comparisonResult.data
 
   const formulas = calculateAllFormulas(
     {
@@ -1209,8 +1306,10 @@ export async function updateQuote(input: unknown): Promise<ActionResult<{ id: st
   }
 
   if (isDevNoAuthMode()) {
-    const { updateDevQuote } = await import('@/lib/dev-data')
-    const quote = updateDevQuote(id, parsed.data)
+    const { updateDevQuote, getDevQuote, resolveDevQuotePaintComparison } = await import('@/lib/dev-data')
+    const prepared = resolveDevQuotePaintComparison(parsed.data, getDevQuote(id))
+    if (!prepared.ok) return prepared
+    const quote = updateDevQuote(id, prepared.data)
     if (!quote) return { ok: false, error: 'Quote not found' }
     revalidatePath('/quotes')
     revalidatePath(`/quotes/${id}`)
@@ -1228,7 +1327,7 @@ export async function updateQuote(input: unknown): Promise<ActionResult<{ id: st
 
   const { data: existingQuote, error: existingQuoteError } = await supabase
     .from('quotes')
-    .select('pricing_settings_snapshot, subtotal, final_total, quote_options(subtotal, final_total)')
+    .select('pricing_settings_snapshot, subtotal, final_total, quote_options(subtotal, final_total), jobber_quote_lines(quantity, unit_price, total_price, client_visible, optional, selected)')
     .is('deleted_at', null)
     .eq('id', id)
     .single()
@@ -1238,6 +1337,7 @@ export async function updateQuote(input: unknown): Promise<ActionResult<{ id: st
     subtotal: unknown
     final_total: unknown
     quote_options?: unknown
+    jobber_quote_lines?: Array<Pick<JobberQuoteLineRow, 'quantity' | 'unit_price' | 'total_price' | 'client_visible' | 'optional' | 'selected'>>
   }
 
   const fallbackSettings = await getPricingSettings()
@@ -1245,7 +1345,9 @@ export async function updateQuote(input: unknown): Promise<ActionResult<{ id: st
   const settings = normalizePricingSettingsSnapshot(existingQuoteRow.pricing_settings_snapshot, fallbackSettings.data)
   const snapshotInputResult = await resolveQuoteInputSnapshots(supabase, parsed.data, id)
   if (!snapshotInputResult.ok) return snapshotInputResult
-  const quoteInput = snapshotInputResult.data
+  const comparisonResult = prepareQuotePaintComparison(snapshotInputResult.data, settings)
+  if (!comparisonResult.ok) return comparisonResult
+  const quoteInput = comparisonResult.data
 
   const formulas = calculateAllFormulas(
     {
@@ -1269,6 +1371,12 @@ export async function updateQuote(input: unknown): Promise<ActionResult<{ id: st
   )
   const newOptionsSubtotal = optionalMoney(calculateQuoteOptionsTotal(quoteInput.options, settings, 'subtotal') ?? undefined)
   const newOptionsFinalTotal = optionalMoney(calculateQuoteOptionsTotal(quoteInput.options, settings, 'finalTotal') ?? undefined)
+  const previousPublicTotal = existingQuoteRow.jobber_quote_lines?.length
+    ? existingQuoteRow.jobber_quote_lines.reduce((total, line) =>
+      !line.client_visible || (line.optional === true && line.selected !== true) ? total : total.add(
+        line.total_price ?? new Decimal(line.quantity ?? 0).mul(line.unit_price ?? 0)
+      ), new Decimal(0)).toFixed(2) : null
+  const newPublicTotal = optionalMoney(calculateJobberQuoteLinesTotal(quoteInput.jobberQuoteLines) ?? undefined)
 
   const previousSubtotal = decimalText(existingQuoteRow.subtotal)
   const previousFinalTotal = decimalText(existingQuoteRow.final_total)
@@ -1279,7 +1387,8 @@ export async function updateQuote(input: unknown): Promise<ActionResult<{ id: st
     previousSubtotal !== newSubtotal ||
     previousFinalTotal !== newFinalTotal ||
     previousOptionsSubtotal !== newOptionsSubtotal ||
-    previousOptionsFinalTotal !== newOptionsFinalTotal
+    previousOptionsFinalTotal !== newOptionsFinalTotal ||
+    previousPublicTotal !== newPublicTotal
   ) {
     const nextRevisionNumber = await getNextQuotePriceRevisionNumber(supabase, id)
     if (!nextRevisionNumber.ok) return nextRevisionNumber
@@ -1292,8 +1401,8 @@ export async function updateQuote(input: unknown): Promise<ActionResult<{ id: st
       previous_final_total: previousFinalTotal,
       new_subtotal: newSubtotal,
       new_final_total: newFinalTotal,
-      previous_jobber_lines_total: null,
-      new_jobber_lines_total: optionalMoney(calculateJobberQuoteLinesTotal(quoteInput.jobberQuoteLines) ?? undefined),
+      previous_jobber_lines_total: previousPublicTotal,
+      new_jobber_lines_total: newPublicTotal,
       previous_options_subtotal: previousOptionsSubtotal,
       new_options_subtotal: newOptionsSubtotal,
       previous_options_final_total: previousOptionsFinalTotal,
@@ -1334,7 +1443,7 @@ export async function duplicateQuote(sourceQuoteId: string): Promise<ActionResul
   if (!sourceId) return { ok: false, error: 'Quote id is required' }
 
   if (isDevNoAuthMode()) {
-    const { createDevQuote, getDevQuote, listDevProducts } = await import('@/lib/dev-data')
+    const { createDevQuote, getDevQuote, listDevProducts, resolveDevQuotePaintComparison } = await import('@/lib/dev-data')
     const sourceQuote = getDevQuote(sourceId)
     if (!sourceQuote) return { ok: false, error: 'Quote not found' }
 
@@ -1344,7 +1453,9 @@ export async function duplicateQuote(sourceQuoteId: string): Promise<ActionResul
         .filter((product) => productIds.includes(product.id))
         .map((product) => [product.id, productSnapshotFromRecord(product)])
     )
-    const quote = createDevQuote(buildDuplicateQuoteInput(sourceQuote, products))
+    const prepared = resolveDevQuotePaintComparison(buildDuplicateQuoteInput(sourceQuote, products))
+    if (!prepared.ok) return prepared
+    const quote = createDevQuote(prepared.data)
     revalidatePath('/quotes')
     revalidatePath(`/quotes/${sourceId}`)
     return { ok: true, data: { id: quote.id } }
@@ -1441,6 +1552,12 @@ function optionalTrimmedText(value: string | undefined): string | null {
 
 function toJobberQuoteLineInsert(quoteId: string, line: JobberQuoteLineInput, index: number) {
   return {
+    optional: line.optional ?? (line.jobberLineItemId ? null : false),
+    recommended: line.recommended ?? (line.jobberLineItemId ? null : false),
+    selected: line.selected ?? null,
+    optional_write_policy: line.optionalWritePolicy ?? (line.jobberLineItemId ? 'preserve' : 'set_false'),
+    recommended_write_policy: line.recommendedWritePolicy ?? (line.jobberLineItemId ? 'preserve' : 'set_false'),
+    paint_comparison_key: line.paintComparisonKey ?? null,
     quote_id: quoteId,
     kind: line.kind,
     name: line.name.trim(),
@@ -1667,6 +1784,9 @@ export async function getQuote(id: string): Promise<ActionResult<QuoteRecord | n
     }
   }
 
+  if (row && !storedPaintComparisonsSchema.safeParse(row.paint_comparisons ?? []).success) {
+    return { ok: false, error: 'Unsupported saved Timber comparison. This quote needs a supported comparison version before editing.' }
+  }
   const profileIds = row
     ? [
         row.created_by,

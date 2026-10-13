@@ -5,6 +5,42 @@
  * 페이지/컴포넌트에서 이 클래스들을 조합해 일관된 UI를 만든다.
  */
 
+.pbc-timber-control { display: flex; align-items: center; flex-wrap: wrap; gap: .5rem .75rem; margin-block: .5rem; min-width: 0; }
+.pbc-timber-control .pbc-field { min-width: 0; max-width: 100%; }
+.pbc-timber-control .pbc-field__hint { flex-basis: 100%; }
+.pbc-paint-comparison { margin-block: 1rem; min-width: 0; scroll-margin-block-start: 9rem; }
+.pbc-paint-totals { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .75rem; margin-block: 1rem; }
+.pbc-paint-totals .pbc-ministat { min-width: 0; overflow-wrap: anywhere; }
+.pbc-paint-totals small { color: var(--muted-2); }
+.pbc-paint-comparison .pbc-paint-totals .pbc-ministat b { font-size: 1.75rem; line-height: 1.2; font-weight: 800; font-variant-numeric: tabular-nums; }
+.pbc-paint-difference { background: var(--primary-soft); border-color: var(--primary); }
+.pbc-paint-actions { display: flex; flex-wrap: wrap; gap: .5rem; margin-block: .75rem; }
+.pbc-paint-details > summary { padding-block: .75rem; cursor: pointer; font-weight: 700; }
+.pbc-paint-finish { margin-block: .75rem; min-width: 0; overflow-wrap: anywhere; container: paint-finish / inline-size; }
+.pbc-paint-finish__header { display: flex; align-items: start; justify-content: space-between; gap: .75rem; }
+.pbc-paint-finish__header > .pbc-btn { flex-shrink: 0; }
+.pbc-paint-finish__body { margin-top: .75rem; }
+.pbc-paint-finish__body[hidden] { display: none; }
+.pbc-paint-compare-head, .pbc-paint-compare-row { display: grid; grid-template-columns: minmax(7rem, .7fr) repeat(2, minmax(0, 1fr)); column-gap: .75rem; align-items: start; }
+.pbc-paint-compare-head { padding-bottom: .75rem; font-size: .875rem; }
+.pbc-paint-compare-head > div { min-width: 0; }
+.pbc-paint-compare-head span { display: block; font-size: .75rem; color: var(--muted-2); }
+.pbc-paint-compare-row { border-top: 1px solid var(--border); padding-block: .75rem; }
+.pbc-paint-compare-label { font-size: .875rem; font-weight: 700; }
+.pbc-paint-compare-cell { min-width: 0; }
+.pbc-paint-readonly { display: flex; flex-direction: column; justify-content: center; min-height: 44px; padding: .5rem .75rem; border-radius: var(--r-sm); background: var(--surface-soft); }
+.pbc-paint-finish__actions { display: flex; flex-wrap: wrap; gap: .5rem; margin-block: .5rem; }
+.pbc-paint-field { display: grid; grid-template-columns: minmax(0, 1fr) minmax(7rem, 1.2fr); align-items: start; gap: .5rem; }
+.pbc-paint-field .pbc-field { min-width: 0; }
+@container paint-finish (max-width: 40rem) {
+  .pbc-paint-compare-head, .pbc-paint-compare-row { grid-template-columns: repeat(2, minmax(0, 1fr)); row-gap: .5rem; }
+  .pbc-paint-compare-head > .pbc-paint-compare-label { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  .pbc-paint-compare-row > .pbc-paint-compare-label { grid-column: 1 / -1; }
+  .pbc-paint-field { grid-template-columns: minmax(0, 1fr); }
+}
+.pbc-paint-comparison .pbc-srow { flex-wrap: wrap; gap: .5rem; }
+.pbc-paint-comparison .pbc-alert .pbc-btn { margin: .25rem; }
+.pbc-paint-comparison input[readonly] { background: var(--surface-soft); }
 /* ── 앱 셸 ─────────────────────────────────────────────── */
 .pbc-side {
   display: flex;
@@ -560,6 +596,11 @@
 
 @media (max-width: 720px) {
   .pbc-page { padding: 22px var(--mobile-page-inset) 48px; }
+  .pbc-paint-totals { grid-template-columns: minmax(0, 1fr); }
+  .pbc-paint-totals { gap: .5rem; }
+  .pbc-paint-comparison .pbc-btn { min-height: 44px; white-space: normal; }
+  .pbc-timber-control select { min-height: 44px; font-size: 16px; }
+  .pbc-paint-field { grid-template-columns: minmax(0, 1fr); }
   .pbc-card--pad { padding: var(--mobile-page-inset); }
   .pbc-topbar__local-save { display: none; }
   .pbc-inventoryaddtrigger { display: inline-flex; flex: 1 0 100%; justify-content: center; }

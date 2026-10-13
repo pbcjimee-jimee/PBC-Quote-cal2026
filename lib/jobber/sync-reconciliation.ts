@@ -51,6 +51,8 @@ export function jobberReadMatchesCompletion(
         !moneyEqual(actual.unitPrice, expected.unitPrice) ||
         !moneyEqual(actual.totalPrice, expected.totalPrice) ||
         actual.taxable !== expected.taxable ||
+        (expected.optional !== undefined && actual.optional !== expected.optional) ||
+        (expected.recommended !== undefined && actual.recommended !== expected.recommended) ||
         (expected.productOrServiceId !== undefined &&
           actual.linkedProductOrService?.id !== expected.productOrServiceId)
       ) return false

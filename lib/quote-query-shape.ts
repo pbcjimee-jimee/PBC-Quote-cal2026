@@ -53,6 +53,7 @@ const QUOTE_DETAIL_COLUMNS = [
   'subtotal',
   'final_total',
   'pricing_settings_snapshot',
+  'paint_comparisons',
   'created_by',
   'created_at',
 ] as const
@@ -60,6 +61,8 @@ const QUOTE_DETAIL_COLUMNS = [
 const QUOTE_ITEM_COLUMNS = [
   'id',
   'quote_id',
+  'logical_key',
+  'timber_role',
   'product_id',
   'product_name_snapshot',
   'memo',
@@ -116,6 +119,12 @@ const QUOTE_OPTION_ITEM_COLUMNS = [
 const JOBBER_QUOTE_LINE_COLUMNS = [
   'id',
   'quote_id',
+  'optional',
+  'recommended',
+  'selected',
+  'optional_write_policy',
+  'recommended_write_policy',
+  'paint_comparison_key',
   'kind',
   'name',
   'description',

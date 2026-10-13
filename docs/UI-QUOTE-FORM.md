@@ -371,3 +371,16 @@ Quote detail의 `JobberSyncStatus`는 operation을 별도로 조회한다. 현�
 > Use this file for quote-form behavior and layout history; when token,
 > component class, radius, shadow, or responsive guidance conflicts, follow
 > `docs/UI-DESIGN-SYSTEM.md`.
+
+## 2026-10-14 Timber paint comparison
+
+- Main Interior 자재의 `Timber only` 체크와 `Shared work / material`·`Enamel finish` 용도로 비교 대상을 연결한다. 체크 자체로 Main의 행이나 금액은 바뀌지 않는다. 일반 Options로 복사할 때 비교 연결을 상속하지 않는다.
+- Super Enamel은 전체 Main 계산이다. Aquanamel은 같은 Main에서 Timber 마감재만 수동 선택한 Aqua 상품과 별도 수량·작업일수·인원으로 대체한다. 기본 입력은 Main 연동이며 Prep·Quick Dry는 공통으로 한 번만 계산한다.
+- 비교 상단의 두 전체 견적과 signed 차액은 Ex GST이다. Timber 소계·공통 항목·마감재별 입력은 세부 내역으로 구분한다. 체크 해제와 공통 용도로 변경할 때 Aqua 설정을 보존하며, 원본 삭제 시 해당 설정도 제거한다.
+- Apply는 실제 Public Optional 한 행을 만든다. 이후 계산 변화는 같은 행을 갱신하고 고객용 이름·설명은 보존한다. 기본 Public 가격은 수동 입력한다. 미선택 Optional은 기본 공개 합계에서 제외하고 선택 시 예상 합계를 별도로 표시한다.
+- 계산 Optional의 수량·가격·GST·고객 공개 상태는 계산이 관리한다. 직접 공개행 삭제는 재Apply 전까지 재생성하지 않는다. Main 상품 변경 시 Aqua 확인을 요구하고, 이미 적용된 불완전·미확인 차액은 Save/Sync를 차단한다.
+- draft v3는 비교 입력과 삭제 의도를 보존하며 v1/v2를 읽는다. 펼침·스크롤 같은 UI 상태는 견적 데이터나 dirty 비교에 포함하지 않는다.
+- 후속 UI 요청 반영: 각 마감재는 Item / Super Enamel / Aquanamel 공통 행으로 Product·Quantity·Working days·Labour/day를 비교한다. 실제 항목 컨테이너가 좁아지면 항목명만 위에 두고 같은 행의 두 시나리오 값을 나란히 유지한다. Aqua 입력 모드는 Linked / Separate로 표시한다.
+- 마감재마다 Collapse / Expand 버튼을 제공한다. 접힌 상태에서도 항목·선택 제품·제품 변경 확인 안내를 볼 수 있고, 본문을 숨기되 mounted 상태를 유지해 입력값과 검색어를 보존한다. 접기 상태는 견적·draft 데이터에 저장하지 않는다.
+
+설계와 상태별 수용 기준: `docs/superpowers/specs/2026-10-14-timber-enamel-ui-ux.md`.

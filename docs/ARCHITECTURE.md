@@ -246,3 +246,11 @@ Internal quote memos are stored as child rows in `quote_memos`.
 - create/update use only the atomic save RPCs. Jobber results use `apply_quote_jobber_result`, which locks the parent and verifies the version captured before the network request; delayed results cannot overwrite archived or restored records.
 - The DB locks quote-related writes before row locks and enforces archive guards on parent/child tables. This favors predictable data preservation for the current small internal team; higher write volume would require measuring lock contention before changing the lock design.
 - Migration `20260916023434` and release `9668a93` are deployed to production after export/restore verification. All existing quote data matched before/after the migration. See the implementation plan for rollout evidence and forward-fix rollback.
+
+## 2026-10-14 Timber paint comparison (branch only)
+
+- Main material `timberRole` and stable `logicalKey` select comparison membership. Super uses Main directly; Aqua is a projection with manually selected products and field-level overrides. The UI and server share `lib/quote-paint-comparison.ts` and the existing formula/Area calculator.
+- Only Aqua configuration is stored in `quotes.paint_comparisons`; shared work and Super materials are not copied. Unchecking preserves dormant input, source deletion removes it, and source-product replacement requires acknowledgement.
+- Server quote actions resolve trusted snapshots, recalculate signed Ex GST difference and attach it to one public Optional line. Public base prices stay manual. Save uses the existing atomic child RPC and quote version; duplicate rekeys both material and comparison identity and removes remote associations.
+- Optional observations and mutation policies stay separate through saved lines and durable sync. `selected` is read-only observation. Existing connected ordinary lines preserve omitted flags, while unlinked copied lines retain their explicit create intent. Historic queued payloads keep their original contract.
+- New SQL migrations are authored and tested locally; no production DB or deployment changes have been made for this feature.

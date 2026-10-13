@@ -39,6 +39,11 @@ function createPricedLineItem(): JobberQuoteLineItemDraft {
     unitPrice: '0.00',
     taxable: true,
     clientVisible: true,
+    optional: false,
+    recommended: false,
+    selected: false,
+    optionalWritePolicy: 'set_false',
+    recommendedWritePolicy: 'set_false',
   }
 }
 
@@ -823,13 +828,13 @@ function PricedLineRow({
               aria-label="Line item name"
               value={line.name}
               data-error-key={getJobberLineErrorKey(line.id, 'name')}
-              onFocus={onLookupFocus}
+              onFocus={line.paintComparisonKey ? undefined : onLookupFocus}
               onBlur={onLookupBlur}
               onChange={(event: ChangeEvent<HTMLInputElement>) => onChange({ ...line, name: event.target.value })}
               className="pbc-input font-semibold"
               placeholder="Line item name"
             />
-            {isLookupActive && filteredProductServices.length > 0 ? (
+            {!line.paintComparisonKey && isLookupActive && filteredProductServices.length > 0 ? (
               <div className="pbc-dropdown" aria-label="Product / Service dropdown">
                 {filteredProductServices.map((productService) => (
                   <button
@@ -866,6 +871,7 @@ function PricedLineRow({
               <input
                 value={line.quantity}
                 data-error-key={getJobberLineErrorKey(line.id, 'quantity')}
+                readOnly={Boolean(line.paintComparisonKey)}
                 onChange={(event: ChangeEvent<HTMLInputElement>) => onChange({ ...line, quantity: event.target.value })}
                 inputMode="decimal"
                 className="pbc-input min-w-0"
@@ -876,6 +882,7 @@ function PricedLineRow({
               <input
                 value={line.unitPrice}
                 data-error-key={getJobberLineErrorKey(line.id, 'unitPrice')}
+                readOnly={Boolean(line.paintComparisonKey)}
                 onChange={(event: ChangeEvent<HTMLInputElement>) => onChange({ ...line, unitPrice: event.target.value })}
                 inputMode="decimal"
                 className="pbc-input min-w-0 font-mono"
@@ -887,6 +894,7 @@ function PricedLineRow({
                   type="checkbox"
                   checked={line.taxable}
                   data-error-key={getJobberLineErrorKey(line.id, 'taxable')}
+                  disabled={Boolean(line.paintComparisonKey)}
                   onChange={(event: ChangeEvent<HTMLInputElement>) => onChange({ ...line, taxable: event.target.checked })}
                   className="pbc-checkbox"
                 />
@@ -897,6 +905,7 @@ function PricedLineRow({
                   type="checkbox"
                   checked={line.clientVisible}
                   data-error-key={getJobberLineErrorKey(line.id, 'clientVisible')}
+                  disabled={Boolean(line.paintComparisonKey)}
                   onChange={(event: ChangeEvent<HTMLInputElement>) => onChange({ ...line, clientVisible: event.target.checked })}
                   className="pbc-checkbox"
                 />
@@ -904,6 +913,8 @@ function PricedLineRow({
               </label>
             </div>
           </div>
+          {line.paintComparisonKey ? <p className="pbc-field__hint">Calculated Optional · quantity and price are managed by Timber paint comparison. Always taxable and client visible. Customer name and description remain editable.</p> : null}
+          {line.optionalWritePolicy === 'set_true' || (line.optionalWritePolicy !== 'set_false' && line.optional === true) ? <p className="pbc-chip">Optional · {line.selected === true ? 'Selected' : line.selected === false ? 'Not selected' : 'Selection unknown'}</p> : null}
         </div>
         <button
           type="button"

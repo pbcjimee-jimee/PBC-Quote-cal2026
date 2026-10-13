@@ -27,6 +27,9 @@ export function mapJobberDraftLineItemsToState(
       taxable: kind === 'line_item',
       clientVisible: true,
       jobberLineItemId: line.id,
+      ...(line.optional !== undefined ? { optional: line.optional } : {}),
+      ...(line.recommended !== undefined ? { recommended: line.recommended } : {}),
+      ...(line.selected !== undefined ? { selected: line.selected } : {}),
     }
   })
 }

@@ -3,6 +3,8 @@ import type { JobberQuoteLineItemDraft, MaterialItem, QuoteMemoItem, QuoteOption
 
 type SavedMaterialItem = {
   id: string
+  logicalKey?: string
+  timberRole?: MaterialItem['timberRole']
   productId: string | null
   productNameSnapshot: string
   memo?: string
@@ -20,6 +22,8 @@ type SavedMaterialItem = {
 export function mapSavedItemsToMaterials(items: SavedMaterialItem[]): MaterialItem[] {
   return items.map((item) => ({
     id: item.id,
+    logicalKey: item.logicalKey,
+    timberRole: item.timberRole ?? 'none',
     productId: item.productId ?? undefined,
     name: item.productNameSnapshot,
     memo: item.memo ?? '',
@@ -69,5 +73,11 @@ export function mapJobberQuoteLinesToState(quote: QuoteRecord): JobberQuoteLineI
     clientVisible: line.clientVisible,
     jobberLineItemId: line.jobberLineItemId ?? undefined,
     linkedProductOrServiceId: line.linkedProductOrServiceId ?? undefined,
+    optional: line.optional,
+    recommended: line.recommended,
+    selected: line.selected,
+    optionalWritePolicy: line.paintComparisonKey ? 'set_true' : line.jobberLineItemId ? 'preserve' : line.optionalWritePolicy ?? (line.optional === true ? 'set_true' : line.optional === false ? 'set_false' : 'preserve'),
+    recommendedWritePolicy: line.jobberLineItemId ? 'preserve' : line.recommendedWritePolicy ?? (line.recommended === true ? 'set_true' : line.recommended === false ? 'set_false' : 'preserve'),
+    paintComparisonKey: line.paintComparisonKey ?? undefined,
   }))
 }

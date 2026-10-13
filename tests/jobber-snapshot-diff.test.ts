@@ -53,6 +53,15 @@ function sumLineTotals(productsAndServices: JobberQuoteDraftLineItem[]): number 
 }
 
 describe('diffJobberSnapshots', () => {
+  it.each(['optional', 'recommended', 'selected'] as const)('detects a remote %s-only change without conflating unknown and false', (field) => {
+    const before = snapshot({ productsAndServices: [line({ [field]: false })] })
+    const after = snapshot({ productsAndServices: [line({ [field]: true })] })
+    const diff = diffJobberSnapshots(before, after)
+    expect(diff.status).toBe('changed')
+    expect(diff.summary[0].label).toContain('status')
+    expect(diff.summary[0].before).not.toEqual(diff.summary[0].after)
+    expect(diffJobberSnapshots(snapshot(), before).status).toBe('changed')
+  })
   it('returns unchanged with an empty summary for equivalent normalized snapshots', () => {
     const previous = snapshot({
       customerName: ' Jane   Customer ',

@@ -1,7 +1,34 @@
 import { describe, expect, it } from 'vitest'
-import { jobberQuoteLineSchema, jobberSaveModeSchema, quoteSchema } from '@/lib/validators'
+import { jobberQuoteLineSchema, jobberSaveModeSchema, quoteSchema, paintComparisonSchema } from '@/lib/validators'
 
 describe('Jobber quote line validators', () => {
+  const base = { workingDays: 0, labourPerDay: 0, materialMarket: 10, materialActual: 10,
+    selectedMin: 1, selectedMax: 1, items: [{ logicalKey: '00000000-0000-4000-8000-000000000201',
+      timberRole: 'shared', productNameSnapshot: 'Prep', marketPriceSnapshot: 10,
+      actualPriceSnapshot: 10, quantity: 1, areaId: 'area-1', areaScopeSnapshot: 'interior' }] }
+  const comparison = { version: 1, key: '00000000-0000-4000-8000-000000000401', alternatives: [] }
+  it.each([{ mode: 'inherit', value: '' }, { mode: 'override', value: '0.333' }])('retains remembered Aqua input $mode/$value without normalizing dormant strings', (field) => {
+    const input = { ...comparison, alternatives: [{ targetLogicalKey: base.items[0].logicalKey,
+      previousRole: 'finish', acknowledgedSourceProductId: null,
+      quantity: field, workingDays: { mode: 'inherit', value: '0' }, labourPerDay: { mode: 'inherit', value: '0' } }] }
+    const parsed = paintComparisonSchema.safeParse(input)
+    expect(parsed.success).toBe(true)
+    if (parsed.success) expect(parsed.data.alternatives[0].quantity).toEqual(field)
+    expect(paintComparisonSchema.safeParse({ ...input, alternatives: [{ ...input.alternatives[0], quantity: { ...field, value: '0'.repeat(101) } }] }).success).toBe(false)
+  })
+  it('keeps comparison drafts but blocks timber outside Interior and option timber markers', () => {
+    expect(quoteSchema.safeParse({ ...base, paintComparisons: [comparison] }).success).toBe(true)
+    expect(quoteSchema.safeParse({ ...base, paintComparisons: [comparison],
+      items: [{ ...base.items[0], areaScopeSnapshot: 'roof' }] }).success).toBe(false)
+    expect(quoteSchema.safeParse({ ...base, options: [{ title: 'Normal option', selectedMin: 1,
+      selectedMax: 1, items: base.items }] }).success).toBe(false)
+  })
+  it('rejects duplicate logical keys and extra decimal precision in compared materials', () => {
+    expect(quoteSchema.safeParse({ ...base, items: [base.items[0], base.items[0]] }).success).toBe(false)
+    expect(quoteSchema.safeParse({ ...base, paintComparisons: [comparison],
+      items: [{ ...base.items[0], quantity: 0.333 }] }).success).toBe(false)
+    expect(quoteSchema.safeParse({ ...base, items: [{ ...base.items[0], timberRole: 'none', quantity: 0.333 }] }).success).toBe(true)
+  })
   it('accepts priced public line items and applies public visibility defaults', () => {
     const parsed = jobberQuoteLineSchema.parse({
       kind: 'line_item',
@@ -53,14 +80,24 @@ describe('Jobber quote line validators', () => {
     expect(parsed).toMatchObject({ success: false })
   })
 
-  it('rejects invalid save modes and negative public prices', () => {
+  it('rejects invalid save modes while accepting signed public discounts', () => {
     expect(jobberSaveModeSchema.safeParse('material_breakdown')).toMatchObject({ success: false })
     expect(jobberQuoteLineSchema.safeParse({
       kind: 'line_item',
       name: 'Bad line',
       quantity: 1,
       unitPrice: -1,
-    })).toMatchObject({ success: false })
+    })).toMatchObject({ success: true })
+  })
+
+  it('preserves unknown optional observations and explicit write policies', () => {
+    expect(jobberQuoteLineSchema.parse({ kind: 'line_item', name: 'Discount', quantity: 1,
+      unitPrice: -150, optional: null, recommended: null, selected: null,
+      optionalWritePolicy: 'set_true', recommendedWritePolicy: 'preserve',
+      paintComparisonKey: '00000000-0000-4000-8000-000000000401',
+    })).toMatchObject({ optional: null, recommended: null, selected: null,
+      optionalWritePolicy: 'set_true', recommendedWritePolicy: 'preserve',
+      paintComparisonKey: '00000000-0000-4000-8000-000000000401' })
   })
 
   it('allows quote inputs to include Jobber save mode and public lines', () => {

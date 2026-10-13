@@ -323,7 +323,7 @@ describe('quote form draft persistence', () => {
     const storedJson = JSON.stringify(storedDraft)
 
     expect(storedDraft).toMatchObject({
-      version: 2,
+      version: 3,
       customerName: 'Jane Customer',
       customerAddress: '10 Main St',
       workType: 'Exterior repaint',

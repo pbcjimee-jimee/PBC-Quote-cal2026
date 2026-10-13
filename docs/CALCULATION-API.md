@@ -142,3 +142,11 @@ export function calculateAreaSubtotalBreakdown(input: {
 ```
 
 This helper must call the existing `calculateAllFormulas`, `calculateSubtotal`, and `calculateFinal` functions for each scoped group. It must not duplicate formula math.
+
+## Timber paint comparison (2026-10-14)
+
+`lib/quote-calculation-totals.ts`는 기존 Main/Area 집계 구현의 공용 위치다. 기존 컴포넌트 경로는 해당 모듈을 다시 export한다.
+
+`calculatePaintComparison` (`lib/quote-paint-comparison.ts`)은 전체 Main을 Super로 계산하고, Interior Timber finish의 상품·effective 수량·노무만 바꾼 전체 견적을 Aqua로 계산한다. shared 행은 그대로 참조한다. 동일 settings와 Area Low/High를 사용하고 각 전체 Ex GST 소계를 cents로 반올림한 뒤 Aqua − Super를 구한다. Timber 소계는 설명용이며 차액의 계산 기준이 아니다.
+
+결과 상태는 ready/incomplete/needs_review/invalid다. 미선택 상품·마감 없음은 incomplete, 원본 상품 미확인은 needs_review, 유효 범위를 벗어난 활성 입력은 invalid다. 비활성 대안과 inherit의 기억값은 계산에서 제외한다. 공개 가격 표시에는 signed display helper를 사용하며 저장에는 `parsePublicLineMoney`의 finite·NUMERIC 범위 검증을 사용한다.

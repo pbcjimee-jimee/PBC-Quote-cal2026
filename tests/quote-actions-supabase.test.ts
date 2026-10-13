@@ -341,6 +341,7 @@ function persistenceFixture(row: unknown = quoteRow) {
   const revisions = createThenableBuilder({ data: [{ revision_number: 1 }], error: null })
   const from = vi.fn((table: string) => {
     if (table === 'quotes') return quote
+    if (table === 'quote_items') return createThenableBuilder({ data: [], error: null }) as never
     if (table === 'quote_price_revisions') return revisions
     throw new Error('Unexpected direct database access: ' + table)
   })
@@ -366,6 +367,141 @@ function rpcPayload(rpc: ReturnType<typeof persistenceFixture>['rpc'], name = 'u
 }
 
 describe('quote actions against Supabase', () => {
+  const logicalKey = '00000000-0000-4000-8000-000000000211'
+  const comparisonKey = '00000000-0000-4000-8000-000000000411'
+  const aquaProductId = '00000000-0000-4000-8000-000000000911'
+  const comparisonInput = { ...quoteInput, workingDays: 0, labourPerDay: 0,
+    items: [{ ...quoteInput.items[0], logicalKey, timberRole: 'finish', areaId: 'area-1', areaScopeSnapshot: 'interior', workingDays: 0, labourPerDay: 0 }],
+    paintComparisons: [{ version: 1, key: comparisonKey, alternatives: [{ targetLogicalKey: logicalKey,
+      previousRole: 'finish', acknowledgedSourceProductId: null,
+      product: { productId: aquaProductId, name: 'Aqua', marketPrice: '30.00', actualPrice: '999.00' },
+      quantity: { mode: 'inherit', value: '1' }, workingDays: { mode: 'inherit', value: '0' }, labourPerDay: { mode: 'inherit', value: '0' },
+    }] }],
+    jobberQuoteLines: [{ kind: 'line_item', name: 'Aqua choice', quantity: 9, unitPrice: 999,
+      paintComparisonKey: comparisonKey }],
+  }
+  it('recalculates generated prices from full scenarios and trusted catalog Aqua snapshots', async () => {
+    const { rpc, from } = persistenceFixture()
+    const productQuery = createThenableBuilder({ data: [{ id: aquaProductId, name: 'Aqua', rrp_price: '30.00' }], error: null })
+    from.mockImplementation((table) => { if (table === 'products') return productQuery as never; if (table === 'quote_items') return createThenableBuilder({ data: [], error: null }) as never; throw new Error(table) })
+    const result = await createQuote(comparisonInput)
+    expect(result.ok).toBe(true)
+    expect(rpcPayload(rpc, 'create_quote_with_jobber_sync')).toMatchObject({
+      quote: { paint_comparisons: [{ alternatives: [{ product: { actualPrice: '30.00' } }],
+        result: { superSubtotal: '10.00', aquaSubtotal: '30.00', differenceSubtotal: '20.00' } }] },
+      jobber_lines: [{ quantity: '1.00', unit_price: '20.00', total_price: '20.00', optional: true,
+        recommended: false, selected: false, optional_write_policy: 'set_true' }],
+    })
+  })
+  it('allows incomplete comparison saves only when no generated public price is applied', async () => {
+    const { rpc } = persistenceFixture()
+    const input = { ...comparisonInput, paintComparisons: [{ ...comparisonInput.paintComparisons[0],
+      alternatives: [{ ...comparisonInput.paintComparisons[0].alternatives[0], product: undefined }] }] }
+    expect((await createQuote({ ...input, jobberQuoteLines: [] })).ok).toBe(true)
+    rpc.mockClear()
+    expect((await createQuote(input)).ok).toBe(false)
+    expect(rpc).not.toHaveBeenCalled()
+  })
+  it('pins existing Aqua actual snapshots by comparison, logical target and product identity', async () => {
+    const storedComparison = { ...comparisonInput.paintComparisons[0], alternatives: [{ ...comparisonInput.paintComparisons[0].alternatives[0],
+      product: { ...comparisonInput.paintComparisons[0].alternatives[0].product, actualPrice: '8.00' } }] }
+    const { rpc, quote } = persistenceFixture({ ...quoteRow, paint_comparisons: [storedComparison],
+      quote_items: [{ ...quoteRow.quote_items[0], logical_key: logicalKey }] })
+    const productQuery = createThenableBuilder({ data: [{ id: aquaProductId, name: 'Aqua', rrp_price: '50.00' }], error: null })
+    const revisions = createThenableBuilder({ data: [], error: null })
+    mocks.createClient.mockResolvedValue({ from: (table: string) => table === 'products' ? productQuery : table === 'quote_price_revisions' ? revisions : quote, rpc })
+    const result = await updateQuote({ ...comparisonInput, id: quoteId })
+    expect(result.ok).toBe(true)
+    expect(rpcPayload(rpc)).toMatchObject({ quote: { paint_comparisons: [{ alternatives: [{ product: { actualPrice: '8.00' } }] }] } })
+  })
+  it('refuses client Aqua snapshots when no trusted saved or current product is available', async () => {
+    const { rpc } = persistenceFixture()
+    const productQuery = createThenableBuilder({ data: [], error: null })
+    mocks.createClient.mockResolvedValue({ from: (table: string) => table === 'products' ? productQuery : createThenableBuilder({ data: [], error: null }), rpc })
+    expect((await createQuote(comparisonInput)).ok).toBe(false)
+    expect(rpc).not.toHaveBeenCalled()
+  })
+  it('records a public baseline price revision without charging unselected signed Optionals', async () => {
+    const { rpc } = persistenceFixture()
+    const result = await updateQuote({ ...quoteInput, id: quoteId,
+      jobberQuoteLines: [{ kind: 'line_item', name: 'Updated public', quantity: 1, unitPrice: 2600 },
+        { kind: 'line_item', name: 'Optional discount', quantity: 1, unitPrice: -150, optional: true, selected: false }],
+    })
+    expect(result.ok).toBe(true)
+    expect(rpcPayload(rpc)).toMatchObject({ price_revision: { previous_jobber_lines_total: '2500.00', new_jobber_lines_total: '2600.00' } })
+  })
+  it('rejects a logical key owned by another quote independently of snapshot source identity', async () => {
+    const { rpc } = persistenceFixture()
+    mocks.createClient.mockResolvedValue({ from: () => createThenableBuilder({ data: [{ logical_key: logicalKey, quote_id: 'another-quote' }], error: null }), rpc })
+    const result = await createQuote({ ...quoteInput, items: [{ ...quoteInput.items[0], logicalKey }] })
+    expect(result.ok).toBe(false)
+    expect(rpc).not.toHaveBeenCalled()
+  })
+  it('saves review-needed comparisons without Optional but rejects stale applied prices', async () => {
+    const { rpc } = persistenceFixture()
+    const productQuery = createThenableBuilder({ data: [{ id: aquaProductId, name: 'Aqua', rrp_price: '30.00' }], error: null })
+    mocks.createClient.mockResolvedValue({ from: (table: string) => table === 'products' ? productQuery : createThenableBuilder({ data: [], error: null }), rpc })
+    const input = { ...comparisonInput, paintComparisons: [{ ...comparisonInput.paintComparisons[0],
+      alternatives: [{ ...comparisonInput.paintComparisons[0].alternatives[0], acknowledgedSourceProductId: 'old-source-product' }] }] }
+    expect((await createQuote({ ...input, jobberQuoteLines: [] })).ok).toBe(true)
+    rpc.mockClear()
+    expect((await createQuote(input)).ok).toBe(false)
+    expect(rpc).not.toHaveBeenCalled()
+  })
+  it('returns a clear restoration error for unsupported stored JSONB versions', async () => {
+    persistenceFixture({ ...quoteRow, paint_comparisons: [{ version: 2, key: comparisonKey, alternatives: [] }] })
+    expect(await getQuote(quoteId)).toMatchObject({ ok: false, error: expect.stringContaining('Unsupported saved Timber comparison') })
+  })
+  it.each([
+    { role: 'finish', mode: 'inherit', value: '' },
+    { role: 'none', mode: 'override', value: '0.333' },
+    { role: 'shared', mode: 'override', value: '' },
+  ])('persists and restores dormant remembered Aqua input $role/$mode/$value', async ({ role, mode, value }) => {
+    const comparison = { ...comparisonInput.paintComparisons[0], alternatives: [{ ...comparisonInput.paintComparisons[0].alternatives[0], quantity: { mode, value } }] }
+    const { rpc, quote } = persistenceFixture()
+    const productQuery = createThenableBuilder({ data: [{ id: aquaProductId, name: 'Aqua', rrp_price: '30.00' }], error: null })
+    mocks.createClient.mockResolvedValue({ from: (table: string) => table === 'products' ? productQuery : table === 'quotes' ? quote : createThenableBuilder({ data: [], error: null }), rpc })
+    const result = await createQuote({ ...comparisonInput, items: [{ ...comparisonInput.items[0], timberRole: role }], paintComparisons: [comparison], jobberQuoteLines: role === 'finish' ? comparisonInput.jobberQuoteLines : [] })
+    expect(result.ok).toBe(true)
+    expect(rpcPayload(rpc, 'create_quote_with_jobber_sync')).toMatchObject({ quote: { paint_comparisons: [{ alternatives: [{ quantity: { mode, value } }] }] } })
+    const stored = rpcPayload(rpc, 'create_quote_with_jobber_sync').quote as { paint_comparisons: unknown }
+    persistenceFixture({ ...quoteRow, paint_comparisons: stored.paint_comparisons })
+    const restored = await getQuote(quoteId)
+    expect(restored.ok).toBe(true)
+    if (restored.ok) expect(restored.data?.paintComparisons?.[0].alternatives[0].quantity).toEqual({ mode, value })
+    if (mode === 'override') {
+      const reactivated = persistenceFixture({ ...quoteRow, paint_comparisons: stored.paint_comparisons,
+        quote_items: [{ ...quoteRow.quote_items[0], logical_key: logicalKey }] })
+      mocks.createClient.mockResolvedValue({ from: (table: string) => table === 'products' ? productQuery : reactivated.quote, rpc: reactivated.rpc })
+      const invalid = await updateQuote({ ...comparisonInput, id: quoteId, paintComparisons: [comparison], jobberQuoteLines: [] })
+      expect(invalid.ok).toBe(false)
+      expect(reactivated.rpc).not.toHaveBeenCalled()
+    } else {
+      expect(rpcPayload(rpc, 'create_quote_with_jobber_sync')).toMatchObject({ jobber_lines: [{ unit_price: '20.00' }] })
+    }
+  })
+  it('rejects malformed Aqua overrides once the finish role makes them effective', async () => {
+    const { rpc } = persistenceFixture()
+    const productQuery = createThenableBuilder({ data: [{ id: aquaProductId, name: 'Aqua', rrp_price: '30.00' }], error: null })
+    mocks.createClient.mockResolvedValue({ from: (table: string) => table === 'products' ? productQuery : createThenableBuilder({ data: [], error: null }), rpc })
+    const comparison = { ...comparisonInput.paintComparisons[0], alternatives: [{ ...comparisonInput.paintComparisons[0].alternatives[0], quantity: { mode: 'override', value: '0.333' } }] }
+    expect((await createQuote({ ...comparisonInput, paintComparisons: [comparison], jobberQuoteLines: [] })).ok).toBe(false)
+    expect(rpc).not.toHaveBeenCalled()
+  })
+  it('persists signed optional policy and logical keys through the atomic save boundary', async () => {
+    const { rpc } = persistenceFixture()
+    const result = await createQuote({ ...quoteInput,
+      items: [{ ...quoteInput.items[0], logicalKey: '00000000-0000-4000-8000-000000000201', timberRole: 'none' }],
+      jobberQuoteLines: [{ kind: 'line_item', name: 'Discount', quantity: 1, unitPrice: -150,
+        optional: true, recommended: false, selected: false, optionalWritePolicy: 'set_true', recommendedWritePolicy: 'set_false' }],
+    })
+    expect(result.ok).toBe(true)
+    expect(rpcPayload(rpc, 'create_quote_with_jobber_sync')).toMatchObject({
+      quote: { paint_comparisons: [] }, items: [{ logical_key: '00000000-0000-4000-8000-000000000201', timber_role: 'none' }],
+      jobber_lines: [{ unit_price: '-150.00', optional: true, optional_write_policy: 'set_true' }],
+      price_revision: { new_jobber_lines_total: '0.00' },
+    })
+  })
   beforeEach(() => {
     vi.clearAllMocks()
     mocks.syncJobberQuoteLineItems.mockReset()
@@ -546,7 +682,7 @@ describe('quote actions against Supabase', () => {
   })
 
   it('saves unchanged pricing without adding a price revision', async () => {
-    const { rpc, from, quote } = persistenceFixture()
+    const { rpc, from, quote } = persistenceFixture({ ...quoteRow, jobber_quote_lines: [] })
     expect((await updateQuote({ ...quoteInput, id: quoteId, expectedVersion: 1, customerName: 'Same Price Customer' })).ok).toBe(true)
     expect(rpcPayload(rpc)).toMatchObject({ price_revision: null, quote: { customer_name: 'Same Price Customer' } })
     expect(from).not.toHaveBeenCalledWith('quote_price_revisions')
@@ -554,7 +690,7 @@ describe('quote actions against Supabase', () => {
   })
 
   it.each(['create', 'update'])('does not perform compensating deletes when the %s transaction fails', async (operation) => {
-    const { rpc, from } = persistenceFixture()
+    const { rpc, from } = persistenceFixture({ ...quoteRow, jobber_quote_lines: [] })
     rpc.mockResolvedValueOnce({ data: null, error: { message: 'memo insert failed' } })
     const result = operation === 'create' ? await createQuote(quoteInput) : await updateQuote({ ...quoteInput, id: quoteId, expectedVersion: 1 })
     expect(result.ok).toBe(false)
@@ -1633,6 +1769,7 @@ describe('quote actions against Supabase', () => {
     })
     const createQuoteFrom = vi.fn((table: string) => {
       if (table === 'products') return productQuery
+      if (table === 'quote_items') return createThenableBuilder({ data: [], error: null })
       throw new Error(`unexpected create quote table ${table}`)
     })
     mocks.createClient
@@ -1749,6 +1886,7 @@ describe('quote actions against Supabase', () => {
         auth: createAuthUser(), rpc,
         from: vi.fn((table: string) => {
           if (table === 'products') return productQuery
+          if (table === 'quote_items') return createThenableBuilder({ data: [], error: null })
           throw new Error(`unexpected create quote table ${table}`)
         }),
       })
@@ -1986,11 +2124,12 @@ describe('quote actions against Supabase', () => {
       'subtotal',
       'final_total',
       'pricing_settings_snapshot',
+      'paint_comparisons',
       'created_by',
       'created_at',
-      'quote_items(id, quote_id, product_id, product_name_snapshot, memo, market_price_snapshot, actual_price_snapshot, quantity, working_days, labour_per_day, area_id, area_name_snapshot, area_scope_snapshot, is_custom, position)',
+      'quote_items(id, quote_id, logical_key, timber_role, product_id, product_name_snapshot, memo, market_price_snapshot, actual_price_snapshot, quantity, working_days, labour_per_day, area_id, area_name_snapshot, area_scope_snapshot, is_custom, position)',
       'quote_options(id, quote_id, title, working_days, labour_per_day, material_market, material_actual, formula1_total, formula2_total, formula3_total, formula4_total, formula5_total, selected_min, selected_max, subtotal, final_total, position, quote_option_items(id, option_id, product_id, product_name_snapshot, memo, market_price_snapshot, actual_price_snapshot, quantity, working_days, labour_per_day, area_id, area_name_snapshot, area_scope_snapshot, is_custom, position))',
-      'jobber_quote_lines(id, quote_id, kind, name, description, quantity, unit_price, total_price, taxable, client_visible, jobber_line_item_id, linked_product_or_service_id, position, created_at, updated_at)',
+      'jobber_quote_lines(id, quote_id, optional, recommended, selected, optional_write_policy, recommended_write_policy, paint_comparison_key, kind, name, description, quantity, unit_price, total_price, taxable, client_visible, jobber_line_item_id, linked_product_or_service_id, position, created_at, updated_at)',
       'quote_memos(id, quote_id, body, position, created_by, created_at, updated_at)',
       'quote_price_revisions(id, quote_id, revision_number, event_type, previous_subtotal, previous_final_total, new_subtotal, new_final_total, previous_jobber_lines_total, new_jobber_lines_total, previous_options_subtotal, new_options_subtotal, previous_options_final_total, new_options_final_total, changed_by, changed_at)',
     ].join(', '))

@@ -1,8 +1,10 @@
 import { decimalFromInput } from '@/lib/quote-labour'
 import { AREA_SCOPE_LABELS } from '@/lib/areas/constants'
 import type { MaterialItem } from './types'
+import { TimberMaterialControl } from './timber-material-control'
+import type { TimberRole } from '@/lib/paint-comparison-types'
 
-export function MaterialSummary({ item, onEdit }: { item: MaterialItem; onEdit: () => void }) {
+export function MaterialSummary({ item, onEdit, onTimberRoleChange }: { item: MaterialItem; onEdit: () => void; onTimberRoleChange?: (role: TimberRole | 'restore') => void }) {
   const amount = decimalFromInput(item.marketPrice).mul(decimalFromInput(item.quantity))
   return (
     <div className="pbc-material-summary">
@@ -12,6 +14,7 @@ export function MaterialSummary({ item, onEdit }: { item: MaterialItem; onEdit: 
         <span className="mono">{item.quantity || '0'} × ${decimalFromInput(item.marketPrice).toFixed(2)} · <strong>${amount.toFixed(2)}</strong></span>
         <span>{item.workingDays || '0'} working days · {item.labourPerDay || '0'} labour / day</span>
         {item.memo ? <span className="pbc-material-summary__memo">Memo: {item.memo}</span> : null}
+        {onTimberRoleChange ? <TimberMaterialControl item={item} onChange={onTimberRoleChange} /> : null}
       </div>
       <button
         type="button"

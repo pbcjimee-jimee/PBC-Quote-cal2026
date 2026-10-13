@@ -19,7 +19,12 @@ export interface EstimatedProfitSummary {
   readonly profitMarginPercent: string | null
 }
 
-type FinancialLineItem = { readonly totalPrice: Decimal.Value }
+type FinancialLineItem = {
+  readonly totalPrice: Decimal.Value
+  readonly optional?: boolean | null
+  readonly selected?: boolean | null
+  readonly recommended?: boolean | null
+}
 type FinancialExpenseJob = {
   readonly expenses: readonly { readonly total: Decimal.Value | null }[]
 }
@@ -65,7 +70,9 @@ export function calculateFinancialSummary(
   sourceTotal?: Decimal.Value,
 ): JobberQuoteFinancialSummary {
   const quoteTotal = sourceTotal === undefined
-    ? productsAndServices.reduce<Decimal>((total, item) => total.add(item.totalPrice), new Decimal(0))
+    ? productsAndServices
+      .filter((item) => item.optional !== true || item.selected === true)
+      .reduce<Decimal>((total, item) => total.add(item.totalPrice), new Decimal(0))
     : new Decimal(sourceTotal)
   const expenseValues = jobExpenses.flatMap((job) => (
     job.expenses.flatMap((expense) => expense.total === null ? [] : [expense.total])

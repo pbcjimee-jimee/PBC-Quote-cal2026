@@ -2,6 +2,8 @@ import { createQuote, updateQuote } from '@/lib/actions/quotes'
 import type { PricingSettings } from '@/lib/calculator'
 import Decimal from 'decimal.js'
 import { decimalFromInput } from '@/lib/quote-labour'
+import { parsePublicLineMoney, signedPublicDecimalFromInput } from '@/lib/public-line-money'
+import type { PaintComparison } from '@/lib/paint-comparison-types'
 import type { JobberQuoteDraft } from '@/lib/jobber/mapper'
 import type { JobberSnapshotChangeStatus } from '@/lib/jobber/snapshot-diff'
 import type { JobberSnapshotChangeSummaryItem } from '@/lib/dev-data'
@@ -31,6 +33,7 @@ export interface QuoteFormSavePayloadInput {
   materials: MaterialItem[]
   options: QuoteOptionItem[]
   memos: QuoteMemoItem[]
+  paintComparison?: PaintComparison | null
 }
 
 export interface JobberSyncPreviewLine {
@@ -44,6 +47,9 @@ export interface JobberSyncPreviewLine {
   clientVisible?: boolean
   jobberLineItemId?: string | null
   linkedProductOrServiceId?: string | null
+  optional?: boolean | null
+  selected?: boolean | null
+  optionalWritePolicy?: 'preserve' | 'set_true' | 'set_false'
 }
 
 export interface JobberSyncPreviewInput {
@@ -53,17 +59,22 @@ export interface JobberSyncPreviewInput {
 
 export function calculateJobberSyncPreview({ pbcSubtotal, jobberQuoteLines }: JobberSyncPreviewInput) {
   const pbcSubtotalDecimal = decimalFromInput(pbcSubtotal)
+  const lineTotal = (line: JobberSyncPreviewLine) => line.totalPrice !== null && line.totalPrice !== undefined && String(line.totalPrice).trim() !== ''
+    ? signedPublicDecimalFromInput(line.totalPrice)
+    : decimalFromInput(line.quantity).mul(signedPublicDecimalFromInput(line.unitPrice))
+  const isOptional = (line: JobberSyncPreviewLine) => line.optionalWritePolicy === 'set_true' || (line.optionalWritePolicy !== 'set_false' && line.optional === true)
   const jobberPublicLineTotal = jobberQuoteLines.reduce((total, line) => {
     if (line.kind !== 'line_item' || line.clientVisible === false) return total
-    if (line.totalPrice !== null && line.totalPrice !== undefined && String(line.totalPrice).trim() !== '') {
-      return total.add(decimalFromInput(line.totalPrice))
-    }
-    return total.add(decimalFromInput(line.quantity).mul(decimalFromInput(line.unitPrice)))
+    if (isOptional(line) && line.selected !== true) return total
+    return total.add(lineTotal(line))
   }, new Decimal(0))
+  const optionalLineTotal = jobberQuoteLines.reduce((total, line) => line.kind === 'line_item' && line.clientVisible !== false && isOptional(line) && line.selected !== true ? total.add(lineTotal(line)) : total, new Decimal(0))
 
   return {
     pbcSubtotal: pbcSubtotalDecimal,
     jobberPublicLineTotal,
+    optionalLineTotal,
+    withOptionalTotal: jobberPublicLineTotal.add(optionalLineTotal),
     difference: pbcSubtotalDecimal.sub(jobberPublicLineTotal),
   }
 }
@@ -86,6 +97,7 @@ export function buildQuoteSavePayload({
   materials,
   options,
   memos,
+  paintComparison,
 }: QuoteFormSavePayloadInput) {
   const normalizedAreaFormulaSelections = areaFormulaSelections ?? {
     interior: { selectedMin, selectedMax },
@@ -113,16 +125,23 @@ export function buildQuoteSavePayload({
     jobberSnapshotChangeSummary: jobberSnapshot ? jobberSnapshotChangeSummary : undefined,
     jobberSaveMode: 'priced_line_items',
     deletedJobberLineItemIds,
+    paintComparisons: paintComparison ? [paintComparison] : [],
     jobberQuoteLines: jobberQuoteLines.map((line, index) => ({
       kind: line.kind,
       name: line.name.trim() || (line.kind === 'text' ? `Text ${index + 1}` : `Line item ${index + 1}`),
       description: line.description,
       quantity: Number(decimalFromInput(line.quantity).toString()),
-      unitPrice: Number(decimalFromInput(line.unitPrice).toString()),
+      unitPrice: (() => { const price = parsePublicLineMoney(line.unitPrice); if (!price.ok) throw new Error('Enter a valid public unit price.'); return Number(price.value.toString()) })(),
       taxable: line.taxable,
       clientVisible: line.clientVisible,
       jobberLineItemId: line.jobberLineItemId,
       linkedProductOrServiceId: line.linkedProductOrServiceId,
+      optional: line.optional,
+      recommended: line.recommended,
+      selected: line.selected,
+      optionalWritePolicy: line.optionalWritePolicy,
+      recommendedWritePolicy: line.recommendedWritePolicy,
+      paintComparisonKey: line.paintComparisonKey,
       position: index,
     })),
     workType,
@@ -135,6 +154,8 @@ export function buildQuoteSavePayload({
     areaFormulaSelections: normalizedAreaFormulaSelections,
     items: materials.map((item, index) => ({
       sourceItemId: item.id,
+      logicalKey: item.logicalKey,
+      timberRole: item.timberRole,
       productId: item.productId,
       productNameSnapshot: item.name,
       memo: item.memo ?? '',
@@ -156,6 +177,8 @@ export function buildQuoteSavePayload({
       position: optionIndex,
       items: option.materials.map((item, itemIndex) => ({
         sourceItemId: item.id,
+        logicalKey: item.logicalKey,
+        timberRole: item.timberRole,
         productId: item.productId,
         productNameSnapshot: item.name,
         memo: item.memo ?? '',

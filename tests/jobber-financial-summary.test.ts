@@ -6,6 +6,18 @@ import {
 } from '@/lib/jobber/financial-summary'
 
 describe('Jobber financial summary', () => {
+  it.each([
+    [false, 100], [true, 85], [null, 100], [undefined, 100],
+  ] as const)('includes the Optional discount in quote revenue only when selected is true (%s)', (selected, expected) => {
+    expect(calculateFinancialSummary([
+      { totalPrice: 100 }, { totalPrice: -15, optional: true, selected, recommended: true },
+    ], []).quoteTotal).toBe(expected)
+  })
+
+  it('keeps legacy unknown Optional flags in ordinary totals and respects authoritative job totals', () => {
+    expect(calculateFinancialSummary([{ totalPrice: 100 }, { totalPrice: 15, selected: false }], []).quoteTotal).toBe(115)
+    expect(calculateFinancialSummary([{ totalPrice: 15, optional: true, selected: false }], [], '200').quoteTotal).toBe(200)
+  })
   it('uses Decimal arithmetic for job revenue, expenses, profit, and margin', () => {
     expect(calculateFinancialSummaryFromAmounts('12437.02', ['603.89', '890'])).toEqual({
       revenue: '12437.02',

@@ -10,6 +10,7 @@ import type { AreaRecord, AreaScope } from '@/lib/areas/types'
 import { AREA_SCOPE_LABELS, AREA_SCOPES } from '@/lib/areas/constants'
 import { Icons } from '@/components/ui/icons'
 import { getQuoteErrorKey, type MaterialScopeView } from './quote-mobile-state'
+import type { TimberRole } from '@/lib/paint-comparison-types'
 
 interface MaterialsPanelProps {
   activeScope?: MaterialScopeView
@@ -18,6 +19,8 @@ interface MaterialsPanelProps {
   onEditingItemChange?: (id: string | null) => void
   optionId?: string
   onReview?: () => void
+  onTimberRoleChange?: (item: MaterialItem, role: TimberRole | 'restore') => void
+  onViewComparison?: () => void
   materials: MaterialItem[]
   areas: AreaRecord[]
   areaBreakdown?: AreaSubtotalBreakdown
@@ -187,6 +190,8 @@ export function MaterialsPanel({
   onEditingItemChange,
   optionId,
   onReview,
+  onTimberRoleChange,
+  onViewComparison,
   materials,
   areas,
   areaBreakdown,
@@ -466,6 +471,7 @@ export function MaterialsPanel({
           </button>
         </div>
       </div>
+      {!optionId && onViewComparison && materials.some(item => item.timberRole === 'shared' || item.timberRole === 'finish') ? <button type="button" className="pbc-btn pbc-btn--ghost pbc-btn--sm" onClick={onViewComparison}>Timber {materials.filter(item => item.timberRole === 'shared' || item.timberRole === 'finish').length} items · View comparison</button> : null}
 
       {isExpanded || currentEditingId !== null ? (
         <>
@@ -519,6 +525,7 @@ export function MaterialsPanel({
                   isEditing={currentEditingId === item.id}
                   onEditingChange={(editing) => changeEditingId(editing ? item.id : null)}
                   optionId={optionId}
+                  onTimberRoleChange={onTimberRoleChange ? role => onTimberRoleChange(item, role) : undefined}
                   onCreateArea={onCreateArea}
                   onChange={(nextItem) => {
                     onChange(nextItem, item.id)

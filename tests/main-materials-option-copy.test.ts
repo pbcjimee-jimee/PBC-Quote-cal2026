@@ -71,10 +71,12 @@ describe('main materials option copy', () => {
         {
           ...source[0],
           id: 'option-item-2',
+          logicalKey: expect.any(String), timberRole: 'none',
         },
         {
           ...source[1],
           id: 'option-item-3',
+          logicalKey: expect.any(String), timberRole: 'none',
         },
       ],
     })

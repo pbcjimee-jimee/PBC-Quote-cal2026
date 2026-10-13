@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import Decimal from 'decimal.js'
 
 const PUBLIC_LINE_DESCRIPTION_MAX_LENGTH = 4000
 const PRICING_MARGIN_MIN_MESSAGE = 'Margins must be 0% or higher'
@@ -28,6 +29,9 @@ export const jobberQuoteSnapshotSchema = z.object({
     totalPrice: z.number(),
     linkedName: z.string().nullable(),
     textOnly: z.boolean().optional(),
+    optional: z.boolean().nullable().optional(),
+    recommended: z.boolean().nullable().optional(),
+    selected: z.boolean().nullable().optional(),
   })),
   jobExpenses: z.array(z.object({
     jobId: z.string(),
@@ -56,6 +60,8 @@ export const jobberQuoteSnapshotSchema = z.object({
 })
 
 const quoteItemSchema = z.object({
+  logicalKey: z.string().uuid().optional(),
+  timberRole: z.enum(['none', 'shared', 'finish']).optional(),
   sourceItemId: z.string().min(1).max(100).optional(),
   productId: z.string().uuid().optional(),
   productNameSnapshot: z.string().min(1),
@@ -110,8 +116,14 @@ export const jobberQuoteLineSchema = z.object({
   name: z.string().trim().min(1).max(200),
   description: z.string().trim().max(PUBLIC_LINE_DESCRIPTION_MAX_LENGTH).optional(),
   quantity: z.number().nonnegative().optional(),
-  unitPrice: z.number().nonnegative().optional(),
-  totalPrice: z.number().nonnegative().optional(),
+  unitPrice: z.number().finite().min(-99999999.99).max(99999999.99).optional(),
+  totalPrice: z.number().finite().min(-99999999.99).max(99999999.99).optional(),
+  optional: z.boolean().nullable().optional(),
+  recommended: z.boolean().nullable().optional(),
+  selected: z.boolean().nullable().optional(),
+  optionalWritePolicy: z.enum(['preserve', 'set_true', 'set_false']).optional(),
+  recommendedWritePolicy: z.enum(['preserve', 'set_true', 'set_false']).optional(),
+  paintComparisonKey: z.string().uuid().optional(),
   taxable: z.boolean().default(true),
   clientVisible: z.boolean().default(true),
   jobberLineItemId: z.string().trim().min(1).optional(),
@@ -137,7 +149,25 @@ export const jobberQuoteLineSchema = z.object({
   }
 })
 
+const comparisonDecimal = z.string().regex(/^\d+(?:\.\d{1,2})?$/).refine((value) => Number.isFinite(Number(value)))
+const comparisonFieldSchema = z.object({ mode: z.enum(['inherit', 'override']), value: z.string().max(100) })
+export const paintComparisonSchema = z.object({
+  version: z.literal(1),
+  key: z.string().uuid(),
+  alternatives: z.array(z.object({
+    targetLogicalKey: z.string().uuid(),
+    previousRole: z.enum(['shared', 'finish']),
+    acknowledgedSourceProductId: z.string().nullable(),
+    product: z.object({ productId: z.string().uuid(), name: z.string().min(1),
+      marketPrice: comparisonDecimal, actualPrice: comparisonDecimal }).optional(),
+    quantity: comparisonFieldSchema,
+    workingDays: comparisonFieldSchema,
+    labourPerDay: comparisonFieldSchema,
+  })),
+})
+
 export const quoteSchema = z.object({
+  paintComparisons: z.array(paintComparisonSchema).max(1).default([]),
   expectedVersion: z.number().int().positive().optional(),
   syncJobber: z.boolean().optional(),
   customerName: z.string().optional(),
@@ -162,6 +192,30 @@ export const quoteSchema = z.object({
   items: z.array(quoteItemSchema),
   options: z.array(quoteOptionSchema).default([]),
   memos: z.array(quoteMemoSchema).default([]),
+}).superRefine((quote, context) => {
+  const keys = new Set<string>()
+  quote.items.forEach((item, index) => {
+    if (item.logicalKey && keys.has(item.logicalKey)) context.addIssue({ code: 'custom', path: ['items', index, 'logicalKey'], message: 'Duplicate material logical key' })
+    if (item.logicalKey) keys.add(item.logicalKey)
+    if (item.timberRole && item.timberRole !== 'none' && (!item.areaId || item.areaScopeSnapshot !== 'interior' || !item.logicalKey)) {
+      context.addIssue({ code: 'custom', path: ['items', index, 'timberRole'], message: 'Timber materials require an Interior area and logical key' })
+    }
+    if (quote.paintComparisons.length) {
+      for (const field of ['marketPriceSnapshot', 'actualPriceSnapshot', 'quantity', 'workingDays', 'labourPerDay'] as const) {
+        if (item[field] !== undefined && new Decimal(item[field]).decimalPlaces() > 2) context.addIssue({ code: 'custom', path: ['items', index, field], message: 'Timber comparison inputs allow at most two decimal places' })
+      }
+    }
+  })
+  quote.options.forEach((option, optionIndex) => option.items.forEach((item, index) => {
+    if (item.timberRole && item.timberRole !== 'none') context.addIssue({ code: 'custom', path: ['options', optionIndex, 'items', index, 'timberRole'], message: 'Normal options cannot contain Timber comparison markers' })
+  }))
+  quote.paintComparisons.forEach((comparison, index) => {
+    const targets = new Set<string>()
+    comparison.alternatives.forEach((alternative, alternativeIndex) => {
+      if (targets.has(alternative.targetLogicalKey) || !keys.has(alternative.targetLogicalKey)) context.addIssue({ code: 'custom', path: ['paintComparisons', index, 'alternatives', alternativeIndex, 'targetLogicalKey'], message: 'Comparison target must reference one unique Main material' })
+      targets.add(alternative.targetLogicalKey)
+    })
+  })
 })
 
 export type QuoteInput = z.infer<typeof quoteSchema>

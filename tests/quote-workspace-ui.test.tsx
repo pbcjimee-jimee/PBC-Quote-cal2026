@@ -215,6 +215,52 @@ async function mountQuoteForm(options: {
 }
 
 describe('quote workspace structure', () => {
+  const timberSourceKey = '00000000-0000-4000-8000-000000000401'
+  const timberComparisonKey = '00000000-0000-4000-8000-000000000402'
+  const timberAreaId = '00000000-0000-4000-8000-000000000403'
+  const timberProductId = '00000000-0000-4000-8000-000000000404'
+  function createTimberQuote(hasProduct = true): QuoteRecord {
+    return createQuoteRecord({ selectedMin: 1, selectedMax: 1, items: [{ id: timberSourceKey, logicalKey: timberSourceKey, timberRole: 'finish', quoteId: 'quote-workspace-1', productId: null, productNameSnapshot: 'Super source', marketPriceSnapshot: '20', actualPriceSnapshot: '20', quantity: '1', workingDays: '0', labourPerDay: '0', areaId: timberAreaId, areaNameSnapshot: 'Doors', areaScopeSnapshot: 'interior', isCustom: true, position: 0 }], paintComparisons: [{ version: 1, key: timberComparisonKey, alternatives: [{ targetLogicalKey: timberSourceKey, previousRole: 'finish', acknowledgedSourceProductId: null, product: hasProduct ? { productId: timberProductId, name: 'Aqua product', marketPrice: '10', actualPrice: '10' } : undefined, quantity: { mode: 'inherit', value: '1' }, workingDays: { mode: 'inherit', value: '0' }, labourPerDay: { mode: 'inherit', value: '0' } }] }], jobberQuoteLines: hasProduct ? [{ id: 'generated', quoteId: 'quote-workspace-1', kind: 'line_item', name: 'Aqua adjustment', description: 'Customer copy', quantity: '1', unitPrice: '-10', totalPrice: '-10', taxable: true, clientVisible: true, position: 0, jobberLineItemId: 'remote-adjustment', linkedProductOrServiceId: null, paintComparisonKey: timberComparisonKey, optional: true, selected: false, createdAt: '2026-10-14T00:00:00Z', updatedAt: '2026-10-14T00:00:00Z' }] : [] })
+  }
+  it('removes comparison markers and preserves remote deletion intent when removing the comparison', async () => {
+    vi.mocked(updateQuote).mockReset().mockResolvedValue({ ok: false, error: 'Held for inspection' })
+    const mounted = await mountQuoteForm({ initialQuote: createTimberQuote(), areas: [{ id: timberAreaId, scope: 'interior', name: 'Doors', active: true, position: 0 }] })
+    try {
+      await act(async () => findButton(mounted.container, 'Remove comparison and its Optional')!.dispatchEvent(new Event('click', { bubbles: true })))
+      expect(mounted.container.textContent).not.toContain('Timber paint comparison')
+      await act(async () => findButton(mounted.container, 'Save changes')!.dispatchEvent(new Event('click', { bubbles: true })))
+      expect(updateQuote).toHaveBeenCalledWith(expect.objectContaining({ paintComparisons: [], jobberQuoteLines: [], deletedJobberLineItemIds: ['remote-adjustment'], items: [expect.objectContaining({ timberRole: 'none', logicalKey: timberSourceKey })] }))
+    } finally { await mounted.cleanup() }
+  })
+  it('does not recreate a manually deleted generated Optional when Main changes', async () => {
+    vi.mocked(updateQuote).mockReset().mockResolvedValue({ ok: false, error: 'Held for inspection' })
+    const mounted = await mountQuoteForm({ initialQuote: createTimberQuote(), areas: [{ id: timberAreaId, scope: 'interior', name: 'Doors', active: true, position: 0 }] })
+    try {
+      await act(async () => findElement(mounted.container, 'button', button => button.getAttribute('aria-label') === 'Delete Aqua adjustment')!.dispatchEvent(new Event('click', { bubbles: true })))
+      const quantity = findElement(mounted.container, 'input', input => input.getAttribute('data-error-key') === `work:main:${timberSourceKey}:quantity`)!
+      quantity.value = '2'
+      await act(async () => quantity.dispatchEvent(new Event('input', { bubbles: true })))
+      expect(mounted.container.textContent).not.toContain('Calculated Optional')
+      await act(async () => findButton(mounted.container, 'Save changes')!.dispatchEvent(new Event('click', { bubbles: true })))
+      expect(updateQuote).toHaveBeenCalledWith(expect.objectContaining({ jobberQuoteLines: [], deletedJobberLineItemIds: ['remote-adjustment'] }))
+    } finally { await mounted.cleanup() }
+  })
+  it('keeps Timber details open when selecting the last required Aqua product completes the calculation', async () => {
+    vi.mocked(searchProducts).mockReset().mockResolvedValue({ ok: true, data: [{ id: timberProductId, name: 'Aqua product', manufacturer: null, type: null, marketPrice: '10', actualPrice: '10', unit: 'each', active: true, colorCode: null }] })
+    const mounted = await mountQuoteForm({ initialQuote: createTimberQuote(false), areas: [{ id: timberAreaId, scope: 'interior', name: 'Doors', active: true, position: 0 }] })
+    try {
+      const details = findElement(mounted.container, 'details', element => element.getAttribute('class') === 'pbc-paint-details')!
+      expect(details.hasAttribute('open')).toBe(true)
+      const search = findElement(mounted.container, 'input', input => input.getAttribute('data-error-key') === `work:main:${timberSourceKey}:comparison`)!
+      search.value = 'Aqua'
+      await act(async () => search.dispatchEvent(new Event('input', { bubbles: true })))
+      await act(async () => new Promise(resolve => setTimeout(resolve, 230)))
+      const result = findElement(mounted.container, 'button', button => button.getAttribute('role') === 'option' && button.textContent.includes('Aqua product'))!
+      await act(async () => result.dispatchEvent(new Event('click', { bubbles: true })))
+      expect(mounted.container.textContent).not.toContain('Aqua product required')
+      expect(details.hasAttribute('open')).toBe(true)
+    } finally { await mounted.cleanup() }
+  })
   it.each(['main', 'option'] as const)('replaces a saved %s material in place and saves the new product price', async (scope) => {
     const item = {
       id: 'saved-material', quoteId: 'quote-workspace-1', productId: 'old-product',

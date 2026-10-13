@@ -6,6 +6,18 @@
 
 ---
 
+## Timber 비교 저장 계약 (2026-10-14, 운영 미적용)
+
+새 마이그레이션 `20261014000000_add_paint_comparison_optional_lines.sql`과 `20261014000001_extend_jobber_optional_sync_contract.sql`은 이번 브랜치의 로컬 검증용이다. 운영 DB에는 아직 적용하지 않았다.
+
+- `quotes.paint_comparisons`: 버전 1 비교 JSONB 배열, 견적당 0~1개. Aqua 상품 snapshot·Main 필드 연동/별도 입력·마지막 확인한 원본 상품·비활성 설정·서버 계산 결과를 저장한다.
+- `quote_items.logical_key`: 제품 교체와 별개로 유지하는 고유 UUID. `timber_role`: none/shared/finish이며 활성 Timber는 Main Interior Area만 허용한다. 복제는 논리 키·비교 키를 새로 발급한다.
+- `jobber_quote_lines`: nullable optional/recommended/selected 관측값, optional/recommended 쓰기 정책(preserve/set_true/set_false), paint_comparison_key를 저장한다. 관측 selected는 원격 mutation 입력에 넣지 않는다. 기존 원격행의 알 수 없는 Optional 상태는 NULL/preserve를 유지한다.
+- Public unit_price·total_price는 signed NUMERIC을 허용한다. 비교 연결행은 수량 1·taxable·client_visible·Optional이며, 비교 키당 한 행으로 제한한다. 상품·템플릿·자재의 음수 입력은 허용하지 않는다.
+- 기존 원자적 저장 RPC·권한·견적 version을 유지한다. 서버는 같은 견적의 비교 키+대상 논리 키+대안 상품 ID가 일치할 때만 기존 Aqua snapshot을 보존하고, 제품 교체는 현재 신뢰 가격을 다시 조회한다. 요청 가격·계산 결과를 신뢰하지 않는다.
+
+---
+
 ## 테이블 관계도
 
 운영 적용 기록 (2026-09-25): durable save/sync schema와 helper grant를 순서대로 적용했다. Connector remote version은 `20260925010625` / `20260925010633`이며, 각각 canonical `20260917025111` / `20260918020411` 파일에 대응한다. 일반 Save create/update의 authenticated rollback 검증을 통과했다. 상세 백업·권한·데이터 보존 결과는 `docs/superpowers/reviews/2026-09-25-production-db-alignment.md`에 기록했다. 이미 적용된 파일을 CLI로 중복 실행하거나 migration history를 임의 repair하지 않는다.

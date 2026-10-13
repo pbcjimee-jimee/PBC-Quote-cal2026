@@ -1,6 +1,8 @@
 import { quoteSchema } from '@/lib/validators'
 import { buildQuoteSavePayload, type QuoteFormSavePayloadInput } from './quote-save-payload'
 import type { QuoteFormIssue, QuoteUiTarget } from './quote-mobile-state'
+import { parsePublicLineMoney } from '@/lib/public-line-money'
+import { calculatePaintComparison, getMaterialLogicalKey } from '@/lib/quote-paint-comparison'
 
 const MATERIAL_FIELDS: Record<string, string> = {
   productNameSnapshot: 'name', marketPriceSnapshot: 'marketPrice', actualPriceSnapshot: 'marketPrice',
@@ -9,6 +11,19 @@ const MATERIAL_FIELDS: Record<string, string> = {
 }
 
 export function getQuoteFormIssues(input: QuoteFormSavePayloadInput): QuoteFormIssue[] {
+  const moneyIssues: QuoteFormIssue[] = input.jobberQuoteLines.flatMap(line => parsePublicLineMoney(line.unitPrice).ok ? [] : [{ section: 'public' as const, entityId: line.id, field: 'unitPrice', message: 'Enter a valid signed unit price within the supported range.' }])
+  if (moneyIssues.length) return moneyIssues
+  if (input.paintComparison) {
+    const calculation = calculatePaintComparison({ ...input, comparison: input.paintComparison })
+    const applied = input.jobberQuoteLines.some(line => line.paintComparisonKey === input.paintComparison?.key)
+    if (calculation.status === 'invalid' || (applied && calculation.status !== 'ready')) {
+      return calculation.issues.map(issue => {
+        const item = input.materials.find(material => getMaterialLogicalKey(material) === issue.targetLogicalKey)
+        const field = issue.code === 'invalid_scope' ? 'area' : issue.variant === 'aqua' || issue.code === 'missing_finish' || issue.code === 'source_product_changed' ? 'comparison' : issue.field ?? 'comparison'
+        return { section: 'work', entityId: item?.id, scope: item?.areaScope ?? 'unassigned', field, message: issue.code === 'invalid_scope' ? 'Return this Timber material to Interior or exclude it from the comparison.' : issue.code === 'invalid_number' ? 'Comparison values must be nonnegative with at most two decimal places.' : 'Complete or remove the applied Aquanamel Optional before saving.' }
+      })
+    }
+  }
   try {
     const payload = buildQuoteSavePayload(input)
     const result = quoteSchema.safeParse(payload)
