@@ -1,6 +1,6 @@
 # Timber · Super Enamel / Aquanamel 구현 검증
 
-**상태:** `codex/enamel-upgrade-option`에 로컬 구현 완료. 운영 DB 적용·배포·live Jobber 쓰기·commit/push 미실행.
+**상태:** 아래는 로컬 구현 당시 검증 이력이다. 후속 사용자 승인으로 커밋·main 병합·운영 DB 적용·배포를 완료했다. 최신 전체 검증·실제 Preview·운영 결과와 남은 제한은 [릴리스 기록](2026-10-14-enamel-release.md)을 따른다.
 **기준 commit:** `eb74fba0194ef5e84ac3ca257638f3b66a71f75b`.
 **Model:** 구현·테스트·오류 수정·독립 리뷰 서브에이전트 모두 `gpt-6.1-sol/high`. 기존 설계는 사용자 승인한 Sol ultra 계획을 재사용했다.
 

@@ -19,6 +19,16 @@
 
 ---
 
+## [릴리스 2026-10-14] Timber / Enamel main 병합·운영 반영 완료
+
+- **Model:** 사용자 지정 GPT-6.1 Sol/high 구현·테스트·오류 수정·독립 리뷰 서브에이전트. 아래 구현 시점의 제한은 당시 기록이며 최신 상태는 이 항목을 따른다.
+- **코드:** 기능 `a0d9c12`, 실제 PostgREST 숫자 가격 DTO 오류 수정 `04def38`, main merge `35c2126`. GitHub 연결 앱 PR 생성은 권한 403으로 실패해 사용자 승인한 main 병합을 프로젝트 SSH로 수행했다.
+- **DB:** 승인한 두 SQL을 Preview에 먼저, 운영에 `20261013221300`/`20261013221308`로 적용했다. 백업 9개 테이블 원래 컬럼 SHA-256, operation38/step348·legacy 완료 예상값을 보존했다. 기존 재조정 대기1건은 유지한다. 실제 authenticated rollback으로 signed Optional 생성·수정·버전 충돌·기존 Save를 검증했고 운영 시험 행0이다.
+- **검증:** 최신 전체 **1,243 pass / 19 환경 skip**, coverage86.36/75.38/94.58/91.16%, TypeScript·기본lint·build19/19·독립리뷰·staged검사 통과. 승인한 Next/ESLint16.3.8·sharp0.35.5·source-map-js1.2.2 패치 후 운영 의존성 취약점0이다.
+- **실제 앱:** 격리 Preview에서 SupabaseAuth→Aquanamel실상품선택→음수OptionalSave→EditSave/재조회·수동기본가격/Timber입력보존·390px행정렬/Collapse 통과. 합성 견적softTrash·임시profileinactive 정리, Jobber호출0. 실제스키마의 미지원 selected 조회도 수정하고 운영견적readonly조회HTTP200/errors0을 확인했다.
+- **배포:** Production `dpl_9p3Q4xuZvyygyDDvCWEFdzLuUiE9`, source main merge, READY/syd1 및 기존운영alias 일치. 로그인·PWA·offline/sw200, 익명보호경로login307, 확인구간runtimeerror0. Vercel환경변수/도메인설정·사용자데이터영구삭제·실제Jobber견적전송은 없다.
+- **제한/근거:** liveJobber쓰기·물리모바일·Production브라우저Save는 미검증. 기존개발의존성11경고/Authadvisor1경고는 남아 있다. 상세 결과와 백업·원격버전·복구 기준은 `docs/superpowers/reviews/2026-10-14-enamel-release.md`.
+
 ## [후속 UI 2026-10-14] 마감재 행 비교·Collapse / Expand
 
 - **Model:** 구현·독립 리뷰 `gpt-6.1-sol/high`, 기존 승인 범위와 모델 지정 유지.
