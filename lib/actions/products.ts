@@ -1,5 +1,6 @@
 'use server'
 
+import Decimal from 'decimal.js'
 import { normalizeRrpProduct, type ProductRecord } from '@/lib/products/types'
 import { requireRole } from '@/lib/security/require-app-user'
 import { createClient } from '@/lib/supabase/server'
@@ -16,6 +17,10 @@ import { isDevNoAuthMode } from './types'
 import type { Database } from '@/lib/supabase/types'
 
 type ProductRow = Database['public']['Tables']['products']['Row']
+type ProductNumericColumn = 'market_price' | 'actual_price' | 'price' | 'rrp_price' | 'volume_litres'
+type ProductResponseRow = Omit<ProductRow, ProductNumericColumn> & {
+  [Column in ProductNumericColumn]: ProductRow[Column] | number
+}
 type ProductCreateInput = {
   name?: string
   manufacturer?: string | null
@@ -60,7 +65,7 @@ export interface QuoteProductPriceSnapshot {
 }
 
 type PublicProductRow = Pick<
-  ProductRow,
+  ProductResponseRow,
   | 'id'
   | 'name'
   | 'manufacturer'
@@ -79,7 +84,7 @@ type PublicProductRow = Pick<
   | 'product_code'
   | 'source_url'
 > & {
-  actual_price?: string
+  actual_price?: ProductResponseRow['actual_price']
 }
 
 const PUBLIC_PRODUCT_COLUMNS = [
@@ -106,9 +111,13 @@ const QUOTE_PRODUCT_COLUMNS = `${PUBLIC_PRODUCT_COLUMNS}, actual_price`
 const QUOTE_PRODUCT_PRICE_COLUMNS = 'id, market_price, actual_price, price, rrp_price'
 
 type QuoteProductPriceRow = Pick<
-  ProductRow,
+  ProductResponseRow,
   'id' | 'market_price' | 'actual_price' | 'price' | 'rrp_price'
 >
+
+function productDecimalText(value: string | number): string {
+  return typeof value === 'number' ? new Decimal(value).toFixed() : value
+}
 
 function rowToProduct(row: PublicProductRow): ProductRecord {
   return normalizeRrpProduct({
@@ -117,17 +126,17 @@ function rowToProduct(row: PublicProductRow): ProductRecord {
     manufacturer: row.manufacturer,
     type: row.type,
     unit: row.unit,
-    marketPrice: row.market_price,
-    actualPrice: row.actual_price ?? row.market_price,
+    marketPrice: productDecimalText(row.market_price),
+    actualPrice: productDecimalText(row.actual_price ?? row.market_price),
     colorCode: row.color_code,
     active: row.active,
     category: row.category,
     productLine: row.product_line,
     base: row.base,
     sheen: row.sheen,
-    volumeLitres: row.volume_litres,
-    price: row.price,
-    rrpPrice: row.rrp_price,
+    volumeLitres: row.volume_litres === null ? null : productDecimalText(row.volume_litres),
+    price: row.price === null ? null : productDecimalText(row.price),
+    rrpPrice: row.rrp_price === null ? null : productDecimalText(row.rrp_price),
     productCode: row.product_code,
     sourceUrl: row.source_url,
   })
@@ -138,7 +147,7 @@ function resolveTrustedProductPrice(product: ProductRecord): string {
 }
 
 function resolveTrustedProductRowPrice(row: QuoteProductPriceRow): string {
-  return row.rrp_price ?? row.market_price ?? row.price ?? row.actual_price
+  return productDecimalText(row.rrp_price ?? row.market_price ?? row.price ?? row.actual_price)
 }
 
 function orderResolvedQuoteProductPrices(
