@@ -23,6 +23,11 @@ vi.mock('@/lib/actions/jobber-sync', () => ({
   getJobberSyncState: vi.fn(),
 }))
 
+vi.mock('@/lib/actions/jobber-sync-recovery', () => ({
+  getJobberSyncRecovery: vi.fn(),
+  recoverJobberQuoteSync: vi.fn(),
+}))
+
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn(), prefetch: vi.fn(), refresh: vi.fn() }),
   useSearchParams: () => new URLSearchParams(),

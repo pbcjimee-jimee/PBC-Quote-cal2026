@@ -1,0 +1,27 @@
+.recovery { margin-block: 16px; color: var(--foreground); font-size: 14px; line-height: 1.5; overflow-wrap: anywhere; min-width: 0; }
+.recovery p { margin-block: 8px; }
+.header, .actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+.header { justify-content: space-between; margin-bottom: 12px; }
+.header h3 { margin: 0; }
+.recovery button { min-height: var(--mobile-tap-target); white-space: normal; }
+.rows { list-style: none; padding: 0; margin-block: 20px; }
+.row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 24px; padding-block: 20px; border-top: 1px solid var(--border); }
+.row h4 { font-size: 15px; font-weight: 700; margin: 0 0 12px; }
+.local, .remote { min-width: 0; }
+.label { font-weight: 700; }
+.kind, .facts { font-size: 13px; color: var(--secondary-text); }
+.kind { font-weight: 500; }
+.description { white-space: pre-wrap; }
+.comparison { margin-top: 12px; }
+.remote select { margin-top: 8px; max-width: 100%; min-height: var(--mobile-tap-target); }
+.removals { padding-left: 20px; margin: 0; font-weight: 500; }
+.removals li + li { margin-top: 8px; }
+.acknowledgement { display: flex; align-items: flex-start; gap: 12px; padding-block: 12px; min-height: var(--mobile-tap-target); cursor: pointer; }
+.acknowledgement input { width: 20px; height: 20px; flex-shrink: 0; margin-top: 2px; accent-color: var(--primary); }
+.acknowledgement input:focus-visible { outline: 3px solid var(--primary); outline-offset: 3px; }
+.actions { margin-top: 16px; }
+@media (max-width: 1023.98px) { .remote select { font-size: var(--mobile-input-font-size); } }
+@media (max-width: 640px) {
+  .row { grid-template-columns: minmax(0, 1fr); gap: 16px; }
+  .actions > button { flex: 1 1 140px; justify-content: center; }
+}

@@ -124,6 +124,38 @@ export type Database = {
           },
         ]
       }
+      jobber_sync_recoveries: {
+        Row: {
+          id: string
+          operation_id: string
+          quote_id: string
+          actor_id: string
+          old_quote_version: number
+          new_quote_version: number
+          line_mappings: Json
+          observed_remote_ids: Json
+          pending_deleted_ids: Json
+          created_at: string
+        }
+        Insert: never
+        Update: never
+        Relationships: [
+          {
+            foreignKeyName: "jobber_sync_recoveries_operation_id_fkey"
+            columns: ["operation_id"]
+            isOneToOne: true
+            referencedRelation: "jobber_sync_operations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "jobber_sync_recoveries_quote_id_fkey"
+            columns: ["quote_id"]
+            isOneToOne: false
+            referencedRelation: "quotes"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       jobber_sync_steps: {
         Row: {
           id: string
@@ -684,6 +716,16 @@ export type Database = {
         Returns: Json
       }
       resolve_jobber_sync_operation: { Args: { operation_id: string }; Returns: undefined }
+      recover_jobber_sync_operation: {
+        Args: {
+          operation_id: string
+          target_quote_id: string
+          expected_version: number
+          line_mappings: Json
+          observed_remote_ids: Json
+        }
+        Returns: Json
+      }
       restore_quote: {
         Args: { target_quote_id: string; expected_version: number }
         Returns: { id: string; version: number; deleted_at: string | null }[]

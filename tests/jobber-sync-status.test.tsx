@@ -7,6 +7,15 @@ const mocks = vi.hoisted(() => ({
   getState: vi.fn(),
   checkSync: vi.fn(),
   retrySync: vi.fn(),
+  recoveryPreview: vi.fn(),
+  recoverySave: vi.fn(),
+  refresh: vi.fn(),
+}))
+
+vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh: mocks.refresh }) }))
+vi.mock('@/lib/actions/jobber-sync-recovery', () => ({
+  getJobberSyncRecovery: mocks.recoveryPreview,
+  recoverJobberQuoteSync: mocks.recoverySave,
 }))
 
 vi.mock('@/lib/actions/jobber-sync', () => ({
@@ -89,6 +98,36 @@ describe('JobberSyncStatus', () => {
 
     expect(rendered.container.textContent).toContain('Queued for Jobber')
     expect(buttonByText(rendered.container, 'Retry sync')).toBeDefined()
+  })
+
+  it('explains saved edits and offers recovery instead of suggesting a connection failure', async () => {
+    mocks.getState.mockResolvedValue({ ok: true, data: { ...uncertainState, failureCode: 'quote_changed', isCurrentVersion: false } })
+    const rendered = await renderStatus()
+    cleanups.push(rendered.cleanup)
+    expect(rendered.container.textContent).toContain('edited after the previous sync started')
+    expect(buttonByText(rendered.container, 'Review sync recovery')).toBeDefined()
+    expect(buttonByText(rendered.container, 'Retry sync')).toBeUndefined()
+  })
+
+  it('keeps recovery success and the explicit sync action after the old barrier is cleared', async () => {
+    mocks.getState.mockResolvedValue({ ok: true, data: { ...uncertainState, failureCode: 'quote_changed', isCurrentVersion: false } })
+    mocks.recoveryPreview.mockResolvedValue({ ok: true, data: { quoteId, operationId, expectedVersion: 6, remoteFingerprint: 'fingerprint', reason: 'quote_changed', lines: [], remoteLines: [], deletionCandidateIds: [] } })
+    mocks.recoverySave.mockResolvedValue({ ok: true, data: { id: quoteId, version: 7 } })
+    const rendered = await renderStatus()
+    cleanups.push(rendered.cleanup)
+    await act(async () => { buttonByText(rendered.container, 'Review sync recovery')?.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
+    expect(buttonByText(rendered.container, 'Check Jobber')?.disabled).toBe(true)
+    const checkbox = rendered.container.querySelectorAll('input')[0]
+    await act(async () => { checkbox.checked = true; checkbox.dispatchEvent(new Event('change', { bubbles: true })) })
+    await act(async () => { buttonByText(rendered.container, 'Save recovery')?.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
+    expect(rendered.container.textContent).toContain('Recovery complete')
+    expect(rendered.container.textContent).not.toContain('earlier sync is blocking')
+    expect(buttonByText(rendered.container, 'Sync saved quote')).toBeDefined()
+    expect(mocks.retrySync).not.toHaveBeenCalled()
+    mocks.getState.mockResolvedValue({ ok: true, data: null })
+    await act(async () => { buttonByText(rendered.container, 'Sync saved quote')?.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
+    expect(mocks.retrySync).toHaveBeenCalledWith(quoteId)
+    expect(buttonByText(rendered.container, 'Sync saved quote')).toBeUndefined()
   })
 
   it('does not poll durable status when Jobber is disabled in preview', async () => {

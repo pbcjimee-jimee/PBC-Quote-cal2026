@@ -7,6 +7,7 @@ import {
   type SyncState,
 } from '@/lib/actions/jobber-sync'
 import { retryJobberQuoteSync } from '@/lib/actions/quotes'
+import { JobberSyncRecovery } from './jobber-sync-recovery'
 
 export interface JobberSyncStatusProps {
   quoteId: string
@@ -25,6 +26,9 @@ type ClientActionResult =
   | { ok: false; error: string }
 
 function statusMessage(sync: SyncState): string {
+  if (sync.failureCode === 'quote_changed') {
+    return 'This quote was edited after the previous sync started. The earlier sync is blocking this quote because it cannot be applied to the newer saved rows. Review sync recovery to keep your edits and repair the row links before syncing again.'
+  }
   if (!sync.isCurrentVersion) {
     return 'An earlier sync is blocking this quote. It will not be treated as this quote’s successful or retryable sync.'
   }
@@ -69,6 +73,8 @@ function JobberSyncStatusScope({ quoteId, legacyFailed = false }: JobberSyncStat
   const [lookup, setLookup] = useState<LookupState>({ status: 'loading', quoteId })
   const [actionFailure, setActionFailure] = useState<{ quoteId: string; message: string } | null>(null)
   const [isPending, startTransition] = useTransition()
+  const [reviewOpen, setReviewOpen] = useState(false)
+  const [recovered, setRecovered] = useState(false)
   const scopeVersion = useRef(0)
   const requestVersion = useRef(0)
 
@@ -126,60 +132,78 @@ function JobberSyncStatusScope({ quoteId, legacyFailed = false }: JobberSyncStat
     : { status: 'loading', quoteId }
   const actionError = actionFailure?.quoteId === quoteId ? actionFailure.message : null
 
-  if (visibleLookup.status === 'loading') {
+  function renderStatus() {
+    if (visibleLookup.status === 'loading') {
+      return (
+        <div className={alertClass(null, legacyFailed)} role="status" aria-live="polite">
+          <span>{legacyFailed ? 'Checking the durable record for the previous Jobber sync failure…' : 'Loading Jobber sync status…'}</span>
+        </div>
+      )
+    }
+
+    if (visibleLookup.status === 'failure') {
+      return (
+        <div className="pbc-alert pbc-alert--stack pbc-alert--warning" role="alert">
+          <span>Jobber sync status could not be checked. Retry and resend controls remain unavailable.</span>
+        </div>
+      )
+    }
+
+    if (!visibleLookup.sync) {
+      if (!legacyFailed) return null
+      return (
+        <div className="pbc-alert pbc-alert--stack pbc-alert--warning" role="alert">
+          <span>This quote has a previous failure but no durable sync record. Retry is blocked until the saved legacy state is inspected safely.</span>
+        </div>
+      )
+    }
+
+    const sync = visibleLookup.sync
+    const canCheck = sync.status === 'running' || sync.status === 'reconciliation_required'
+
     return (
-      <div className={alertClass(null, legacyFailed)} role="status" aria-live="polite">
-        <span>{legacyFailed ? 'Checking the durable record for the previous Jobber sync failure…' : 'Loading Jobber sync status…'}</span>
+      <div className={alertClass(sync, actionError !== null)} role={actionError ? 'alert' : 'status'} aria-live="polite">
+        <span>
+          <b>Jobber sync</b> — {statusMessage(sync)}
+          {actionError ? ` ${actionError}` : ''}
+        </span>
+        {sync.canRetry ? (
+          <button
+            type="button"
+            className="pbc-btn pbc-btn--ghost pbc-btn--sm"
+            disabled={isPending || reviewOpen}
+            onClick={() => runAction(() => retryJobberQuoteSync(quoteId))}
+          >
+            {isPending ? 'Retrying…' : 'Retry sync'}
+          </button>
+        ) : null}
+        {canCheck ? (
+          <button
+            type="button"
+            className="pbc-btn pbc-btn--ghost pbc-btn--sm"
+            disabled={isPending || reviewOpen}
+            onClick={() => runAction(() => checkJobberQuoteSync(quoteId))}
+          >
+            {isPending ? 'Checking…' : 'Check Jobber'}
+          </button>
+        ) : null}
       </div>
     )
   }
 
-  if (visibleLookup.status === 'failure') {
-    return (
-      <div className="pbc-alert pbc-alert--stack pbc-alert--warning" role="alert">
-        <span>Jobber sync status could not be checked. Retry and resend controls remain unavailable.</span>
-      </div>
-    )
-  }
-
-  if (!visibleLookup.sync) {
-    if (!legacyFailed) return null
-    return (
-      <div className="pbc-alert pbc-alert--stack pbc-alert--warning" role="alert">
-        <span>This quote has a previous failure but no durable sync record. Retry is blocked until the saved legacy state is inspected safely.</span>
-      </div>
-    )
-  }
-
-  const sync = visibleLookup.sync
-  const canCheck = sync.status === 'running' || sync.status === 'reconciliation_required'
-
-  return (
-    <div className={alertClass(sync, actionError !== null)} role={actionError ? 'alert' : 'status'} aria-live="polite">
-      <span>
-        <b>Jobber sync</b> — {statusMessage(sync)}
-        {actionError ? ` ${actionError}` : ''}
-      </span>
-      {sync.canRetry ? (
-        <button
-          type="button"
-          className="pbc-btn pbc-btn--ghost pbc-btn--sm"
-          disabled={isPending}
-          onClick={() => runAction(() => retryJobberQuoteSync(quoteId))}
-        >
-          {isPending ? 'Retrying…' : 'Retry sync'}
-        </button>
-      ) : null}
-      {canCheck ? (
-        <button
-          type="button"
-          className="pbc-btn pbc-btn--ghost pbc-btn--sm"
-          disabled={isPending}
-          onClick={() => runAction(() => checkJobberQuoteSync(quoteId))}
-        >
-          {isPending ? 'Checking…' : 'Check Jobber'}
-        </button>
-      ) : null}
-    </div>
-  )
+  return <>
+    {!recovered ? renderStatus() : null}
+    <JobberSyncRecovery
+      quoteId={quoteId}
+      available={visibleLookup.status === 'ready' && visibleLookup.sync?.status === 'reconciliation_required'}
+      disabled={isPending}
+      onReviewChange={setReviewOpen}
+      onRecovered={() => setRecovered(true)}
+      onSynced={() => {
+        setRecovered(false)
+        setLookup({ status: 'loading', quoteId })
+        void loadStatus(quoteId, scopeVersion.current)
+      }}
+    />
+  </>
 }

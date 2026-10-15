@@ -19,6 +19,15 @@
 
 ---
 
+## [수정 2026-10-16] Jobber 차단 원인·앱 내 검토 복구 — 로컬 검증 완료
+
+- **Model:** 프로젝트 지침에 따라 구현·DB·독립 리뷰 서브에이전트 `gpt-6-astra/high` 명시 실행. 주 채팅 모델은 지침으로 전환하지 않았다.
+- **운영 원인:** 대상 견적 version1의 작업이 14create+delete+reorder 모두 applied이나 full result가 null이며, 현재 version6에서 `reconciliation_required/quote_changed`로 차단됨을 SELECT로 확인했다. 실제 앱의 Jobber Refresh는 성공했고 원래14개+수동추가1개가 있다. 일반 Total의 `recommended:false` 기대와 실제 null 응답 차이가 완료 readback을 실패시키는 경로를 회귀로 재현·수정했다. 최초 응답/log가 없으므로 초기 실패 단독원인은 단정하지 않는다.
+- **구현:** `Review sync recovery`에서 현재행 UUID·원격항목을 검토하고 버전/fingerprint 재검사 후 로컬 연결·정확한 삭제대기만 원자적으로 복구한다. 내용·금액·자재·불변이력 보존, 감사기록 추가, 이전 claim 폐기. 복구 자체 Jobber전송0, 별도 `Sync saved quote`. sending/unknown create·legacy·다른견적·다른미완료작업·미지원모드는 차단한다.
+- **검증:** 최종 coverage **1,329 pass/19 환경skip**, S/B/F/L86.61/75.96/94.68/91.36% 및 threshold 통과. 실제 PGlite migration/RPC27tests, 전체TypeScript·lint·build19/19·diff 통과. 독립리뷰 삭제예고/SQL모드가드2건 수정후 남은P0–P2없음. 별도Next실제컴포넌트+합성action 브라우저360/390/1280px·키보드·중복/동의초기화·복구성공·자동전송없음 확인, viewport복구·consoleerror0.
+- **운영 반영 진행:** 사용자가 migration1개·앱배포·현재견적로컬복구를 명시승인했다. Preview `20261015224423` 및 운영 `20261015224635` 적용·authenticated rollback smoke 통과, 기존견적/라인/operation/step 체크섬보존 및 시험행0 확인. 앱배포·실제복구 진행중이다. Jobbermutation·고객메시지는 승인범위에 없으며 실행하지 않는다. 물리모바일·실제다중세션경합 미검증.
+- **근거:** `docs/superpowers/specs/2026-10-16-jobber-reviewed-recovery.md`, `docs/superpowers/reviews/2026-10-16-jobber-recovery-verification.md`.
+
 ## [릴리스 2026-10-14] Timber / Enamel main 병합·운영 반영 완료
 
 - **Model:** 사용자 지정 GPT-6.1 Sol/high 구현·테스트·오류 수정·독립 리뷰 서브에이전트. 아래 구현 시점의 제한은 당시 기록이며 최신 상태는 이 항목을 따른다.

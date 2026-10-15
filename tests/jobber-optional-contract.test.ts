@@ -32,6 +32,44 @@ function quotePayload(lineItems: unknown[]) {
 }
 
 describe('Jobber Optional write contract', () => {
+  it('accepts Jobber null recommendation only for a confirmed mandatory line requested as not recommended', () => {
+    const expected = { kind: 'line_item' as const, name: 'Aqua', description: '', quantity: 1,
+      unitPrice: -150, totalPrice: -150, taxable: true, jobberLineItemId: 'known', optional: false, recommended: false }
+    const completion = { syncedLineItems: [], expectedLineItems: [expected], deletedLineItemIds: [] }
+    expect(jobberReadMatchesCompletion([{ ...remote, optional: false, recommended: null }], completion)).toBe(true)
+    expect(jobberReadMatchesCompletion([{ ...remote, optional: true, recommended: null }], completion)).toBe(false)
+    expect(jobberReadMatchesCompletion([{ ...remote, optional: false, recommended: undefined }], completion)).toBe(false)
+    expect(jobberReadMatchesCompletion([{ ...remote, optional: false, recommended: true }], completion)).toBe(false)
+    expect(jobberReadMatchesCompletion([{ ...remote, optional: true, recommended: null }], {
+      ...completion, expectedLineItems: [{ ...expected, optional: true }],
+    })).toBe(false)
+    expect(jobberReadMatchesCompletion([{ ...remote, optional: false, recommended: null }], {
+      ...completion, expectedLineItems: [{ ...expected, recommended: true }],
+    })).toBe(false)
+  })
+
+  it('finishes a mandatory line sync when Jobber reads its recommendation back as null', async () => {
+    let reads = 0
+    const fetcher = vi.fn(async (_url: string, init: RequestInit) => {
+      const body = JSON.parse(String(init.body)) as { query: string }
+      if (body.query.includes('query PbcDurableQuoteLineItems')) {
+        return new Response(JSON.stringify({ data: { quote: { lineItems: {
+          nodes: ++reads === 1 ? [] : [{ ...remote, optional: false, recommended: null }],
+          pageInfo: { hasNextPage: false, endCursor: null },
+        } } } }))
+      }
+      return new Response(JSON.stringify({ data: { quoteCreateLineItems: {
+        createdLineItems: [{ id: 'known' }], userErrors: [],
+      } } }))
+    })
+    const result = await syncJobberQuoteLineItems('quote', {
+      ...input, lines: [{ ...input.lines[0], optionalWritePolicy: 'set_false' }],
+    }, { accessToken: 'test', graphqlVersion: '2025-04-16', fetcher,
+      journal: { beforeMutation: vi.fn(), afterMutation: vi.fn() } })
+    expect(result.syncedLineItems).toEqual([{ sourcePosition: 0, jobberLineItemId: 'known' }])
+    expect(fetcher).toHaveBeenCalledTimes(3)
+  })
+
   it.each(['full', 'lightweight', 'legacy lines', 'durable lines'] as const)(
     'uses only configured QuoteLineItem schema fields in the %s query', async (mode) => {
     let query = ''

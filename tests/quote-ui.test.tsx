@@ -39,6 +39,11 @@ const routerPushMock = vi.hoisted(() => vi.fn())
 const routerPrefetchMock = vi.hoisted(() => vi.fn())
 const resolveQuoteProductPricesMock = vi.hoisted(() => vi.fn())
 
+vi.mock('@/lib/actions/jobber-sync-recovery', () => ({
+  getJobberSyncRecovery: vi.fn(),
+  recoverJobberQuoteSync: vi.fn(),
+}))
+
 vi.mock('next/navigation', () => ({
   useRouter: () => ({
     push: routerPushMock,
