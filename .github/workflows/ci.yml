@@ -17,7 +17,7 @@ jobs:
       # Action unit tests use in-memory fixtures; production builds disable this mode.
       NEXT_PUBLIC_DEV_NO_AUTH: 'true'
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-node@v4
         with:
           node-version-file: .nvmrc
