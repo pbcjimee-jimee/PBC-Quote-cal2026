@@ -12,8 +12,35 @@ import {
 
 describe('quote form draft persistence', () => {
   it('uses separate draft keys for new and existing quotes', () => {
-    expect(getQuoteDraftStorageKey()).toBe('pbc-quote-draft:new')
-    expect(getQuoteDraftStorageKey('quote-1')).toBe('pbc-quote-draft:quote-1')
+    expect(getQuoteDraftStorageKey('user-a')).toBe('pbc-quote-draft:user-a:new')
+    expect(getQuoteDraftStorageKey('user-a', 'quote-1')).toBe('pbc-quote-draft:user-a:quote-1')
+    expect(getQuoteDraftStorageKey('user-b', 'quote-1')).not.toBe(getQuoteDraftStorageKey('user-a', 'quote-1'))
+  })
+
+  it.each([1, 2, 3])('restores version %s only for its owner and removes rejected drafts', (version) => {
+    const key = getQuoteDraftStorageKey('user-b')
+    const entries = new Map<string, string>()
+    const storage = {
+      getItem: (key: string) => entries.get(key) ?? null,
+      removeItem: (key: string) => { entries.delete(key) },
+    }
+    const draft = {
+      ...createEmptyQuoteFormDraft(), version, customerName: 'Private customer',
+      updatedAt: '2026-10-21T00:00:00.000Z',
+    }
+    const now = new Date('2026-10-21T01:00:00.000Z')
+    entries.set(key, JSON.stringify({ ...draft, ownerId: 'user-a' }))
+    expect(readQuoteFormDraftFromStorage(storage, key, 'user-b', now)).toBeNull()
+    expect(entries.has(key)).toBe(false)
+
+    entries.set(key, JSON.stringify(draft))
+    entries.set('pbc-quote-draft:new', JSON.stringify(draft))
+    expect(readQuoteFormDraftFromStorage(storage, key, 'user-b', now)).toBeNull()
+    expect(entries.size).toBe(0)
+
+    entries.set(key, JSON.stringify({ ...draft, ownerId: 'user-b' }))
+    expect(readQuoteFormDraftFromStorage(storage, key, 'user-b', now)?.customerName).toBe('Private customer')
+    expect(entries.has(key)).toBe(true)
   })
 
   it('ignores empty drafts but keeps meaningful quote input', () => {
@@ -232,11 +259,12 @@ describe('quote form draft persistence', () => {
   })
 
   it('purges invalid or expired raw draft payloads from local storage when read', () => {
-    const key = getQuoteDraftStorageKey('quote-1')
+    const key = getQuoteDraftStorageKey('user-a', 'quote-1')
     const entries = new Map<string, string>([
       [key, JSON.stringify({
         ...createEmptyQuoteFormDraft(),
         customerName: 'Expired Customer',
+        ownerId: 'user-a',
         updatedAt: '2026-06-18T23:59:59.999Z',
         jobberQuoteDraft: {
           financialSummary: { profit: 123 },
@@ -253,7 +281,7 @@ describe('quote form draft persistence', () => {
       },
     }
 
-    expect(readQuoteFormDraftFromStorage(storage, key, new Date('2026-06-26T00:00:00.000Z'))).toBeNull()
+    expect(readQuoteFormDraftFromStorage(storage, key, 'user-a', new Date('2026-06-26T00:00:00.000Z'))).toBeNull()
     expect(entries.has(key)).toBe(false)
   })
 

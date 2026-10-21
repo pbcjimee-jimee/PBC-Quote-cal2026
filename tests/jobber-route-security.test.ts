@@ -1,4 +1,4 @@
-import { describe, expect, it, vi, beforeEach } from 'vitest'
+import { afterEach, describe, expect, it, vi, beforeEach } from 'vitest'
 import { NextRequest } from 'next/server'
 
 const mocks = vi.hoisted(() => ({
@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   createClient: vi.fn(),
   createServiceClient: vi.fn(),
   requireAllowedUser: vi.fn(),
+  signOut: vi.fn(),
 }))
 
 vi.mock('@/lib/jobber/oauth', () => ({
@@ -32,9 +33,15 @@ import { GET as jobberCallback } from '@/app/api/jobber/callback/route'
 import { GET as jobberConnect } from '@/app/api/jobber/connect/route'
 import { AUTHENTICATION_REQUIRED_ERROR, USER_NOT_ALLOWED_ERROR } from '@/lib/security/auth-policy'
 
+afterEach(() => {
+  vi.unstubAllEnvs()
+  vi.restoreAllMocks()
+})
+
 describe('jobber callback security', () => {
   beforeEach(() => {
-    vi.clearAllMocks()
+    vi.resetAllMocks()
+    vi.stubEnv('JOBBER_TOKEN_ENCRYPTION_KEY', 'callback-test-key')
     mocks.requireAllowedUser.mockResolvedValue({
       ok: true,
       user: { id: 'user-1', email: 'owner@example.com' },
@@ -43,6 +50,7 @@ describe('jobber callback security', () => {
     mocks.createClient.mockResolvedValue({
       auth: {
         getUser: vi.fn(async () => ({ data: { user: { id: 'user-1' } }, error: null })),
+        signOut: mocks.signOut,
       },
     })
     mocks.createServiceClient.mockResolvedValue({
@@ -79,6 +87,7 @@ describe('jobber callback security', () => {
 
     expect(mocks.exchangeAuthorizationCode).not.toHaveBeenCalled()
     expect(mocks.requireAllowedUser).not.toHaveBeenCalled()
+    expect(mocks.requireAllowedUser).not.toHaveBeenCalled()
     expect(mocks.createServiceClient).not.toHaveBeenCalled()
   })
 
@@ -91,6 +100,19 @@ describe('jobber callback security', () => {
 
     expect(response.status).toBe(400)
     expect(await response.json()).toEqual({ ok: false, error: 'Invalid Jobber OAuth state' })
+    expect(mocks.exchangeAuthorizationCode).not.toHaveBeenCalled()
+    expect(mocks.requireAllowedUser).not.toHaveBeenCalled()
+    expect(mocks.signOut).not.toHaveBeenCalled()
+  })
+
+  it('does not sign out a user or exchange a code when callback state does not match', async () => {
+    const response = await jobberCallback(new NextRequest(
+      'http://localhost:3000/api/jobber/callback?code=auth-code&state=wrong',
+      { headers: { cookie: 'jobber_oauth_state=expected', 'sec-fetch-site': 'cross-site' } }
+    ))
+    expect(response.status).toBe(400)
+    expect(mocks.signOut).not.toHaveBeenCalled()
+    expect(mocks.requireAllowedUser).not.toHaveBeenCalled()
     expect(mocks.exchangeAuthorizationCode).not.toHaveBeenCalled()
   })
 
@@ -115,7 +137,7 @@ describe('jobber callback security', () => {
     const response = await jobberCallback(request)
 
     expect(response.status).toBe(502)
-    expect(await response.json()).toEqual({ ok: false, error: 'Jobber OAuth scopes must be read-only' })
+    expect(await response.json()).toEqual({ ok: false, error: 'Unable to connect Jobber. Please try again.' })
     expect(mocks.saveDevJobberToken).not.toHaveBeenCalled()
     expect(mocks.createClient).not.toHaveBeenCalled()
     expect(mocks.createServiceClient).not.toHaveBeenCalled()
@@ -175,14 +197,56 @@ describe('jobber callback security', () => {
     const response = await jobberCallback(request)
 
     expect(response.status).toBe(307)
-    expect(response.headers.get('location')).toBe('http://localhost:3000/api/auth/signout?reason=not_allowed')
+    expect(response.headers.get('location')).toBe('http://localhost:3000/login')
+    expect(mocks.exchangeAuthorizationCode).not.toHaveBeenCalled()
+    expect(mocks.signOut).toHaveBeenCalledOnce()
     expect(mocks.createServiceClient).not.toHaveBeenCalled()
+  })
+
+  it('requires admin authorization before exchanging a valid OAuth code', async () => {
+    mocks.exchangeAuthorizationCode.mockResolvedValueOnce({ accessToken: 'access-token', refreshToken: 'refresh-token',
+      expiresIn: 3600, tokenType: 'Bearer', scope: 'quotes:read' })
+    const response = await jobberCallback(new NextRequest(
+      'http://localhost:3000/api/jobber/callback?code=auth-code&state=valid',
+      { headers: { cookie: 'jobber_oauth_state=valid' } }
+    ))
+    expect(response.headers.get('location')).toBe('http://localhost:3000/settings?jobber=connected')
+    expect(mocks.requireAllowedUser).toHaveBeenCalledWith('admin')
+    expect(mocks.requireAllowedUser.mock.invocationCallOrder[0]).toBeLessThan(mocks.exchangeAuthorizationCode.mock.invocationCallOrder[0])
+    expect(response.cookies.get('jobber_oauth_state')?.value).toBe('')
+  })
+
+  it('does not disclose callback error details or log secrets', async () => {
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {})
+    mocks.exchangeAuthorizationCode.mockRejectedValueOnce(new Error('auth-code client-secret access-token private details'))
+    const response = await jobberCallback(new NextRequest(
+      'http://localhost:3000/api/jobber/callback?code=auth-code&state=valid',
+      { headers: { cookie: 'jobber_oauth_state=valid' } }
+    ))
+    expect(response.status).toBe(502)
+    expect(await response.json()).toEqual({ ok: false, error: 'Unable to connect Jobber. Please try again.' })
+    expect(log).toHaveBeenCalled()
+    const logged = JSON.stringify(log.mock.calls)
+    for (const secret of ['auth-code', 'client-secret', 'access-token', 'private details']) expect(logged).not.toContain(secret)
+  })
+
+  it('rejects keyless local dev callbacks before consuming an OAuth code', async () => {
+    vi.stubEnv('JOBBER_TOKEN_ENCRYPTION_KEY', '')
+    vi.stubEnv('NEXT_PUBLIC_DEV_NO_AUTH', 'true')
+    const response = await jobberCallback(new NextRequest(
+      'http://localhost:3000/api/jobber/callback?code=auth-code&state=valid',
+      { headers: { cookie: 'jobber_oauth_state=valid' } }
+    ))
+    expect(response.status).toBe(503)
+    expect(mocks.exchangeAuthorizationCode).not.toHaveBeenCalled()
+    expect(mocks.saveDevJobberToken).not.toHaveBeenCalled()
   })
 })
 
 describe('jobber connect security', () => {
   beforeEach(() => {
-    vi.clearAllMocks()
+    vi.resetAllMocks()
+    mocks.createClient.mockResolvedValue({ auth: { signOut: mocks.signOut } })
     mocks.requireAllowedUser.mockResolvedValue({
       ok: true,
       user: { id: 'user-1', email: 'owner@example.com' },
@@ -196,7 +260,7 @@ describe('jobber connect security', () => {
   it('returns 503 in Vercel Preview before auth or OAuth state generation', async () => {
     vi.stubEnv('VERCEL_ENV', 'preview')
     const randomUUID = vi.spyOn(crypto, 'randomUUID')
-    const request = new NextRequest('http://localhost:3000/api/jobber/connect')
+    const request = new NextRequest('http://localhost:3000/api/jobber/connect', { headers: { 'sec-fetch-site': 'same-origin' } })
 
     try {
       const response = await jobberConnect(request)
@@ -238,13 +302,16 @@ describe('jobber connect security', () => {
       error: USER_NOT_ALLOWED_ERROR,
     })
     const randomUUID = vi.spyOn(crypto, 'randomUUID')
-    const request = new NextRequest('http://localhost:3000/api/jobber/connect')
+    const request = new NextRequest('http://localhost:3000/api/jobber/connect', {
+      headers: { 'sec-fetch-site': 'same-origin' },
+    })
 
     try {
       const response = await jobberConnect(request)
 
       expect(response.status).toBe(307)
-      expect(response.headers.get('location')).toBe('http://localhost:3000/api/auth/signout?reason=not_allowed')
+      expect(response.headers.get('location')).toBe('http://localhost:3000/login')
+      expect(mocks.signOut).toHaveBeenCalledOnce()
       expect(randomUUID).not.toHaveBeenCalled()
     } finally {
       randomUUID.mockRestore()
@@ -295,5 +362,14 @@ describe('jobber connect security', () => {
     } finally {
       vi.unstubAllEnvs()
     }
+  })
+
+  it('does not turn a cross-site connect GET into a logout CSRF path', async () => {
+    mocks.requireAllowedUser.mockResolvedValueOnce({ ok: false, error: USER_NOT_ALLOWED_ERROR })
+    const response = await jobberConnect(new NextRequest('http://localhost:3000/api/jobber/connect', {
+      headers: { 'sec-fetch-site': 'cross-site' },
+    }))
+    expect(mocks.signOut).not.toHaveBeenCalled()
+    expect(response.headers.get('location')).toBe('http://localhost:3000/login/signout')
   })
 })

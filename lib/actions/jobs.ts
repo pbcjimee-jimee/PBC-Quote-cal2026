@@ -1,5 +1,7 @@
 'use server'
 
+import { safeErrorMessage } from './action-error'
+
 import { z } from 'zod'
 import { calculateEstimatedLabour, type EstimatedLabourSummary } from '@/lib/jobber/estimated-labour'
 import { calculateFinancialSummaryFromAmounts, type DecimalFinancialSummary } from '@/lib/jobber/financial-summary'
@@ -594,16 +596,20 @@ function currentSydneyMonth(now = new Date()): string {
 function assertRefreshAllowed(snapshots: readonly StoredJobSnapshot[], now = Date.now()): void {
   const latest = snapshots.reduce((value, snapshot) => Math.max(value, Date.parse(snapshot.refreshedAt)), 0)
   if (latest > 0 && now - latest < REFRESH_COOLDOWN_MS) {
-    throw new Error('Jobs were refreshed recently. Try again in 30 seconds.')
+    throw new JobRefreshCooldownError()
   }
 }
 
 function jobberFailure(error: unknown): ActionResult<never> {
   return {
     ok: false,
-    error: error instanceof Error ? error.message : 'Unable to load Jobber jobs',
+    error: error instanceof JobRefreshCooldownError
+      ? 'Jobs were refreshed recently. Try again in 30 seconds.'
+      : safeErrorMessage(error, 'jobs.jobber', 'Unable to load Jobber jobs. Contact an administrator to check the Jobber connection.'),
     code: 'JOBBER_ERROR',
   }
 }
 
 class JobAccessError extends Error {}
+
+class JobRefreshCooldownError extends Error {}

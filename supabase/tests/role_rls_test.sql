@@ -1,13 +1,13 @@
 BEGIN;
 CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA extensions;
-SELECT plan(22);
+SELECT plan(24);
 
 WITH admin_tables AS (
   SELECT unnest(ARRAY[
     'products', 'pricing_settings', 'quotes', 'quote_items', 'quote_areas',
     'quote_options', 'quote_option_items', 'jobber_quote_lines',
     'product_services', 'quote_line_templates', 'quote_line_template_items',
-    'quote_memos', 'quote_price_revisions'
+    'quote_memos'
   ]) AS table_name
 )
 SELECT ok(
@@ -26,6 +26,32 @@ SELECT ok(
   format('public.%I has the exact authenticated admin-only ALL policy', table_name)
 )
 FROM admin_tables;
+
+WITH expected(policy_name, cmd, qual, with_check) AS (
+  VALUES
+    ('quote_price_revisions_admin_select', 'SELECT', '(app_auth.current_role() = ''admin''::text)', NULL),
+    ('quote_price_revisions_admin_insert', 'INSERT', NULL, '(app_auth.current_role() = ''admin''::text)')
+)
+SELECT ok(
+  EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public'
+      AND tablename = 'quote_price_revisions'
+      AND policyname = expected.policy_name
+      AND roles = ARRAY['authenticated'::name]
+      AND pg_policies.cmd = expected.cmd
+      AND replace(pg_policies.qual, '"current_role"', 'current_role') IS NOT DISTINCT FROM expected.qual
+      AND replace(pg_policies.with_check, '"current_role"', 'current_role') IS NOT DISTINCT FROM expected.with_check
+  ),
+  format('%s permits only the intended admin operation', policy_name)
+)
+FROM expected;
+
+SELECT is(
+  (SELECT count(*)::INT FROM pg_policies WHERE schemaname = 'public' AND tablename = 'quote_price_revisions'),
+  2,
+  'price revisions have no UPDATE, DELETE or ALL policy'
+);
 
 SELECT ok(prosecdef, 'app_auth.current_role is SECURITY DEFINER')
 FROM pg_proc

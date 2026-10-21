@@ -1,8 +1,19 @@
 # PROGRESS.md — PBC 견적 계산기 진행 현황
 
 > **공용 진행 현황 문서.** 새 세션 시작 시 먼저 읽고 "이미 된 것"과 "남은 것"을 파악한다.
-> 모든 작업은 GPT-6 Astra가 담당한다(`AGENTS.md`, 2026-09-16 사용자 지정).
-> 설계·기획·QA 설계·디자인·아키텍처·스코프/보안 리스크 판단=**max**, 코드 구현·간단한 변경·git·배포=**medium**, 테스트·오류 수정·대규모 수정·리뷰·보안 점검/수정=**high**로 나눠 쓴다.
+> 현재 역할 기준(사용자 지정 2026-10-21): Claude Code 팀장(Opus 5.5/high) + Orca Codex 워커. 워커 모델은 전역 `~/.codex/AGENTS.md`를 따르며 상세는 `AGENTS.md`·`docs/AGENT-MAP.md` 참조. 아래 과거 항목의 모델은 당시 실행 이력이다.
+
+---
+
+## [보안 2026-10-21] 감사 후속 보안·의존성·CI 강화 — 로컬 구현·검증 완료, 커밋/운영 미반영
+
+- **Model:** Claude Code 팀장(Opus 5.5/high)이 분석·분배·코드 리뷰·최종 통합 검증하고 Orca Codex 워커가 구현·검증했다. 역할 모델 기준은 전역 `~/.codex/AGENTS.md`(implementer GPT-6.1 Sol/high, quick_edit GPT-6 Luna/high, analyst GPT-6 Astra/xhigh, explorer GPT-6 Astra/high)로 문서화했다.
+- **구현:** 감사 actor DB 강제·가격 이력 authenticated append-only migration, 전 환경 Jobber 토큰 암호화·로컬 파일 암호화, 공유 Auth 사용자 관리 대상 검증·기존 ban 상태 복원, 사용자 관리 입력 속성·대상 확인창을 추가했다. OAuth state→admin→교환, 출처 기반 GET 로그아웃·`/login/signout`의 Origin POST, server-only 가드, 사용자별 초안 key/envelope·로그아웃 정리, 안전 오류 문구·Ref/제한 로그·앱/global 오류 경계, Jobber URL allowlist·CSP connect-src를 보강했다. 미사용 middleware·CAD formatter 제거와 계산 테스트 주석 정정도 포함한다.
+- **구현(의존성·CI):** 개발 의존성 audit 12→5, 운영 audit 0. Node 24 `.nvmrc`·`@types/node ^24`, GitHub Actions `npm run verify`·Dependabot 설정을 추가했다. 기존 감사 항목의 해결/부분/미해결·운영 상태와 보안·스키마·배포·모델 라우팅 문서를 실제 코드에 맞췄다.
+- **검증:** 팀장 최종 통합 `npm run verify` **exit 0** — Vitest **1,461 pass / 19 환경 skip (142 files)**, 기준선 **1,329 pass**. Coverage S/B/F/L **87.31/76.76/95.42/92.00%**, typecheck·lint 오류 **0**, Next build **20/20**, production audit **0**, 전체 audit **high 5**(braces 체인, 패치 없음). 문서 태스크가 전체 verify를 재실행한 결과가 아니라 팀장 전달 최종 값이다.
+- **검증(브라우저):** 브라우저 QA: **팀장 확인 항목 참조**. 로컬 로그아웃 출처·확인 화면 및 임시 격리 사용자 관리 확인창·오류 경계의 렌더/상호작용 결과는 `docs/APP-AUDIT-2026-09-15.md`의 2026-10-21 팀장 확인 항목에 기록했다.
+- **제한:** 커밋·push·배포·이번 migration의 Preview/운영 적용은 미실행이다. Preview 먼저 적용·Save/Edit/version conflict/duplicate/trash/restore/Jobber recovery smoke 후 운영은 사용자 명시 승인이 필요하다. 실제 Supabase 인증 앱 전체 흐름·OAuth·Jobber 경합·물리 모바일은 미검증이며 원격 CI·branch protection·Hosted Auth·백업/PITR 확인도 남아 있다. 390px 사용자 표의 기존 가로 넘침은 감사 P2-13 미해결로 남긴다. 기존 무소유 로컬 초안은 배포 후 복원되지 않으며 과거 DB 저장 오류·actor는 소급 수정하지 않는다.
+- **근거:** `supabase/migrations/20261021094546_enforce_audit_actor_integrity.sql`, 관련 action/route·draft·URL·오류·사용자 UI 회귀, `.github/workflows/ci.yml`, `.github/dependabot.yml`, `docs/BACKLOG.md`·`docs/APP-AUDIT-2026-09-15.md`·`docs/SECURITY.md`·`docs/DB-SCHEMA.md`·`docs/DEPLOY.md` 및 팀장 재검증 결과. 문서 변경은 지정 11개 파일에 한정했다.
 
 ---
 

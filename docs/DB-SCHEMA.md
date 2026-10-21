@@ -6,6 +6,25 @@
 
 ---
 
+## 감사 actor 무결성 (2026-10-21, 로컬 완료·Preview/운영 미적용)
+
+새 forward migration: `20261021094546_enforce_audit_actor_integrity.sql`. 기존 행·가격 스냅샷·견적 version을 소급 변경하지 않으며 기존 저장 RPC·lifecycle guard를 유지한다.
+
+| 대상 테이블 | `zz_enforce_audit_actor_integrity` BEFORE INSERT/UPDATE 동작 |
+|---|---|
+| `quotes` | INSERT created_by/updated_by = auth.uid(); UPDATE created_by = OLD.created_by, updated_by = auth.uid() |
+| `quote_memos` | INSERT created_by = auth.uid(); UPDATE created_by = OLD.created_by |
+| `pricing_settings` | INSERT/UPDATE updated_by = auth.uid() |
+| `quote_price_revisions` | INSERT changed_by = auth.uid(); authenticated UPDATE/DELETE 권한 별도 회수 |
+
+- 공통 함수 `app_auth.enforce_audit_actor_integrity()`는 SECURITY INVOKER, `search_path = ''`이며 `auth.uid()`가 NULL이면 제공 attribution을 유지한다. JWT를 가진 요청에는 client actor 대신 DB actor를 강제한다. 기존 lifecycle/parent guard 이후 실행하도록 트리거 이름을 정했다.
+- `quote_price_revisions_admin` all-command 정책을 제거하고 `quote_price_revisions_admin_select` / `_insert`만 생성한다. 둘 다 active admin 역할을 확인한다. authenticated의 UPDATE/DELETE grant를 회수해 append-only로 제한하며 service 유지보수까지 전면 불변으로 만드는 변경은 아니다.
+- 함수의 PUBLIC·anon·authenticated·service_role 직접 EXECUTE 권한을 회수한다. 테이블 쓰기 시 트리거는 기존 RLS·grant·guard와 함께 작동한다. schema reload를 알리고 트랜잭션으로 적용한다.
+- 별도 actor 경계가 있는 lifecycle events, jobber_sync_operations/recoveries, service-only job snapshots는 변경하지 않는다.
+- Preview에 먼저 적용하고 admin Save/Edit/version conflict/duplicate/trash/restore/Jobber recovery smoke를 수행한다. 운영 적용은 사용자 명시 승인이 필요하며 롤백 위치·세부 게이트는 `DEPLOY.md`를 따른다.
+
+---
+
 ## Timber 비교 저장 계약 (2026-10-14, 운영 미적용)
 
 새 마이그레이션 `20261014000000_add_paint_comparison_optional_lines.sql`과 `20261014000001_extend_jobber_optional_sync_contract.sql`은 이번 브랜치의 로컬 검증용이다. 운영 DB에는 아직 적용하지 않았다.
@@ -90,6 +109,7 @@ quotes ── jobber_sync_operations ──< jobber_sync_steps
 | `20260815000648_add_quote_item_memos.sql` | `quote_items`·`quote_option_items`에 견적별 app-only `memo`(최대 4,000자) 추가 + 견적 저장 RPC 갱신·`search_path` 고정 |
 | `20260917025111_add_jobber_durable_sync.sql` | 불변 Jobber operation snapshot·mutation step journal, lease/claim/reconciliation RPC, quote save+enqueue wrapper |
 | `20260918020411_fix_jobber_total_line_lookup_grant.sql` | invoker 저장 wrapper가 호출하는 `latest_jobber_total_line_id(text)`의 authenticated 실행 권한 보완. 활성 admin 검사 유지, PUBLIC/anon/service_role 실행 차단 |
+| `20261021094546_enforce_audit_actor_integrity.sql` | actor 강제 BEFORE 트리거 4개 + SECURITY INVOKER 함수, 가격 이력 authenticated UPDATE/DELETE 회수·admin SELECT/INSERT 정책 (로컬 완료·Preview/운영 미적용) |
 
 `20260731` role 마이그레이션은 위 세 개가 전부다. Progress Invoice 마이그레이션은 이 브랜치와 릴리스에 없으며 별도 소유된다.
 
@@ -147,7 +167,7 @@ App-only warehouse stock list managed at `/inventory` (`/settings/inventory` red
 
 ### quote_price_revisions (금액 변경 이력)
 quote/option totals의 price-change 스냅샷을 보관해 이후 편집이 sell total 이력을 보존. SQL: `0017`/`0018`.
-> ⚠️ `changed_by`가 DB에서 강제되지 않고(`WITH CHECK(true)`, DEFAULT/트리거 없음) UPDATE/DELETE도 authenticated에 허용 → 행위자 위조·이력 변조 가능. `docs/BACKLOG.md` H5 참조.
+> 2026-10-21 로컬 migration이 changed_by를 DB actor로 고정하고 authenticated SELECT/INSERT만 허용한다. Preview/운영에는 아직 미적용이므로 기존 원격의 위조·변조 위험이 해소됐다고 간주하지 않는다. 상단 감사 actor 절·`docs/BACKLOG.md` H5 참조.
 
 ---
 
@@ -155,6 +175,7 @@ quote/option totals의 price-change 스냅샷을 보관해 이후 편집이 sell
 
 - 역할 판정은 JWT payload나 클라이언트 입력이 아니라 `auth.uid()`와 `user_profiles.is_active`를 조회하는 `app_auth.current_role()` SECURITY DEFINER 함수로 통일한다.
 - admin 전용: 견적·가격·제품·설정·템플릿·메모·가격 이력 테이블과 견적 저장 RPC. supervisor의 direct Supabase 조회·쓰기 및 SECURITY DEFINER RPC 우회는 모두 거부한다.
+- 2026-10-21 forward migration 적용 후 가격 이력은 admin SELECT/INSERT만 허용한다. authenticated UPDATE/DELETE는 grant와 정책 양쪽에서 차단한다.
 - admin+supervisor: `warehouse_inventory` SELECT/UPDATE. supervisor UPDATE는 트리거가 재고 이동 필드 외 변경을 거부하며 INSERT/DELETE는 admin만 허용한다.
 - `user_profiles`: 본인 행 SELECT 또는 admin 전체 SELECT만 허용한다. authenticated 직접 write 정책은 없다.
 - `jobber_tokens`, `jobber_job_snapshots`: RLS enabled + 클라이언트 정책 없음(service-role only).

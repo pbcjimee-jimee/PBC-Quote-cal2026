@@ -6,6 +6,8 @@ import { listQuoteLineTemplates } from '@/lib/actions/quote-line-templates'
 import { getQuote } from '@/lib/actions/quotes'
 import { getPricingSettings } from '@/lib/actions/settings'
 import { isJobberDisabledInPreview, JOBBER_DISABLED_MESSAGE } from '@/lib/jobber/environment'
+import { isDevNoAuthMode } from '@/lib/actions/types'
+import { requireRole } from '@/lib/security/require-app-user'
 
 interface QuoteEditPageProps {
   params: Promise<{ id: string }>
@@ -37,6 +39,8 @@ export default async function QuoteEditPage({ params }: QuoteEditPageProps) {
   const templates = quoteLineTemplates.status === 'fulfilled' && quoteLineTemplates.value.ok
     ? quoteLineTemplates.value.data
     : null
+  const appUser = isDevNoAuthMode() ? null : await requireRole('admin')
+  const userId = appUser === null ? 'dev-no-auth' : appUser.ok ? appUser.user.id : undefined
 
   return (
     <>
@@ -46,6 +50,8 @@ export default async function QuoteEditPage({ params }: QuoteEditPageProps) {
         </p>
       ) : null}
       <QuoteForm
+        key={userId}
+        userId={userId}
         areas={areas.value.data}
         quoteLineTemplates={templates ?? []}
         initialQuote={quote.value.data}

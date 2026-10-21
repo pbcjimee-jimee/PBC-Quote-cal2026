@@ -6,6 +6,8 @@ export default defineConfig({
   plugins: [react()],
   test: {
     environment: 'node',
+    // Only tests bypass the marker; Next.js still enforces server-only imports.
+    setupFiles: ['./tests/server-only-setup.ts'],
     exclude: [
       '**/.claude/**',
       '**/.worktrees/**',

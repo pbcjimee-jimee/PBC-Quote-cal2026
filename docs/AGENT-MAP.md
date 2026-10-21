@@ -1,8 +1,8 @@
 # AGENT-MAP.md — 모델 라우팅 & 필독 파일 매트릭스
 
 > 세션 시작·작업 시 참조해야 할 모델 라우팅과 파일 매핑.
-> 이 프로젝트는 모든 작업에 **GPT-6 Astra**를 사용하고 역할별 reasoning effort를 조정한다.
-> **max**는 설계·기획·QA 설계·디자인·아키텍처·스코프/보안 리스크 판단, **medium**은 코드 구현·간단한 변경·git·배포, **high**는 테스트·오류 수정·대규모·장시간 작업·리뷰·보안 점검/수정에 쓴다.
+> 사용자 지정(2026-10-21): **Claude Code 팀장(Opus 5.5/high) + Orca Codex 워커**.
+> 워커 모델·effort는 전역 `~/.codex/AGENTS.md`의 역할 기준을 따른다.
 
 ---
 
@@ -11,32 +11,35 @@
 | 파일 | 역할 |
 |---|---|
 | `AGENTS.md` | 세션 진입점 — 역할 분업·규칙 요약 |
-| `CLAUDE.md` | Deprecated — 현재 운영에서 사용하지 않음 |
+| `CLAUDE.md` | Claude Code 팀장용 현재 기준 요약 |
 
 ---
 
 ## 모델 라우팅 (역할 기반)
 
 작업 지시·스킬 호출·하위 에이전트 핸드오프 시 담당 모델을 함께 적는다.
-런타임에서 모델 전환이 불가능하면 프롬프트 첫 줄에 `Model: <모델>`을 표시한다.
+실제 실행 모델·effort를 확인하며, 접근 불가 또는 지정 불가 시 제한을 보고한다. 프롬프트의 모델 표기만으로 런타임이 전환되지는 않는다.
 
 | 작업 유형 | 담당 모델 |
 |---|---|
-| 계획·아키텍처 설계, 스코프·리스크 판단 | **GPT-6 Astra max** |
-| 아이디어·브레인스토밍, 기능 구상 | **GPT-6 Astra max** |
-| QA 시나리오 설계, 테스트 전략 | **GPT-6 Astra max** |
-| UI/UX 디자인, plan/design 리뷰 | **GPT-6 Astra max** |
-| 코드 구현 (마이그레이션·Server Action·Route·UI) | **GPT-6 Astra medium** |
-| 간단한 변경, 단순 문구 수정·기계적 반복 작업 | **GPT-6 Astra medium** |
-| git 작업, 배포 실행 | **GPT-6 Astra medium** |
-| 테스트 작성, QA 실행 | **GPT-6 Astra high** |
-| 버그·오류 수정 | **GPT-6 Astra high** |
-| 대규모 수정·리팩토링, 오래 걸리는 작업 | **GPT-6 Astra high** |
-| 코드 리뷰, 보안 점검·수정 | **GPT-6 Astra high** |
+| 계획·아키텍처 설계, 스코프·리스크 판단 | **Claude Code 팀장 (Opus 5.5/high)** |
+| 아이디어·브레인스토밍, 기능 구상 | **Claude Code 팀장 (Opus 5.5/high)** |
+| QA 시나리오 설계, 테스트 전략 | **Claude Code 팀장 (Opus 5.5/high)** |
+| UI/UX 디자인, plan/design 리뷰 | **Claude Code 팀장 (Opus 5.5/high)** |
+| 코드 구현 (마이그레이션·Server Action·Route·UI) | **Codex implementer (GPT-6.1 Sol/high)** |
+| 범위·정답이 명확한 저위험 변경 | **Codex quick_edit (GPT-6 Luna/high)** |
+| git 작업, 배포 실행 | **Codex implementer (GPT-6.1 Sol/high)** |
+| 테스트 작성, QA 실행 | **Codex implementer (GPT-6.1 Sol/high)** |
+| 버그·오류 수정 | **Codex implementer (GPT-6.1 Sol/high)** |
+| 대규모 수정·리팩토링, 오래 걸리는 작업 | **Codex implementer (GPT-6.1 Sol/high)** |
+| 코드 리뷰·통합 검증·보안 리스크 판단 | **Claude Code 팀장 (Opus 5.5/high)** |
+| 분석·설계·리뷰·QA·UI/UX 판단 보조 | **Codex analyst (GPT-6 Astra/xhigh)** |
+| 읽기 전용 코드·파일·문서 탐색 | **Codex explorer (GPT-6 Astra/high)** |
+| 확정된 보안 수정 구현·테스트 | **Codex implementer (GPT-6.1 Sol/high)** |
 
-**서브에이전트 원칙:** Codex가 서브에이전트를 스폰할 때 서브에이전트 모델은 전부 **`gpt-6-astra` + reasoning effort `high`**로 실행한다. 2026-09-16 사용자 지정을 따르며 런타임에서도 해당 모델을 명시한다.
+**워커·서브에이전트 원칙:** implementer `gpt-6.1-sol/high`, quick_edit `gpt-6-luna/high`, analyst `gpt-6-astra/xhigh`, explorer `gpt-6-astra/high`를 전역 역할 기준과 위임 허용 범위에 따라 선택한다. 역할 정의만으로 모든 작업에 하위 에이전트를 호출하지 않는다. 권한·데이터·복잡한 구조 판단은 quick_edit로 분류하지 않는다.
 
-**핸드오프 원칙:** 설계 작업(GPT-6 Astra max)의 산출물은 `docs/superpowers/specs/`(설계) 또는 `docs/superpowers/plans/`(구현 계획)에 남기고, GPT-6 Astra medium/high는 그 문서를 입력으로 구현·검증한다. 이 라우팅은 비용·품질 기준일 뿐 시스템·사용자 지시, 보안·의존성 승인 규칙을 대체하지 않는다.
+**핸드오프 원칙:** Claude가 설계·계획을 `docs/superpowers/specs/` 또는 `docs/superpowers/plans/`에 남기고 Orca Run/Task(Target·Change·Constraints·Ownership·Acceptance)로 분배한다. 워커는 구현·검증 후 해당 Dispatch의 `worker_done`으로 보고하고, Claude가 코드 리뷰·최종 통합 검증한다. 오류는 같은 흐름에서 수정 후 다음 단계로 진행한다. 병렬 편집은 파일 소유 범위를 나눈다. 운영 DB migration, Vercel 환경 변수·도메인, 영구 삭제, force push/reset, 새 외부 의존성, push·배포의 사용자 명시 승인 경계는 유지한다.
 
 ---
 
@@ -98,11 +101,11 @@ superpowers 아래 개별 spec/plan 파일 목록은 해당 디렉터리에서 �
 
 ---
 
-## Deprecated 파일
+## 팀장 진입 요약
 
 | 파일 | 상태 |
 |---|---|
-| `CLAUDE.md` | 현재 운영에서 사용하지 않음. 최신 기준은 `AGENTS.md`와 `docs/WORKFLOW.md`다. |
+| `CLAUDE.md` | Claude Code 팀장 요약. 공용 상세 기준은 `AGENTS.md`와 `docs/WORKFLOW.md`다. |
 
 ---
 
@@ -110,16 +113,16 @@ superpowers 아래 개별 spec/plan 파일 목록은 해당 디렉터리에서 �
 
 | 작업 유형 | 담당 모델 | 필독 파일 |
 |---|---|---|
-| **신규 기능 설계** | GPT-6 Astra max | `AGENTS.md` → `PROGRESS.md` → `docs/DECISIONS.md` → `docs/ARCHITECTURE.md` → `docs/SECURITY.md` |
-| **UI/UX 디자인 설계** | GPT-6 Astra max | `AGENTS.md` → `docs/UI-DESIGN-SYSTEM.md` → `docs/UI-DESIGN.md` → `docs/UI-UX-REVIEW.md` |
-| **DB 마이그레이션** | GPT-6 Astra medium | `AGENTS.md` → `docs/DB-SCHEMA.md` → `docs/SECURITY.md` |
-| **계산 로직** | GPT-6 Astra medium | `AGENTS.md` → `docs/CALCULATION.md` → `docs/CALCULATION-API.md` → `docs/CODING-STYLE.md` |
-| **Server Actions** | GPT-6 Astra medium | `AGENTS.md` → `docs/ARCHITECTURE.md` → `docs/DB-SCHEMA.md` → `docs/CODING-STYLE.md` |
-| **UI 컴포넌트 구현** | GPT-6 Astra medium | `AGENTS.md` → `docs/UI-DESIGN-SYSTEM.md` → 페이지별(`UI-QUOTE-FORM.md`/`UI-PAGES.md`) → `docs/CODING-STYLE.md` |
-| **테스트 작성** | GPT-6 Astra high | `AGENTS.md` → `docs/CALCULATION.md` → `docs/CALCULATION-API.md` → `PROGRESS.md` |
-| **버그·오류 수정, 대규모 수정** | GPT-6 Astra high | `AGENTS.md` → 재현 경로 → 관련 명세 → `docs/CODING-STYLE.md` |
-| **코드 리뷰·보안** | GPT-6 Astra high | `AGENTS.md` → `docs/DECISIONS.md` → `docs/CODING-STYLE.md` → `docs/SECURITY.md` |
-| **배포** | GPT-6 Astra medium | `AGENTS.md` → `docs/DEPLOY.md` → `docs/CLI-ACCESS.md` → `docs/SECURITY.md` |
+| **신규 기능 설계** | Claude Code 팀장 (Opus 5.5/high) | `AGENTS.md` → `PROGRESS.md` → `docs/DECISIONS.md` → `docs/ARCHITECTURE.md` → `docs/SECURITY.md` |
+| **UI/UX 디자인 설계** | Claude Code 팀장 (Opus 5.5/high) | `AGENTS.md` → `docs/UI-DESIGN-SYSTEM.md` → `docs/UI-DESIGN.md` → `docs/UI-UX-REVIEW.md` |
+| **DB 마이그레이션** | Codex implementer (GPT-6.1 Sol/high) | `AGENTS.md` → `docs/DB-SCHEMA.md` → `docs/SECURITY.md` |
+| **계산 로직** | Codex implementer (GPT-6.1 Sol/high) | `AGENTS.md` → `docs/CALCULATION.md` → `docs/CALCULATION-API.md` → `docs/CODING-STYLE.md` |
+| **Server Actions** | Codex implementer (GPT-6.1 Sol/high) | `AGENTS.md` → `docs/ARCHITECTURE.md` → `docs/DB-SCHEMA.md` → `docs/CODING-STYLE.md` |
+| **UI 컴포넌트 구현** | Codex implementer (GPT-6.1 Sol/high) | `AGENTS.md` → `docs/UI-DESIGN-SYSTEM.md` → 페이지별(`UI-QUOTE-FORM.md`/`UI-PAGES.md`) → `docs/CODING-STYLE.md` |
+| **테스트 작성** | Codex implementer (GPT-6.1 Sol/high) | `AGENTS.md` → `docs/CALCULATION.md` → `docs/CALCULATION-API.md` → `PROGRESS.md` |
+| **버그·오류 수정, 대규모 수정** | Codex implementer (GPT-6.1 Sol/high) | `AGENTS.md` → 재현 경로 → 관련 명세 → `docs/CODING-STYLE.md` |
+| **코드 리뷰·보안** | Claude Code 팀장 / analyst 보조, 구현은 implementer | `AGENTS.md` → `docs/DECISIONS.md` → `docs/CODING-STYLE.md` → `docs/SECURITY.md` |
+| **배포** | Codex implementer (GPT-6.1 Sol/high) | `AGENTS.md` → `docs/DEPLOY.md` → `docs/CLI-ACCESS.md` → `docs/SECURITY.md` |
 
 ---
 

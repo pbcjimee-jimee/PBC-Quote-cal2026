@@ -1,6 +1,7 @@
 'use server'
 
 import { revalidatePath } from 'next/cache'
+import { safeErrorMessage } from './action-error'
 import { createClient } from '@/lib/supabase/server'
 import { requireRole } from '@/lib/security/require-app-user'
 import { pricingSettingsSchema, type PricingSettingsInput } from '@/lib/validators'
@@ -71,7 +72,7 @@ export async function getPricingSettings(): Promise<ActionResult<PricingSettings
     .eq('id', 1)
     .single()
 
-  if (error) return { ok: false, error: error.message }
+  if (error) return { ok: false, error: safeErrorMessage(error, 'settings.getPricingSettings') }
   return { ok: true, data: rowToSettings(data) }
 }
 
@@ -99,7 +100,7 @@ export async function updatePricingSettings(input: unknown): Promise<ActionResul
     .select('*')
     .single()
 
-  if (error) return { ok: false, error: error.message }
+  if (error) return { ok: false, error: safeErrorMessage(error, 'settings.updatePricingSettings') }
   revalidateSettingsConsumers()
   return { ok: true, data: rowToSettings(data) }
 }

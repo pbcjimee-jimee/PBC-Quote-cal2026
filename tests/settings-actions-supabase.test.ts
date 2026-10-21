@@ -92,7 +92,7 @@ describe('settings actions against Supabase', () => {
 
     const result = await getPricingSettings()
 
-    expect(result).toEqual({ ok: false, error: 'settings missing' })
+    expect(result).toEqual({ ok: false, error: expect.stringMatching(/^Unable to complete this request\. Please try again\. \(Ref: [a-f0-9]{12}\)$/) })
   })
 
   it('rejects disallowed users before reading pricing settings', async () => {

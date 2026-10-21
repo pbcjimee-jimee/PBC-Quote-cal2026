@@ -377,4 +377,20 @@ describe('product actions against Supabase', () => {
     expect(builder.update).toHaveBeenCalledWith(expect.objectContaining({ active: false }))
     expect(builder.eq).toHaveBeenCalledWith('id', '00000000-0000-4000-8000-000000000001')
   })
+  it('redacts database errors from responses and server logs', async () => {
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const secret = 'token=private actual_price=123 staff@example.com'
+    const error = { message: secret, details: secret, code: secret }
+    const { from } = createSingleProductBuilder('insert', { data: null, error })
+    mocks.createClient.mockResolvedValueOnce({ from })
+    try {
+      const result = await createProduct({ manufacturer: 'Brand', productLine: 'Paint', volumeLitres: 1, rrpPrice: 1 })
+      expect(result).toEqual({ ok: false, error: expect.stringMatching(/^Unable to complete this request\. Please try again\. \(Ref: [a-f0-9]{12}\)$/) })
+      expect(JSON.stringify(log.mock.calls)).not.toContain(secret)
+      expect(log).toHaveBeenCalled()
+    } finally {
+      log.mockRestore()
+    }
+  })
+
 })

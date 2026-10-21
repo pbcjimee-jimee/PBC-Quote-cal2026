@@ -25,6 +25,7 @@ function parseDraftPaintComparison(value: unknown): { ok: true; value: PaintComp
 
 const QUOTE_DRAFT_VERSION = 3
 const QUOTE_DRAFT_STORAGE_PREFIX = 'pbc-quote-draft:'
+export const QUOTE_DRAFT_SIGN_OUT_EVENT = 'pbc-quote-draft-sign-out'
 export const QUOTE_DRAFT_EXPIRY_MS = 7 * 24 * 60 * 60 * 1000
 const LOCAL_DRAFT_JOBBER_PRIVATE_FIELDS_MESSAGE = 'Jobber expense and financial details are not stored in local drafts. Fetch Jobber again to refresh them.'
 
@@ -90,8 +91,8 @@ export interface QuoteFormDraft {
 
 type UnknownRecord = Record<string, unknown>
 
-export function getQuoteDraftStorageKey(quoteId?: string): string {
-  return `${QUOTE_DRAFT_STORAGE_PREFIX}${quoteId ?? 'new'}`
+export function getQuoteDraftStorageKey(ownerId: string, quoteId?: string): string {
+  return `${QUOTE_DRAFT_STORAGE_PREFIX}${ownerId}:${quoteId ?? 'new'}`
 }
 
 export function createEmptyQuoteFormDraft(): QuoteFormDraft {
@@ -625,11 +626,28 @@ export function parseQuoteFormDraft(value: string | null, now: Date = new Date()
 export function readQuoteFormDraftFromStorage(
   storage: QuoteDraftReadableStorage,
   key: string,
+  ownerId: string,
   now: Date = new Date()
 ): QuoteFormDraft | null {
+  const ownerPrefix = `${QUOTE_DRAFT_STORAGE_PREFIX}${ownerId}:`
+  if (key.startsWith(ownerPrefix)) {
+    storage.removeItem(`${QUOTE_DRAFT_STORAGE_PREFIX}${key.slice(ownerPrefix.length)}`)
+  }
   const storedValue = storage.getItem(key)
+  if (storedValue === null) return null
+  let envelope: unknown
+  try {
+    envelope = JSON.parse(storedValue)
+  } catch {
+    storage.removeItem(key)
+    return null
+  }
+  if (!ownerId || !isRecord(envelope) || envelope.ownerId !== ownerId) {
+    storage.removeItem(key)
+    return null
+  }
   const draft = parseQuoteFormDraft(storedValue, now)
-  if (storedValue !== null && draft === null) {
+  if (draft === null) {
     storage.removeItem(key)
   }
   return draft

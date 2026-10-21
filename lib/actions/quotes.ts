@@ -1,6 +1,7 @@
 'use server'
 
 import { revalidatePath } from 'next/cache'
+import { safeErrorMessage } from './action-error'
 import { after } from 'next/server'
 import { z } from 'zod'
 import {
@@ -874,7 +875,7 @@ async function resolveQuoteInputSnapshots(
       .eq('id', quoteId)
       .single()
 
-    if (error) return { ok: false, error: error.message }
+    if (error) return { ok: false, error: safeErrorMessage(error, 'quotes.resolveQuoteInputSnapshots') }
     const existing = data as unknown as {
       paint_comparisons?: unknown
       quote_items?: ExistingQuoteItemSnapshotRow[]
@@ -902,7 +903,7 @@ async function resolveQuoteInputSnapshots(
   const newLogicalKeys = input.items.flatMap((item) => item.logicalKey && !ownLogicalKeys.has(item.logicalKey) ? [item.logicalKey] : [])
   if (newLogicalKeys.length) {
     const { data, error } = await supabase.from('quote_items').select('logical_key, quote_id').in('logical_key', newLogicalKeys)
-    if (error) return { ok: false, error: error.message }
+    if (error) return { ok: false, error: safeErrorMessage(error, 'quotes.resolveQuoteInputSnapshots') }
     if ((data ?? []).some((row) => row.quote_id !== quoteId)) {
       return { ok: false, error: 'Material logical key belongs to another quote. Refresh before saving.' }
     }
@@ -914,7 +915,7 @@ async function resolveQuoteInputSnapshots(
       .select('id, name, market_price, actual_price, price, rrp_price')
       .in('id', productIds)
 
-    if (error) return { ok: false, error: error.message }
+    if (error) return { ok: false, error: safeErrorMessage(error, 'quotes.resolveQuoteInputSnapshots') }
 
     for (const row of (data ?? []) as unknown as ProductPriceRow[]) {
       currentProducts.set(row.id, productSnapshotFromRow(row))
@@ -1156,7 +1157,7 @@ async function getNextQuotePriceRevisionNumber(
     .order('revision_number', { ascending: false })
     .limit(1)
 
-  if (error) return { ok: false, error: error.message }
+  if (error) return { ok: false, error: safeErrorMessage(error, 'quotes.getNextQuotePriceRevisionNumber') }
   const latest = Array.isArray(data) ? data[0]?.revision_number : undefined
   return { ok: true, data: typeof latest === 'number' ? latest + 1 : 1 }
 }
@@ -1331,7 +1332,7 @@ export async function updateQuote(input: unknown): Promise<ActionResult<{ id: st
     .is('deleted_at', null)
     .eq('id', id)
     .single()
-  if (existingQuoteError) return { ok: false, error: existingQuoteError.message }
+  if (existingQuoteError) return { ok: false, error: safeErrorMessage(existingQuoteError, 'quotes.updateQuote') }
   const existingQuoteRow = existingQuote as unknown as {
     pricing_settings_snapshot: unknown
     subtotal: unknown
@@ -1479,7 +1480,7 @@ export async function duplicateQuote(sourceQuoteId: string): Promise<ActionResul
       .select('id, name, market_price, actual_price, price, rrp_price')
       .in('id', productIds)
 
-    if (error) return { ok: false, error: error.message }
+    if (error) return { ok: false, error: safeErrorMessage(error, 'quotes.duplicateQuote') }
 
     for (const row of (data ?? []) as unknown as ProductPriceRow[]) {
       currentProducts.set(row.id, productSnapshotFromRow(row))
@@ -1530,7 +1531,7 @@ export async function searchQuotes(query = '', limit = 100): Promise<ActionResul
   }
 
   const { data, error } = await request
-  if (error) return { ok: false, error: error.message }
+  if (error) return { ok: false, error: safeErrorMessage(error, 'quotes.searchQuotes') }
   const rows = data as unknown as QuoteListRow[] | null
   const quoteRows = rows ?? []
 
@@ -1664,7 +1665,7 @@ export async function retryJobberQuoteSync(quoteId: string): Promise<ActionResul
 }
 
 function getSyncErrorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : 'Unable to sync quote to Jobber'
+  return safeErrorMessage(error, 'quotes.refreshJobberSnapshot', 'Unable to refresh the Jobber quote. Check the Jobber connection and try again.')
 }
 
 export async function refreshJobberQuoteSnapshot(
@@ -1691,7 +1692,7 @@ export async function refreshJobberQuoteSnapshot(
     .is('deleted_at', null)
     .eq('id', id)
     .single()
-  if (error) return { ok: false, error: error.message }
+  if (error) return { ok: false, error: safeErrorMessage(error, 'quotes.refreshJobberQuoteSnapshot') }
 
   const row = data as unknown as Pick<QuoteRow, 'id' | 'version' | 'jobber_quote_id' | 'jobber_snapshot'> | null
   if (!row) return { ok: false, error: 'Quote not found' }
@@ -1751,7 +1752,7 @@ export async function getQuote(id: string): Promise<ActionResult<QuoteRecord | n
   if (error) {
     if (isSupabaseNoRowsError(error)) return { ok: true, data: null }
     if (!isMissingMemoRelationError(error) && !isMissingLegacyDetailRelationError(error)) {
-      return { ok: false, error: error.message }
+      return { ok: false, error: safeErrorMessage(error, 'quotes.getQuote') }
     }
 
     if (isMissingMemoRelationError(error)) {
@@ -1767,7 +1768,7 @@ export async function getQuote(id: string): Promise<ActionResult<QuoteRecord | n
       } else if (isSupabaseNoRowsError(fallbackError)) {
         return { ok: true, data: null }
       } else if (!isMissingLegacyDetailRelationError(fallbackError)) {
-        return { ok: false, error: fallbackError.message }
+        return { ok: false, error: safeErrorMessage(fallbackError, 'quotes.getQuote') }
       }
     }
 
@@ -1779,7 +1780,7 @@ export async function getQuote(id: string): Promise<ActionResult<QuoteRecord | n
         .eq('id', id)
         .single()
       if (isSupabaseNoRowsError(fallbackError)) return { ok: true, data: null }
-      if (fallbackError) return { ok: false, error: fallbackError.message }
+      if (fallbackError) return { ok: false, error: safeErrorMessage(fallbackError, 'quotes.getQuote') }
       row = fallbackData as unknown as QuoteWithItemsRow
     }
   }

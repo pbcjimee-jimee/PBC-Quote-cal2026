@@ -3,7 +3,7 @@ import { createRoot } from 'react-dom/client'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it, vi } from 'vitest'
 import { QuoteForm } from '@/components/quote-form/quote-form'
-import { getQuoteDraftStorageKey } from '@/components/quote-form/quote-draft'
+import { createEmptyQuoteFormDraft, getQuoteDraftStorageKey } from '@/components/quote-form/quote-draft'
 import { createQuote, updateQuote } from '@/lib/actions/quotes'
 import { searchProducts } from '@/lib/actions/products'
 import { DEFAULT_PRICING_SETTINGS } from '@/lib/calculator'
@@ -157,6 +157,8 @@ async function settle() {
 }
 
 async function mountQuoteForm(options: {
+  userId?: string
+  storage?: MemoryStorage
   initialQuote?: QuoteRecord
   areas?: { id: string; scope: 'interior' | 'exterior' | 'roof'; name: string; active: boolean; position: number }[]
   viewportWidth?: number
@@ -165,7 +167,7 @@ async function mountQuoteForm(options: {
 } = {}) {
   const installed = installTestDom()
   const restoreElementRuntime = installElementRuntime()
-  const storage = new MemoryStorage()
+  const storage = options.storage ?? new MemoryStorage()
   Object.assign(window, {
     cancelAnimationFrame: vi.fn(),
     clearTimeout: globalThis.clearTimeout.bind(globalThis),
@@ -195,6 +197,7 @@ async function mountQuoteForm(options: {
   const root = createRoot(container as unknown as Element)
   await act(async () => {
     root.render(createElement(QuoteForm, {
+      userId: options.userId ?? 'user-a',
       settings: DEFAULT_PRICING_SETTINGS,
       areas: options.areas ?? [], productServices: [], quoteLineTemplates: [],
       initialQuote: options.initialQuote,
@@ -215,6 +218,44 @@ async function mountQuoteForm(options: {
 }
 
 describe('quote workspace structure', () => {
+  it('does not offer another user’s draft or an unowned legacy draft', async () => {
+    const storage = new MemoryStorage()
+    const draft = { ...createEmptyQuoteFormDraft(), customerName: 'Private A', updatedAt: new Date().toISOString() }
+    storage.setItem(getQuoteDraftStorageKey('user-a'), JSON.stringify({ ...draft, ownerId: 'user-a' }))
+    storage.setItem('pbc-quote-draft:new', JSON.stringify(draft))
+    const mounted = await mountQuoteForm({ userId: 'user-b', storage })
+    try {
+      expect(findButton(mounted.container, 'Restore Draft')).toBeUndefined()
+      expect(mounted.container.textContent).not.toContain('Private A')
+      expect(storage.getItem('pbc-quote-draft:new')).toBeNull()
+    } finally {
+      await mounted.cleanup()
+    }
+  })
+
+  it.each(['Restore Draft', 'Discard'])('keeps the same owner’s %s action working', async (action) => {
+    const storage = new MemoryStorage()
+    const key = getQuoteDraftStorageKey('user-a')
+    storage.setItem(key, JSON.stringify({
+      ...createEmptyQuoteFormDraft(), ownerId: 'user-a', customerName: 'Restored A', updatedAt: new Date().toISOString(),
+    }))
+    const mounted = await mountQuoteForm({ storage })
+    try {
+      const button = findButton(mounted.container, action)
+      expect(button).toBeDefined()
+      await act(async () => button!.dispatchEvent(new Event('click', { bubbles: true })))
+      expect(findButton(mounted.container, 'Restore Draft')).toBeUndefined()
+      const customerInput = findWorkspace(mounted.container, 'details')?.querySelectorAll('input')[0]
+      expect(customerInput?.value).toBe(action === 'Restore Draft' ? 'Restored A' : '')
+      if (action === 'Discard') {
+        window.dispatchEvent(new Event('pagehide'))
+        expect(storage.getItem(key)).toBeNull()
+      }
+    } finally {
+      await mounted.cleanup()
+    }
+  })
+
   const timberSourceKey = '00000000-0000-4000-8000-000000000401'
   const timberComparisonKey = '00000000-0000-4000-8000-000000000402'
   const timberAreaId = '00000000-0000-4000-8000-000000000403'
@@ -345,7 +386,7 @@ describe('quote workspace structure', () => {
       await act(async () => customerInput.dispatchEvent(new Event('input', { bubbles: true })))
       await act(async () => new Promise((resolve) => setTimeout(resolve, 340)))
 
-      const draftKey = getQuoteDraftStorageKey()
+      const draftKey = getQuoteDraftStorageKey('user-a')
       const draftBeforeNavigation = mounted.storage.getItem(draftKey)
       expect(draftBeforeNavigation).not.toBeNull()
       const pricingShortcut = findButton(mounted.container, 'Products & pricing')
@@ -593,7 +634,7 @@ describe('quote workspace structure', () => {
       const beforeUnload = new Event('beforeunload', { cancelable: true })
       window.dispatchEvent(beforeUnload)
       expect(beforeUnload.defaultPrevented).toBe(false)
-      expect(mounted.storage.getItem(getQuoteDraftStorageKey(quote.id))).toBeNull()
+      expect(mounted.storage.getItem(getQuoteDraftStorageKey('user-a', quote.id))).toBeNull()
 
       const cancel = findButton(mounted.container, 'Cancel')
       expect(cancel).toBeDefined()

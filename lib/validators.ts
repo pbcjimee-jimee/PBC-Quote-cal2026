@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import Decimal from 'decimal.js'
+import { getSafeJobberUrl } from '@/lib/jobber/url'
 
 const PUBLIC_LINE_DESCRIPTION_MAX_LENGTH = 4000
 const PRICING_MARGIN_MIN_MESSAGE = 'Margins must be 0% or higher'
@@ -57,6 +58,15 @@ export const jobberQuoteSnapshotSchema = z.object({
     profit: z.number(),
     profitMarginPercent: z.number().nullable(),
   }),
+})
+
+const jobberUrlSchema = z.string().refine(value => value === '' || getSafeJobberUrl(value) !== null, {
+  message: 'Jobber links must use HTTPS on getjobber.com',
+})
+// Legacy snapshots remain readable; URL restrictions apply only when saving.
+const jobberQuoteSnapshotInputSchema = jobberQuoteSnapshotSchema.extend({
+  sourceUrl: jobberUrlSchema,
+  jobExpenses: z.array(jobberQuoteSnapshotSchema.shape.jobExpenses.element.extend({ jobUrl: jobberUrlSchema })),
 })
 
 const quoteItemSchema = z.object({
@@ -173,7 +183,7 @@ export const quoteSchema = z.object({
   customerName: z.string().optional(),
   customerAddress: z.string().optional(),
   jobberQuoteId: z.string().optional(),
-  jobberSnapshot: jobberQuoteSnapshotSchema.optional(),
+  jobberSnapshot: jobberQuoteSnapshotInputSchema.optional(),
   jobberSnapshotRefreshedAt: z.string().datetime({ offset: true }).optional(),
   jobberSnapshotChangeStatus: z.enum(['unknown', 'unchanged', 'changed']).optional(),
   jobberSnapshotChangeSummary: z.array(jobberSnapshotChangeSummaryItemSchema).max(8).optional(),

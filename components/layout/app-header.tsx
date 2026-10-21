@@ -7,6 +7,7 @@ import { signOut } from '@/lib/actions/auth'
 import { Icons } from '@/components/ui/icons'
 import type { UserProfile } from '@/lib/user-profiles'
 import type { AppRole } from '@/lib/security/require-app-user'
+import { clearLocalQuoteDrafts, QUOTE_DRAFT_SIGN_OUT_EVENT } from '@/components/quote-form/quote-draft'
 
 type NavItem = {
   href: string
@@ -105,6 +106,15 @@ export function AppHeader({ userProfile }: { userProfile: UserProfile }) {
     window.dispatchEvent(new Event(SIDEBAR_PREFERENCE_EVENT))
   }
 
+  function clearDraftsBeforeSignOut() {
+    window.dispatchEvent(new Event(QUOTE_DRAFT_SIGN_OUT_EVENT))
+    try {
+      clearLocalQuoteDrafts(window.localStorage)
+    } catch {
+      return
+    }
+  }
+
   return (
     <>
       <aside
@@ -162,7 +172,7 @@ export function AppHeader({ userProfile }: { userProfile: UserProfile }) {
               {showEmail ? <i>{userProfile.email}</i> : null}
             </span>
           </div>
-          <form action={signOut}>
+          <form action={signOut} onSubmit={clearDraftsBeforeSignOut}>
             <button
               type="submit"
               aria-label="Sign out"
@@ -189,7 +199,7 @@ export function AppHeader({ userProfile }: { userProfile: UserProfile }) {
               <span className="pbc-brand__mark !h-9 !w-9 !text-sm">P</span>
               <span className="text-sm font-extrabold text-[var(--foreground)]">PBC Quote</span>
             </IntentLink>
-            <form action={signOut}>
+            <form action={signOut} onSubmit={clearDraftsBeforeSignOut}>
               <button
                 type="submit"
                 aria-label="Sign out"

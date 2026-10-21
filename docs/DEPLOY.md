@@ -66,6 +66,9 @@ git ls-remote origin main
 
 **주의:** `SERVICE_ROLE_KEY`는 절대 `NEXT_PUBLIC_` prefix 붙이지 말 것 (브라우저 노출 위험).
 
+- 로그인 이메일 allowlist는 선택적 추가 필터다. `ALLOWED_LOGIN_EMAILS`가 비어 있으면 환경과 무관하게 이메일 필터를 통과하며 실제 앱 게이트는 active `user_profiles`와 역할이다.
+- Jobber 토큰을 저장·갱신하는 환경은 로컬 개발도 `JOBBER_TOKEN_ENCRYPTION_KEY`를 설정해야 한다. DB·로컬 파일 저장 모두 키 누락 시 거부한다. Jobber가 차단된 제한 Preview는 계속 Jobber 변수 미설정 규칙을 따른다.
+
 ### Preview 환경 격리 준비 기록 (2026-09-18)
 
 > 아래는 9월 18일 당시 기록이다. 9월 25일 승인된 제한 Preview와 최신 전환 결과는 다음 섹션 및 `docs/superpowers/reviews/2026-09-25-preview-isolation.md`를 우선한다.
@@ -144,6 +147,40 @@ Promotion 전 확인:
 - auth behavior, quote calculation, Jobber supervisor authorization, runtime error가 동일할 때만 production promotion을 검토한다.
 
 `auth.getClaims()` 전환과 DB index/RLS/RPC 최적화는 이 배포의 일부가 아니다. 각각 운영 보안 결정과 별도 migration review·production DB 명시 승인이 필요하다.
+
+### 2026-10-21 감사 actor migration 릴리스 게이트
+
+대상: `supabase/migrations/20261021094546_enforce_audit_actor_integrity.sql`. 현재 **로컬 구현·검증 완료, Preview/운영 미적용**이다. 이 문서 갱신은 원격 적용·push·배포 승인이 아니다.
+
+1. 적용 전 기존 migration·권한·트리거와 백업/복구 상태를 확인한다. 이 migration은 기존 role/lifecycle/save schema 다음의 forward 변경이다. linked CLI 기본 대상이 운영이므로 Preview 프로젝트를 명시한다.
+2. 격리된 **Preview DB에 먼저** 적용한다. 새 트리거 4개, SECURITY INVOKER·빈 search_path 함수, 가격 이력 authenticated UPDATE/DELETE 회수와 admin SELECT/INSERT 정책을 확인한다. 기존 행의 actor·금액·version은 소급 수정하지 않는다.
+3. 활성 admin으로 **Save(create) → Edit → version conflict → duplicate → trash → restore → Jobber recovery**를 smoke 검증한다. 정상 actor 기록·created_by 보존, 직접 forged actor 입력의 DB 보정, 가격 이력 수정/삭제 거부와 supervisor/anon 차단도 확인한다. 합성 시험 데이터만 사용하고 테스트 결과·정리 상태를 기록한다.
+4. 제한 Preview에서는 Jobber 서버 경로가 차단돼 있으므로 recovery는 격리 DB/RPC fixture로 검증한다. 실제 Jobber 호출이나 운영 token 복사로 우회하지 않는다. 이 검사를 실제 Jobber E2E 통과로 보고하지 않는다.
+5. Preview 결과·정확한 적용 SQL·롤백 위치·영향을 제시하고 **운영 DB 적용은 사용자 명시 승인 후** 진행한다. 운영 반영 시 기존 durable sync의 maintenance·old callback drain·unresolved-operation 게이트도 유지한다. push·앱 배포·Vercel 변수 변경은 각각 승인 범위를 따른다.
+
+운영 후에는 authenticated 정상 Save/Edit·이력 actor·가격 스냅샷과 기존 데이터 보존을 재확인한다. 기존 무소유 localStorage 초안은 새 소유자 검증으로 복원되지 않으며, 과거 저장 actor·오류 문자열은 이번 변경으로 정정되지 않는다.
+
+#### 감사 actor migration 롤백 SQL 위치
+
+롤백 SQL의 영구 보관 위치는 **이 절의 아래 코드 블록**이다(팀장 전달 T1 보고 기준). **검토용·미실행**이며 적용 시 actor 위조·가격 이력 변경의 보안 허점이 다시 열린다. 운영에서는 승인된 forward fix를 우선하고, 사용자 명시 승인·백업·호환성 검토 없이 실행하지 않는다. 데이터·기존 lifecycle DELETE 차단·보존 컬럼·이력·durable schema는 제거하지 않는다. 원래 정책은 `20260731011000_tighten_role_rls.sql`의 `quote_price_revisions_admin` 정의와 대조했다.
+
+```sql
+BEGIN;
+DROP TRIGGER zz_enforce_audit_actor_integrity ON public.quotes;
+DROP TRIGGER zz_enforce_audit_actor_integrity ON public.quote_memos;
+DROP TRIGGER zz_enforce_audit_actor_integrity ON public.quote_price_revisions;
+DROP TRIGGER zz_enforce_audit_actor_integrity ON public.pricing_settings;
+DROP FUNCTION app_auth.enforce_audit_actor_integrity();
+DROP POLICY quote_price_revisions_admin_select ON public.quote_price_revisions;
+DROP POLICY quote_price_revisions_admin_insert ON public.quote_price_revisions;
+CREATE POLICY quote_price_revisions_admin ON public.quote_price_revisions
+  FOR ALL TO authenticated
+  USING (app_auth.current_role() = 'admin')
+  WITH CHECK (app_auth.current_role() = 'admin');
+GRANT UPDATE, DELETE ON TABLE public.quote_price_revisions TO authenticated;
+NOTIFY pgrst, 'reload schema';
+COMMIT;
+```
 
 ### P0-02 Jobber durable sync 릴리스 게이트
 
@@ -233,7 +270,7 @@ order by created_at, id;
 3. 또는 게이트와 호환되는 forward fix/main revert를 review 후 push한다.
 4. **`git reset --hard`나 `git push --force`는 절대 사용 금지** (사용자 명시 승인 시에만)
 
-> ⚠️ **2026-07-06 감사 발견(`docs/BACKLOG.md` P4):** 마이그레이션은 forward-only(down 없음)라 스키마 변경을 동반한 배포는 코드 롤백만으로 복구되지 않는다. 파괴적 마이그레이션(drop column 등) 전 백업/PITR 시점 확보 필수. 또한 CI 부재로 `verify` 게이트가 자동 강제되지 않고, 프리뷰 배포가 프로덕션 Supabase에 접근할 위험(환경 분리 미문서화)이 있다. 조치 방향은 BACKLOG 참조.
+> **2026-10-21 재검증(`docs/BACKLOG.md` P4):** 일반 down migration 체계는 없어 코드 롤백만으로 schema를 복구할 수 없다. 파괴적 변경 전 백업/PITR 시점 확보는 필수다. Preview 격리는 09-25 반영됐고 CI verify workflow는 이번 로컬 변경에 추가했으나 원격 실행·branch protection은 확인 전이다. 이번 actor migration의 예외적 롤백 검토는 위 전용 절을 따르며 기존 durable gate를 우회하지 않는다.
 
 ---
 

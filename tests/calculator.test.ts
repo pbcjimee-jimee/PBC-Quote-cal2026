@@ -223,7 +223,7 @@ describe('calculateSubtotal', () => {
 
   it('averages min and max formula', () => {
     const subtotal = calculateSubtotal(results, 4, 1)
-    // (2717.50 + 2842.50) / 2 = 2780.00
+    // ((380 × 5 / 0.75 + 342.50) + 2842.50) / 2 ≈ 2859.17
     expect(subtotal.toFixed(2)).toBe('2859.17')
   })
 

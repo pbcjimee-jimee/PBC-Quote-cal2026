@@ -12,6 +12,7 @@ WITH expected(table_name, grantee, privileges) AS (
       WHEN grantee IN ('PUBLIC', 'anon') THEN NULL
       WHEN table_name = 'quote_lifecycle_events' THEN 'SELECT'
       WHEN table_name = 'quotes' THEN 'INSERT,SELECT,UPDATE'
+      WHEN table_name = 'quote_price_revisions' AND grantee = 'authenticated' THEN 'INSERT,SELECT'
       WHEN table_name = 'user_profiles' AND grantee = 'authenticated' THEN 'SELECT'
       WHEN table_name IN ('jobber_tokens', 'jobber_job_snapshots')
         AND grantee = 'authenticated' THEN NULL

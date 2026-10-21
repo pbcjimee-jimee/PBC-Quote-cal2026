@@ -38,7 +38,7 @@ function createDraft(customerName: string): QuoteFormDraft {
   }
 }
 
-function compactSanitize(value: QuoteFormDraft): unknown {
+function compactSanitize(value: QuoteFormDraft): object {
   return {
     customerName: value.customerName,
     updatedAt: value.updatedAt,
@@ -49,6 +49,7 @@ function PersistenceHarness({
   draft,
   enabled,
   storageKey = 'pbc-quote-draft:new',
+  ownerId = 'user-a',
   sanitize = compactSanitize,
   clearRequested = false,
   readRequested = false,
@@ -57,13 +58,15 @@ function PersistenceHarness({
   draft: QuoteFormDraft
   enabled: boolean
   storageKey?: string
-  sanitize?: (draft: QuoteFormDraft) => unknown
+  ownerId?: string
+  sanitize?: (draft: QuoteFormDraft) => object
   clearRequested?: boolean
   readRequested?: boolean
   onRead?: (draft: QuoteFormDraft | null) => void
 }) {
   const { clearDraft, readDraft } = useQuoteDraftPersistence({
     storageKey,
+    ownerId,
     draft,
     enabled,
     delayMs: 300,
@@ -126,7 +129,7 @@ describe('useQuoteDraftPersistence', () => {
       await act(async () => vi.advanceTimersByTime(1))
       expect(storage.setCalls).toEqual([[
         'pbc-quote-draft:new',
-        '{"customerName":"Final","updatedAt":"2026-08-13T00:00:00.500Z"}',
+        '{"customerName":"Final","updatedAt":"2026-08-13T00:00:00.500Z","ownerId":"user-a"}',
       ]])
     } finally {
       if (root) await act(async () => root?.unmount())
@@ -156,7 +159,7 @@ describe('useQuoteDraftPersistence', () => {
       window.dispatchEvent(new Event('pagehide'))
       expect(storage.setCalls).toEqual([[
         'pbc-quote-draft:new',
-        '{"customerName":"Page hide","updatedAt":"2026-08-13T01:00:00.000Z"}',
+        '{"customerName":"Page hide","updatedAt":"2026-08-13T01:00:00.000Z","ownerId":"user-a"}',
       ]])
 
       await act(async () => vi.advanceTimersByTime(300))
@@ -229,7 +232,7 @@ describe('useQuoteDraftPersistence', () => {
 
       expect(storage.setCalls).toEqual([[
         'pbc-quote-draft:new',
-        '{"customerName":"Unmounted","updatedAt":"2026-08-13T02:00:00.000Z"}',
+        '{"customerName":"Unmounted","updatedAt":"2026-08-13T02:00:00.000Z","ownerId":"user-a"}',
       ]])
       await act(async () => vi.advanceTimersByTime(300))
       expect(storage.setCalls).toHaveLength(1)

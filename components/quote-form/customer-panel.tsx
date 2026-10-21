@@ -1,3 +1,4 @@
+import { getSafeJobberUrl } from '@/lib/jobber/url'
 import type {
   JobberQuoteDraft,
   JobberQuoteDraftExpense,
@@ -120,6 +121,7 @@ function ExpenseRow({ expense }: { expense: JobberQuoteDraftExpense }) {
 }
 
 function JobExpensesGroup({ job }: { job: JobberQuoteDraftJobExpenses }) {
+  const jobUrl = getSafeJobberUrl(job.jobUrl)
   return (
     <div className="pbc-inlinepanel">
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -129,8 +131,8 @@ function JobExpensesGroup({ job }: { job: JobberQuoteDraftJobExpenses }) {
           </p>
           <p className="pbc-listitem__meta">{formatStatus(job.jobStatus)}</p>
         </div>
-        {job.jobUrl ? (
-          <a href={job.jobUrl} target="_blank" rel="noreferrer" className="text-xs font-bold text-[var(--primary)] hover:text-[var(--primary-strong)]">
+        {jobUrl ? (
+          <a href={jobUrl} target="_blank" rel="noreferrer" className="text-xs font-bold text-[var(--primary)] hover:text-[var(--primary-strong)]">
             Open job
           </a>
         ) : null}

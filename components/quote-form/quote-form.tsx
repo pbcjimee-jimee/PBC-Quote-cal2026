@@ -70,6 +70,7 @@ import type { ProductServiceRecord } from '@/lib/product-services/types'
 import type { QuoteLineTemplateRecord } from '@/lib/quote-line-templates/types'
 
 interface QuoteFormProps {
+  userId?: string
   settings: PricingSettings
   areas: AreaRecord[]
   productServices?: ProductServiceRecord[]
@@ -323,6 +324,7 @@ export function getNextDeletedJobberLineItemIds(
 }
 
 export function QuoteForm({
+  userId,
   settings,
   areas,
   productServices,
@@ -445,7 +447,7 @@ export function QuoteForm({
     })
   }, [formIssues, mobileState])
 
-  const draftStorageKey = useMemo(() => getQuoteDraftStorageKey(initialQuote?.id), [initialQuote?.id])
+  const draftStorageKey = useMemo(() => getQuoteDraftStorageKey(userId ?? '', initialQuote?.id), [initialQuote?.id, userId])
   const quoteTargetPath = initialQuote ? `/quotes/${initialQuote.id}` : '/quotes'
   const cancelTargetPath = quoteTargetPath
 
@@ -505,6 +507,7 @@ export function QuoteForm({
     clearDraft: clearPersistedDraft,
     readDraft,
   } = useQuoteDraftPersistence({
+    ownerId: userId,
     storageKey: draftStorageKey,
     draft: currentDraft,
     enabled: isDirty,

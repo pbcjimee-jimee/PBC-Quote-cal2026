@@ -265,4 +265,20 @@ describe('quote line template actions against Supabase', () => {
     expect(from).not.toHaveBeenCalledWith('quote_line_template_items')
     if (result.ok) expect(result.data.items).toEqual([])
   })
+  it('redacts database errors from responses and server logs', async () => {
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const secret = 'token=private actual_price=123 staff@example.com'
+    const error = { message: secret, details: secret, code: secret }
+    const builder = createListBuilder({ data: null, error })
+    mocks.createClient.mockResolvedValueOnce({ from: vi.fn(() => builder) })
+    try {
+      const result = await listQuoteLineTemplates()
+      expect(result).toEqual({ ok: false, error: expect.stringMatching(/^Unable to complete this request\. Please try again\. \(Ref: [a-f0-9]{12}\)$/) })
+      expect(JSON.stringify(log.mock.calls)).not.toContain(secret)
+      expect(log).toHaveBeenCalled()
+    } finally {
+      log.mockRestore()
+    }
+  })
+
 })

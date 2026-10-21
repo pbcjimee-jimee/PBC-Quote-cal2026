@@ -15,9 +15,10 @@
 
 ### 2. `SUPABASE_SERVICE_ROLE_KEY` 사용 제한
 
-- **Server Actions에서만 사용**
+- **서버 전용 경계에서만 사용**: 인가된 Server Actions·Route Handlers와 서버 helper만 허용한다.
 - Client Component에서 import 금지
 - 브라우저 번들에 절대 포함 금지
+- `lib/supabase/server.ts`, `lib/jobber/tokens.ts`, `lib/user-profiles.ts`와 내부 오류 helper `lib/actions/action-error.ts`는 `import 'server-only'` 가드를 유지한다. 테스트 대체는 Vitest 전역 `tests/server-only-setup.ts`에서만 수행한다.
 
 ### 3. 민감 정보 로그 금지
 
@@ -41,16 +42,20 @@
 
 - Server-side 저장만 (`jobber_tokens` 테이블). Jobber is a shared company-level connection for allowed app users: the app uses the latest token row globally, and `user_id` remains the owner row for the user who connected/reconnected Jobber.
 - 클라이언트에 절대 노출 금지
+- 토큰을 저장·갱신하는 모든 환경(로컬 개발 포함)에서 `JOBBER_TOKEN_ENCRYPTION_KEY`가 필수다. NODE_ENV와 무관하게 누락 시 저장을 거부한다. DB 및 로컬 `.jobber.local.json`의 새 token 값은 AES-256-GCM으로 암호화한다. 기존 평문 읽기 호환이 기존 저장물의 재암호화·회전 완료를 뜻하지 않는다.
+- Jobber 서버 기능이 차단된 제한 Preview는 자격증명·암호화 키를 주입하지 않는 기존 격리 정책을 유지한다.
 - Refresh token 자동 갱신 구현
 - controlled write-back 구현 시 quote line item update에 필요한 최소 write scope만 허용
 - broad `manage`, `delete`, unrelated write scope는 거부
 - Jobber GraphQL mutation은 allowlist된 quote write-back 함수에서만 실행
 - material 가격 스냅샷(`actual_price`)과 내부 material 상세는 Jobber payload에 포함 금지
+- OAuth callback은 state 일치 검증 → active admin 인가 → code 교환·scope 검증·암호화 저장 순서다. 인가 전 토큰 교환을 금지하고 사용자에게 오류 원문을 반환하지 않는다. connect 인가 거부의 직접 signOut은 신뢰 출처 GET만 허용하며, 비신뢰 요청은 확인 화면으로 보낸다. callback의 인가 거부 처리는 먼저 검증한 OAuth state를 전제로 한다.
 
 ### 7. Local draft 저장 제한
 
 - `localStorage` draft에는 Jobber expense, financial summary, 원본 fetch 응답 전체처럼 견적 작성에 직접 필요 없는 민감 fetch 결과를 저장하지 않는다.
 - draft는 저장 시각을 함께 저장하고 기본 7일 만료로 정리한다.
+- key는 `pbc-quote-draft:<userId>:<quoteId|new>`, envelope에는 `ownerId`를 저장한다. 소유 불일치·무소유 legacy 초안은 삭제하며 앱 헤더 로그아웃 시 로컬 초안과 대기 중 저장을 정리한다. 배포 전의 무소유 초안은 복원하지 않는다.
 - 사용자가 로컬 draft를 수동 삭제할 수 있는 "clear local drafts" 동선을 제공한다.
 - PWA 설치 안내는 dismiss 선호(`pbc-install-guidance-dismissed`) 외의 데이터를 저장하지 않는다.
 
@@ -60,6 +65,31 @@
 - 서비스 워커는 오프라인 안내를 위한 `/offline`과 그 화면에 필요한 공개 브랜딩 아이콘(`/icons/icon-192.png`)만 프리캐시한다.
 - 인증된 HTML, 견적·가격 데이터, API, Supabase, Server Actions, RSC payload는 절대 캐시하지 않는다. 네비게이션은 network-first로 처리하고 네트워크 실패 시에만 `/offline`을 반환한다.
 - 캐시 범위를 늘리는 변경은 stale 견적·가격 노출 리스크를 보안 리뷰한 뒤 사용자 승인을 받는다.
+
+### 9. 로그아웃 요청 출처
+
+- `/api/auth/signout` GET은 `Sec-Fetch-Site: same-origin` 또는 `none`만 직접 signOut한다. 헤더가 없을 때만 동일 Origin, 또는 Origin도 없으면 동일 Referer를 확인한다. same-site/cross-site·출처 증거 없음은 `/login/signout`으로 보내며 세션은 변경하지 않는다.
+- `/login/signout`은 사용자가 직접 제출하는 POST form이며 자동 제출하지 않는다. POST는 요청 Origin과 URL origin의 정확한 일치를 필수로 하고 실패 시 403, 성공 시 signOut 후 303으로 `/login`에 보낸다. 확인 화면은 로그인 보호로 재리디렉션하지 않아 루프를 만들지 않는다.
+- 공통 판정은 `lib/security/request-origin.ts`, endpoint와 확인 페이지는 `app/api/auth/signout/route.ts`, `app/(auth)/login/signout/page.tsx`를 따른다.
+
+### 10. 감사 actor와 가격 이력
+
+- 새 `20261021094546_enforce_audit_actor_integrity.sql`의 `zz_enforce_audit_actor_integrity` 트리거가 사용자 JWT의 `auth.uid()`를 강제한다. quotes·quote_memos의 created_by는 INSERT 시 현재 사용자로, UPDATE 시 기존값으로 고정한다. quotes·pricing_settings의 updated_by는 INSERT/UPDATE 시 현재 사용자로 고정하며 quote_price_revisions.changed_by는 INSERT 시 고정한다.
+- 가격 이력은 authenticated에 append-only다. UPDATE/DELETE grant를 회수하고 활성 admin의 SELECT/INSERT 정책만 둔다. client/정상 action이 보낸 actor만으로 보안 경계를 대신하지 않는다.
+- 트리거 함수는 SECURITY INVOKER·빈 search_path를 유지하고 직접 EXECUTE 권한을 회수한다. `auth.uid()` NULL인 service/유지보수는 제공 attribution을 유지하며 기존 행을 소급 수정하지 않는다.
+- 이 항목은 **로컬 구현 상태이며 Preview/운영 미적용**이다. `docs/DEPLOY.md`의 Preview-first smoke와 운영 사용자 명시 승인 게이트를 따른다. lifecycle·sync operation/recovery의 기존 actor 고정과 service-only job snapshot 경계는 유지한다.
+
+### 11. 사용자 노출 오류와 내부 진단
+
+- DB·Jobber 등 의존성 오류는 `safeErrorMessage`의 분류별 안전 문구와 12자리 Ref로 반환한다. 기존 사용자용 Zod·권한·충돌·마지막 admin 안내 계약은 유지한다.
+- 서버 로그는 reference·context·category, 형식 검증된 code/name/HTTP status만 기록한다. 원문 message·stack·details·hint·token·내부 가격·고객 payload는 기록하지 않는다. OAuth callback도 stage와 검증된 status만 기록한다.
+- 앱/global 오류 경계는 Retry·홈·Quotes와 형식 검증된 digest만 표시하고 `error.message`를 렌더하지 않는다. 과거 DB 저장 오류 문자열은 이번 변경에서 소급 수정하지 않는다.
+
+### 12. 외부 URL과 CSP
+
+- Jobber 링크는 `lib/jobber/url.ts`의 `getSafeJobberUrl`로 HTTPS 및 `getjobber.com`/`*.getjobber.com` host만 허용하고 username/password가 있는 URL은 거부한다. 저장 validator와 Customer/Job 상세 렌더링에서 모두 검사한다.
+- `next.config.ts`의 connect-src는 self와 설정된 `NEXT_PUBLIC_SUPABASE_URL` origin으로 제한한다. Preview는 고정 테스트 Supabase origin만 사용하고 브라우저에서 쓰지 않는 `api.getjobber.com`을 허용하지 않는다. URL 미설정 시 코드에 Supabase wildcard fallback이 있으므로 운영에는 정확한 프로젝트 URL을 설정해야 한다.
+- script/style `unsafe-inline`은 현재 남아 있으며 nonce 전환 완료로 표현하지 않는다.
 
 ---
 
@@ -81,6 +111,7 @@ Progress Invoice는 role 브랜치와 릴리스에 포함되지 않는다. 기�
 - `ALLOWED_LOGIN_EMAILS`가 설정된 환경에서는 프로필 허용 조건에 더해 이메일도 일치해야 하는 추가 AND 백스톱으로 사용한다.
 - `ALLOWED_LOGIN_EMAILS`가 비어 있으면 이메일 제한은 적용하지 않으며, active 프로필과 역할이 최종 판정 기준이다.
 - 역할 값이나 사용자 ID를 클라이언트 payload에서 신뢰하지 않는다.
+- 사용자 관리의 기존 대상은 `user_profiles` 존재를 먼저 확인한 뒤 Auth Admin ban/unban/password reset을 호출한다. 공유 `auth.users`의 타 앱 UUID를 수정하지 않는다. 프로필 갱신 실패의 ban 롤백은 원래 `banned_until`의 남은 기간을 복원한다. 신규 생성 실패 cleanup은 그 요청이 생성한 Auth ID만 대상으로 한다.
 
 ---
 
@@ -100,6 +131,7 @@ Progress Invoice는 role 브랜치와 릴리스에 포함되지 않는다. 기�
 | Jobber write-back을 production quote에 적용 | 외부 Jobber 견적 데이터 변경 |
 | `package.json` 메이저 버전 업그레이드 | 브레이킹 체인지 위험 |
 | 새 외부 의존성 추가 | 보안·라이선스 검토 필요 |
+| push·배포 | 원격 코드·운영 반영 |
 
 ### 사용자 승인 받는 방법
 
@@ -115,7 +147,8 @@ Progress Invoice는 role 브랜치와 릴리스에 포함되지 않는다. 기�
 PR 머지 전 다음을 반드시 확인:
 
 - [ ] 환경 변수가 클라이언트 번들에 포함되지 않음
-- [ ] `SERVICE_ROLE_KEY`가 Server Actions에서만 사용됨
+- [ ] `SERVICE_ROLE_KEY`가 인가된 서버 경계에서만 사용되며 필수 모듈의 server-only 가드를 유지함
+- [ ] 토큰 저장·갱신 환경의 암호화 키, actor 강제·가격 이력 append-only, URL allowlist·오류 안전 문구·로그아웃 출처 정책을 확인함
 - [ ] 모든 Server Action에 Zod 검증 있음
 - [ ] RLS 정책이 새 테이블에도 적용됨
 - [ ] 사용자 입력 → DB 흐름에 SQL injection 가능성 없음

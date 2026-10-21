@@ -8,16 +8,14 @@ interface TokenEncryptionOptions {
 }
 
 function getEncryptionKey(options: TokenEncryptionOptions = {}): string {
-  return options.key ?? process.env.JOBBER_TOKEN_ENCRYPTION_KEY?.trim() ?? ''
+  return (options.key ?? process.env.JOBBER_TOKEN_ENCRYPTION_KEY ?? '').trim()
 }
 
 export function getMissingJobberTokenStorageConfigKeys(
   options: TokenEncryptionOptions = {}
 ): string[] {
   const key = getEncryptionKey(options)
-  const nodeEnv = options.nodeEnv ?? process.env.NODE_ENV
-
-  return nodeEnv === 'production' && !key ? ['JOBBER_TOKEN_ENCRYPTION_KEY'] : []
+  return !key ? ['JOBBER_TOKEN_ENCRYPTION_KEY'] : []
 }
 
 export function assertJobberTokenStorageConfigured(options: TokenEncryptionOptions = {}): void {
@@ -32,13 +30,7 @@ function deriveKey(key: string): Buffer {
 
 export function encryptTokenValue(value: string, options: TokenEncryptionOptions = {}): string {
   const key = getEncryptionKey(options)
-  const nodeEnv = options.nodeEnv ?? process.env.NODE_ENV
-
-  if (!key) {
-    assertJobberTokenStorageConfigured({ ...options, nodeEnv })
-
-    return value
-  }
+  assertJobberTokenStorageConfigured(options)
 
   if (value.startsWith(TOKEN_PREFIX)) return value
 

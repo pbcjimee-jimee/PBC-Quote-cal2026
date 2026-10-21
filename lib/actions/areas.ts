@@ -1,6 +1,7 @@
 'use server'
 
 import { revalidatePath } from 'next/cache'
+import { safeErrorMessage } from './action-error'
 import { areaDeleteSchema, areaSchema, areaUpdateSchema } from '@/lib/validators'
 import { requireRole } from '@/lib/security/require-app-user'
 import { createClient } from '@/lib/supabase/server'
@@ -28,10 +29,6 @@ function revalidateAreaConsumers(): void {
   revalidatePath('/quotes/new')
 }
 
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : 'Unknown error'
-}
-
 export async function listAreas(): Promise<ActionResult<AreaRecord[]>> {
   if (isDevNoAuthMode()) {
     const { listDevAreas } = await import('@/lib/dev-data')
@@ -51,10 +48,10 @@ export async function listAreas(): Promise<ActionResult<AreaRecord[]>> {
       .order('position', { ascending: true })
       .order('name', { ascending: true })
 
-    if (error) return { ok: false, error: error.message }
+    if (error) return { ok: false, error: safeErrorMessage(error, 'areas.listAreas') }
     return { ok: true, data: data.map(rowToArea) }
   } catch (error) {
-    return { ok: false, error: errorMessage(error) }
+    return { ok: false, error: safeErrorMessage(error, 'areas.listAreas') }
   }
 }
 
@@ -87,11 +84,11 @@ export async function createArea(input: unknown): Promise<ActionResult<AreaRecor
       .select('*')
       .single()
 
-    if (error) return { ok: false, error: error.message }
+    if (error) return { ok: false, error: safeErrorMessage(error, 'areas.createArea') }
     revalidateAreaConsumers()
     return { ok: true, data: rowToArea(data) }
   } catch (error) {
-    return { ok: false, error: errorMessage(error) }
+    return { ok: false, error: safeErrorMessage(error, 'areas.createArea') }
   }
 }
 
@@ -126,11 +123,11 @@ export async function updateArea(input: unknown): Promise<ActionResult<AreaRecor
       .select('*')
       .single()
 
-    if (error) return { ok: false, error: error.message }
+    if (error) return { ok: false, error: safeErrorMessage(error, 'areas.updateArea') }
     revalidateAreaConsumers()
     return { ok: true, data: rowToArea(data) }
   } catch (error) {
-    return { ok: false, error: errorMessage(error) }
+    return { ok: false, error: safeErrorMessage(error, 'areas.updateArea') }
   }
 }
 
@@ -163,10 +160,10 @@ export async function deleteArea(input: unknown): Promise<ActionResult<AreaRecor
       .select('*')
       .single()
 
-    if (error) return { ok: false, error: error.message }
+    if (error) return { ok: false, error: safeErrorMessage(error, 'areas.deleteArea') }
     revalidateAreaConsumers()
     return { ok: true, data: rowToArea(data) }
   } catch (error) {
-    return { ok: false, error: errorMessage(error) }
+    return { ok: false, error: safeErrorMessage(error, 'areas.deleteArea') }
   }
 }

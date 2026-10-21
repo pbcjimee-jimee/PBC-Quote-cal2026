@@ -6,7 +6,7 @@ import { bootstrap, pgliteAvailable, savePayload } from './helpers/paint-compari
 const suite = pgliteAvailable ? describe : describe.skip
 suite('paint comparison migration on ephemeral PostgreSQL', () => {
   let db: { query(sql: string, params?: unknown[]): Promise<{ rows: Record<string, unknown>[] }>; exec(sql: string): Promise<unknown>; close(): Promise<void> }
-  beforeAll(async () => { db = await bootstrap({ through: '20261014000000' }) }, 30000)
+  beforeAll(async () => { db = await bootstrap({ through: '20261021094546' }) }, 30000)
   afterAll(async () => { await db?.close() })
   it('migrates existing trashed quotes and preserves unknown linked Optional observations', async () => {
     const legacy = await bootstrap()
