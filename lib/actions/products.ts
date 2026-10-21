@@ -1,5 +1,7 @@
 'use server'
 
+import { safeErrorMessage } from './action-error'
+
 import Decimal from 'decimal.js'
 import { normalizeRrpProduct, type ProductRecord } from '@/lib/products/types'
 import { requireRole } from '@/lib/security/require-app-user'
@@ -262,7 +264,7 @@ function parseImportPrice(value: string): string {
   const cleaned = value.trim().replace(/,/g, '')
   const amount = Number(cleaned)
   if (!Number.isFinite(amount) || amount < 0) {
-    throw new Error(`invalid price: ${value}`)
+    throw new CsvValidationError(`invalid price: ${value}`)
   }
   return amount.toFixed(2)
 }
@@ -270,11 +272,11 @@ function parseImportPrice(value: string): string {
 function parseImportVolume(value: string): string {
   const cleaned = value.trim().replace(/[^0-9.]/g, '')
   if (!cleaned) {
-    throw new Error(`invalid volume: ${value}`)
+    throw new CsvValidationError(`invalid volume: ${value}`)
   }
   const amount = Number(cleaned)
   if (!Number.isFinite(amount) || amount < 0) {
-    throw new Error(`invalid volume: ${value}`)
+    throw new CsvValidationError(`invalid volume: ${value}`)
   }
   return amount % 1 === 0 ? amount.toFixed(0) : amount.toFixed(2)
 }
@@ -299,13 +301,13 @@ function parseProductsCSV(csvText: string): ProductImportRow[] {
   }
 
   if (indexByField.manufacturer === undefined) {
-    throw new Error('Missing required column: Brand')
+    throw new CsvValidationError('Missing required column: Brand')
   }
   if (indexByField.productLine === undefined) {
-    throw new Error('Missing required column: Kind')
+    throw new CsvValidationError('Missing required column: Kind')
   }
   if (indexByField.volumeLitres === undefined) {
-    throw new Error('Missing required column: Volume (L)')
+    throw new CsvValidationError('Missing required column: Volume (L)')
   }
 
   const rows: ProductImportRow[] = []
@@ -322,7 +324,7 @@ function parseProductsCSV(csvText: string): ProductImportRow[] {
     const rrpPrice = parseImportPrice(getValue(indexByField.rrpPrice))
 
     if (!manufacturer || !productLine) {
-      throw new Error(`Line ${rowIndex + 1}: missing brand or kind`)
+      throw new CsvValidationError(`Line ${rowIndex + 1}: missing brand or kind`)
     }
 
     rows.push({
@@ -435,7 +437,7 @@ export async function createProduct(input: unknown): Promise<ActionResult<Produc
     .select(PUBLIC_PRODUCT_COLUMNS)
     .single()
 
-  if (error) return { ok: false, error: error.message }
+  if (error) return { ok: false, error: safeErrorMessage(error, 'products.createProduct') }
   return { ok: true, data: rowToProduct(data as unknown as PublicProductRow) }
 }
 
@@ -474,7 +476,7 @@ export async function searchProducts(input: unknown): Promise<ActionResult<Produ
   }
 
   const { data, error } = await request
-  if (error) return { ok: false, error: error.message }
+  if (error) return { ok: false, error: safeErrorMessage(error, 'products.searchProducts') }
   return { ok: true, data: (data as unknown as PublicProductRow[]).map(rowToProduct) }
 }
 
@@ -516,7 +518,7 @@ export async function resolveQuoteProductPrices(
     .select(QUOTE_PRODUCT_PRICE_COLUMNS)
     .in('id', productIds)
 
-  if (error) return { ok: false, error: error.message }
+  if (error) return { ok: false, error: safeErrorMessage(error, 'products.resolveQuoteProductPrices') }
 
   const resolved = orderResolvedQuoteProductPrices(
     productIds,
@@ -568,7 +570,7 @@ export async function listProducts(input: unknown = {}): Promise<ActionResult<Pr
   }
 
   const { data, error } = await request
-  if (error) return { ok: false, error: error.message }
+  if (error) return { ok: false, error: safeErrorMessage(error, 'products.listProducts') }
   return { ok: true, data: (data as unknown as PublicProductRow[]).map(rowToProduct) }
 }
 
@@ -582,7 +584,7 @@ export async function importProductsCSV(input: unknown): Promise<ActionResult<Pr
   try {
     rows = parseProductsCSV(parsed.data.csvText)
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'Invalid CSV format'
+    const message = error instanceof CsvValidationError ? error.message : safeErrorMessage(error, 'products.import', 'Invalid CSV format')
     return { ok: false, error: message }
   }
 
@@ -613,7 +615,7 @@ export async function importProductsCSV(input: unknown): Promise<ActionResult<Pr
   const supabase = await createClient()
   const { data, error } = await supabase.from('products').insert(insertRows).select(PUBLIC_PRODUCT_COLUMNS)
   if (error) {
-    return { ok: false, error: error.message }
+    return { ok: false, error: safeErrorMessage(error, 'products.importProductsCSV') }
   }
 
   const productRows = data as unknown as PublicProductRow[]
@@ -677,7 +679,7 @@ export async function updateProduct(input: unknown): Promise<ActionResult<Produc
     .select(PUBLIC_PRODUCT_COLUMNS)
     .single()
 
-  if (error) return { ok: false, error: error.message }
+  if (error) return { ok: false, error: safeErrorMessage(error, 'products.updateProduct') }
   return { ok: true, data: rowToProduct(data as unknown as PublicProductRow) }
 }
 
@@ -705,6 +707,8 @@ export async function deleteProduct(input: unknown): Promise<ActionResult<Produc
     .select(PUBLIC_PRODUCT_COLUMNS)
     .single()
 
-  if (error) return { ok: false, error: error.message }
+  if (error) return { ok: false, error: safeErrorMessage(error, 'products.deleteProduct') }
   return { ok: true, data: rowToProduct(data as unknown as PublicProductRow) }
 }
+
+class CsvValidationError extends Error {}

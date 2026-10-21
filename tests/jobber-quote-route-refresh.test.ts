@@ -171,7 +171,7 @@ describe('jobber quote route token refresh', () => {
     })
 
     expect(response.status).toBe(502)
-    expect(await response.json()).toEqual({ ok: false, error: 'Jobber OAuth scopes must be read-only' })
+    expect(await response.json()).toEqual({ ok: false, error: expect.stringMatching(/^Unable to fetch the Jobber quote\. Check the Jobber connection and try again\. \(Ref: [a-f0-9]{12}\)$/) })
     expect(mocks.fetchJobberQuote).not.toHaveBeenCalled()
     expect(mocks.fetchJobberQuoteJobs).not.toHaveBeenCalled()
   })
@@ -191,7 +191,31 @@ describe('jobber quote route token refresh', () => {
     })
 
     expect(response.status).toBe(502)
-    expect(await response.json()).toEqual({ ok: false, error: 'Unable to identify Jobber connection owner' })
+    expect(await response.json()).toEqual({ ok: false, error: expect.stringMatching(/^Unable to fetch the Jobber quote\. Check the Jobber connection and try again\. \(Ref: [a-f0-9]{12}\)$/) })
     expect(mocks.refreshSharedJobberConnectionToken).not.toHaveBeenCalled()
   })
+  it.each(['token', 'quote', 'expenses'] as const)('redacts %s failure details and logs', async (source) => {
+    const secret = 'JOBBER_TOKEN_ENCRYPTION_KEY token=private staff@example.com actual_price=123'
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {})
+    if (source === 'token') mocks.getUsableSharedJobberConnectionToken.mockRejectedValueOnce(new Error(secret))
+    if (source === 'quote') mocks.fetchJobberQuote.mockReset().mockRejectedValueOnce(new Error(secret))
+    if (source === 'expenses') {
+      mocks.fetchJobberQuote.mockReset().mockResolvedValueOnce({ id: 'jobber-quote' })
+      mocks.fetchJobberQuoteJobs.mockRejectedValueOnce(new Error(secret))
+    }
+    try {
+      const response = await jobberQuoteRoute(new NextRequest('http://localhost:3000/api/jobber/quote/Z2lkOi8vtest'), {
+        params: Promise.resolve({ quoteId: 'Z2lkOi8vtest' }),
+      })
+      const body = await response.json()
+      expect(response.status).toBe(source === 'expenses' ? 200 : 502)
+      expect(source === 'expenses' ? body.data.jobExpensesError : body.error).toMatch(/\(Ref: [a-f0-9]{12}\)$/)
+      expect(JSON.stringify(body)).not.toContain(secret)
+      expect(JSON.stringify(log.mock.calls)).not.toContain(secret)
+      expect(log).toHaveBeenCalled()
+    } finally {
+      log.mockRestore()
+    }
+  })
+
 })

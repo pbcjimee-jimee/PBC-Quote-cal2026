@@ -23,4 +23,18 @@ describe('jobber token encryption', () => {
       nodeEnv: 'production',
     })).toThrow('JOBBER_TOKEN_ENCRYPTION_KEY is required')
   })
+
+  it.each(['development', 'test', undefined])('refuses plaintext writes in %s without a key', (nodeEnv) => {
+    expect(() => encryptTokenValue('sensitive-token', { key: '', nodeEnv }))
+      .toThrow('JOBBER_TOKEN_ENCRYPTION_KEY is required')
+  })
+
+  it('rejects whitespace-only keys before writing tokens', () => {
+    expect(() => encryptTokenValue('sensitive-token', { key: '   ' }))
+      .toThrow('JOBBER_TOKEN_ENCRYPTION_KEY is required')
+  })
+
+  it('reads legacy plaintext without requiring a key', () => {
+    expect(decryptTokenValue('legacy-token', { key: '' })).toBe('legacy-token')
+  })
 })

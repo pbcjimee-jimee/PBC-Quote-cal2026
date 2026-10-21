@@ -1,6 +1,7 @@
 'use server'
 
 import { revalidatePath } from 'next/cache'
+import { safeErrorMessage } from './action-error'
 import { z } from 'zod'
 import { requireRole } from '@/lib/security/require-app-user'
 import { createClient } from '@/lib/supabase/server'
@@ -53,7 +54,7 @@ export async function getJobberSyncRecovery(quoteId: string): Promise<ActionResu
     const { preview } = await loadRecovery(await createClient(), parsed.data)
     return { ok: true, data: preview }
   } catch (error) {
-    return { ok: false, error: error instanceof SyncRecoveryError ? error.message : 'Unable to review Jobber recovery. No changes were sent. Please try again.' }
+    return { ok: false, error: error instanceof SyncRecoveryError ? error.message : safeErrorMessage(error, 'jobber.recovery.review', 'Unable to review Jobber recovery. No changes were sent. Please try again.') }
   }
 }
 
@@ -92,6 +93,6 @@ export async function recoverJobberQuoteSync(input: RecoveryInput): Promise<Acti
     revalidatePath(`/quotes/${parsed.data.quoteId}/edit`)
     return { ok: true, data: recovered.data }
   } catch (error) {
-    return { ok: false, error: error instanceof SyncRecoveryError ? error.message : 'Unable to recover the sync safely. Refresh and review the quote again.' }
+    return { ok: false, error: error instanceof SyncRecoveryError ? error.message : safeErrorMessage(error, 'jobber.recovery.apply', 'Unable to recover the sync safely. Refresh and review the quote again.') }
   }
 }

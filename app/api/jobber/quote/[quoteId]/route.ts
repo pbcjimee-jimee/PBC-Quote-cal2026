@@ -14,6 +14,7 @@ import { mapJobberJobToDraft, mapJobberQuoteToDraft } from '@/lib/jobber/mapper'
 import { getUsableSharedJobberConnectionToken, refreshSharedJobberConnectionToken, requireSharedJobberConnectionOwnerId, type StoredJobberToken } from '@/lib/jobber/tokens'
 import { requireRole } from '@/lib/security/require-app-user'
 import { isDevNoAuthMode } from '@/lib/actions/types'
+import { safeErrorMessage } from '@/lib/actions/action-error'
 import { isJobberDisabledInPreview, JOBBER_DISABLED_MESSAGE } from '@/lib/jobber/environment'
 
 interface RouteContext {
@@ -38,7 +39,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
   if (missing.length > 0) {
     return NextResponse.json({
       ok: false,
-      error: `Jobber quote fetch is not configured: ${missing.join(', ')}`,
+      error: safeErrorMessage(null, 'jobber.quote.configuration', 'Jobber connection needs attention. Contact an administrator.'),
     }, { status: 503 })
   }
 
@@ -94,12 +95,12 @@ export async function GET(request: NextRequest, context: RouteContext) {
     })
   } catch (error) {
     if (error instanceof JobberAuthError) {
-      return NextResponse.json({ ok: false, error: error.message }, { status: 401 })
+      return NextResponse.json({ ok: false, error: 'Login is required to fetch Jobber quotes' }, { status: 401 })
     }
 
     return NextResponse.json({
       ok: false,
-      error: error instanceof Error ? error.message : 'Unable to fetch Jobber quote',
+      error: safeErrorMessage(error, 'jobber.quote.fetch', 'Unable to fetch the Jobber quote. Check the Jobber connection and try again.'),
     }, { status: 502 })
   }
 }
@@ -133,17 +134,9 @@ async function fetchQuoteJobsWithoutBlockingQuote(
 }
 
 function getJobExpensesErrorMessage(error: unknown): string {
-  if (error instanceof JobberPermissionError) {
-    return error.message
-  }
-
-  if (!(error instanceof Error)) {
-    return 'Job expenses could not be loaded from Jobber.'
-  }
-
-  return error.message.startsWith('Jobber returned a GraphQL error')
-    ? error.message.replace('Jobber returned a GraphQL error', 'Job expenses could not be loaded')
-    : `Job expenses could not be loaded: ${error.message}`
+  return safeErrorMessage(error, 'jobber.quote.expenses', error instanceof JobberPermissionError
+    ? 'Job expenses could not be loaded. Ask an administrator to check Jobber permissions and reconnect Jobber.'
+    : 'Job expenses could not be loaded from Jobber. Please try again.')
 }
 
 async function getJobberTokenUserId(): Promise<string | null> {

@@ -4,6 +4,8 @@ import { listAreas } from '@/lib/actions/areas'
 import { listQuoteLineTemplates } from '@/lib/actions/quote-line-templates'
 import { getPricingSettings } from '@/lib/actions/settings'
 import { isJobberDisabledInPreview, JOBBER_DISABLED_MESSAGE } from '@/lib/jobber/environment'
+import { isDevNoAuthMode } from '@/lib/actions/types'
+import { requireRole } from '@/lib/security/require-app-user'
 
 export default async function QuoteNewPage() {
   const jobberEnabled = !isJobberDisabledInPreview()
@@ -24,6 +26,8 @@ export default async function QuoteNewPage() {
   const templates = quoteLineTemplates.status === 'fulfilled' && quoteLineTemplates.value.ok
     ? quoteLineTemplates.value.data
     : null
+  const appUser = isDevNoAuthMode() ? null : await requireRole('admin')
+  const userId = appUser === null ? 'dev-no-auth' : appUser.ok ? appUser.user.id : undefined
 
   return (
     <>
@@ -33,6 +37,8 @@ export default async function QuoteNewPage() {
         </p>
       ) : null}
       <QuoteForm
+        key={userId}
+        userId={userId}
         areas={areas.value.data}
         quoteLineTemplates={templates ?? []}
         settings={settings.value.data}

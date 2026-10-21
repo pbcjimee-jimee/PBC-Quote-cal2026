@@ -636,7 +636,7 @@ describe('job actions', () => {
 
     await expect(refreshJobDetail({ jobberJobId: 'job-1' })).resolves.toEqual({
       ok: false,
-      error: 'assignment detail unavailable',
+      error: expect.stringMatching(/^Unable to load Jobber jobs\. Contact an administrator to check the Jobber connection\. \(Ref: [a-f0-9]{12}\)$/),
       code: 'JOBBER_ERROR',
     })
     expect(mocks.saveSnapshots).not.toHaveBeenCalled()
@@ -709,6 +709,19 @@ describe('job actions', () => {
     })
     if (result.ok) expect(result.data.jobs).toHaveLength(11)
   })
+  it.each(['admin', 'supervisor'] as const)('redacts Jobber configuration failures for %s', async (role) => {
+    mocks.requireRole.mockResolvedValue(appUser(role, 'jobber-user-1'))
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {})
+    mocks.createJobberGateway.mockRejectedValueOnce(new Error('JOBBER_TOKEN_ENCRYPTION_KEY is required token=secret staff@example.com actual_price=123'))
+    try {
+      const result = await listMyJobs({})
+      expect(result).toEqual({ ok: false, code: 'JOBBER_ERROR', error: expect.stringMatching(/^Unable to load Jobber jobs\. Contact an administrator to check the Jobber connection\. \(Ref: [a-f0-9]{12}\)$/) })
+      expect(JSON.stringify(log.mock.calls)).not.toMatch(/ENCRYPTION|token=|staff@|actual_price/)
+    } finally {
+      log.mockRestore()
+    }
+  })
+
 })
 
 function assignmentVisits(count: number) {

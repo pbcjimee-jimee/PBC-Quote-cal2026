@@ -1844,7 +1844,7 @@ describe('quote actions against Supabase', () => {
 
     const result = await duplicateQuote(quoteId)
 
-    expect(result).toEqual({ ok: false, error: 'product lookup failed' })
+    expect(result).toEqual({ ok: false, error: expect.stringMatching(/^Unable to complete this request\. Please try again\. \(Ref: [a-f0-9]{12}\)$/) })
   })
 
   it('returns createQuote errors when duplicating a Supabase quote fails at insert', async () => {
@@ -1948,14 +1948,14 @@ describe('quote actions against Supabase', () => {
     persistenceFixture({ ...quoteRow, jobber_quote_id: 'jobber-quote-id' })
     mocks.getUsableSharedJobberConnectionToken.mockResolvedValueOnce({ accessToken: 'token', refreshToken: 'refresh' })
     mocks.fetchJobberQuote.mockRejectedValueOnce(new mocks.JobberApiError('expired', 401))
-    expect(await refreshJobberQuoteSnapshot(quoteId)).toMatchObject({ ok: false, error: expect.stringContaining('owner') })
+    expect(await refreshJobberQuoteSnapshot(quoteId)).toMatchObject({ ok: false, error: expect.stringMatching(/^Unable to refresh the Jobber quote\. Check the Jobber connection and try again\. \(Ref: [a-f0-9]{12}\)$/) })
   })
 
   it('stores refresh errors with the original version and rejects late success results', async () => {
     const { rpc } = persistenceFixture({ ...quoteRow, jobber_quote_id: 'jobber-quote-id' })
     mocks.fetchJobberQuote.mockRejectedValueOnce(new Error('Jobber timeout'))
-    expect(await refreshJobberQuoteSnapshot(quoteId)).toEqual({ ok: false, error: 'Jobber timeout' })
-    expect(rpc).toHaveBeenCalledWith('apply_quote_jobber_result', { target_quote_id: quoteId, expected_version: 1, changes: { jobber_snapshot_refresh_error: 'Jobber timeout' } })
+    expect(await refreshJobberQuoteSnapshot(quoteId)).toEqual({ ok: false, error: expect.stringMatching(/^Unable to refresh the Jobber quote\. Check the Jobber connection and try again\. \(Ref: [a-f0-9]{12}\)$/) })
+    expect(rpc).toHaveBeenCalledWith('apply_quote_jobber_result', { target_quote_id: quoteId, expected_version: 1, changes: { jobber_snapshot_refresh_error: expect.stringMatching(/^Unable to refresh the Jobber quote\. Check the Jobber connection and try again\. \(Ref: [a-f0-9]{12}\)$/) } })
     rpc.mockResolvedValueOnce({ data: null, error: { message: 'QUOTE_DELETED' } })
     expect(await refreshJobberQuoteSnapshot(quoteId)).toMatchObject({ ok: false, error: expect.stringContaining('Trash') })
   })
@@ -2051,7 +2051,7 @@ describe('quote actions against Supabase', () => {
 
     const result = await searchQuotes()
 
-    expect(result).toEqual({ ok: false, error: 'quote search failed' })
+    expect(result).toEqual({ ok: false, error: expect.stringMatching(/^Unable to complete this request\. Please try again\. \(Ref: [a-f0-9]{12}\)$/) })
     expect(searchBuilder.or).not.toHaveBeenCalled()
   })
 
@@ -2510,7 +2510,7 @@ describe('quote actions against Supabase', () => {
 
     const result = await getQuote(quoteId)
 
-    expect(result).toEqual({ ok: false, error: 'quote detail failed' })
+    expect(result).toEqual({ ok: false, error: expect.stringMatching(/^Unable to complete this request\. Please try again\. \(Ref: [a-f0-9]{12}\)$/) })
   })
 
   it('returns null data when quote detail lookup finds no rows', async () => {

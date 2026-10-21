@@ -19,7 +19,7 @@ describe.skipIf(!pgliteAvailable)('reviewed Jobber recovery on ephemeral Postgre
   let mappings: Mapping[]
   const observation = ['remote-created', 'remote-orphan', 'unmanaged-remote']
 
-  beforeAll(async () => { db = await bootstrap({ through: '20261016092708' }) }, 30000)
+  beforeAll(async () => { db = await bootstrap({ through: '20261021094546' }) }, 30000)
   afterAll(async () => { await db?.close() })
   beforeEach(async () => {
     await db.exec('RESET ROLE')

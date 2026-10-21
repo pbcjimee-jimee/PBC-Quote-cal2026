@@ -69,11 +69,10 @@ describe('jobber tokens', () => {
     vi.clearAllMocks()
     mocks.createServiceClient.mockReset()
     mocks.refreshAccessToken.mockReset()
-    process.env.JOBBER_TOKEN_ENCRYPTION_KEY = ''
+    vi.stubEnv('JOBBER_TOKEN_ENCRYPTION_KEY', 'test-encryption-key')
   })
 
   afterEach(() => {
-    delete process.env.JOBBER_TOKEN_ENCRYPTION_KEY
     vi.unstubAllEnvs()
   })
 
@@ -99,6 +98,7 @@ describe('jobber tokens', () => {
   })
 
   it('uses the most recently updated Jobber connection for every logged-in app user', async () => {
+    vi.stubEnv('JOBBER_TOKEN_ENCRYPTION_KEY', '')
     const currentUserRow = {
       user_id: 'current-user',
       access_token: 'stale-access-token',
@@ -197,6 +197,10 @@ describe('jobber tokens', () => {
       refreshToken: 'new-refresh-token',
     })
     expect(updateBuilder.eq).toHaveBeenCalledWith('user_id', 'jobber-owner')
+    expect(updateBuilder.update).toHaveBeenCalledWith(expect.objectContaining({
+      access_token: expect.stringMatching(/^enc:v1:/),
+      refresh_token: expect.stringMatching(/^enc:v1:/),
+    }))
   })
 
   it('recovers from a refresh 401 when another request already saved a newer shared token', async () => {
@@ -260,8 +264,8 @@ describe('jobber tokens', () => {
       .rejects.toThrow('Jobber connection expired. Reconnect Jobber from Settings.')
   })
 
-  it('does not consume Jobber refresh tokens when production token storage is not configured', async () => {
-    vi.stubEnv('NODE_ENV', 'production')
+  it.each(['production', 'development', 'test'])('does not consume Jobber refresh tokens without an encryption key in %s', async (nodeEnv) => {
+    vi.stubEnv('NODE_ENV', nodeEnv)
     vi.stubEnv('JOBBER_TOKEN_ENCRYPTION_KEY', '')
 
     try {

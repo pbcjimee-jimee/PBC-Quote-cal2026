@@ -1,5 +1,7 @@
 'use server'
 
+import { safeErrorMessage } from './action-error'
+
 import { normalizeInventoryItem, type InventoryItemRecord, type InventoryStatus } from '@/lib/inventory/types'
 import { requireRole } from '@/lib/security/require-app-user'
 import { createClient } from '@/lib/supabase/server'
@@ -382,7 +384,7 @@ function parseInventoryCSV(csvText: string, sourceYear?: string | null): Invento
   }
 
   if (indexByField.name === undefined) {
-    throw new Error('Missing required column: Name')
+    throw new CsvValidationError('Missing required column: Name')
   }
 
   const rows: InventoryImportRow[] = []
@@ -393,7 +395,7 @@ function parseInventoryCSV(csvText: string, sourceYear?: string | null): Invento
     const getValue = (fieldIndex?: number) => (fieldIndex === undefined ? '' : (row[fieldIndex] ?? '').trim())
     const name = getValue(indexByField.name)
     if (!name) {
-      throw new Error(`Line ${rowIndex + 1}: missing name`)
+      throw new CsvValidationError(`Line ${rowIndex + 1}: missing name`)
     }
 
     const category = getValue(indexByField.category)
@@ -461,7 +463,7 @@ function importRowToInsert(row: InventoryImportRow): InventoryInsert {
   const quantity = Number(row.quantity.replace(/,/g, ''))
 
   if (!Number.isFinite(quantity) || quantity < 0) {
-    throw new Error(`invalid quantity: ${row.quantity}`)
+    throw new CsvValidationError(`invalid quantity: ${row.quantity}`)
   }
 
   const status = purchaseMarkerStatus === 'out'
@@ -552,7 +554,7 @@ export async function listInventory(input: unknown = {}): Promise<ActionResult<I
     )
 
     const { data, error } = await request
-    if (error) return { ok: false, error: error.message }
+    if (error) return { ok: false, error: safeErrorMessage(error, 'inventory.listInventory') }
     const batch = data as unknown as InventoryRow[]
 
     if (!fetchAll) {
@@ -606,7 +608,7 @@ export async function listInventoryCategories(): Promise<ActionResult<string[]>>
       .order('id', { ascending: true })
       .range(offset, offset + batchSize - 1)
 
-    if (error) return { ok: false, error: error.message }
+    if (error) return { ok: false, error: safeErrorMessage(error, 'inventory.listInventoryCategories') }
     const batch = data as unknown as InventoryCategoryRow[]
     rows.push(...batch)
     if (batch.length < batchSize) break
@@ -639,7 +641,7 @@ export async function createInventoryItem(input: unknown): Promise<ActionResult<
     .select(INVENTORY_COLUMNS)
     .single()
 
-  if (error) return { ok: false, error: error.message }
+  if (error) return { ok: false, error: safeErrorMessage(error, 'inventory.createInventoryItem') }
   return { ok: true, data: rowToInventory(data as unknown as InventoryRow) }
 }
 
@@ -674,7 +676,7 @@ export async function updateInventoryItem(input: unknown): Promise<ActionResult<
     .select(INVENTORY_COLUMNS)
     .single()
 
-  if (error) return { ok: false, error: error.message }
+  if (error) return { ok: false, error: safeErrorMessage(error, 'inventory.updateInventoryItem') }
   return { ok: true, data: rowToInventory(data as unknown as InventoryRow) }
 }
 
@@ -711,7 +713,7 @@ export async function updateInventoryMovement(input: unknown): Promise<ActionRes
     .select(INVENTORY_COLUMNS)
     .single()
 
-  if (error) return { ok: false, error: error.message }
+  if (error) return { ok: false, error: safeErrorMessage(error, 'inventory.updateInventoryMovement') }
   return { ok: true, data: rowToInventory(data as unknown as InventoryRow) }
 }
 
@@ -744,7 +746,7 @@ export async function deleteInventoryItem(input: unknown): Promise<ActionResult<
     .select(INVENTORY_COLUMNS)
     .single()
 
-  if (error) return { ok: false, error: error.message }
+  if (error) return { ok: false, error: safeErrorMessage(error, 'inventory.deleteInventoryItem') }
   return { ok: true, data: rowToInventory(data as unknown as InventoryRow) }
 }
 
@@ -758,7 +760,7 @@ export async function importInventoryCSV(input: unknown): Promise<ActionResult<I
   try {
     rows = parseInventoryCSV(parsed.data.csvText, parsed.data.sourceYear)
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'Invalid CSV format'
+    const message = error instanceof CsvValidationError ? error.message : safeErrorMessage(error, 'inventory.import', 'Invalid CSV format')
     return { ok: false, error: message }
   }
 
@@ -770,7 +772,7 @@ export async function importInventoryCSV(input: unknown): Promise<ActionResult<I
   try {
     insertRows = toInventoryInsertPayload(rows)
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'Invalid inventory data'
+    const message = error instanceof CsvValidationError ? error.message : safeErrorMessage(error, 'inventory.import', 'Invalid inventory data')
     return { ok: false, error: message }
   }
 
@@ -789,7 +791,9 @@ export async function importInventoryCSV(input: unknown): Promise<ActionResult<I
     .insert(insertRows)
     .select(INVENTORY_COLUMNS)
 
-  if (error) return { ok: false, error: error.message }
+  if (error) return { ok: false, error: safeErrorMessage(error, 'inventory.importInventoryCSV') }
   const inventoryRows = data as unknown as InventoryRow[]
   return { ok: true, data: { imported: inventoryRows.length, items: inventoryRows.map(rowToInventory) } }
 }
+
+class CsvValidationError extends Error {}

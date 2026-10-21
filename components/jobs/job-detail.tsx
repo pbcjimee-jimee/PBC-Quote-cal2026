@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import { getSafeJobberUrl } from '@/lib/jobber/url'
 import type { JobDetailData } from '@/lib/actions/jobs'
 import { JobFinancials, formatAud } from './job-financials'
 import { JobRefreshButton } from './job-refresh-button'
@@ -9,11 +10,12 @@ function formatExpenseDate(value: string): string {
 }
 
 export function JobDetail({ job }: { job: JobDetailData }) {
+  const jobberUrl = getSafeJobberUrl(job.jobberWebUri)
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div><h1>Job #{job.jobNumber}</h1><p>{job.title || 'Untitled job'} · {job.jobStatus.replaceAll('_', ' ')}</p></div>
-        <div className="flex flex-wrap gap-2"><JobRefreshButton jobberJobId={job.id} /><Link href={job.jobberWebUri} target="_blank" rel="noreferrer" className="pbc-btn pbc-btn--ghost">Open in Jobber</Link></div>
+        <div className="flex flex-wrap gap-2"><JobRefreshButton jobberJobId={job.id} />{jobberUrl ? <Link href={jobberUrl} target="_blank" rel="noreferrer" className="pbc-btn pbc-btn--ghost">Open in Jobber</Link> : null}</div>
       </div>
       <JobFinancials summary={job.financialSummary} labourEstimate={job.labourEstimate} />
       <section className="pbc-card pbc-card--pad">

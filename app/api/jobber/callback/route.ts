@@ -4,7 +4,8 @@ import { saveDevJobberToken } from '@/lib/jobber/dev-tokens'
 import { exchangeAuthorizationCode, getTokenExpiresAt } from '@/lib/jobber/oauth'
 import { encryptTokenValue, getMissingJobberTokenStorageConfigKeys } from '@/lib/jobber/token-encryption'
 import { requireRole } from '@/lib/security/require-app-user'
-import { createServiceClient } from '@/lib/supabase/server'
+import { AUTHENTICATION_REQUIRED_ERROR } from '@/lib/security/auth-policy'
+import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { isDevNoAuthMode } from '@/lib/actions/types'
 import { isJobberDisabledInPreview, JOBBER_DISABLED_MESSAGE } from '@/lib/jobber/environment'
 
@@ -16,7 +17,7 @@ export async function GET(request: NextRequest) {
   const isDevTokenStorage = isDevNoAuthMode()
   const missing = [
     ...getMissingOAuthConfigKeys(config),
-    ...(isDevTokenStorage ? [] : getMissingJobberTokenStorageConfigKeys()),
+    ...getMissingJobberTokenStorageConfigKeys(),
   ]
   if (missing.length > 0) {
     return NextResponse.json({
@@ -37,11 +38,24 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ ok: false, error: 'Invalid Jobber OAuth state' }, { status: 400 })
   }
 
+  let stage = 'authorization'
   try {
+    const allowedUser = isDevTokenStorage ? null : await requireRole('admin')
+    if (allowedUser && !allowedUser.ok) {
+      if (allowedUser.error !== AUTHENTICATION_REQUIRED_ERROR) {
+        const supabase = await createClient()
+        await supabase.auth.signOut()
+      }
+      return NextResponse.redirect(new URL('/login', request.url))
+    }
+
+    stage = 'token exchange'
     const token = await exchangeAuthorizationCode(code, config)
+    stage = 'scope validation'
     assertJobberReadOnlyScopes(token.scope)
     const expiresAt = getTokenExpiresAt(token)
 
+    stage = 'token storage'
     if (isDevTokenStorage) {
       await saveDevJobberToken(token)
       const response = NextResponse.redirect(new URL('/settings?jobber=connected', request.url))
@@ -49,14 +63,7 @@ export async function GET(request: NextRequest) {
       return response
     }
 
-    const allowedUser = await requireRole('admin')
-    if (!allowedUser.ok && allowedUser.error === 'Authentication required') {
-      return NextResponse.redirect(new URL('/login', request.url))
-    }
-
-    if (!allowedUser.ok) {
-      return NextResponse.redirect(new URL('/api/auth/signout?reason=not_allowed', request.url))
-    }
+    if (!allowedUser?.ok) throw new Error('Admin authorization required')
 
     const service = await createServiceClient()
     const { error } = await service
@@ -72,6 +79,7 @@ export async function GET(request: NextRequest) {
       }, { onConflict: 'user_id' })
 
     if (error) {
+      console.error('Jobber OAuth callback failed', { stage })
       return NextResponse.json({ ok: false, error: 'Unable to save Jobber connection' }, { status: 500 })
     }
 
@@ -79,9 +87,13 @@ export async function GET(request: NextRequest) {
     response.cookies.delete('jobber_oauth_state')
     return response
   } catch (error) {
+    const status = error instanceof Error
+      ? /^Jobber token exchange failed with status (\d{3})$/.exec(error.message)?.[1]
+      : undefined
+    console.error('Jobber OAuth callback failed', { stage, status })
     return NextResponse.json({
       ok: false,
-      error: error instanceof Error ? error.message : 'Unable to connect Jobber',
+      error: 'Unable to connect Jobber. Please try again.',
     }, { status: 502 })
   }
 }

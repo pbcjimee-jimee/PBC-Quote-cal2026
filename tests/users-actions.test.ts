@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({
   requireRole: vi.fn(),
@@ -37,13 +37,16 @@ function mutationBuilder(response: unknown) {
     eq: vi.fn(() => builder),
     select: vi.fn(() => builder),
     single: vi.fn(async () => response),
+    maybeSingle: vi.fn(async (): Promise<{ data: typeof profileRow | null; error: Error | null }> => ({ data: profileRow, error: null })),
   }
   return builder
 }
 
 describe('admin user actions', () => {
+  afterEach(() => vi.restoreAllMocks())
   beforeEach(() => {
     vi.clearAllMocks()
+    vi.spyOn(console, 'error').mockImplementation(() => {})
     mocks.requireRole.mockResolvedValue({
       ok: true,
       user: { id: '00000000-0000-4000-8000-000000000001' },
@@ -117,7 +120,7 @@ describe('admin user actions', () => {
       role: 'supervisor',
     })
 
-    expect(result).toEqual({ ok: false, error: 'duplicate email' })
+    expect(result).toEqual({ ok: false, error: expect.stringMatching(/^Unable to create user \(Ref: [a-f0-9]{12}\)$/) })
     expect(from).not.toHaveBeenCalled()
   })
 
@@ -140,7 +143,7 @@ describe('admin user actions', () => {
       role: 'supervisor',
     })
 
-    expect(result).toEqual({ ok: false, error: 'profile failed' })
+    expect(result).toEqual({ ok: false, error: expect.stringMatching(/^Unable to create app profile \(Ref: [a-f0-9]{12}\)$/) })
     expect(deleteUser).toHaveBeenCalledWith(profileRow.id)
   })
 
@@ -148,7 +151,7 @@ describe('admin user actions', () => {
     const builder = mutationBuilder({ data: { ...profileRow, role: 'admin' }, error: null })
     const updateUserById = vi.fn(async () => ({ data: {}, error: null }))
     mocks.createServiceClient.mockResolvedValue({
-      auth: { admin: { updateUserById } },
+      auth: { admin: { updateUserById, getUserById: vi.fn(async () => ({ data: { user: { banned_until: null } }, error: null })) } },
       from: vi.fn(() => builder),
     })
 
@@ -190,7 +193,7 @@ describe('admin user actions', () => {
 
     await expect(updateUserRole({ id: selfId, role: 'supervisor' })).resolves.toEqual({
       ok: false,
-      error: 'LAST_ACTIVE_ADMIN_REQUIRED',
+      error: 'At least one active admin is required',
     })
   })
 
@@ -205,7 +208,7 @@ describe('admin user actions', () => {
     const builder = mutationBuilder({ data: { ...profileRow, is_active: false }, error: null })
     const updateUserById = vi.fn(async () => ({ data: {}, error: null }))
     mocks.createServiceClient.mockResolvedValue({
-      auth: { admin: { updateUserById } },
+      auth: { admin: { updateUserById, getUserById: vi.fn(async () => ({ data: { user: { banned_until: null } }, error: null })) } },
       from: vi.fn(() => builder),
     })
 
@@ -219,13 +222,13 @@ describe('admin user actions', () => {
   it('rolls Auth ban state back if the profile status update fails', async () => {
     const updateUserById = vi.fn(async () => ({ data: {}, error: null }))
     mocks.createServiceClient.mockResolvedValue({
-      auth: { admin: { updateUserById } },
+      auth: { admin: { updateUserById, getUserById: vi.fn(async () => ({ data: { user: { banned_until: null } }, error: null })) } },
       from: vi.fn(() => mutationBuilder({ data: null, error: new Error('profile update failed') })),
     })
 
     const result = await setUserActive({ id: profileRow.id, active: false })
 
-    expect(result).toEqual({ ok: false, error: 'profile update failed' })
+    expect(result).toEqual({ ok: false, error: expect.stringMatching(/^Unable to update user status \(Ref: [a-f0-9]{12}\)$/) })
     expect(updateUserById).toHaveBeenNthCalledWith(1, profileRow.id, { ban_duration: '876000h' })
     expect(updateUserById).toHaveBeenNthCalledWith(2, profileRow.id, { ban_duration: 'none' })
   })
@@ -233,7 +236,7 @@ describe('admin user actions', () => {
   it('surfaces the database last-admin error and restores Auth when deactivation is rejected', async () => {
     const updateUserById = vi.fn(async () => ({ data: {}, error: null }))
     mocks.createServiceClient.mockResolvedValue({
-      auth: { admin: { updateUserById } },
+      auth: { admin: { updateUserById, getUserById: vi.fn(async () => ({ data: { user: { banned_until: null } }, error: null })) } },
       from: vi.fn(() => mutationBuilder({
         data: null,
         error: new Error('LAST_ACTIVE_ADMIN_REQUIRED'),
@@ -242,7 +245,7 @@ describe('admin user actions', () => {
 
     const result = await setUserActive({ id: profileRow.id, active: false })
 
-    expect(result).toEqual({ ok: false, error: 'LAST_ACTIVE_ADMIN_REQUIRED' })
+    expect(result).toEqual({ ok: false, error: 'At least one active admin is required' })
     expect(updateUserById).toHaveBeenNthCalledWith(1, profileRow.id, { ban_duration: '876000h' })
     expect(updateUserById).toHaveBeenNthCalledWith(2, profileRow.id, { ban_duration: 'none' })
   })
@@ -250,16 +253,16 @@ describe('admin user actions', () => {
   it('returns service errors from password and Jobber link updates', async () => {
     const updateUserById = vi.fn(async () => ({ data: {}, error: new Error('password failed') }))
     mocks.createServiceClient.mockResolvedValue({
-      auth: { admin: { updateUserById } },
+      auth: { admin: { updateUserById, getUserById: vi.fn(async () => ({ data: { user: { banned_until: null } }, error: null })) } },
       from: vi.fn(() => mutationBuilder({ data: null, error: new Error('link failed') })),
     })
 
     await expect(resetUserPassword({
       id: profileRow.id,
       temporaryPassword: 'Replacement!234',
-    })).resolves.toEqual({ ok: false, error: 'password failed' })
+    })).resolves.toEqual({ ok: false, error: expect.stringMatching(/^Unable to reset password \(Ref: [a-f0-9]{12}\)$/) })
     await expect(linkJobberUser({ id: profileRow.id, jobberUserId: 'jobber-1' }))
-      .resolves.toEqual({ ok: false, error: 'link failed' })
+      .resolves.toEqual({ ok: false, error: expect.stringMatching(/^Unable to link Jobber user \(Ref: [a-f0-9]{12}\)$/) })
   })
 
   it('rejects all mutations when the session is not admin', async () => {
@@ -269,5 +272,92 @@ describe('admin user actions', () => {
 
     expect(result).toEqual({ ok: false, error: 'Admin access required' })
     expect(mocks.createServiceClient).not.toHaveBeenCalled()
+  })
+
+  const mutations = [
+    () => setUserActive({ id: profileRow.id, active: true }),
+    () => setUserActive({ id: profileRow.id, active: false }),
+    () => resetUserPassword({ id: profileRow.id, temporaryPassword: 'Replacement!234' }),
+    () => updateUserRole({ id: profileRow.id, role: 'admin' }),
+    () => linkJobberUser({ id: profileRow.id, jobberUserId: 'jobber-1' }),
+  ]
+
+  it.each(mutations)('rejects a missing app profile without touching shared Auth %#', async (mutate) => {
+    const builder = mutationBuilder({ data: null, error: null })
+    builder.maybeSingle.mockResolvedValue({ data: null, error: null })
+    const authAdmin = { getUserById: vi.fn(), updateUserById: vi.fn() }
+    mocks.createServiceClient.mockResolvedValue({ from: vi.fn(() => builder), auth: { admin: authAdmin } })
+    await expect(mutate()).resolves.toEqual({ ok: false, error: 'User not found' })
+    expect(builder.eq).toHaveBeenCalledWith('id', profileRow.id)
+    expect(builder.update).not.toHaveBeenCalled()
+    expect(authAdmin.getUserById).not.toHaveBeenCalled()
+    expect(authAdmin.updateUserById).not.toHaveBeenCalled()
+  })
+
+  it.each(mutations)('fails closed on a profile lookup error %#', async (mutate) => {
+    const builder = mutationBuilder({ data: null, error: null })
+    builder.maybeSingle.mockResolvedValue({ data: null, error: new Error('internal schema details') })
+    const updateUserById = vi.fn()
+    mocks.createServiceClient.mockResolvedValue({ from: vi.fn(() => builder), auth: { admin: { updateUserById } } })
+    await expect(mutate()).resolves.toEqual({ ok: false, error: expect.stringMatching(/^Unable to load user \(Ref: [a-f0-9]{12}\)$/) })
+    expect(updateUserById).not.toHaveBeenCalled()
+    expect(builder.update).not.toHaveBeenCalled()
+  })
+
+  it.each([null, '2026-01-01T00:00:00.000Z', '2026-10-21T01:30:00.000Z'])(
+    'restores the actual previous ban (%s) after a failed activation, regardless of profile status', async (bannedUntil) => {
+      vi.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-10-21T01:00:00.000Z'))
+      const builder = mutationBuilder({ data: null, error: new Error('profile update failed') })
+      const updateUserById = vi.fn(async () => ({ error: null }))
+      mocks.createServiceClient.mockResolvedValue({
+        from: vi.fn(() => builder),
+        auth: { admin: {
+          getUserById: vi.fn(async () => ({ data: { user: { banned_until: bannedUntil } }, error: null })),
+          updateUserById,
+        } },
+      })
+      await expect(setUserActive({ id: profileRow.id, active: true })).resolves.toEqual({ ok: false, error: expect.stringMatching(/^Unable to update user status \(Ref: [a-f0-9]{12}\)$/) })
+      expect(updateUserById).toHaveBeenNthCalledWith(1, profileRow.id, { ban_duration: 'none' })
+      expect(updateUserById).toHaveBeenNthCalledWith(2, profileRow.id, {
+        ban_duration: bannedUntil === '2026-10-21T01:30:00.000Z' ? '1800000ms' : 'none',
+      })
+      expect(updateUserById).not.toHaveBeenCalledWith(profileRow.id, { ban_duration: '876000h' })
+    }
+  )
+
+  it('restores Auth after a rejected profile write and reports rollback failure safely', async () => {
+    const builder = mutationBuilder({ data: null, error: null })
+    builder.single.mockRejectedValue(new Error('network write failed'))
+    const updateUserById = vi.fn().mockResolvedValueOnce({ error: null })
+      .mockResolvedValueOnce({ error: new Error('private rollback details') })
+    mocks.createServiceClient.mockResolvedValue({
+      from: vi.fn(() => builder),
+      auth: { admin: {
+        getUserById: vi.fn(async () => ({ data: { user: { banned_until: null } }, error: null })),
+        updateUserById,
+      } },
+    })
+    await expect(setUserActive({ id: profileRow.id, active: true })).resolves.toEqual({
+      ok: false, error: expect.stringMatching(/^Unable to restore user status\. Contact an administrator before retrying\. \(Ref: [a-f0-9]{12}\)$/),
+    })
+    expect(updateUserById).toHaveBeenCalledTimes(2)
+    expect(console.error).toHaveBeenCalled()
+  })
+
+  it('does not mutate status if the previous Auth state cannot be read', async () => {
+    const builder = mutationBuilder({ data: profileRow, error: null })
+    const updateUserById = vi.fn()
+    mocks.createServiceClient.mockResolvedValue({
+      from: vi.fn(() => builder),
+      auth: { admin: { getUserById: vi.fn(async () => ({ data: { user: null }, error: new Error('private Auth error') })), updateUserById } },
+    })
+    await expect(setUserActive({ id: profileRow.id, active: false })).resolves.toEqual({ ok: false, error: expect.stringMatching(/^Unable to load user status \(Ref: [a-f0-9]{12}\)$/) })
+    expect(updateUserById).not.toHaveBeenCalled()
+    expect(builder.update).not.toHaveBeenCalled()
+  })
+
+  it('returns a safe Result when a service operation throws', async () => {
+    mocks.createServiceClient.mockRejectedValue(new Error('private service configuration'))
+    await expect(listUsers()).resolves.toEqual({ ok: false, error: expect.stringMatching(/^Unable to load users \(Ref: [a-f0-9]{12}\)$/) })
   })
 })

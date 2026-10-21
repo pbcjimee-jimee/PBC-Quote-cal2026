@@ -226,4 +226,20 @@ describe('product service actions against Supabase', () => {
     if (!malformedImport.ok) expect(malformedImport.error).toContain('invalid amount')
     expect(mocks.createClient).not.toHaveBeenCalled()
   })
+  it('redacts database errors from responses and server logs', async () => {
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const secret = 'token=private actual_price=123 staff@example.com'
+    const error = { message: secret, details: secret, code: secret }
+    const builder = createInsertBuilder({ data: null, error })
+    mocks.createClient.mockResolvedValueOnce({ from: vi.fn(() => builder) })
+    try {
+      const result = await createProductService({ name: 'Ceiling', unitPrice: 14.5 })
+      expect(result).toEqual({ ok: false, error: expect.stringMatching(/^Unable to complete this request\. Please try again\. \(Ref: [a-f0-9]{12}\)$/) })
+      expect(JSON.stringify(log.mock.calls)).not.toContain(secret)
+      expect(log).toHaveBeenCalled()
+    } finally {
+      log.mockRestore()
+    }
+  })
+
 })

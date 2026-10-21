@@ -1,5 +1,7 @@
 'use server'
 
+import { safeErrorMessage } from './action-error'
+
 import { createClient } from '@/lib/supabase/server'
 import type { Database } from '@/lib/supabase/types'
 import { normalizeProductService, type ProductServiceRecord } from '@/lib/product-services/types'
@@ -166,7 +168,7 @@ function parseOptionalMoney(value: string): string | null {
   if (!trimmed) return null
   const amount = Number(trimmed)
   if (!Number.isFinite(amount) || amount < 0) {
-    throw new Error(`invalid amount: ${value}`)
+    throw new CsvValidationError(`invalid amount: ${value}`)
   }
   return amount.toFixed(2)
 }
@@ -180,7 +182,7 @@ function parseOptionalInteger(value: string): number | null {
   if (!trimmed) return null
   const amount = Number(trimmed)
   if (!Number.isInteger(amount) || amount < 0) {
-    throw new Error(`invalid duration: ${value}`)
+    throw new CsvValidationError(`invalid duration: ${value}`)
   }
   return amount
 }
@@ -190,7 +192,7 @@ function parseBoolean(value: string, defaultValue: boolean): boolean {
   if (!normalized) return defaultValue
   if (['true', 'yes', 'y', '1'].includes(normalized)) return true
   if (['false', 'no', 'n', '0'].includes(normalized)) return false
-  throw new Error(`invalid boolean: ${value}`)
+  throw new CsvValidationError(`invalid boolean: ${value}`)
 }
 
 function parseProductServicesCSV(csvText: string): ProductServiceImportRow[] {
@@ -205,15 +207,15 @@ function parseProductServicesCSV(csvText: string): ProductServiceImportRow[] {
     if (mapped) indexByField[mapped] = index
   }
 
-  if (indexByField.name === undefined) throw new Error('Missing required column: Name')
-  if (indexByField.unitPrice === undefined) throw new Error('Missing required column: Unit Price')
+  if (indexByField.name === undefined) throw new CsvValidationError('Missing required column: Name')
+  if (indexByField.unitPrice === undefined) throw new CsvValidationError('Missing required column: Unit Price')
 
   const rows: ProductServiceImportRow[] = []
   for (let rowIndex = 1; rowIndex < parsedRows.length; rowIndex += 1) {
     const row = parsedRows[rowIndex]
     const getValue = (fieldIndex?: number) => (fieldIndex === undefined ? '' : (row[fieldIndex] ?? '').trim())
     const name = getValue(indexByField.name)
-    if (!name) throw new Error(`Line ${rowIndex + 1}: missing name`)
+    if (!name) throw new CsvValidationError(`Line ${rowIndex + 1}: missing name`)
 
     rows.push({
       name,
@@ -302,7 +304,7 @@ export async function createProductService(input: unknown): Promise<ActionResult
     .select(PRODUCT_SERVICE_COLUMNS)
     .single()
 
-  if (error) return { ok: false, error: error.message }
+  if (error) return { ok: false, error: safeErrorMessage(error, 'product-services.createProductService') }
   return { ok: true, data: rowToProductService(data as unknown as ProductServiceRow) }
 }
 
@@ -341,7 +343,7 @@ export async function searchProductServices(input: unknown): Promise<ActionResul
   }
 
   const { data, error } = await request
-  if (error) return { ok: false, error: error.message }
+  if (error) return { ok: false, error: safeErrorMessage(error, 'product-services.searchProductServices') }
   return { ok: true, data: (data as unknown as ProductServiceRow[]).map(rowToProductService) }
 }
 
@@ -373,7 +375,7 @@ export async function listProductServices(input: unknown = {}): Promise<ActionRe
   }
 
   const { data, error } = await request
-  if (error) return { ok: false, error: error.message }
+  if (error) return { ok: false, error: safeErrorMessage(error, 'product-services.listProductServices') }
   return { ok: true, data: (data as unknown as ProductServiceRow[]).map(rowToProductService) }
 }
 
@@ -385,7 +387,7 @@ export async function importProductServicesCSV(input: unknown): Promise<ActionRe
   try {
     rows = parseProductServicesCSV(parsed.data.csvText)
   } catch (error) {
-    return { ok: false, error: error instanceof Error ? error.message : 'Invalid CSV format' }
+    return { ok: false, error: error instanceof CsvValidationError ? error.message : safeErrorMessage(error, 'product-services.import', 'Invalid CSV format') }
   }
 
   if (rows.length === 0) return { ok: false, error: 'No valid rows found in CSV' }
@@ -394,7 +396,7 @@ export async function importProductServicesCSV(input: unknown): Promise<ActionRe
   try {
     insertRows = toProductServiceInsertPayload(rows)
   } catch (error) {
-    return { ok: false, error: error instanceof Error ? error.message : 'Invalid CSV format' }
+    return { ok: false, error: error instanceof CsvValidationError ? error.message : safeErrorMessage(error, 'product-services.import', 'Invalid CSV format') }
   }
 
   if (isDevNoAuthMode()) {
@@ -412,7 +414,7 @@ export async function importProductServicesCSV(input: unknown): Promise<ActionRe
     .upsert(insertRows, { onConflict: 'name,category' })
     .select(PRODUCT_SERVICE_COLUMNS)
 
-  if (error) return { ok: false, error: error.message }
+  if (error) return { ok: false, error: safeErrorMessage(error, 'product-services.importProductServicesCSV') }
   const productServices = (data as unknown as ProductServiceRow[]).map(rowToProductService)
   return { ok: true, data: { imported: productServices.length, productServices } }
 }
@@ -458,7 +460,7 @@ export async function updateProductService(input: unknown): Promise<ActionResult
     .select(PRODUCT_SERVICE_COLUMNS)
     .single()
 
-  if (error) return { ok: false, error: error.message }
+  if (error) return { ok: false, error: safeErrorMessage(error, 'product-services.updateProductService') }
   return { ok: true, data: rowToProductService(data as unknown as ProductServiceRow) }
 }
 
@@ -484,6 +486,8 @@ export async function deleteProductService(input: unknown): Promise<ActionResult
     .select(PRODUCT_SERVICE_COLUMNS)
     .single()
 
-  if (error) return { ok: false, error: error.message }
+  if (error) return { ok: false, error: safeErrorMessage(error, 'product-services.deleteProductService') }
   return { ok: true, data: rowToProductService(data as unknown as ProductServiceRow) }
 }
+
+class CsvValidationError extends Error {}

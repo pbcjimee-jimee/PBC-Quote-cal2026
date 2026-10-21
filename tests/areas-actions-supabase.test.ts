@@ -102,7 +102,7 @@ describe('area actions against Supabase', () => {
 
     const result = await listAreas()
 
-    expect(result).toEqual({ ok: false, error: 'area read failed' })
+    expect(result).toEqual({ ok: false, error: expect.stringMatching(/^Unable to complete this request\. Please try again\. \(Ref: [a-f0-9]{12}\)$/) })
   })
 
   it('rejects disallowed users before listing areas', async () => {
@@ -167,7 +167,7 @@ describe('area actions against Supabase', () => {
 
     const result = await updateArea({ id: 'area-1', scope: 'interior', name: 'Feature Wall' })
 
-    expect(result).toEqual({ ok: false, error: 'fetch failed' })
+    expect(result).toEqual({ ok: false, error: expect.stringMatching(/^Unable to complete this request\. Please try again\. \(Ref: [a-f0-9]{12}\)$/) })
   })
 
   it('soft deletes an area through Supabase and revalidates consumers', async () => {
@@ -200,6 +200,6 @@ describe('area actions against Supabase', () => {
 
     const result = await deleteArea({ id: 'area-1' })
 
-    expect(result).toEqual({ ok: false, error: 'fetch failed' })
+    expect(result).toEqual({ ok: false, error: expect.stringMatching(/^Unable to complete this request\. Please try again\. \(Ref: [a-f0-9]{12}\)$/) })
   })
 })

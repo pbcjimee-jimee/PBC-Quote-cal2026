@@ -1,3 +1,4 @@
+import 'server-only'
 import { createServiceClient } from '@/lib/supabase/server'
 import { assertJobberReadOnlyScopes, type JobberConfig } from './config'
 import { assertJobberEnabled } from './environment'

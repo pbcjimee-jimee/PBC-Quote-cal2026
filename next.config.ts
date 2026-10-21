@@ -5,6 +5,8 @@ import { assertPreviewEnvironment, PREVIEW_SUPABASE_URL } from './lib/deployment
 assertPreviewEnvironment()
 
 const isProduction = process.env.NODE_ENV === 'production'
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+const supabaseOrigin = supabaseUrl ? new URL(supabaseUrl).origin : 'https://*.supabase.co'
 const cspHeader = [
   "default-src 'self'",
   `script-src 'self' 'unsafe-inline'${isProduction ? '' : " 'unsafe-eval'"}`,
@@ -13,7 +15,7 @@ const cspHeader = [
   "font-src 'self' data:",
   process.env.VERCEL_ENV === 'preview'
     ? `connect-src 'self' ${PREVIEW_SUPABASE_URL}`
-    : "connect-src 'self' https://*.supabase.co https://api.getjobber.com",
+    : `connect-src 'self' ${supabaseOrigin}`,
   "worker-src 'self'",
   "form-action 'self'",
   "base-uri 'self'",

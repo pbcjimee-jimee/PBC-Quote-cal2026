@@ -1,6 +1,7 @@
 'use server'
 
 import { revalidatePath } from 'next/cache'
+import { safeErrorMessage } from './action-error'
 import { createClient } from '@/lib/supabase/server'
 import type { Database } from '@/lib/supabase/types'
 import { requireRole } from '@/lib/security/require-app-user'
@@ -102,7 +103,7 @@ async function insertTemplateItems(
     .insert(items.map((item, index) => itemToInsert(templateId, item, index)))
     .select('*')
 
-  if (error) return { ok: false, error: error.message }
+  if (error) return { ok: false, error: safeErrorMessage(error, 'quote-line-templates.insertTemplateItems') }
   return { ok: true, data: (data as unknown as TemplateItemRow[]).map(rowToTemplateItem) }
 }
 
@@ -130,7 +131,7 @@ export async function createQuoteLineTemplate(input: unknown): Promise<ActionRes
     .select('id, name, active, created_at, updated_at')
     .single()
 
-  if (error) return { ok: false, error: error.message }
+  if (error) return { ok: false, error: safeErrorMessage(error, 'quote-line-templates.createQuoteLineTemplate') }
 
   const insertedItems = await insertTemplateItems(supabase, template.id, parsed.data.items)
   if (!insertedItems.ok) return insertedItems
@@ -173,10 +174,10 @@ export async function updateQuoteLineTemplate(input: unknown): Promise<ActionRes
     .select('id, name, active, created_at, updated_at')
     .single()
 
-  if (error) return { ok: false, error: error.message }
+  if (error) return { ok: false, error: safeErrorMessage(error, 'quote-line-templates.updateQuoteLineTemplate') }
 
   const { error: deleteError } = await supabase.from('quote_line_template_items').delete().eq('template_id', id)
-  if (deleteError) return { ok: false, error: deleteError.message }
+  if (deleteError) return { ok: false, error: safeErrorMessage(deleteError, 'quote-line-templates.updateQuoteLineTemplate') }
 
   const insertedItems = await insertTemplateItems(supabase, id, fields.items)
   if (!insertedItems.ok) return insertedItems
@@ -211,7 +212,7 @@ export async function listQuoteLineTemplates(): Promise<ActionResult<QuoteLineTe
     .eq('active', true)
     .order('updated_at', { ascending: false })
 
-  if (error) return { ok: false, error: error.message }
+  if (error) return { ok: false, error: safeErrorMessage(error, 'quote-line-templates.listQuoteLineTemplates') }
   return { ok: true, data: (data as unknown as TemplateRow[]).map(rowToTemplate) }
 }
 
@@ -238,7 +239,7 @@ export async function deleteQuoteLineTemplate(input: unknown): Promise<ActionRes
     .select(TEMPLATE_COLUMNS)
     .single()
 
-  if (error) return { ok: false, error: error.message }
+  if (error) return { ok: false, error: safeErrorMessage(error, 'quote-line-templates.deleteQuoteLineTemplate') }
   revalidateTemplateConsumers()
   return { ok: true, data: rowToTemplate(data as unknown as TemplateRow) }
 }
