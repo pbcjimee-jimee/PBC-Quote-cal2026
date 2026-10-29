@@ -5,6 +5,36 @@
 
 ---
 
+## [설계 2026-10-30] AI 견적 자동화 — 설계·구현 계획 작성 완료, 구현 미착수
+
+- **Model:** Claude Code 팀장(Opus 5.5/high)이 기존 구조를 분석하고 설계·구현 계획을 작성했다. 코드 변경과 구현 분배는 하지 않았다.
+- **범위:** 입력창에 견적 설명·아이템을 글로 적으면 Claude API가 PBC 과거 견적 분석 가이드와 유사 견적을 참고해 고객용 라인, 내부 계산 행, 공식 선택 초안을 만든다. 사용자가 검토·적용한 뒤 앱에만 저장하고, Jobber Sync는 서버 검토 게이트를 거친다. P0(과거 견적 분석 가이드)+P1(메모 기반 초안)을 먼저 구현하고, OneDrive 현장 사진(P2)은 다음 단계로 둔다.
+- **사용자 결정(D1~D11):**
+  - 사진: OneDrive(Microsoft 365 업무 계정) 연동, 폴더 이름 `quote 3000 - address`, 분석 후 즉시 삭제
+  - 초안 범위: 고객용 라인과 계산 행 둘 다
+  - 학습 방식: 분석 가이드와 유사 견적 예시(파인튜닝 아님)
+  - 진행 순서: 메모 기반 먼저
+  - 한도: 사용자당 하루 초안 20회, 분석 3회
+  - 정확도 비교용 메모: AI가 역작성
+  - 입력 방식: 한 번 입력 → 초안 1회
+  - 공식 기준: 공식 3·5는 actual
+- **문서:**
+  - 신규: `docs/superpowers/specs/2026-10-30-ai-quote-automation-design.md`, `docs/superpowers/plans/2026-10-30-ai-quote-automation-p0-p1.md`(16 Task)
+  - `docs/DECISIONS.md` §3: 공식 3·5 표기를 actual로 정정
+  - `docs/DECISIONS.md` §13: AI 견적 자동화 결정 추가
+  - `docs/CALCULATION.md`: 공식 3·5를 actual로 정정
+  - `docs/AUTOMATION-IDEAS.md`: 설계 승격 안내 추가
+- **남은 결정:** 고객용 라인 단가 배분 방식은 사용자가 따로 지정하지 않아 A안(계산기 총액을 라인별 비중으로 배분)을 기본으로 둔다. 사진 폴더가 본인 OneDrive에 있는지 공유 폴더·SharePoint에 있는지는 P2 설계 때 확인한다.
+- **승인 대기:**
+  - G1: `@anthropic-ai/sdk` 추가
+  - G2: Anthropic 키·월 한도, `.env.local`·Vercel 환경 변수
+  - G3: 운영 DB 마이그레이션
+  - G4: 정확도 비교 실행(비용 발생)
+  - G5: push·배포
+- **검증:** 문서 변경만 했고 테스트·빌드는 실행하지 않았다. 계산 동작은 바뀌지 않았다. `lib/calculator.ts`의 공식 3·5 주석 정정은 계획 Task 16에 포함했다.
+
+---
+
 ## [보안 2026-10-21] 감사 후속 보안·의존성·CI 강화 — 로컬 구현·검증 완료, 커밋/운영 미반영
 
 - **Model:** Claude Code 팀장(Opus 5.5/high)이 분석·분배·코드 리뷰·최종 통합 검증하고 Orca Codex 워커가 구현·검증했다. 역할 모델 기준은 전역 `~/.codex/AGENTS.md`(implementer GPT-6.1 Sol/high, quick_edit GPT-6 Luna/high, analyst GPT-6 Astra/xhigh, explorer GPT-6 Astra/high)로 문서화했다.
