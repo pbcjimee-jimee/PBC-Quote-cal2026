@@ -225,7 +225,7 @@ describe('createAiDraftMaterialItem', () => {
 })
 
 describe('reallocateAiLinePrices', () => {
-  it('only reallocates AI lines, ignoring manual lines and stale metadata', () => {
+  it('only reallocates AI lines, preserving manual prices and ignoring stale metadata', () => {
     const manual = formLine({ unitPrice: '900.00' })
     const lines = [manual, formLine({ id: 'ai-catalog', quantity: '2' }), formLine({ id: 'ai-weighted' }), formLine({ id: 'ai-text', kind: 'text' })]
     const original = structuredClone(lines)
@@ -234,7 +234,7 @@ describe('reallocateAiLinePrices', () => {
       'ai-weighted': { priceSource: 'allocated', catalogUnitPrice: null, priceWeight: 2 },
       'ai-text': { priceSource: 'none', catalogUnitPrice: null, priceWeight: 100 },
       stale: { priceSource: 'catalog', catalogUnitPrice: '9999.00', priceWeight: 0 },
-    }, new Decimal('110.00'))
+    }, new Decimal('1100.00'))
 
     expect(result.result).toEqual({
       status: 'allocated', unitPrices: { 'ai-catalog': '20.00', 'ai-weighted': '60.00', 'ai-text': '0.00' }, residual: '0.00',
@@ -242,6 +242,59 @@ describe('reallocateAiLinePrices', () => {
     expect(result.lines.map((line) => line.unitPrice)).toEqual(['900.00', '20.00', '60.00', '0.00'])
     expect(result.lines[0]).toBe(manual)
     expect(lines).toEqual(original)
+  })
+
+  it('reserves a manual line total and allocates only the remaining total by AI weights', () => {
+    const manual = formLine({ unitPrice: '300.00' })
+    const lines = [manual, formLine({ id: 'ai-a' }), formLine({ id: 'ai-b' })]
+    const original = structuredClone(lines)
+    const result = reallocateAiLinePrices(lines, {
+      'ai-a': { priceSource: 'allocated', catalogUnitPrice: null, priceWeight: 60 },
+      'ai-b': { priceSource: 'allocated', catalogUnitPrice: null, priceWeight: 40 },
+    }, '1100')
+
+    expect(result.result).toEqual({
+      status: 'allocated', unitPrices: { 'ai-a': '420.00', 'ai-b': '280.00' }, residual: '0.00',
+    })
+    expect(result.lines.map((line) => line.unitPrice)).toEqual(['300.00', '420.00', '280.00'])
+    expect(result.lines[0]).toBe(manual)
+    expect(lines).toEqual(original)
+  })
+
+  it('sums manual unit prices times fractional quantities using decimal arithmetic', () => {
+    const result = reallocateAiLinePrices([
+      formLine({ unitPrice: '100.10', quantity: '2.5' }),
+      formLine({ id: 'manual-2', unitPrice: '49.75', jobberLineItemId: 'jobber-line-2' }),
+      formLine({ id: 'ai-a' }),
+    ], {
+      'ai-a': { priceSource: 'allocated', catalogUnitPrice: null, priceWeight: 1 },
+    }, '1100')
+
+    expect(result.lines.map((line) => line.unitPrice)).toEqual(['100.10', '49.75', '700.00'])
+  })
+
+  it.each([
+    { kind: 'text' as const },
+    { clientVisible: false },
+    { optional: true, selected: true },
+  ])('excludes manual text, hidden or optional lines from the reserved amount: %j', (overrides) => {
+    const manual = formLine({ unitPrice: '300.00', ...overrides })
+    const result = reallocateAiLinePrices([manual, formLine({ id: 'ai-a' })], {
+      'ai-a': { priceSource: 'allocated', catalogUnitPrice: null, priceWeight: 1 },
+    }, '1100')
+
+    expect(result.lines[0]).toBe(manual)
+    expect(result.lines[1].unitPrice).toBe('1000.00')
+  })
+
+  it.each([false, null, undefined])('reserves manual lines unless optional is explicitly true: %s', (optional) => {
+    const result = reallocateAiLinePrices([
+      formLine({ unitPrice: '300.00', optional }), formLine({ id: 'ai-a' }),
+    ], {
+      'ai-a': { priceSource: 'allocated', catalogUnitPrice: null, priceWeight: 1 },
+    }, '1100')
+
+    expect(result.lines[1].unitPrice).toBe('700.00')
   })
 
   it('returns allocation warnings without changing unrelated manual lines', () => {

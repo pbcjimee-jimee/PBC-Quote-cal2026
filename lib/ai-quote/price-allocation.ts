@@ -25,6 +25,7 @@ const GST_MULTIPLIER = new Decimal('1.10')
 export function allocatePublicLinePrices(
   lines: AllocatableLine[],
   finalTotal: Decimal.Value,
+  reservedExGst: Decimal.Value = 0,
 ): AllocationResult {
   const unitPrices: Record<string, string> = Object.fromEntries(lines.map((line) => [
     line.id,
@@ -34,6 +35,7 @@ export function allocatePublicLinePrices(
   ]))
   const target = new Decimal(finalTotal).div(GST_MULTIPLIER)
     .toDecimalPlaces(2, Decimal.ROUND_HALF_UP)
+    .sub(new Decimal(reservedExGst).toDecimalPlaces(2, Decimal.ROUND_HALF_UP))
 
   if (target.lte(0)) {
     return { status: 'skipped', reason: 'no_total', unitPrices }

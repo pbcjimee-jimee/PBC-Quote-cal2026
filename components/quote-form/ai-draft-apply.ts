@@ -1,4 +1,4 @@
-import type Decimal from 'decimal.js'
+import Decimal from 'decimal.js'
 import {
   allocatePublicLinePrices,
   type AllocationResult,
@@ -125,12 +125,18 @@ export function reallocateAiLinePrices(
   finalTotal: Decimal.Value,
 ): { lines: JobberQuoteLineItemDraft[]; result: AllocationResult } {
   const aiLines = lines.filter((line) => Object.hasOwn(aiLineMeta, line.id))
+  const reservedExGst = lines.reduce((total, line) => (
+    !Object.hasOwn(aiLineMeta, line.id) && line.kind === 'line_item'
+      && line.clientVisible !== false && line.optional !== true
+      ? total.add(new Decimal(line.unitPrice).mul(line.quantity))
+      : total
+  ), new Decimal(0))
   const result = allocatePublicLinePrices(aiLines.map((line) => ({
     id: line.id,
     kind: line.kind,
     quantity: line.quantity,
     ...aiLineMeta[line.id],
-  })), finalTotal)
+  })), finalTotal, reservedExGst)
 
   return {
     lines: lines.map((line) => Object.hasOwn(aiLineMeta, line.id)

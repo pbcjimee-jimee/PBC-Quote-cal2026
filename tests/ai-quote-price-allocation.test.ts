@@ -33,6 +33,36 @@ describe('allocatePublicLinePrices', () => {
     ], '1100').unitPrices).toEqual({ c: '150.00', a: '700.00' })
   })
 
+  it('reserves existing public line totals before allocating AI prices', () => {
+    expect(allocatePublicLinePrices([
+      line('a', { priceWeight: 60 }), line('b', { priceWeight: 40 }),
+    ], '1100', '300')).toEqual({
+      status: 'allocated', unitPrices: { a: '420.00', b: '280.00' }, residual: '0.00',
+    })
+  })
+
+  it('rounds the GST-exclusive target and reserved amount separately before subtraction', () => {
+    expect(allocatePublicLinePrices([line('a')], '1.15', '0.005')).toEqual({
+      status: 'allocated', unitPrices: { a: '1.04' }, residual: '0.00',
+    })
+  })
+
+  it.each(['1000', '1001'])('skips when reserved amount %s exhausts the target and keeps catalog prices', (reserved) => {
+    expect(allocatePublicLinePrices([
+      line('c', { priceSource: 'catalog', catalogUnitPrice: '150' }), line('a'),
+    ], '1100', reserved)).toEqual({
+      status: 'skipped', reason: 'no_total', unitPrices: { c: '150.00', a: '0.00' },
+    })
+  })
+
+  it('checks catalog prices against the remaining target after reservation', () => {
+    expect(allocatePublicLinePrices([
+      line('c', { priceSource: 'catalog', catalogUnitPrice: '150' }), line('a'),
+    ], '1100', '900')).toEqual({
+      status: 'skipped', reason: 'catalog_exceeds_total', unitPrices: { c: '150.00', a: '0.00' },
+    })
+  })
+
   it('puts the rounding remainder on the first heaviest quantity-one line', () => {
     expect(allocatePublicLinePrices([line('a'), line('b'), line('c')], '1100'))
       .toEqual({
