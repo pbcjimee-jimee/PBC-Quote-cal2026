@@ -93,25 +93,116 @@ CREATE POLICY ai_quote_eval_cases_admin_update ON public.ai_quote_eval_cases
 CREATE POLICY ai_quote_eval_cases_admin_delete ON public.ai_quote_eval_cases
   FOR DELETE TO authenticated USING (app_auth.current_role() = 'admin');
 
-CREATE FUNCTION app_auth.preserve_ai_quote_creator()
+CREATE FUNCTION app_auth.guard_ai_quote_run_update()
 RETURNS TRIGGER
 LANGUAGE plpgsql
 SECURITY INVOKER
 SET search_path = ''
 AS $$
 BEGIN
+  NEW.id := OLD.id;
   NEW.created_by := OLD.created_by;
+  NEW.created_at := OLD.created_at;
+  NEW.kind := OLD.kind;
+  NEW.prompt_version := OLD.prompt_version;
+  NEW.memo := OLD.memo;
+  NEW.knowledge_id := OLD.knowledge_id;
+  NEW.jobber_quote_id := OLD.jobber_quote_id;
+
+  IF OLD.status <> 'running' THEN
+    NEW.status := OLD.status;
+    NEW.model := OLD.model;
+    NEW.output := OLD.output;
+    NEW.error_code := OLD.error_code;
+    NEW.input_tokens := OLD.input_tokens;
+    NEW.output_tokens := OLD.output_tokens;
+    NEW.cache_read_tokens := OLD.cache_read_tokens;
+    NEW.cache_write_tokens := OLD.cache_write_tokens;
+    NEW.cost_usd := OLD.cost_usd;
+    NEW.completed_at := OLD.completed_at;
+  ELSIF NEW.status IS DISTINCT FROM OLD.status
+    AND auth.uid() IS NOT NULL AND auth.uid() IS DISTINCT FROM OLD.created_by THEN
+    RAISE EXCEPTION 'AI_RUN_CREATOR_REQUIRED' USING ERRCODE = '42501';
+  END IF;
+
+  IF OLD.review_confirmed_at IS NOT NULL THEN
+    NEW.review_confirmed_at := OLD.review_confirmed_at;
+    NEW.review_confirmed_by := OLD.review_confirmed_by;
+  ELSIF NEW.review_confirmed_at IS NOT NULL THEN
+    NEW.review_confirmed_by := auth.uid();
+    NEW.review_confirmed_at := now();
+  ELSE
+    NEW.review_confirmed_by := OLD.review_confirmed_by;
+  END IF;
   RETURN NEW;
 END;
 $$;
 
-CREATE TRIGGER preserve_ai_quote_creator BEFORE UPDATE ON public.ai_quote_runs
-  FOR EACH ROW EXECUTE FUNCTION app_auth.preserve_ai_quote_creator();
-CREATE TRIGGER preserve_ai_quote_creator BEFORE UPDATE ON public.ai_quote_knowledge
-  FOR EACH ROW EXECUTE FUNCTION app_auth.preserve_ai_quote_creator();
-CREATE TRIGGER preserve_ai_quote_creator BEFORE UPDATE ON public.ai_quote_eval_cases
-  FOR EACH ROW EXECUTE FUNCTION app_auth.preserve_ai_quote_creator();
-REVOKE ALL ON FUNCTION app_auth.preserve_ai_quote_creator() FROM PUBLIC, anon, authenticated, service_role;
+CREATE FUNCTION app_auth.guard_ai_quote_knowledge_update()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY INVOKER
+SET search_path = ''
+AS $$
+BEGIN
+  NEW.id := OLD.id;
+  NEW.created_by := OLD.created_by;
+  NEW.created_at := OLD.created_at;
+  NEW.version := OLD.version;
+  NEW.stats := OLD.stats;
+  NEW.source_counts := OLD.source_counts;
+  NEW.run_id := OLD.run_id;
+  NEW.approved_by := OLD.approved_by;
+  NEW.approved_at := OLD.approved_at;
+
+  IF OLD.status <> 'draft' AND (
+    NEW.style_guide IS DISTINCT FROM OLD.style_guide
+    OR NEW.pricing_guide IS DISTINCT FROM OLD.pricing_guide
+  ) THEN
+    RAISE EXCEPTION 'AI_KNOWLEDGE_NOT_DRAFT' USING ERRCODE = '22023';
+  END IF;
+
+  IF NEW.status IS DISTINCT FROM OLD.status AND (
+    NEW.status = 'active' OR (OLD.status = 'active' AND NEW.status = 'archived')
+  ) THEN
+    IF current_setting('app.ai_knowledge_activation', true) IS DISTINCT FROM 'on' THEN
+      RAISE EXCEPTION 'AI_KNOWLEDGE_ACTIVATION_REQUIRED' USING ERRCODE = '42501';
+    END IF;
+    IF NEW.status = 'active' THEN
+      NEW.approved_by := auth.uid();
+      NEW.approved_at := now();
+    END IF;
+  END IF;
+
+  NEW.updated_at := now();
+  RETURN NEW;
+END;
+$$;
+
+CREATE FUNCTION app_auth.guard_ai_quote_eval_case_update()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY INVOKER
+SET search_path = ''
+AS $$
+BEGIN
+  NEW.id := OLD.id;
+  NEW.created_by := OLD.created_by;
+  NEW.created_at := OLD.created_at;
+  NEW.quote_id := OLD.quote_id;
+  NEW.set_label := OLD.set_label;
+  RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER guard_ai_quote_run_update BEFORE UPDATE ON public.ai_quote_runs
+  FOR EACH ROW EXECUTE FUNCTION app_auth.guard_ai_quote_run_update();
+CREATE TRIGGER guard_ai_quote_knowledge_update BEFORE UPDATE ON public.ai_quote_knowledge
+  FOR EACH ROW EXECUTE FUNCTION app_auth.guard_ai_quote_knowledge_update();
+CREATE TRIGGER guard_ai_quote_eval_case_update BEFORE UPDATE ON public.ai_quote_eval_cases
+  FOR EACH ROW EXECUTE FUNCTION app_auth.guard_ai_quote_eval_case_update();
+REVOKE ALL ON FUNCTION app_auth.guard_ai_quote_run_update(), app_auth.guard_ai_quote_knowledge_update(),
+  app_auth.guard_ai_quote_eval_case_update() FROM PUBLIC, anon, authenticated, service_role;
 
 CREATE FUNCTION public.activate_ai_quote_knowledge(p_id UUID)
 RETURNS UUID
@@ -119,6 +210,8 @@ LANGUAGE plpgsql
 SECURITY INVOKER
 SET search_path = ''
 AS $$
+DECLARE
+  previous_activation TEXT;
 BEGIN
   IF app_auth.current_role() IS DISTINCT FROM 'admin' THEN
     RAISE EXCEPTION 'ADMIN_REQUIRED' USING ERRCODE = '42501';
@@ -127,6 +220,8 @@ BEGIN
   -- Serialize approvals even when there is no active version to lock yet.
   PERFORM pg_advisory_xact_lock(hashtextextended('public.ai_quote_knowledge.activation', 0));
 
+  previous_activation := current_setting('app.ai_knowledge_activation', true);
+  PERFORM set_config('app.ai_knowledge_activation', 'on', true);
   UPDATE public.ai_quote_knowledge SET status = 'archived', updated_at = now() WHERE status = 'active';
   UPDATE public.ai_quote_knowledge
     SET status = 'active', approved_by = auth.uid(), approved_at = now(), updated_at = now()
@@ -134,6 +229,7 @@ BEGIN
   IF NOT FOUND THEN
     RAISE EXCEPTION 'AI_QUOTE_KNOWLEDGE_NOT_FOUND' USING ERRCODE = 'P0002';
   END IF;
+  PERFORM set_config('app.ai_knowledge_activation', coalesce(previous_activation, ''), true);
   RETURN p_id;
 END;
 $$;
