@@ -6,6 +6,10 @@ import { normalizeAreaKey, type KnowledgeSourceQuote } from '@/lib/ai-quote/know
 import type { SimilarQuoteCandidate } from '@/lib/ai-quote/similar-quotes'
 import { normalizeRrpProduct, type ProductRecord } from '@/lib/products/types'
 import type { Database } from '@/lib/supabase/types'
+import type { EvalCandidate } from '@/lib/ai-quote/eval-select'
+import type { AiDraftComparison } from '@/lib/ai-quote/eval-metrics'
+import { redactContactDetails } from '@/lib/ai-quote/pii'
+import { calculateDisplayLabourTotals } from '@/lib/quote-labour'
 
 export interface DraftCatalog {
   productServices: Array<{
@@ -196,4 +200,106 @@ export async function loadActiveKnowledge(supabase: SupabaseClient<Database>): P
     .select('id, version, style_guide, pricing_guide').eq('status', 'active').maybeSingle()
   if (error) throw error
   return data ? { id: data.id, version: data.version, styleGuide: data.style_guide, pricingGuide: data.pricing_guide } : null
+}
+
+export async function loadEvalCandidates(supabase: SupabaseClient<Database>): Promise<EvalCandidate[]> {
+  const rows = await loadPages((from, to) => supabase.from('quotes').select([
+    'id', 'created_at', 'final_total', 'quote_items(area_scope_snapshot)', 'jobber_quote_lines(kind, unit_price, client_visible)',
+  ].join(', ')).is('deleted_at', null).order('created_at', { ascending: false }).order('id', { ascending: true }).range(from, to))
+  type Row = Pick<Tables['quotes']['Row'], 'id' | 'created_at' | 'final_total'> & {
+    quote_items: Array<Pick<Tables['quote_items']['Row'], 'area_scope_snapshot'>>
+    jobber_quote_lines: Array<Pick<Tables['jobber_quote_lines']['Row'], 'kind' | 'unit_price' | 'client_visible'>>
+  }
+  return (rows as unknown as Row[]).map(row => ({
+    id: row.id, createdAt: row.created_at, finalTotal: String(row.final_total), itemCount: row.quote_items.length,
+    scopes: [...new Set(row.quote_items.flatMap(item => item.area_scope_snapshot ? [item.area_scope_snapshot] : []))],
+    pricedLineCount: row.jobber_quote_lines.filter(line => line.client_visible !== false
+      && line.kind === 'line_item' && new Decimal(line.unit_price ?? 0).gt(0)).length,
+  }))
+}
+
+export interface EvalReference extends KnowledgeSourceQuote {
+  areas: Array<{ scope: NonNullable<KnowledgeSourceQuote['items'][number]['areaScope']>; name: string }>
+  areaNames: string[]
+  productIds: string[]
+  productNames: string[]
+  totalWorkingDays: string
+  publicLineCount: number
+}
+
+export async function loadEvalReference(supabase: SupabaseClient<Database>, quoteId: string): Promise<EvalReference | null> {
+  const select = `working_days, labour_per_day, ${SOURCE_SELECT.replace('jobber_quote_lines(', 'jobber_quote_lines(client_visible, ')}`
+  const { data, error } = await supabase.from('quotes').select(select)
+    .is('deleted_at', null).eq('id', quoteId).maybeSingle()
+  if (error) throw error
+  if (!data) return null
+  const row = data as unknown as Omit<SourceRow, 'jobber_quote_lines'> & Pick<Tables['quotes']['Row'], 'working_days' | 'labour_per_day'> & {
+    jobber_quote_lines: Array<SourceRow['jobber_quote_lines'][number] & { client_visible: boolean }>
+  }
+  const source = mapSource({ ...row, jobber_quote_lines: row.jobber_quote_lines.filter(line => line.client_visible !== false) })
+  const labour = calculateDisplayLabourTotals(row.working_days, row.labour_per_day,
+    row.quote_items.map(item => ({ workingDays: item.working_days, labourPerDay: item.labour_per_day })))
+  const areas: EvalReference['areas'] = []
+  const seen = new Set<string>()
+  for (const item of source.items) {
+    if (!item.areaScope || !item.areaName?.trim()) continue
+    const key = `${item.areaScope}:${item.areaName.trim().toLowerCase()}`
+    if (seen.has(key)) continue
+    seen.add(key)
+    areas.push({ scope: item.areaScope, name: item.areaName })
+  }
+  return {
+    ...source, areas, areaNames: areas.map(area => area.name),
+    productIds: [...new Set(source.items.flatMap(item => item.productId ? [item.productId] : []))],
+    productNames: [...new Set(source.items.map(item => item.productName).filter(Boolean))],
+    totalWorkingDays: labour.workingDays.toFixed(),
+    publicLineCount: source.publicLines.length,
+  }
+}
+
+export type EvalCase = Tables['ai_quote_eval_cases']['Row'] & { leaks: string[] }
+
+const EVAL_CASE_SELECT = [
+  'id', 'set_label', 'quote_id', 'memo', 'memo_run_id', 'last_draft_run_id', 'last_metrics',
+  'created_by', 'created_at', 'updated_at', 'memo_run:ai_quote_runs!ai_quote_eval_cases_memo_run_id_fkey(output)',
+].join(', ')
+
+function mapEvalCase(row: Tables['ai_quote_eval_cases']['Row'] & { memo_run: { output: unknown } | null }): EvalCase {
+  const { memo_run: memoRun, ...record } = row
+  const output = memoRun?.output
+  const leaks = output && typeof output === 'object' && 'leaks' in output && Array.isArray(output.leaks)
+    ? output.leaks.filter((value): value is string => typeof value === 'string') : []
+  return { ...record, leaks }
+}
+
+export async function loadEvalCases(supabase: SupabaseClient<Database>, setLabel: string): Promise<EvalCase[]> {
+  const rows = await loadPages((from, to) => supabase.from('ai_quote_eval_cases').select(EVAL_CASE_SELECT)
+    .eq('set_label', setLabel).order('created_at', { ascending: true }).order('id', { ascending: true }).range(from, to))
+  return (rows as unknown as Parameters<typeof mapEvalCase>[0][]).map(mapEvalCase)
+}
+
+export async function loadEvalCase(supabase: SupabaseClient<Database>, caseId: string): Promise<EvalCase | null> {
+  const { data, error } = await supabase.from('ai_quote_eval_cases').select(EVAL_CASE_SELECT).eq('id', caseId).maybeSingle()
+  if (error) throw error
+  return data ? mapEvalCase(data as unknown as Parameters<typeof mapEvalCase>[0]) : null
+}
+
+export async function upsertEvalCase(supabase: SupabaseClient<Database>, input: {
+  setLabel: string; quoteId: string; memo: string; memoRunId: string
+}): Promise<string> {
+  const { data, error } = await supabase.from('ai_quote_eval_cases').upsert({
+    set_label: input.setLabel, quote_id: input.quoteId, memo: redactContactDetails(input.memo), memo_run_id: input.memoRunId,
+    last_draft_run_id: null, last_metrics: null,
+  }, { onConflict: 'set_label,quote_id' }).select('id').single()
+  if (error) throw error
+  return data.id
+}
+
+export async function saveEvalResult(supabase: SupabaseClient<Database>, caseId: string, input: {
+  runId: string; metrics: AiDraftComparison
+}): Promise<void> {
+  const { error } = await supabase.from('ai_quote_eval_cases').update({
+    last_draft_run_id: input.runId, last_metrics: { ...input.metrics },
+  }).eq('id', caseId)
+  if (error) throw error
 }

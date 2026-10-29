@@ -473,3 +473,12 @@ export const aiQuoteDraftRequestSchema = z.object({
   memo: z.string().trim().min(1).max(8000),
   jobberContext: draftJobberContextSchema.nullable(),
 })
+
+export const aiEvalMemoRequestSchema = z.object({
+  setLabel: z.string().trim().min(1).max(60),
+  quoteId: z.string().uuid(),
+})
+
+export const aiEvalRunRequestSchema = z.object({
+  caseId: z.string().uuid(),
+})

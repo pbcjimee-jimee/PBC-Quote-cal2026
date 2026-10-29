@@ -4,6 +4,7 @@ import type { Database } from '@/lib/supabase/types'
 import {
   loadActiveKnowledge, loadDraftCatalog, loadKnowledgeSource,
   loadQuoteExamples, loadSimilarQuoteCandidates,
+  loadEvalCandidates, loadEvalCases, loadEvalCase, loadEvalReference, upsertEvalCase, saveEvalResult,
 } from '@/lib/ai-quote/data'
 
 type Response = { data: unknown; error: unknown }
@@ -174,6 +175,96 @@ describe('AI quote data loaders', () => {
       examples: () => loadQuoteExamples(db.client, ['quote-1']), catalog: () => loadDraftCatalog(db.client),
       active: () => loadActiveKnowledge(db.client),
     }[kind]!
+    await expect(operation()).rejects.toBe(error)
+  })
+})
+
+describe('AI eval data', () => {
+  function evalDatabase(response: Response) {
+    const chain = { select: vi.fn().mockReturnThis(), is: vi.fn().mockReturnThis(), eq: vi.fn().mockReturnThis(),
+      order: vi.fn().mockReturnThis(), range: vi.fn().mockReturnThis(), single: vi.fn().mockReturnThis(),
+      maybeSingle: vi.fn().mockReturnThis(), upsert: vi.fn().mockReturnThis(), update: vi.fn().mockReturnThis(),
+      then: (resolve: (value: unknown) => unknown) => Promise.resolve(response).then(resolve) }
+    const from = vi.fn().mockReturnValue(chain)
+    return { client: { from } as unknown as SupabaseClient<Database>, from, chain }
+  }
+
+  it('loads candidate counts, distinct scopes and creation dates without customer identity columns', async () => {
+    const db = evalDatabase({ data: [quote()], error: null })
+    expect(await loadEvalCandidates(db.client)).toEqual([{ id: 'quote-1', createdAt: '2026-10-29T00:00:00Z',
+      scopes: ['interior'], itemCount: 2, pricedLineCount: 1, finalTotal: '1100.00' }])
+    expect(db.chain.is).toHaveBeenCalledWith('deleted_at', null)
+    expect(db.chain.range).toHaveBeenCalledWith(0, 999)
+    expect(db.chain.select.mock.calls[0][0]).not.toMatch(/customer|address|phone|email|jobber_snapshot|\*/i)
+  })
+
+  it('loads reference text and comparison values without selecting identity columns', async () => {
+    const source = quote()
+    source.quote_items[1].working_days = '0.25'
+    const db = evalDatabase({ data: source, error: null })
+    expect(await loadEvalReference(db.client, 'quote-1')).toMatchObject({ id: 'quote-1', workType: 'Interior',
+      finalTotal: '1100.00', areaNames: ['Bedroom 1'], productIds: ['paint-1'],
+      productNames: ['Custom', 'Wall paint'], totalWorkingDays: '1.75', publicLineCount: 2,
+      areas: [{ scope: 'interior', name: 'Bedroom 1' }] })
+    expect(db.chain.select.mock.calls[0][0]).not.toMatch(/customer|address|phone|email|jobber_snapshot|\*/i)
+    expect(db.chain.eq).toHaveBeenCalledWith('id', 'quote-1')
+    expect(db.chain.is).toHaveBeenCalledWith('deleted_at', null)
+    const empty = evalDatabase({ data: null, error: null })
+    expect(await loadEvalReference(empty.client, 'gone')).toBeNull()
+  })
+
+  it('loads cases by set label and exposes persisted memo leak flags', async () => {
+    const db = evalDatabase({ data: [{ id: 'case-1', memo: 'Paint', memo_run: { output: { memo: 'Paint', leaks: ['product'] } } }], error: null })
+    expect(await loadEvalCases(db.client, 'Launch')).toEqual([expect.objectContaining({ id: 'case-1', leaks: ['product'] })])
+    expect(db.chain.eq).toHaveBeenCalledWith('set_label', 'Launch')
+    const single = evalDatabase({ data: { id: 'case-1', quote_id: 'quote-1', memo: 'Paint' }, error: null })
+    expect(await loadEvalCase(single.client, 'case-1')).toMatchObject({ id: 'case-1', quote_id: 'quote-1' })
+    expect(single.chain.eq).toHaveBeenCalledWith('id', 'case-1')
+  })
+
+  it('uses legacy quote-level days when historical items have no row-level labour', async () => {
+    const source = { ...quote(), working_days: '4.50', labour_per_day: '2.00',
+      quote_items: quote().quote_items.map(item => ({ ...item, working_days: null, labour_per_day: null })) }
+    const db = evalDatabase({ data: source, error: null })
+    expect((await loadEvalReference(db.client, 'quote-1'))?.totalWorkingDays).toBe('4.5')
+    expect(db.chain.select.mock.calls[0][0]).toContain('working_days')
+  })
+
+  it('never counts private Jobber lines as public or sends them to the memo source', async () => {
+    const source = { ...quote(), jobber_quote_lines: quote().jobber_quote_lines.map(line => ({ ...line, client_visible: false })) }
+    const candidates = evalDatabase({ data: [source], error: null })
+    expect((await loadEvalCandidates(candidates.client))[0].pricedLineCount).toBe(0)
+    const reference = evalDatabase({ data: source, error: null })
+    expect(await loadEvalReference(reference.client, 'quote-1')).toMatchObject({ publicLines: [], publicLineCount: 0 })
+  })
+
+  it('upserts only eval cases and invalidates stale comparison results on memo regeneration', async () => {
+    const db = evalDatabase({ data: { id: 'case-1' }, error: null })
+    expect(await upsertEvalCase(db.client, { setLabel: 'Launch', quoteId: 'quote-1', memo: 'Call private@example.com', memoRunId: 'memo-run' })).toBe('case-1')
+    expect(db.from).toHaveBeenCalledExactlyOnceWith('ai_quote_eval_cases')
+    expect(db.chain.upsert).toHaveBeenCalledWith({ set_label: 'Launch', quote_id: 'quote-1', memo: 'Call [email]',
+      memo_run_id: 'memo-run', last_draft_run_id: null, last_metrics: null }, { onConflict: 'set_label,quote_id' })
+  })
+
+  it('saves comparison results only on the case', async () => {
+    const db = evalDatabase({ data: null, error: null })
+    const metrics = { finalTotalDiffPct: '1.00', workingDaysDiffPct: '2.00', productMatchRate: '0.60',
+      areaRecall: '1.00', areaPrecision: '1.00', publicLineCountDiff: -1 }
+    await saveEvalResult(db.client, 'case-1', { runId: 'draft-run', metrics })
+    expect(db.from).toHaveBeenCalledExactlyOnceWith('ai_quote_eval_cases')
+    expect(db.chain.update).toHaveBeenCalledWith({ last_draft_run_id: 'draft-run', last_metrics: metrics })
+    expect(db.chain.eq).toHaveBeenCalledWith('id', 'case-1')
+  })
+
+  it.each(['candidates', 'cases', 'case', 'reference', 'upsert', 'save'])('throws database errors for eval %s', async kind => {
+    const error = { code: '42501' }
+    const db = evalDatabase({ data: null, error })
+    const metrics = { finalTotalDiffPct: '0.00', workingDaysDiffPct: '0.00', productMatchRate: '0.00',
+      areaRecall: '0.00', areaPrecision: '0.00', publicLineCountDiff: 0 }
+    const operation = { candidates: () => loadEvalCandidates(db.client), cases: () => loadEvalCases(db.client, 'set'),
+      case: () => loadEvalCase(db.client, 'id'), reference: () => loadEvalReference(db.client, 'id'),
+      upsert: () => upsertEvalCase(db.client, { setLabel: 'set', quoteId: 'id', memo: 'Paint', memoRunId: 'run' }),
+      save: () => saveEvalResult(db.client, 'id', { runId: 'run', metrics }) }[kind]!
     await expect(operation()).rejects.toBe(error)
   })
 })
