@@ -455,3 +455,21 @@ export const areaDeleteSchema = z.object({
 })
 
 export type AreaInput = z.infer<typeof areaSchema>
+
+export const draftJobberContextSchema = z.object({
+  jobberQuoteId: z.string().nullable(),
+  workType: z.string(),
+  customerType: z.string(),
+  areaSqft: z.number().nullable(),
+  existingLines: z.array(z.object({
+    name: z.string(),
+    description: z.string(),
+    quantity: z.number(),
+    unitPrice: z.number(),
+  })).max(60),
+})
+
+export const aiQuoteDraftRequestSchema = z.object({
+  memo: z.string().trim().min(1).max(8000),
+  jobberContext: draftJobberContextSchema.nullable(),
+})
