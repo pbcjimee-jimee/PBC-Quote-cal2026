@@ -1,0 +1,100 @@
+import { describe, expect, it } from 'vitest'
+import { buildQuoteDraftPrompt, QUOTE_DRAFT_RULES } from '@/lib/ai-quote/draft-prompt'
+import type { ActiveKnowledge, DraftCatalog, QuoteExample } from '@/lib/ai-quote/data'
+import type { DraftJobberContext } from '@/lib/ai-quote/types'
+
+const knowledge: ActiveKnowledge = {
+  id: 'guide', version: 1, styleGuide: 'Use concise PBC descriptions.', pricingGuide: 'Allow for preparation.',
+}
+const catalog: DraftCatalog = {
+  productServices: ['z-service', 'a-service'].map(id => ({
+    id, name: id, category: 'Painting', unitPrice: '100.50', taxable: true, description: 'd'.repeat(250),
+  })),
+  products: ['z-product', 'a-product'].map(id => ({
+    id, name: id, manufacturer: null, type: null, unit: 'tin', marketPrice: '90', actualPrice: '51.87',
+    colorCode: null, active: true, sheen: 'Low sheen', volumeLitres: '10', rrpPrice: '95',
+  })),
+}
+const examples: QuoteExample[] = [{
+  id: 'example', workType: 'Interior', publicLines: [{
+    kind: 'line_item', name: 'Bedroom walls', description: 'Prepare and paint',
+    quantity: '1', unitPrice: '900', linkedProductServiceId: 'a-service',
+  }],
+  items: [{ areaName: 'Bedroom', areaScope: 'interior', productId: 'a-product', productName: 'Wall paint',
+    quantity: '2', workingDays: '1.5', labourPerDay: '2' }],
+  formulaSelections: { interior: { min: 1, max: 3 } },
+}]
+const context: DraftJobberContext = {
+  jobberQuoteId: 'jobber-1', workType: 'Interior', customerType: 'Residential', areaSqft: 1200,
+  existingLines: [{ name: 'Walls', description: 'Existing scope', quantity: 1, unitPrice: 800 }],
+}
+function prompt(overrides: Partial<Parameters<typeof buildQuoteDraftPrompt>[0]> = {}) {
+  return buildQuoteDraftPrompt({ knowledge, catalog, examples, jobberContext: context, memo: 'Paint walls', ...overrides })
+}
+function userText(result: ReturnType<typeof prompt>): string {
+  return String(result.messages[0].content)
+}
+
+describe('quote draft prompt', () => {
+  it('puts rules, knowledge and sorted catalog in system with caching on the last block', () => {
+    const { system } = prompt()
+    expect(system[0].text).toBe(QUOTE_DRAFT_RULES)
+    expect(system[1].text).toContain(knowledge.styleGuide)
+    expect(system[1].text).toContain(knowledge.pricingGuide)
+    const text = system[2].text
+    expect(text.indexOf('a-service|')).toBeLessThan(text.indexOf('z-service|'))
+    expect(text.indexOf('a-product|')).toBeLessThan(text.indexOf('z-product|'))
+    expect(text).toContain('a-product|a-product|Low sheen|10|tin|95')
+    expect(text).not.toContain('51.87')
+    expect(text).not.toContain('d'.repeat(201))
+    expect(system.at(-1)?.cache_control).toEqual({ type: 'ephemeral' })
+    expect(system.slice(0, -1).every(block => !block.cache_control)).toBe(true)
+    expect(prompt({ catalog: { products: [...catalog.products].reverse(), productServices: [...catalog.productServices].reverse() } }).system).toEqual(system)
+  })
+
+  it('puts similar examples, Jobber context and memo in the user message', () => {
+    const result = prompt()
+    expect(result.messages[0].role).toBe('user')
+    const text = userText(result)
+    for (const value of ['Bedroom walls', 'Wall paint', 'formulaSelections', 'jobber-1', 'Existing scope', '<memo>Paint walls</memo>']) {
+      expect(text).toContain(value)
+    }
+  })
+
+  it('wraps the memo in memo tags after redaction', () => {
+    expect(userText(prompt({ memo: 'call 0412 345 678 or paint@example.com' })))
+      .toContain('<memo>call [phone] or [email]</memo>')
+  })
+
+  it('omits customer identity and unknown fields even if present on context and examples', () => {
+    const enriched = { ...context, customerName: 'Private Customer', address: '123 Private Street',
+      existingLines: [{ ...context.existingLines[0], secret: 'PRIVATE SECRET' }] }
+    const enrichedExamples = [{ ...examples[0], customerName: 'Private Customer' }]
+    const text = JSON.stringify(prompt({ jobberContext: enriched,
+      examples: enrichedExamples }))
+    for (const value of ['Private Customer', '123 Private Street', 'PRIVATE SECRET']) expect(text).not.toContain(value)
+  })
+
+  it('caps existing Jobber lines at 60', () => {
+    const existingLines = Array.from({ length: 61 }, (_, i) => ({ ...context.existingLines[0], name: `line-${i}-end` }))
+    const text = userText(prompt({ jobberContext: { ...context, existingLines } }))
+    expect(text).toContain('line-59-end')
+    expect(text).not.toContain('line-60-end')
+  })
+
+  it('marks the version and defines concise English PBC and untrusted-data rules', () => {
+    for (const value of ['quote-draft-v1', 'English', 'PBC', 'priceWeight', 'one short sentence', 'warranties', 'discounts', 'memo', 'examples', 'Jobber']) {
+      expect(QUOTE_DRAFT_RULES).toContain(value)
+    }
+  })
+
+  it('redacts contact details in examples and Jobber text', () => {
+    const text = userText(prompt({
+      examples: [{ ...examples[0], publicLines: [{ ...examples[0].publicLines[0], description: 'call 0412 345 678' }] }],
+      jobberContext: { ...context, existingLines: [{ ...context.existingLines[0], name: 'email paint@example.com' }] },
+    }))
+    expect(text).not.toMatch(/0412|paint@example.com/)
+    expect(text).toContain('[phone]')
+    expect(text).toContain('[email]')
+  })
+})
