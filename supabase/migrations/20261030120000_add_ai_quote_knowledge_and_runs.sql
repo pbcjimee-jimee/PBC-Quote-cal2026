@@ -93,6 +93,44 @@ CREATE POLICY ai_quote_eval_cases_admin_update ON public.ai_quote_eval_cases
 CREATE POLICY ai_quote_eval_cases_admin_delete ON public.ai_quote_eval_cases
   FOR DELETE TO authenticated USING (app_auth.current_role() = 'admin');
 
+CREATE FUNCTION app_auth.guard_ai_quote_run_insert()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY INVOKER
+SET search_path = ''
+AS $$
+BEGIN
+  NEW.status := 'running';
+  NEW.review_confirmed_at := NULL;
+  NEW.review_confirmed_by := NULL;
+  NEW.completed_at := NULL;
+  NEW.input_tokens := 0;
+  NEW.output_tokens := 0;
+  NEW.cache_read_tokens := 0;
+  NEW.cache_write_tokens := 0;
+  NEW.cost_usd := 0;
+  NEW.output := NULL;
+  NEW.error_code := NULL;
+  RETURN NEW;
+END;
+$$;
+
+CREATE FUNCTION app_auth.guard_ai_quote_knowledge_insert()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY INVOKER
+SET search_path = ''
+AS $$
+BEGIN
+  IF NEW.status IS DISTINCT FROM 'draft' THEN
+    RAISE EXCEPTION 'AI_KNOWLEDGE_DRAFT_REQUIRED' USING ERRCODE = '42501';
+  END IF;
+  NEW.approved_by := NULL;
+  NEW.approved_at := NULL;
+  RETURN NEW;
+END;
+$$;
+
 CREATE FUNCTION app_auth.guard_ai_quote_run_update()
 RETURNS TRIGGER
 LANGUAGE plpgsql
@@ -144,6 +182,8 @@ LANGUAGE plpgsql
 SECURITY INVOKER
 SET search_path = ''
 AS $$
+DECLARE
+  activation_enabled BOOLEAN := current_setting('app.ai_knowledge_activation', true) IS NOT DISTINCT FROM 'on';
 BEGIN
   NEW.id := OLD.id;
   NEW.created_by := OLD.created_by;
@@ -155,23 +195,25 @@ BEGIN
   NEW.approved_by := OLD.approved_by;
   NEW.approved_at := OLD.approved_at;
 
-  IF OLD.status <> 'draft' AND (
-    NEW.style_guide IS DISTINCT FROM OLD.style_guide
-    OR NEW.pricing_guide IS DISTINCT FROM OLD.pricing_guide
-  ) THEN
-    RAISE EXCEPTION 'AI_KNOWLEDGE_NOT_DRAFT' USING ERRCODE = '22023';
-  END IF;
-
-  IF NEW.status IS DISTINCT FROM OLD.status AND (
-    NEW.status = 'active' OR (OLD.status = 'active' AND NEW.status = 'archived')
-  ) THEN
-    IF current_setting('app.ai_knowledge_activation', true) IS DISTINCT FROM 'on' THEN
+  IF NEW.status IS DISTINCT FROM OLD.status THEN
+    IF NOT (
+      (activation_enabled AND OLD.status = 'draft' AND NEW.status IS NOT DISTINCT FROM 'active')
+      OR (activation_enabled AND OLD.status = 'active' AND NEW.status IS NOT DISTINCT FROM 'archived')
+      OR (NOT activation_enabled AND OLD.status = 'draft' AND NEW.status IS NOT DISTINCT FROM 'archived')
+    ) THEN
       RAISE EXCEPTION 'AI_KNOWLEDGE_ACTIVATION_REQUIRED' USING ERRCODE = '42501';
     END IF;
     IF NEW.status = 'active' THEN
       NEW.approved_by := auth.uid();
       NEW.approved_at := now();
     END IF;
+  END IF;
+
+  IF OLD.status <> 'draft' AND (
+    NEW.style_guide IS DISTINCT FROM OLD.style_guide
+    OR NEW.pricing_guide IS DISTINCT FROM OLD.pricing_guide
+  ) THEN
+    RAISE EXCEPTION 'AI_KNOWLEDGE_NOT_DRAFT' USING ERRCODE = '22023';
   END IF;
 
   NEW.updated_at := now();
@@ -195,13 +237,18 @@ BEGIN
 END;
 $$;
 
+CREATE TRIGGER guard_ai_quote_run_insert BEFORE INSERT ON public.ai_quote_runs
+  FOR EACH ROW EXECUTE FUNCTION app_auth.guard_ai_quote_run_insert();
+CREATE TRIGGER guard_ai_quote_knowledge_insert BEFORE INSERT ON public.ai_quote_knowledge
+  FOR EACH ROW EXECUTE FUNCTION app_auth.guard_ai_quote_knowledge_insert();
 CREATE TRIGGER guard_ai_quote_run_update BEFORE UPDATE ON public.ai_quote_runs
   FOR EACH ROW EXECUTE FUNCTION app_auth.guard_ai_quote_run_update();
 CREATE TRIGGER guard_ai_quote_knowledge_update BEFORE UPDATE ON public.ai_quote_knowledge
   FOR EACH ROW EXECUTE FUNCTION app_auth.guard_ai_quote_knowledge_update();
 CREATE TRIGGER guard_ai_quote_eval_case_update BEFORE UPDATE ON public.ai_quote_eval_cases
   FOR EACH ROW EXECUTE FUNCTION app_auth.guard_ai_quote_eval_case_update();
-REVOKE ALL ON FUNCTION app_auth.guard_ai_quote_run_update(), app_auth.guard_ai_quote_knowledge_update(),
+REVOKE ALL ON FUNCTION app_auth.guard_ai_quote_run_insert(), app_auth.guard_ai_quote_knowledge_insert(),
+  app_auth.guard_ai_quote_run_update(), app_auth.guard_ai_quote_knowledge_update(),
   app_auth.guard_ai_quote_eval_case_update() FROM PUBLIC, anon, authenticated, service_role;
 
 CREATE FUNCTION public.activate_ai_quote_knowledge(p_id UUID)

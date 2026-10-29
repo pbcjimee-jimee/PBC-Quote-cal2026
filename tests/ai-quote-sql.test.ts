@@ -105,8 +105,19 @@ describe.skipIf(!pgliteAvailable)('AI quote migration on ephemeral PostgreSQL', 
 
   it('allows only one active knowledge version', async () => {
     const draft = await insert('ai_quote_knowledge')
+    const next = await insert('ai_quote_knowledge')
     await db.query('SELECT public.activate_ai_quote_knowledge($1)', [draft.id])
-    await expect(insert('ai_quote_knowledge', { status: 'active' })).rejects.toMatchObject({ code: '23505' })
+    await expect(insert('ai_quote_knowledge', { status: 'active' })).rejects.toMatchObject({ code: '42501' })
+    await expect(db.query("UPDATE public.ai_quote_knowledge SET status='active' WHERE id=$1", [next.id]))
+      .rejects.toMatchObject({ code: '42501' })
+    await db.exec('BEGIN')
+    try {
+      await db.query("SELECT set_config('app.ai_knowledge_activation','on',true)")
+      await expect(db.query("UPDATE public.ai_quote_knowledge SET status='active' WHERE id=$1", [next.id]))
+        .rejects.toMatchObject({ code: '23505' })
+    } finally {
+      await db.exec('ROLLBACK')
+    }
   })
 
   it('activates a draft and archives the previous active version', async () => {
@@ -136,14 +147,106 @@ describe.skipIf(!pgliteAvailable)('AI quote migration on ephemeral PostgreSQL', 
 
   it.each([
     ['ai_quote_runs', { kind: 'invalid' }],
-    ['ai_quote_runs', { status: 'invalid' }],
-    ['ai_quote_knowledge', { status: 'invalid' }],
     ['ai_quote_runs', { memo: 'a'.repeat(8001) }],
     ['ai_quote_eval_cases', { memo: 'a'.repeat(8001) }],
     ['ai_quote_knowledge', { style_guide: 'a'.repeat(40001) }],
     ['ai_quote_knowledge', { pricing_guide: 'a'.repeat(40001) }],
   ] as const)('rejects invalid values in %s (case %#)', async (table, values) => {
     await expect(insert(table, values)).rejects.toMatchObject({ code: '23514' })
+  })
+
+  it('rejects an invalid run status on update', async () => {
+    const run = await insert('ai_quote_runs')
+    await expect(db.query("UPDATE public.ai_quote_runs SET status='invalid' WHERE id=$1", [run.id]))
+      .rejects.toMatchObject({ code: '23514' })
+  })
+
+  it.each(['active', 'archived', 'invalid', null])('rejects knowledge inserted with status %s', async status => {
+    await expect(insert('ai_quote_knowledge', { status })).rejects.toMatchObject({ code: '42501' })
+  })
+
+  it('clears approval fields supplied when inserting draft knowledge', async () => {
+    const draft = await insert('ai_quote_knowledge', { approved_by: otherId, approved_at: '2000-01-01' })
+    expect((await db.query('SELECT status,approved_by,approved_at FROM public.ai_quote_knowledge WHERE id=$1', [draft.id])).rows)
+      .toEqual([{ status: 'draft', approved_by: null, approved_at: null }])
+  })
+
+  it.each(['succeeded', 'failed', 'refused', 'invalid', null])('resets forged run results and review on insert with status %s', async status => {
+    const run = await insert('ai_quote_runs', {
+      status, review_confirmed_at: '2000-01-01', review_confirmed_by: otherId, completed_at: '2000-01-01',
+      input_tokens: 10, output_tokens: 20, cache_read_tokens: 30, cache_write_tokens: 40, cost_usd: '12.3456',
+      output: { forged: true }, error_code: 'forged',
+    })
+    expect((await db.query(`SELECT status,review_confirmed_at,review_confirmed_by,completed_at,input_tokens,output_tokens,
+      cache_read_tokens,cache_write_tokens,cost_usd,output,error_code FROM public.ai_quote_runs WHERE id=$1`, [run.id])).rows)
+      .toEqual([{
+        status: 'running', review_confirmed_at: null, review_confirmed_by: null, completed_at: null,
+        input_tokens: 0, output_tokens: 0, cache_read_tokens: 0, cache_write_tokens: 0, cost_usd: '0.0000',
+        output: null, error_code: null,
+      }])
+  })
+
+  it('starts a run without result fields and lets its creator finish it later', async () => {
+    const run = (await db.query<{ id: string }>(`INSERT INTO public.ai_quote_runs (kind,model,prompt_version)
+      VALUES ('quote_draft','claude-opus-5-5','quote-draft-v1') RETURNING id`)).rows[0]
+    expect((await db.query('SELECT status,cost_usd FROM public.ai_quote_runs WHERE id=$1', [run.id])).rows)
+      .toEqual([{ status: 'running', cost_usd: '0.0000' }])
+    expect((await db.query(`UPDATE public.ai_quote_runs SET status='succeeded',output='{"ok":true}',input_tokens=10,
+      output_tokens=20,cost_usd=0.1234,completed_at=now() WHERE id=$1 RETURNING status,output,input_tokens,output_tokens,cost_usd,completed_at`, [run.id])).rows)
+      .toEqual([{ status: 'succeeded', output: { ok: true }, input_tokens: 10, output_tokens: 20, cost_usd: '0.1234', completed_at: expect.any(Date) }])
+  })
+
+  it('allows discarding a draft directly', async () => {
+    const draft = await insert('ai_quote_knowledge')
+    expect((await db.query("UPDATE public.ai_quote_knowledge SET status='archived' WHERE id=$1 RETURNING status", [draft.id])).rows)
+      .toEqual([{ status: 'archived' }])
+  })
+
+  it.each([
+    ['active', 'draft', false],
+    ['active', 'draft', true],
+    ['archived', 'draft', false],
+    ['archived', 'draft', true],
+    ['archived', 'active', false],
+    ['archived', 'active', true],
+    ['draft', 'archived', true],
+  ] as const)('rejects knowledge transition %s to %s with activation flag %s', async (from, to, flag) => {
+    const knowledge = await insert('ai_quote_knowledge')
+    if (from === 'active') await db.query('SELECT public.activate_ai_quote_knowledge($1)', [knowledge.id])
+    if (from === 'archived') await db.query("UPDATE public.ai_quote_knowledge SET status='archived' WHERE id=$1", [knowledge.id])
+    await db.exec('BEGIN')
+    try {
+      if (flag) await db.query("SELECT set_config('app.ai_knowledge_activation','on',true)")
+      await expect(db.query('UPDATE public.ai_quote_knowledge SET status=$2 WHERE id=$1', [knowledge.id, to]))
+        .rejects.toMatchObject({ code: '42501' })
+    } finally {
+      await db.exec('ROLLBACK')
+    }
+    expect((await db.query('SELECT status FROM public.ai_quote_knowledge WHERE id=$1', [knowledge.id])).rows)
+      .toEqual([{ status: from }])
+  })
+
+  it('refuses archived activation through the RPC and preserves the approved active version', async () => {
+    const archived = await insert('ai_quote_knowledge')
+    await db.query("UPDATE public.ai_quote_knowledge SET status='archived' WHERE id=$1", [archived.id])
+    const active = await insert('ai_quote_knowledge')
+    await db.query('SELECT public.activate_ai_quote_knowledge($1)', [active.id])
+    const select = 'SELECT status,approved_at,approved_by FROM public.ai_quote_knowledge WHERE id=$1'
+    const original = (await db.query(select, [active.id])).rows
+    await expect(db.query('SELECT public.activate_ai_quote_knowledge($1)', [archived.id]))
+      .rejects.toMatchObject({ code: '42501' })
+    expect((await db.query(select, [active.id])).rows).toEqual(original)
+    expect((await db.query('SELECT status FROM public.ai_quote_knowledge WHERE id=$1', [archived.id])).rows)
+      .toEqual([{ status: 'archived' }])
+  })
+
+  it('rejects resetting an active version to draft even when guides change in the same update', async () => {
+    const knowledge = await insert('ai_quote_knowledge')
+    await db.query('SELECT public.activate_ai_quote_knowledge($1)', [knowledge.id])
+    await expect(db.query(`UPDATE public.ai_quote_knowledge SET status='draft',style_guide='Forged',pricing_guide='Forged'
+      WHERE id=$1`, [knowledge.id])).rejects.toMatchObject({ code: '42501' })
+    expect((await db.query('SELECT status,style_guide,pricing_guide FROM public.ai_quote_knowledge WHERE id=$1', [knowledge.id])).rows)
+      .toEqual([{ status: 'active', style_guide: 'Style', pricing_guide: 'Pricing' }])
   })
 
   it.each(['eval_memo', 'eval_draft'])('accepts the %s run kind', async kind => {

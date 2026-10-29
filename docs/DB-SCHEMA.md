@@ -29,6 +29,8 @@ AI 호출 감사 기록. `id UUID` PK, `kind`는 `knowledge_build` / `quote_draf
 
 인덱스는 `(created_by, kind, created_at DESC)`와 `quote_id IS NOT NULL` 조건의 `(quote_id)`다. 일일 사용량은 사용자·kind별로 조회한다.
 
+BEFORE INSERT 트리거가 `status = 'running'`, 토큰 4개 컬럼·`cost_usd = 0`을 강제하고 `output`, `error_code`, `completed_at`, `review_confirmed_at`, `review_confirmed_by`를 NULL로 초기화한다. 호출자가 미리 완료·비용·검토 값을 보내도 저장하지 않는다. 결과 필드를 생략한 정상 생성과 이후 생성자의 완료 UPDATE는 허용한다.
+
 UPDATE 시 `kind`, `prompt_version`, `memo`, `knowledge_id`, `jobber_quote_id`는 기존값으로 복원한다. `running`에서 다른 상태로 완료 처리는 생성자만 가능하며(`auth.uid()`가 NULL인 유지보수는 허용), 다른 관리자는 `42501`로 거부한다. 완료된 실행은 상태·모델·출력·오류·토큰·비용·완료 시각을 기존값으로 복원하고, `quote_id` 연결과 검토 기록만 변경할 수 있다. 다른 관리자도 검토할 수 있으며 최초 검토 시 승인자와 시각을 `auth.uid()`·`now()`로 강제한다. 검토 기록은 한 번 설정되면 변경할 수 없다.
 
 ### ai_quote_knowledge
@@ -45,7 +47,9 @@ UPDATE 시 `kind`, `prompt_version`, `memo`, `knowledge_id`, `jobber_quote_id`�
 
 `ai_quote_knowledge_one_active` 부분 유니크 인덱스는 `status = 'active'`인 행을 최대 하나로 제한한다. `activate_ai_quote_knowledge(p_id UUID) RETURNS UUID`는 SECURITY INVOKER와 빈 search_path를 사용하며 active admin만 실행할 수 있다. 트랜잭션 advisory lock으로 승인을 직렬화하고 기존 active를 archived로 바꾼 뒤 대상의 상태·승인자·승인/수정 시각을 기록한다. 대상이 없으면 `P0002`로 전체 호출을 롤백하며 기존 active를 보존한다.
 
-UPDATE 시 `version`, `stats`, `source_counts`, `run_id`는 기존값으로 복원한다. 가이드는 기존 상태가 `draft`일 때만 수정할 수 있고, 그 외에는 `22023`·`AI_KNOWLEDGE_NOT_DRAFT`로 거부한다. 승인자·승인 시각의 직접 변경은 무시한다. 활성 상태로 전환하거나 active를 archived로 바꾸려면 RPC 내부의 트랜잭션 로컬 `app.ai_knowledge_activation` 플래그가 필요하며, 없으면 `42501`로 거부한다. 활성 전환 시 트리거가 승인자와 시각을 `auth.uid()`·`now()`로 강제하고, RPC가 반환하기 전에 플래그를 이전 값으로 복원한다. 모든 UPDATE에서 `updated_at`을 `now()`로 강제한다.
+BEFORE INSERT 트리거는 `status`가 `draft`가 아니면 `42501`로 거부하고 `approved_by`, `approved_at`을 NULL로 강제한다. 승인된 지식을 직접 생성할 수 없다.
+
+UPDATE 시 `version`, `stats`, `source_counts`, `run_id`는 기존값으로 복원한다. 가이드는 기존 상태가 `draft`일 때만 수정할 수 있고, 그 외에는 `22023`·`AI_KNOWLEDGE_NOT_DRAFT`로 거부한다. 승인자·승인 시각의 직접 변경은 무시한다. 상태 전이는 RPC 내부의 트랜잭션 로컬 `app.ai_knowledge_activation` 플래그가 켜진 경우 `draft → active`, `active → archived`만, 플래그가 꺼진 일반 수정에서는 `draft → archived`(초안 폐기)만 허용한다. 그 밖의 상태 변경은 `42501`로 거부하며, archived는 다시 활성화하거나 draft로 되돌릴 수 없다. 상태 전이 검증을 가이드 수정 검증보다 먼저 수행한다. 활성 전환 시 트리거가 승인자와 시각을 `auth.uid()`·`now()`로 강제하고, RPC가 반환하기 전에 플래그를 이전 값으로 복원한다. 모든 UPDATE에서 `updated_at`을 `now()`로 강제한다.
 
 ### ai_quote_eval_cases
 
@@ -62,7 +66,7 @@ UPDATE 시 `version`, `stats`, `source_counts`, `run_id`는 기존값으로 복�
 
 UPDATE 시 `quote_id`, `set_label`은 기존값으로 복원한다. `memo`, `memo_run_id`, `last_draft_run_id`, `last_metrics`, `updated_at`은 수정할 수 있다.
 
-세 테이블 모두 RLS를 켜고 `app_auth.current_role() = 'admin'`으로 SELECT/UPDATE를 제한한다. INSERT는 추가로 `created_by = auth.uid()`를 요구하며 기본 생성자는 `auth.uid()`다. 테이블별 BEFORE UPDATE 트리거는 SECURITY INVOKER·빈 search_path로 실행하며 `id`, `created_by`, `created_at`을 기존값으로 복원한다. 트리거 함수의 직접 EXECUTE 권한은 회수한다. eval의 `updated_at`은 호출자가 갱신한다.
+세 테이블 모두 RLS를 켜고 `app_auth.current_role() = 'admin'`으로 SELECT/UPDATE를 제한한다. INSERT는 추가로 `created_by = auth.uid()`를 요구하며 기본 생성자는 `auth.uid()`다. 테이블별 BEFORE INSERT/UPDATE 트리거는 SECURITY INVOKER·빈 search_path로 실행하며, UPDATE 시 `id`, `created_by`, `created_at`을 기존값으로 복원한다. 트리거 함수의 직접 EXECUTE 권한은 회수한다. eval의 `updated_at`은 호출자가 갱신한다.
 
 PUBLIC·anon·authenticated·service_role의 기본 권한을 회수한 뒤 authenticated에 SELECT/INSERT/UPDATE만 부여한다. DELETE는 eval cases에만 admin 정책과 함께 허용하며 runs/knowledge에는 grant·정책 모두 없다. 활성화 RPC의 EXECUTE는 authenticated만 가진다. 고객 연락처는 AI 테이블에 넣지 않으며 메모 마스킹은 저장 전 서버에서 수행한다. 운영 적용은 별도 사용자 승인이 필요하다.
 
