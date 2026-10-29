@@ -39,6 +39,14 @@ export function rankSimilarQuotes(
     .flatMap(text => text.split(/[,\.\r\n]+/))
     .map(normalizeAreaKey)
     .filter(key => knownAreas.has(key)))
+  const memoWords = query.memo.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? []
+  const maxAreaWords = Math.max(2, ...[...knownAreas].map(area => area.split(' ').length))
+  for (let start = 0; start < memoWords.length; start += 1) {
+    for (let length = 1; length <= maxAreaWords && start + length <= memoWords.length; length += 1) {
+      const key = normalizeAreaKey(memoWords.slice(start, start + length).join(' '))
+      if (knownAreas.has(key)) queryAreas.add(key)
+    }
+  }
   const queryTokens = lineTokens(query.existingLineNames)
   const workType = query.workType.trim().toLowerCase()
   const customerType = query.customerType.trim().toLowerCase()

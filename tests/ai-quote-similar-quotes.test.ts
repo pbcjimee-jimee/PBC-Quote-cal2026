@@ -22,6 +22,18 @@ function candidate(id: string, overrides: Partial<SimilarQuoteCandidate> = {}): 
 }
 
 describe('rankSimilarQuotes', () => {
+  it('finds whole area phrases and plural synonyms inside descriptive memos', () => {
+    expect(rankSimilarQuotes(query({ memo: '3 bedrooms walls and ceilings, hallway' }), [
+      candidate('matching', { areaKeys: ['bedroom', 'hallway'] }),
+      candidate('hallway', { areaKeys: ['hallway'] }),
+    ])).toEqual([{ id: 'matching', score: 9 }, { id: 'hallway', score: 6.5 }])
+
+    expect(rankSimilarQuotes(query({ memo: 'Paint bathrooms and living room walls, bedroomish' }), [
+      candidate('matching', { areaKeys: ['bathroom', 'living room'] }),
+      candidate('partial-word', { areaKeys: ['bedroom'] }),
+    ])).toEqual([{ id: 'matching', score: 9 }, { id: 'partial-word', score: 4 }])
+  })
+
   it('prefers the same work type and overlapping areas with the specified score weights', () => {
     const ranked = rankSimilarQuotes(query({ workType: 'INTERIOR', memo: 'Bedroom, bathroom' }), [
       candidate('unrelated', { workType: 'exterior', areaKeys: ['fence'] }),
