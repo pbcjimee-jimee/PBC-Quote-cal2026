@@ -24,6 +24,11 @@ describe('Preview deployment safety', () => {
     expect(() => assertPreviewEnvironment(isolated())).not.toThrow()
   })
 
+  it('rejects an Anthropic key in preview', () => {
+    expect(() => assertPreviewEnvironment({ ...isolated(), ANTHROPIC_API_KEY: 'sk-ant-x' }))
+      .toThrow('Preview must not contain Anthropic credentials.')
+  })
+
   it.each([
     ['NEXT_PUBLIC_SUPABASE_URL', 'https://ojcrfgguhbxhtlgdflzp.supabase.co'],
     ['NEXT_PUBLIC_SUPABASE_URL', `https://${previewRef}.supabase.co.evil.example`],

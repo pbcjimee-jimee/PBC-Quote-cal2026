@@ -34,6 +34,119 @@ export type Database = {
   }
   public: {
     Tables: {
+      ai_quote_runs: {
+        Row: {
+          id: string
+          kind: 'knowledge_build' | 'quote_draft' | 'eval_memo' | 'eval_draft'
+          status: 'running' | 'succeeded' | 'failed' | 'refused'
+          model: string
+          prompt_version: string
+          knowledge_id: string | null
+          quote_id: string | null
+          jobber_quote_id: string | null
+          memo: string | null
+          output: Json | null
+          error_code: string | null
+          input_tokens: number
+          output_tokens: number
+          cache_read_tokens: number
+          cache_write_tokens: number
+          cost_usd: string
+          review_confirmed_at: string | null
+          review_confirmed_by: string | null
+          created_by: string
+          created_at: string
+          completed_at: string | null
+        }
+        Insert: Pick<Database['public']['Tables']['ai_quote_runs']['Row'], 'kind' | 'model' | 'prompt_version'> &
+          Partial<Omit<Database['public']['Tables']['ai_quote_runs']['Row'], 'kind' | 'model' | 'prompt_version'>>
+        Update: Partial<Database['public']['Tables']['ai_quote_runs']['Insert']>
+        Relationships: [
+          {
+            foreignKeyName: "ai_quote_runs_knowledge_id_fkey"
+            columns: ["knowledge_id"]
+            isOneToOne: false
+            referencedRelation: "ai_quote_knowledge"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ai_quote_runs_quote_id_fkey"
+            columns: ["quote_id"]
+            isOneToOne: false
+            referencedRelation: "quotes"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      ai_quote_knowledge: {
+        Row: {
+          id: string
+          version: number
+          status: 'draft' | 'active' | 'archived'
+          style_guide: string
+          pricing_guide: string
+          stats: Json
+          source_counts: Json
+          run_id: string
+          created_by: string
+          created_at: string
+          approved_by: string | null
+          approved_at: string | null
+          updated_at: string
+        }
+        Insert: Pick<Database['public']['Tables']['ai_quote_knowledge']['Row'], 'version' | 'style_guide' | 'pricing_guide' | 'stats' | 'source_counts' | 'run_id'> &
+          Partial<Omit<Database['public']['Tables']['ai_quote_knowledge']['Row'], 'version' | 'style_guide' | 'pricing_guide' | 'stats' | 'source_counts' | 'run_id'>>
+        Update: Partial<Database['public']['Tables']['ai_quote_knowledge']['Insert']>
+        Relationships: [
+          {
+            foreignKeyName: "ai_quote_knowledge_run_id_fkey"
+            columns: ["run_id"]
+            isOneToOne: false
+            referencedRelation: "ai_quote_runs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      ai_quote_eval_cases: {
+        Row: {
+          id: string
+          set_label: string
+          quote_id: string
+          memo: string
+          memo_run_id: string
+          last_draft_run_id: string | null
+          last_metrics: Json | null
+          created_by: string
+          created_at: string
+          updated_at: string
+        }
+        Insert: Pick<Database['public']['Tables']['ai_quote_eval_cases']['Row'], 'set_label' | 'quote_id' | 'memo' | 'memo_run_id'> &
+          Partial<Omit<Database['public']['Tables']['ai_quote_eval_cases']['Row'], 'set_label' | 'quote_id' | 'memo' | 'memo_run_id'>>
+        Update: Partial<Database['public']['Tables']['ai_quote_eval_cases']['Insert']>
+        Relationships: [
+          {
+            foreignKeyName: "ai_quote_eval_cases_quote_id_fkey"
+            columns: ["quote_id"]
+            isOneToOne: false
+            referencedRelation: "quotes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ai_quote_eval_cases_memo_run_id_fkey"
+            columns: ["memo_run_id"]
+            isOneToOne: false
+            referencedRelation: "ai_quote_runs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ai_quote_eval_cases_last_draft_run_id_fkey"
+            columns: ["last_draft_run_id"]
+            isOneToOne: false
+            referencedRelation: "ai_quote_runs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       jobber_job_snapshots: {
         Row: {
           jobber_job_id: string
@@ -680,6 +793,7 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      activate_ai_quote_knowledge: { Args: { p_id: string }; Returns: string }
       soft_delete_quote: {
         Args: { target_quote_id: string; expected_version: number }
         Returns: { id: string; version: number; deleted_at: string | null }[]
