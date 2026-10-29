@@ -6,6 +6,10 @@ import { QuoteForm } from '@/components/quote-form/quote-form'
 import { createEmptyQuoteFormDraft, getQuoteDraftStorageKey } from '@/components/quote-form/quote-draft'
 import { createQuote, updateQuote } from '@/lib/actions/quotes'
 import { searchProducts } from '@/lib/actions/products'
+import { createArea } from '@/lib/actions/areas'
+import type { AiQuoteDraft } from '@/lib/ai-quote/types'
+import Decimal from 'decimal.js'
+import { calculateMainQuoteTotals } from '@/components/quote-form/quote-calculation-totals'
 import { DEFAULT_PRICING_SETTINGS } from '@/lib/calculator'
 import type { QuoteRecord } from '@/lib/dev-data'
 import { installTestDom, TestElement } from '@/tests/helpers/test-dom'
@@ -22,6 +26,7 @@ vi.mock('@/lib/actions/quotes', () => ({
   updateQuote: vi.fn(),
 }))
 vi.mock('@/lib/actions/products', () => ({ searchProducts: vi.fn() }))
+vi.mock('@/lib/actions/areas', () => ({ createArea: vi.fn() }))
 
 class MemoryStorage {
   private readonly values = new Map<string, string>()
@@ -203,6 +208,8 @@ async function mountQuoteForm(options: {
       initialQuote: options.initialQuote,
       jobberEnabled: options.jobberEnabled,
       jobberNotice: options.jobberNotice,
+      aiAvailability: { enabled: true },
+      hasActiveAiKnowledge: true,
     }))
   })
   await settle()
@@ -218,6 +225,55 @@ async function mountQuoteForm(options: {
 }
 
 describe('quote workspace structure', () => {
+  const aiDraft: AiQuoteDraft = {
+    summary: 'Bedroom repaint', findings: [], questions: [], warnings: [],
+    areas: [{ scope: 'interior', name: 'Bedroom' }, { scope: 'interior', name: 'Hallway' }],
+    publicLines: [{ id: 'ai-line', kind: 'line_item', name: 'AI wall painting', description: '', quantity: '1', productServiceId: null, priceSource: 'allocated', priceWeight: 100, catalogUnitPrice: null, taxable: true, areaName: 'Bedroom', rationale: 'Requested.' }],
+    workItems: [{ id: 'ai-work', product: { id: 'paint-1', name: 'AI wall paint', manufacturer: 'Dulux', type: 'Paint', unit: '4L', marketPrice: '80', rrpPrice: '90', actualPrice: '50', colorCode: null, active: true, productCode: 'WALL' }, areaScope: 'interior', areaName: 'Bedroom', quantity: '2', workingDays: '3', labourPerDay: '2', rationale: 'Two coats.' }],
+    formulaSelections: [{ scope: 'interior', selectedMin: 4, selectedMax: 1, rationale: 'Standard.' }],
+  }
+
+  it.each([false, true])('applies AI areas, materials and allocated prices atomically (area failure: %s)', async (failArea) => {
+    const originalFetch = globalThis.fetch
+    vi.mocked(createArea).mockReset()
+    globalThis.fetch = vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => ({ ok: true, data: { runId: '00000000-0000-4000-8000-000000000001', draft: aiDraft } }) })
+    vi.mocked(createArea).mockResolvedValueOnce({ ok: true, data: { id: 'ai-area-1', name: 'Bedroom', scope: 'interior', active: true, position: 0 } })
+      .mockResolvedValueOnce(failArea ? { ok: false, error: 'Area unavailable' } : { ok: true, data: { id: 'ai-area-2', name: 'Hallway', scope: 'interior', active: true, position: 1 } })
+    const mounted = await mountQuoteForm()
+    try {
+      const notes = mounted.container.querySelectorAll('textarea').find(element => element.getAttribute('placeholder')?.startsWith('Interior repaint:'))!
+      expect(notes).toBeDefined()
+      await act(async () => { notes.value = 'Repaint bedroom'; notes.dispatchEvent(new Event('input', { bubbles: true })) })
+      await act(async () => findButton(mounted.container, 'Create draft')!.dispatchEvent(new Event('click', { bubbles: true })))
+      await act(async () => findButton(mounted.container, 'Apply to quote')!.dispatchEvent(new Event('click', { bubbles: true })))
+      await settle()
+      await act(async () => window.dispatchEvent(new Event('pagehide')))
+      if (failArea) {
+        expect(mounted.container.textContent).toContain('Unable to apply')
+        expect(mounted.container.textContent).not.toContain('AI draft applied -')
+        expect(mounted.storage.getItem(getQuoteDraftStorageKey('user-a'))).toBeNull()
+        vi.mocked(createArea).mockResolvedValueOnce({ ok: true, data: { id: 'ai-area-2', name: 'Hallway', scope: 'interior', active: true, position: 1 } })
+        await act(async () => findButton(mounted.container, 'Try again')!.dispatchEvent(new Event('click', { bubbles: true })))
+        expect(createArea).toHaveBeenCalledTimes(3)
+        expect(mounted.container.textContent).toContain('AI draft applied -')
+      } else {
+        const stored = JSON.parse(mounted.storage.getItem(getQuoteDraftStorageKey('user-a'))!)
+        expect(stored.aiDraftRunId).toBe('00000000-0000-4000-8000-000000000001')
+        expect(stored.materials[0]).toMatchObject({ name: 'AI wall paint', areaId: 'ai-area-1', quantity: '2' })
+        const totals = calculateMainQuoteTotals({ materials: stored.materials, selectedMin: stored.selectedMin, selectedMax: stored.selectedMax, areaFormulaSelections: stored.areaFormulaSelections, settings: DEFAULT_PRICING_SETTINGS })
+        expect(new Decimal(stored.jobberQuoteLines[0].unitPrice).toFixed(2)).toBe(totals.finalTotal.div('1.10').toFixed(2))
+        expect(mounted.container.textContent).toContain('AI draft applied -')
+        const itemDays = findElement(mounted.container, 'input', input => input.value === '3')
+        expect(itemDays).toBeDefined()
+        await act(async () => { itemDays!.value = '6'; itemDays!.dispatchEvent(new Event('input', { bubbles: true })) })
+        await act(async () => findButton(mounted.container, 'Recalculate AI prices')!.dispatchEvent(new Event('click', { bubbles: true })))
+        await act(async () => window.dispatchEvent(new Event('pagehide')))
+        const recalculated = JSON.parse(mounted.storage.getItem(getQuoteDraftStorageKey('user-a'))!)
+        expect(new Decimal(recalculated.jobberQuoteLines[0].unitPrice).gt(stored.jobberQuoteLines[0].unitPrice)).toBe(true)
+      }
+    } finally { await mounted.cleanup(); globalThis.fetch = originalFetch }
+  })
+
   it('does not offer another user’s draft or an unowned legacy draft', async () => {
     const storage = new MemoryStorage()
     const draft = { ...createEmptyQuoteFormDraft(), customerName: 'Private A', updatedAt: new Date().toISOString() }

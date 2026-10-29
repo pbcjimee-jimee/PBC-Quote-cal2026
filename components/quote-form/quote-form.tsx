@@ -8,6 +8,10 @@ import { createArea } from '@/lib/actions/areas'
 import { resolveQuoteProductPrices } from '@/lib/actions/products'
 import { Icons } from '@/components/ui/icons'
 import { CustomerPanel, type JobberRefreshPreview } from './customer-panel'
+import { AiDraftPanel, type AiDraftPanelProps } from './ai-draft-panel'
+import { planAiDraftApplication, reallocateAiLinePrices } from './ai-draft-apply'
+import type { AiQuoteAvailability } from '@/lib/ai-quote/config'
+import type { DraftJobberContext } from '@/lib/ai-quote/types'
 import { MaterialsPanel, type MaterialReorderUpdater } from './materials-panel'
 import { PaintComparisonPanel } from './paint-comparison-panel'
 import { applyPaintComparisonLine, refreshPaintComparisonLines, mergePaintComparisonLinesAfterFetch } from './paint-comparison-lines'
@@ -70,6 +74,8 @@ import type { ProductServiceRecord } from '@/lib/product-services/types'
 import type { QuoteLineTemplateRecord } from '@/lib/quote-line-templates/types'
 
 interface QuoteFormProps {
+  aiAvailability?: AiQuoteAvailability
+  hasActiveAiKnowledge?: boolean
   userId?: string
   settings: PricingSettings
   areas: AreaRecord[]
@@ -324,6 +330,8 @@ export function getNextDeletedJobberLineItemIds(
 }
 
 export function QuoteForm({
+  aiAvailability = { enabled: false, reason: 'missing_key', message: 'AI quoting is not configured. Contact an administrator.' },
+  hasActiveAiKnowledge = false,
   userId,
   settings,
   areas,
@@ -344,6 +352,11 @@ export function QuoteForm({
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
   const [quoteAreas, setQuoteAreas] = useState(() => sortQuoteAreas(areas))
+  const [aiDraftRunId, setAiDraftRunId] = useState<string | null>(null)
+  const [aiLineMeta, setAiLineMeta] = useState<NonNullable<QuoteFormDraft['aiLineMeta']>>({})
+  const [aiPriceNotice, setAiPriceNotice] = useState('')
+  const aiApplyRequestRef = useRef(false)
+  const createdAiAreasRef = useRef<AreaRecord[]>([])
   const [customerName, setCustomerName] = useState(initialQuote?.customerName ?? '')
   const [customerAddress, setCustomerAddress] = useState(initialQuote?.customerAddress ?? '')
   const [jobberLookupType, setJobberLookupType] = useState<JobberLookupType>(initialQuote?.jobberSnapshot?.sourceType ?? 'quote')
@@ -453,6 +466,8 @@ export function QuoteForm({
 
   const currentDraft = useMemo<QuoteFormDraft>(() => ({
     ...createEmptyQuoteFormDraft(),
+    aiDraftRunId,
+    aiLineMeta,
     customerName,
     customerAddress,
     jobberLookupType,
@@ -475,6 +490,8 @@ export function QuoteForm({
     jobberQuoteDraft,
     updatedAt: new Date().toISOString(),
   }), [
+    aiDraftRunId,
+    aiLineMeta,
     areaFormulaSelections,
     customerAddress,
     customerName,
@@ -624,6 +641,8 @@ export function QuoteForm({
   }, [cancelTargetPath, isDirty])
 
   function restoreDraft(draft: QuoteFormDraft) {
+    setAiDraftRunId(draft.aiDraftRunId ?? null)
+    setAiLineMeta(draft.aiLineMeta ?? {})
     setCustomerName(draft.customerName)
     setCustomerAddress(draft.customerAddress)
     setJobberLookupType(draft.jobberLookupType)
@@ -752,9 +771,9 @@ export function QuoteForm({
     setMaterials((current) => current.filter((item) => item.id !== id))
   }
 
-  async function createQuoteArea(scope: AreaScope, name: string): Promise<AreaCreateResult> {
+  async function createQuoteArea(scope: AreaScope, name: string, registerInForm = true): Promise<AreaCreateResult> {
     const result = await createArea({ scope, name })
-    if (result.ok) {
+    if (result.ok && registerInForm) {
       setQuoteAreas((current) => {
         const nextAreas = current.some((area) => area.id === result.data.id)
           ? current.map((area) => area.id === result.data.id ? result.data : area)
@@ -859,6 +878,63 @@ export function QuoteForm({
     const nextLines = typeof update === 'function' ? update(jobberQuoteLines) : update
     setDeletedJobberLineItemIds(current => getNextDeletedJobberLineItemIds(current, jobberQuoteLines, nextLines))
     setJobberQuoteLines(nextLines)
+  }
+
+  const aiJobberContext: DraftJobberContext | null = jobberQuoteDraft ? {
+    jobberQuoteId: jobberQuoteDraft.jobberQuoteId,
+    workType: jobberQuoteDraft.workType,
+    customerType: jobberQuoteDraft.customerType,
+    areaSqft: jobberQuoteDraft.areaSqft,
+    existingLines: jobberQuoteDraft.productsAndServices.slice(0, 60).map(line => ({
+      name: line.name, description: line.description, quantity: line.quantity, unitPrice: line.unitPrice,
+    })),
+  } : null
+
+  function describeAiAllocation(result: ReturnType<typeof reallocateAiLinePrices>['result']): string {
+    if (result.status === 'allocated') return result.residual === '0.00' ? 'AI prices recalculated.' : `AI prices recalculated. Review the rounding difference of $${result.residual}.`
+    if (result.reason === 'catalog_exceeds_total') return 'Catalog lines exceed the calculated total. Review the lines and prices.'
+    if (result.reason === 'no_total') return 'Add materials and labour before recalculating AI prices.'
+    return 'AI prices could not be fully allocated. Review the quote line prices.'
+  }
+
+  async function applyAiDraft({ runId, draft, selection, mode }: Parameters<AiDraftPanelProps['onApply']>[0]) {
+    if (aiApplyRequestRef.current) return
+    aiApplyRequestRef.current = true
+    try {
+      const updatedAreas = [...quoteAreas, ...createdAiAreasRef.current.filter(created => !quoteAreas.some(area => area.id === created.id))]
+      const plan = planAiDraftApplication({ draft, selection, mode, current: { materials, jobberQuoteLines, areaFormulaSelections, areas: updatedAreas } })
+      for (const area of plan.areasToCreate) {
+        const result = await createQuoteArea(area.scope, area.name, false)
+        if (!result.ok) throw new Error('Unable to create quote area')
+        createdAiAreasRef.current.push(result.data)
+        updatedAreas.push(result.data)
+      }
+      const next = plan.build(updatedAreas)
+      const metadata: NonNullable<QuoteFormDraft['aiLineMeta']> = Object.fromEntries(
+        Object.entries(aiLineMeta).filter(([id]) => next.jobberQuoteLines.some(line => line.id === id)),
+      )
+      draft.publicLines.filter(line => selection.publicLines.has(line.id)).forEach((line, index) => {
+        metadata[next.appliedLineIds[index]] = { priceSource: line.priceSource, priceWeight: line.priceWeight, catalogUnitPrice: line.catalogUnitPrice }
+      })
+      const nextTotals = calculateMainQuoteTotals({ materials: next.materials, selectedMin, selectedMax, areaFormulaSelections: next.areaFormulaSelections, settings })
+      const allocated = reallocateAiLinePrices(next.jobberQuoteLines, metadata, nextTotals.finalTotal)
+      setQuoteAreas(sortQuoteAreas(updatedAreas))
+      setMaterials(next.materials)
+      changeJobberQuoteLines(allocated.lines)
+      setAreaFormulaSelections(next.areaFormulaSelections)
+      setAiLineMeta(metadata)
+      setAiDraftRunId(runId)
+      setAiPriceNotice(describeAiAllocation(allocated.result))
+      createdAiAreasRef.current = []
+    } finally {
+      aiApplyRequestRef.current = false
+    }
+  }
+
+  function recalculateAiPrices() {
+    const allocated = reallocateAiLinePrices(jobberQuoteLines, aiLineMeta, totals.finalTotal)
+    changeJobberQuoteLines(allocated.lines)
+    setAiPriceNotice(describeAiAllocation(allocated.result))
   }
 
   function applyJobberDraftToForm(draft: JobberQuoteDraft, lookup: string) {
@@ -1089,6 +1165,16 @@ export function QuoteForm({
             jobberEnabled={jobberEnabled}
             jobberNotice={jobberNotice}
           />
+          <AiDraftPanel
+            availability={aiAvailability}
+            hasActiveKnowledge={hasActiveAiKnowledge}
+            jobberContext={aiJobberContext}
+            hasExistingPublicLines={jobberQuoteLines.length > 0}
+            appliedRunId={aiDraftRunId}
+            onApply={applyAiDraft}
+            onReallocate={recalculateAiPrices}
+          />
+          {aiPriceNotice ? <p className="pbc-alert pbc-alert--warning" role="status" aria-live="polite">{aiPriceNotice}</p> : null}
         </section>
         <section id="quote-workspace-public" className="pbc-workspace pbc-quote-workspace-section" data-workspace-section="public" data-active={mobileState.activeSection === 'public'} tabIndex={-1} aria-label="Public quote">
           <JobberProductServiceEditor

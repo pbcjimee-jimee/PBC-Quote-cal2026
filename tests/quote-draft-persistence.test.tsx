@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   createEmptyQuoteFormDraft,
   sanitizeQuoteFormDraftForStorage,
+  parseQuoteFormDraft,
   type QuoteFormDraft,
 } from '@/components/quote-form/quote-draft'
 import {
@@ -30,6 +31,18 @@ class DraftStorage {
     this.entries.delete(key)
   }
 }
+
+it('round trips AI run and price metadata without losing review provenance', () => {
+  const draft = {
+    ...createEmptyQuoteFormDraft(),
+    updatedAt: new Date().toISOString(),
+    aiDraftRunId: '00000000-0000-4000-8000-000000000001',
+    aiLineMeta: { 'line-1': { priceSource: 'allocated' as const, priceWeight: 100, catalogUnitPrice: null } },
+  }
+  const restored = parseQuoteFormDraft(JSON.stringify(sanitizeQuoteFormDraftForStorage(draft)))
+  expect(restored?.aiDraftRunId).toBe(draft.aiDraftRunId)
+  expect(restored?.aiLineMeta).toEqual(draft.aiLineMeta)
+})
 
 function createDraft(customerName: string): QuoteFormDraft {
   return {
