@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '@/lib/supabase/types'
 import { buildKnowledgeStats } from '@/lib/ai-quote/knowledge-stats'
-import { countRecentRuns, finishRun, insertKnowledgeDraft, startRun, type AiRunKind } from '@/lib/ai-quote/runs'
+import { countRecentRuns, finishRun, insertKnowledgeDraft, startRun, enforceAiReviewGate, linkRunAndConfirmReview, hasPendingAiReview, type AiRunKind } from '@/lib/ai-quote/runs'
 
 function database(responses: Array<{ data: unknown; error: unknown; count?: number | null }>) {
   const chains: Array<ReturnType<typeof chainFor>> = []
@@ -13,6 +13,7 @@ function database(responses: Array<{ data: unknown; error: unknown; count?: numb
       limit: vi.fn().mockReturnThis(), insert: vi.fn().mockReturnThis(),
       update: vi.fn().mockReturnThis(), single: vi.fn().mockReturnThis(),
       maybeSingle: vi.fn().mockReturnThis(),
+      is: vi.fn().mockReturnThis(),
       then: (resolve: (value: unknown) => unknown) => Promise.resolve(response).then(resolve),
     }
   }
@@ -108,5 +109,54 @@ describe('AI run bookkeeping', () => {
         stats: buildKnowledgeStats([]), sourceCounts: { quotes: 0, publicLines: 0, items: 0 } }),
     }[kind]!
     await expect(operation()).rejects.toBe(error)
+  })
+})
+
+describe('AI draft review gate', () => {
+  const run = { id: 'run-1', kind: 'quote_draft', status: 'succeeded', created_by: 'user-1', quote_id: null }
+  const input = { userId: 'user-1', quoteId: null, syncJobber: false, aiDraftRunId: 'run-1' }
+  it.each([null, { ...run, created_by: 'someone-else' }, { ...run, status: 'failed' }, { ...run, kind: 'eval_draft' }, { ...run, quote_id: 'another-quote' }])('rejects invalid or reassigned runs: %j', async data => {
+    const db = database([{ data, error: null }])
+    expect(await enforceAiReviewGate(db.client, input)).toMatchObject({ ok: false, code: 'VALIDATION' })
+  })
+  it('blocks sync without confirmation and permits local save without it', async () => {
+    const db = database([{ data: run, error: null }, { data: run, error: null }])
+    expect(await enforceAiReviewGate(db.client, { ...input, syncJobber: true })).toEqual({ ok: false, code: 'VALIDATION', error: 'Confirm the AI draft review before syncing to Jobber.' })
+    expect(await enforceAiReviewGate(db.client, input)).toEqual({ ok: true, data: null })
+  })
+  it('blocks saved-quote sync with a pending run even when the client omits its ID', async () => {
+    const db = database([{ data: null, error: null, count: 1 }])
+    expect(await enforceAiReviewGate(db.client, { userId: 'user-1', quoteId: 'quote-1', syncJobber: true })).toMatchObject({ ok: false, error: 'Confirm the AI draft review before syncing to Jobber.' })
+    expect(db.chains[0].eq).toHaveBeenCalledWith('quote_id', 'quote-1')
+    expect(db.chains[0].is).toHaveBeenCalledWith('review_confirmed_at', null)
+  })
+  it('allows confirmed sync and avoids AI access for a manual local save', async () => {
+    const db = database([])
+    expect(await enforceAiReviewGate(db.client, { userId: 'user-1', quoteId: null, syncJobber: true, aiReviewConfirmed: true })).toEqual({ ok: true, data: null })
+    expect(await enforceAiReviewGate(db.client, { userId: 'user-1', quoteId: 'quote-1', syncJobber: false })).toEqual({ ok: true, data: null })
+    await linkRunAndConfirmReview(db.client, { quoteId: 'quote-1', confirm: false, userId: 'user-1' })
+    expect(db.from).not.toHaveBeenCalled()
+  })
+  it('links successful owned drafts then confirms every unreviewed linked draft using the DB actor guard', async () => {
+    const db = database([{ data: null, error: null }, { data: null, error: null }])
+    await linkRunAndConfirmReview(db.client, { quoteId: 'quote-1', aiDraftRunId: 'run-1', userId: 'user-1', confirm: true })
+    expect(db.chains[0].update).toHaveBeenCalledWith({ quote_id: 'quote-1' })
+    expect(db.chains[0].eq).toHaveBeenCalledWith('id', 'run-1')
+    expect(db.chains[0].eq).toHaveBeenCalledWith('created_by', 'user-1')
+    expect(db.chains[1].update).toHaveBeenCalledWith({ review_confirmed_at: expect.any(String) })
+    expect(db.chains[1].eq).toHaveBeenCalledWith('quote_id', 'quote-1')
+    expect(db.chains[1].is).toHaveBeenCalledWith('review_confirmed_at', null)
+    expect(db.chains[1].eq).not.toHaveBeenCalledWith('created_by', 'user-1')
+  })
+  it('does not confirm runs on local save', async () => {
+    const db = database([{ data: null, error: null }])
+    await linkRunAndConfirmReview(db.client, { quoteId: 'quote-1', aiDraftRunId: 'run-1', userId: 'user-1', confirm: false })
+    expect(db.chains).toHaveLength(1)
+    expect(db.chains[0].update).toHaveBeenCalledWith({ quote_id: 'quote-1' })
+  })
+  it('surfaces pending-review query and link errors', async () => {
+    const error = { code: '42501' }
+    await expect(hasPendingAiReview(database([{ data: null, error }]).client, 'quote-1')).rejects.toBe(error)
+    await expect(linkRunAndConfirmReview(database([{ data: null, error }]).client, { quoteId: 'quote-1', aiDraftRunId: 'run-1', confirm: false, userId: 'user-1' })).rejects.toBe(error)
   })
 })

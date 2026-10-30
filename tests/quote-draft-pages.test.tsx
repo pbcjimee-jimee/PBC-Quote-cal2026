@@ -2,7 +2,8 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { DEFAULT_PRICING_SETTINGS } from '@/lib/calculator'
 
-const mocks = vi.hoisted(() => ({ requireRole: vi.fn(), isDevNoAuthMode: vi.fn(), availability: vi.fn(), loadActiveKnowledge: vi.fn(), createClient: vi.fn() }))
+const mocks = vi.hoisted(() => ({ requireRole: vi.fn(), isDevNoAuthMode: vi.fn(), availability: vi.fn(), loadActiveKnowledge: vi.fn(), createClient: vi.fn(), hasPendingAiReview: vi.fn() }))
+vi.mock('@/lib/ai-quote/runs', () => ({ hasPendingAiReview: mocks.hasPendingAiReview }))
 vi.mock('@/lib/ai-quote/config', () => ({ getAiQuoteAvailability: mocks.availability }))
 vi.mock('@/lib/ai-quote/data', () => ({ loadActiveKnowledge: mocks.loadActiveKnowledge }))
 vi.mock('@/lib/supabase/server', () => ({ createClient: mocks.createClient }))
@@ -17,7 +18,7 @@ vi.mock('@/lib/actions/quotes', () => ({
   getQuote: async () => ({ ok: true, data: { id: 'quote-1', createdBy: 'another-author' } }),
 }))
 vi.mock('@/components/quote-form/quote-form', () => ({
-  QuoteForm: ({ userId, hasActiveAiKnowledge, aiAvailability }: { userId?: string; hasActiveAiKnowledge?: boolean; aiAvailability?: { enabled: boolean } }) => <span>{userId ?? 'draft-disabled'} {hasActiveAiKnowledge ? 'guide-ready' : 'guide-needed'} {aiAvailability?.enabled ? 'ai-enabled' : 'ai-disabled'}</span>,
+  QuoteForm: ({ userId, hasActiveAiKnowledge, aiAvailability, aiReviewPending }: { userId?: string; hasActiveAiKnowledge?: boolean; aiAvailability?: { enabled: boolean }; aiReviewPending?: boolean }) => <span>{userId ?? 'draft-disabled'} {hasActiveAiKnowledge ? 'guide-ready' : 'guide-needed'} {aiAvailability?.enabled ? 'ai-enabled' : 'ai-disabled'} {aiReviewPending ? 'review-pending' : 'no-pending-review'}</span>,
 }))
 
 import QuoteNewPage from '@/app/(app)/quotes/new/page'
@@ -31,6 +32,7 @@ describe('server quote draft ownership', () => {
     mocks.availability.mockReturnValue({ enabled: true })
     mocks.createClient.mockResolvedValue({})
     mocks.loadActiveKnowledge.mockResolvedValue({ id: 'knowledge-1' })
+    mocks.hasPendingAiReview.mockResolvedValue(false)
   })
 
   for (const mode of ['new', 'edit'] as const) {
@@ -60,6 +62,7 @@ describe('server quote draft ownership', () => {
       expect(renderToStaticMarkup(await loadPage())).toContain('dev-no-auth')
       expect(mocks.requireRole).not.toHaveBeenCalled()
       expect(mocks.loadActiveKnowledge).not.toHaveBeenCalled()
+      expect(mocks.hasPendingAiReview).not.toHaveBeenCalled()
     })
 
     it(`${mode}: disables persistence when a session owner cannot be verified`, async () => {
@@ -67,4 +70,16 @@ describe('server quote draft ownership', () => {
       expect(renderToStaticMarkup(await loadPage())).toContain('draft-disabled')
     })
   }
+  it('edit: loads pending reviews even if new AI drafting is disabled', async () => {
+    mocks.availability.mockReturnValue({ enabled: false, reason: 'missing_key', message: 'AI is not configured.' })
+    mocks.hasPendingAiReview.mockResolvedValue(true)
+    const page = await QuoteEditPage({ params: Promise.resolve({ id: 'quote-1' }) })
+    expect(renderToStaticMarkup(page)).toContain('review-pending')
+    expect(mocks.hasPendingAiReview).toHaveBeenCalledWith({}, 'quote-1')
+    expect(mocks.loadActiveKnowledge).not.toHaveBeenCalled()
+  })
+  it('edit: preserves the review requirement when its lookup fails', async () => {
+    mocks.hasPendingAiReview.mockRejectedValue(new Error('unavailable'))
+    expect(renderToStaticMarkup(await QuoteEditPage({ params: Promise.resolve({ id: 'quote-1' }) }))).toContain('review-pending')
+  })
 })

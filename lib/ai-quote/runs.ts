@@ -5,8 +5,62 @@ import { estimateCostUsd } from '@/lib/ai-quote/cost'
 import type { KnowledgeStats } from '@/lib/ai-quote/knowledge-stats'
 import type { AiUsage } from '@/lib/ai-quote/types'
 import type { Database, Json } from '@/lib/supabase/types'
+import type { ActionResult } from '@/lib/actions/types'
+import { safeErrorMessage } from '@/lib/actions/action-error'
 
 export type AiRunKind = 'knowledge_build' | 'quote_draft' | 'eval_memo' | 'eval_draft'
+
+export async function hasPendingAiReview(supabase: SupabaseClient<Database>, quoteId: string): Promise<boolean> {
+  const { count, error } = await supabase.from('ai_quote_runs').select('id', { count: 'exact', head: true })
+    .eq('quote_id', quoteId).eq('kind', 'quote_draft').eq('status', 'succeeded').is('review_confirmed_at', null)
+  if (error) throw error
+  return (count ?? 0) > 0
+}
+
+export async function enforceAiReviewGate(supabase: SupabaseClient<Database>, input: {
+  userId: string
+  quoteId: string | null
+  aiDraftRunId?: string
+  aiReviewConfirmed?: boolean
+  syncJobber: boolean
+}): Promise<ActionResult<null>> {
+  try {
+    if (input.aiDraftRunId) {
+      const { data: run, error } = await supabase.from('ai_quote_runs')
+        .select('id, kind, status, created_by, quote_id').eq('id', input.aiDraftRunId).maybeSingle()
+      if (error) throw error
+      if (!run || run.kind !== 'quote_draft' || run.status !== 'succeeded' || run.created_by !== input.userId
+        || (run.quote_id !== null && run.quote_id !== input.quoteId)) {
+        return { ok: false, code: 'VALIDATION', error: 'The AI draft is invalid or unavailable. Create a new draft and try again.' }
+      }
+    }
+    if (input.syncJobber && input.aiReviewConfirmed !== true
+      && (input.aiDraftRunId || (input.quoteId && await hasPendingAiReview(supabase, input.quoteId)))) {
+      return { ok: false, code: 'VALIDATION', error: 'Confirm the AI draft review before syncing to Jobber.' }
+    }
+    return { ok: true, data: null }
+  } catch (error) {
+    return { ok: false, error: safeErrorMessage(error, 'ai-quote.enforceAiReviewGate', 'Unable to verify the AI draft review. Please try again.') }
+  }
+}
+
+export async function linkRunAndConfirmReview(supabase: SupabaseClient<Database>, input: {
+  quoteId: string
+  aiDraftRunId?: string
+  confirm: boolean
+  userId: string
+}): Promise<void> {
+  if (input.aiDraftRunId) {
+    const { error } = await supabase.from('ai_quote_runs').update({ quote_id: input.quoteId })
+      .eq('id', input.aiDraftRunId).eq('created_by', input.userId).eq('kind', 'quote_draft').eq('status', 'succeeded')
+    if (error) throw error
+  }
+  if (input.confirm) {
+    const { error } = await supabase.from('ai_quote_runs').update({ review_confirmed_at: new Date().toISOString() })
+      .eq('quote_id', input.quoteId).eq('kind', 'quote_draft').eq('status', 'succeeded').is('review_confirmed_at', null)
+    if (error) throw error
+  }
+}
 
 export async function countRecentRuns(
   supabase: SupabaseClient<Database>, userId: string, kind: AiRunKind, since: Date,

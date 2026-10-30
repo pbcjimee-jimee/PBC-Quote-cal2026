@@ -169,6 +169,7 @@ async function mountQuoteForm(options: {
   viewportWidth?: number
   jobberEnabled?: boolean
   jobberNotice?: string
+  aiReviewPending?: boolean
 } = {}) {
   const installed = installTestDom()
   const restoreElementRuntime = installElementRuntime()
@@ -185,7 +186,7 @@ async function mountQuoteForm(options: {
     scrollBy: vi.fn(),
     setTimeout: globalThis.setTimeout.bind(globalThis),
     matchMedia: vi.fn((query: string) => ({
-      matches: query === '(max-width: 720px)' ? (options.viewportWidth ?? 1280) <= 720 : false,
+      matches: query === '(max-width: 720px)' ? (options.viewportWidth ?? 1280) <= 720 : query === '(max-width: 1023.98px)' ? (options.viewportWidth ?? 1280) < 1024 : false,
       media: query,
       onchange: null,
       addEventListener: vi.fn(),
@@ -210,6 +211,7 @@ async function mountQuoteForm(options: {
       jobberNotice: options.jobberNotice,
       aiAvailability: { enabled: true },
       hasActiveAiKnowledge: true,
+      aiReviewPending: options.aiReviewPending,
     }))
   })
   await settle()
@@ -225,6 +227,50 @@ async function mountQuoteForm(options: {
 }
 
 describe('quote workspace structure', () => {
+  it.each([375, 1280])('requires one review checkbox before either Sync button but keeps Save available at %spx', async viewportWidth => {
+    vi.mocked(updateQuote).mockReset().mockResolvedValueOnce({ ok: false, error: 'Hold for inspection' }).mockResolvedValueOnce({ ok: true, data: { id: 'quote-workspace-1' } })
+    const mounted = await mountQuoteForm({ viewportWidth, aiReviewPending: true, initialQuote: createQuoteRecord({ jobberQuoteId: 'jobber-1' }) })
+    try {
+      const controls = mounted.container.querySelectorAll('input').filter(input => input.getAttribute('aria-label') === 'I reviewed the AI draft lines and prices')
+      expect(controls).toHaveLength(1)
+      const checkbox = controls[0]
+      expect(checkbox.parentElement?.parentElement?.getAttribute('class')).toContain(viewportWidth === 375 ? 'pbc-mobile-totalbar' : 'pbc-topbar__right')
+      expect(checkbox.checked).toBe(false)
+      expect(findButton(mounted.container, 'Save')?.disabled).toBe(false)
+      expect(findButton(mounted.container, 'Save & Sync')?.disabled).toBe(true)
+      expect(findButton(mounted.container, 'Save & Sync to Jobber')?.disabled).toBe(true)
+      await act(async () => findButton(mounted.container, 'Save')!.dispatchEvent(new Event('click', { bubbles: true })))
+      expect(updateQuote).toHaveBeenCalledWith(expect.objectContaining({ syncJobber: false, aiReviewConfirmed: false }))
+      await act(async () => { checkbox.checked = true; checkbox.dispatchEvent(new Event('change', { bubbles: true })) })
+      expect(findButton(mounted.container, 'Save & Sync')?.disabled).toBe(false)
+      await act(async () => findButton(mounted.container, 'Save & Sync')!.dispatchEvent(new Event('click', { bubbles: true })))
+      expect(updateQuote).toHaveBeenLastCalledWith(expect.objectContaining({ syncJobber: true, aiReviewConfirmed: true }))
+      expect(mounted.container.querySelectorAll('input').find(input => input.getAttribute('aria-label') === 'I reviewed the AI draft lines and prices')?.checked).toBe(false)
+    } finally { await mounted.cleanup() }
+  })
+
+  it('does not show AI review controls for a manual quote', async () => {
+    const mounted = await mountQuoteForm({ initialQuote: createQuoteRecord({ jobberQuoteId: 'jobber-1' }) })
+    try {
+      expect(mounted.container.textContent).not.toContain('I reviewed the AI draft lines and prices')
+      expect(findButton(mounted.container, 'Save & Sync')?.disabled).toBe(false)
+    } finally { await mounted.cleanup() }
+  })
+
+  it('restores AI run provenance, requires review and forwards it when saving locally', async () => {
+    vi.mocked(createQuote).mockReset().mockResolvedValueOnce({ ok: false, error: 'Hold for inspection' })
+    const storage = new MemoryStorage()
+    const aiDraftRunId = '00000000-0000-4000-8000-000000000001'
+    storage.setItem(getQuoteDraftStorageKey('user-a'), JSON.stringify({ ...createEmptyQuoteFormDraft(), ownerId: 'user-a', aiDraftRunId, updatedAt: new Date().toISOString() }))
+    const mounted = await mountQuoteForm({ storage })
+    try {
+      await act(async () => findButton(mounted.container, 'Restore Draft')!.dispatchEvent(new Event('click', { bubbles: true })))
+      expect(mounted.container.textContent).toContain('I reviewed the AI draft lines and prices')
+      await act(async () => findButton(mounted.container, 'Save')!.dispatchEvent(new Event('click', { bubbles: true })))
+      expect(createQuote).toHaveBeenCalledWith(expect.objectContaining({ aiDraftRunId, aiReviewConfirmed: false, syncJobber: false }))
+    } finally { await mounted.cleanup() }
+  })
+
   const aiDraft: AiQuoteDraft = {
     summary: 'Bedroom repaint', findings: [], questions: [], warnings: [],
     areas: [{ scope: 'interior', name: 'Bedroom' }, { scope: 'interior', name: 'Hallway' }],

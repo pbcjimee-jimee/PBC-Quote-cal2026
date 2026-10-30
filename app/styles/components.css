@@ -223,6 +223,15 @@
 .pbc-input:focus { border-color: var(--primary); box-shadow: 0 0 0 4px rgb(11 102 216 / 12%); }
 .pbc-textarea { width: 100%; padding: 10px 13px; font-size: 13.5px; font-weight: 500; border: 1px solid var(--border); border-radius: 10px; background: #fff; transition: 0.16s; resize: vertical; }
 .pbc-ai-draft { display: grid; gap: 12px; min-width: 0; overflow-wrap: anywhere; }
+.pbc-ai-review-check { display: flex; align-items: center; gap: 8px; min-width: 0; max-width: 250px; min-height: 44px; font-size: 12px; font-weight: 600; line-height: 1.4; cursor: pointer; }
+.pbc-ai-review-check input { flex-shrink: 0; accent-color: var(--primary); }
+.pbc-ai-review-check > span { font-size: inherit; font-weight: inherit; letter-spacing: normal; text-transform: none; color: inherit; }
+.pbc-ai-review-check input:focus-visible { outline: 2px solid var(--primary); outline-offset: 3px; }
+@media (max-width: 1023.98px) {
+  .pbc-mobile-totalbar--ai-review { flex-wrap: wrap; }
+  .pbc-mobile-totalbar--ai-review > .pbc-ai-review-check { flex-basis: 100%; max-width: none; }
+  .pbc-quote-form:has(.pbc-mobile-totalbar--ai-review) .pbc-page { padding-bottom: calc(164px + env(safe-area-inset-bottom)); }
+}
 .pbc-ai-draft h2 { font-size: 16px; font-weight: 800; }
 .pbc-ai-draft p, .pbc-ai-draft li { font-size: 13px; line-height: 1.6; }
 .pbc-ai-draft ul { padding-left: 20px; list-style: disc; }

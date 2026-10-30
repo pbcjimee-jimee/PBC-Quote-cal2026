@@ -10,6 +10,7 @@ import { isDevNoAuthMode } from '@/lib/actions/types'
 import { requireRole } from '@/lib/security/require-app-user'
 import { getAiQuoteAvailability } from '@/lib/ai-quote/config'
 import { loadActiveKnowledge } from '@/lib/ai-quote/data'
+import { hasPendingAiReview } from '@/lib/ai-quote/runs'
 import { createClient } from '@/lib/supabase/server'
 
 interface QuoteEditPageProps {
@@ -46,11 +47,19 @@ export default async function QuoteEditPage({ params }: QuoteEditPageProps) {
   const userId = appUser === null ? 'dev-no-auth' : appUser.ok ? appUser.user.id : undefined
   const aiAvailability = getAiQuoteAvailability()
   let hasActiveAiKnowledge = false
-  if (appUser?.ok && aiAvailability.enabled) {
+  let aiReviewPending = false
+  if (appUser?.ok) {
     try {
-      hasActiveAiKnowledge = await loadActiveKnowledge(await createClient()) !== null
+      const supabase = await createClient()
+      const [knowledge, review] = await Promise.allSettled([
+        aiAvailability.enabled ? loadActiveKnowledge(supabase) : Promise.resolve(null),
+        hasPendingAiReview(supabase, id),
+      ])
+      hasActiveAiKnowledge = knowledge.status === 'fulfilled' && knowledge.value !== null
+      aiReviewPending = review.status === 'fulfilled' ? review.value : true
     } catch {
       hasActiveAiKnowledge = false
+      aiReviewPending = true
     }
   }
 
@@ -66,6 +75,7 @@ export default async function QuoteEditPage({ params }: QuoteEditPageProps) {
         userId={userId}
         aiAvailability={aiAvailability}
         hasActiveAiKnowledge={hasActiveAiKnowledge}
+        aiReviewPending={aiReviewPending}
         areas={areas.value.data}
         quoteLineTemplates={templates ?? []}
         initialQuote={quote.value.data}

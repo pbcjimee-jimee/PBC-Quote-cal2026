@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import type { PricingSettings } from '@/lib/calculator'
 import type { QuoteRecord } from '@/lib/dev-data'
@@ -74,6 +74,7 @@ import type { ProductServiceRecord } from '@/lib/product-services/types'
 import type { QuoteLineTemplateRecord } from '@/lib/quote-line-templates/types'
 
 interface QuoteFormProps {
+  aiReviewPending?: boolean
   aiAvailability?: AiQuoteAvailability
   hasActiveAiKnowledge?: boolean
   userId?: string
@@ -92,6 +93,18 @@ type JobberQuoteResponse =
 
 type JobberLookupType = 'quote' | 'job'
 type QuoteSaveAction = 'local' | 'sync'
+
+const QUOTE_MOBILE_ACTIONS_QUERY = '(max-width: 1023.98px)'
+
+function subscribeToQuoteActionLayout(onChange: () => void): () => void {
+  const media = window.matchMedia?.(QUOTE_MOBILE_ACTIONS_QUERY)
+  media?.addEventListener?.('change', onChange)
+  return () => media?.removeEventListener?.('change', onChange)
+}
+
+function getQuoteMobileActionsSnapshot(): boolean {
+  return window.matchMedia?.(QUOTE_MOBILE_ACTIONS_QUERY).matches ?? false
+}
 
 function getComparableDraftValue(draft: QuoteFormDraft): string {
   return getComparableQuoteDraftValue(draft)
@@ -330,6 +343,7 @@ export function getNextDeletedJobberLineItemIds(
 }
 
 export function QuoteForm({
+  aiReviewPending = false,
   aiAvailability = { enabled: false, reason: 'missing_key', message: 'AI quoting is not configured. Contact an administrator.' },
   hasActiveAiKnowledge = false,
   userId,
@@ -353,6 +367,9 @@ export function QuoteForm({
   const [isPending, startTransition] = useTransition()
   const [quoteAreas, setQuoteAreas] = useState(() => sortQuoteAreas(areas))
   const [aiDraftRunId, setAiDraftRunId] = useState<string | null>(null)
+  const [aiReviewConfirmed, setAiReviewConfirmed] = useState(false)
+  const hasAiReview = Boolean(aiDraftRunId) || aiReviewPending
+  const useMobileActions = useSyncExternalStore(subscribeToQuoteActionLayout, getQuoteMobileActionsSnapshot, () => false)
   const [aiLineMeta, setAiLineMeta] = useState<NonNullable<QuoteFormDraft['aiLineMeta']>>({})
   const [aiPriceNotice, setAiPriceNotice] = useState('')
   const aiApplyRequestRef = useRef(false)
@@ -641,6 +658,7 @@ export function QuoteForm({
   }, [cancelTargetPath, isDirty])
 
   function restoreDraft(draft: QuoteFormDraft) {
+    setAiReviewConfirmed(false)
     setAiDraftRunId(draft.aiDraftRunId ?? null)
     setAiLineMeta(draft.aiLineMeta ?? {})
     setCustomerName(draft.customerName)
@@ -924,6 +942,7 @@ export function QuoteForm({
       setAreaFormulaSelections(next.areaFormulaSelections)
       setAiLineMeta(metadata)
       setAiDraftRunId(runId)
+      setAiReviewConfirmed(false)
       setAiPriceNotice(describeAiAllocation(allocated.result))
       createdAiAreasRef.current = []
     } finally {
@@ -1020,9 +1039,12 @@ export function QuoteForm({
 
   function saveQuote(action: QuoteSaveAction = 'local') {
     if (action === 'sync' && !jobberEnabled) return
+    if (action === 'sync' && hasAiReview && !aiReviewConfirmed) return
     if (copyMaterialsRequestRef.current || saveRequestRef.current) return
 
     const input: QuoteFormSavePayloadInput = {
+      aiDraftRunId: aiDraftRunId ?? undefined,
+      aiReviewConfirmed: hasAiReview ? aiReviewConfirmed : undefined,
       settings, initialQuoteId: initialQuote?.id, initialQuoteVersion: initialQuote?.version,
       syncJobber: action === 'sync', customerName, customerAddress, jobberQuoteId, jobberQuoteLookup,
       jobberQuoteDraft, jobberSnapshotRefreshedAt: jobberRefreshMetadata?.refreshedAt ?? null,
@@ -1046,6 +1068,7 @@ export function QuoteForm({
         const result = await saveQuoteFormPayload(input)
 
         if (result.ok) {
+          setAiReviewConfirmed(false)
           clearDraft()
           isNavigatingRef.current = true
           router.push(initialQuote ? quoteTargetPath : `/quotes/${result.data.id}`)
@@ -1071,6 +1094,19 @@ export function QuoteForm({
     : 'Save & Sync to Jobber'
   const mobileSaveLabel = isPending && pendingSaveAction === 'local' ? 'Saving...' : 'Save'
   const isSaveBlocked = isPending || isCopyingMaterials
+  const isAiSyncBlocked = hasAiReview && !aiReviewConfirmed
+  const aiReviewControl = hasAiReview ? (
+    <label className="pbc-ai-review-check">
+      <input
+        type="checkbox"
+        aria-label="I reviewed the AI draft lines and prices"
+        checked={aiReviewConfirmed}
+        disabled={isPending}
+        onChange={event => setAiReviewConfirmed(event.target.checked)}
+      />
+      <span>I reviewed the AI draft lines and prices</span>
+    </label>
+  ) : null
 
   return (
     <main ref={formRootRef} className="pbc-quote-form">
@@ -1084,6 +1120,7 @@ export function QuoteForm({
           <button type="button" onClick={() => requestNavigation(cancelTargetPath)} disabled={isPending} className="pbc-btn pbc-btn--ghost">
             Cancel
           </button>
+          {!useMobileActions ? aiReviewControl : null}
           <div className="flex flex-wrap justify-end gap-2">
             <button
               type="button"
@@ -1096,8 +1133,8 @@ export function QuoteForm({
             <button
               type="button"
               onClick={() => saveQuote('sync')}
-              disabled={isSaveBlocked || !canSyncJobberQuote}
-              title={!jobberEnabled ? jobberNotice : canSyncJobberQuote ? 'Save app changes and update Jobber' : 'Fetch a Jobber quote before syncing'}
+              disabled={isSaveBlocked || !canSyncJobberQuote || isAiSyncBlocked}
+              title={isAiSyncBlocked ? 'Confirm the AI draft review before syncing to Jobber.' : !jobberEnabled ? jobberNotice : canSyncJobberQuote ? 'Save app changes and update Jobber' : 'Fetch a Jobber quote before syncing'}
               className="pbc-btn pbc-btn--ghost"
             >
               {Icons.refresh({ size: 15 })} {jobberSaveLabel}
@@ -1291,7 +1328,8 @@ export function QuoteForm({
           <details className="pbc-quote-memos"><summary>Internal memos · {memos.length}</summary><QuoteMemosPanel memos={memos} onAddMemo={addMemo} onChangeMemo={changeMemo} onRemoveMemo={removeMemo} /></details>
         </aside>
       </div>
-      <div className="pbc-mobile-totalbar pbc-mobile-totalbar--workspace">
+      <div className={`pbc-mobile-totalbar pbc-mobile-totalbar--workspace${hasAiReview ? ' pbc-mobile-totalbar--ai-review' : ''}`}>
+        {useMobileActions ? aiReviewControl : null}
         <button type="button" className="pbc-totalbar-review" aria-label="Review totals" onClick={() => changeWorkspaceSection('review')}>
           <span>Final subtotal</span>
           <b className="mono">${totals.areaBreakdown.finalSubtotal.toFixed(2)}</b>
@@ -1300,7 +1338,7 @@ export function QuoteForm({
         <button type="button" onClick={() => saveQuote('local')} disabled={isSaveBlocked} className="pbc-btn pbc-btn--primary pbc-btn--sm">
           {Icons.check({ size: 14 })} {mobileSaveLabel}
         </button>
-        <button type="button" onClick={() => saveQuote('sync')} disabled={isSaveBlocked || !canSyncJobberQuote} title={!jobberEnabled ? jobberNotice : undefined} aria-label={jobberSaveLabel} className="pbc-btn pbc-btn--ghost pbc-btn--sm">
+        <button type="button" onClick={() => saveQuote('sync')} disabled={isSaveBlocked || !canSyncJobberQuote || isAiSyncBlocked} title={isAiSyncBlocked ? 'Confirm the AI draft review before syncing to Jobber.' : !jobberEnabled ? jobberNotice : undefined} aria-label={jobberSaveLabel} className="pbc-btn pbc-btn--ghost pbc-btn--sm">
           {isPending && pendingSaveAction === 'sync' ? 'Syncing...' : 'Save & Sync'}
         </button>
       </div>

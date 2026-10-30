@@ -177,6 +177,8 @@ export const paintComparisonSchema = z.object({
 })
 
 export const quoteSchema = z.object({
+  aiDraftRunId: z.string().uuid().optional(),
+  aiReviewConfirmed: z.boolean().optional(),
   paintComparisons: z.array(paintComparisonSchema).max(1).default([]),
   expectedVersion: z.number().int().positive().optional(),
   syncJobber: z.boolean().optional(),
@@ -457,13 +459,13 @@ export const areaDeleteSchema = z.object({
 export type AreaInput = z.infer<typeof areaSchema>
 
 export const draftJobberContextSchema = z.object({
-  jobberQuoteId: z.string().nullable(),
-  workType: z.string(),
-  customerType: z.string(),
+  jobberQuoteId: z.string().max(200).nullable(),
+  workType: z.string().max(200),
+  customerType: z.string().max(200),
   areaSqft: z.number().nullable(),
   existingLines: z.array(z.object({
-    name: z.string(),
-    description: z.string(),
+    name: z.string().max(200),
+    description: z.string().max(4000),
     quantity: z.number(),
     unitPrice: z.number(),
   })).max(60),

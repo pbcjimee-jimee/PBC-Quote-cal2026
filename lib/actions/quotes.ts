@@ -25,6 +25,7 @@ import { paintComparisonSchema } from '@/lib/validators'
 import { calculateDisplayLabourTotals, calculateFormulaLabourDays, calculateLabourTotals } from '@/lib/quote-labour'
 import { requireRole } from '@/lib/security/require-app-user'
 import { createClient } from '@/lib/supabase/server'
+import { enforceAiReviewGate, linkRunAndConfirmReview } from '@/lib/ai-quote/runs'
 import type { Database, Json } from '@/lib/supabase/types'
 import { jobberQuoteSnapshotSchema, pricingSettingsSchema, quoteSchema, type QuoteInput } from '@/lib/validators'
 import { mapJobberQuoteToDraft, type JobberQuoteDraft } from '@/lib/jobber/mapper'
@@ -1193,7 +1194,7 @@ async function findExistingQuoteIdForJobberQuote(
   return { ok: true, data: { id: data?.[0]?.id ?? null, version: data?.[0]?.version ?? null } }
 }
 
-export async function createQuote(input: unknown): Promise<ActionResult<{ id: string }>> {
+export async function createQuote(input: unknown): Promise<ActionResult<{ id: string; warning?: string }>> {
   const parsed = quoteSchema.safeParse(input)
   if (!parsed.success) {
     return { ok: false, error: parsed.error.message }
@@ -1203,6 +1204,7 @@ export async function createQuote(input: unknown): Promise<ActionResult<{ id: st
   }
 
   if (isDevNoAuthMode()) {
+    if (parsed.data.aiDraftRunId) return { ok: false, code: 'VALIDATION', error: 'AI drafting requires authentication.' }
     const { createDevQuote, findDevQuoteByJobberIdentity, updateDevQuote, resolveDevQuotePaintComparison } = await import('@/lib/dev-data')
     const match = findDevQuoteByJobberIdentity(parsed.data)
     if (match.error) return { ok: false, error: quoteLifecycleError(match.error) }
@@ -1228,6 +1230,12 @@ export async function createQuote(input: unknown): Promise<ActionResult<{ id: st
       syncJobber: parsed.data.syncJobber,
     })
   }
+
+  const aiGate = await enforceAiReviewGate(supabase, {
+    userId: allowedUser.user.id, quoteId: null, aiDraftRunId: parsed.data.aiDraftRunId,
+    aiReviewConfirmed: parsed.data.aiReviewConfirmed, syncJobber: parsed.data.syncJobber ?? false,
+  })
+  if (!aiGate.ok) return aiGate
 
   const settingsResult = await getPricingSettings()
   if (!settingsResult.ok) return settingsResult
@@ -1284,16 +1292,26 @@ export async function createQuote(input: unknown): Promise<ActionResult<{ id: st
   if (quoteError) return { ok: false, error: quoteLifecycleError(quoteError.message) }
   if (!quoteId) return { ok: false, error: 'Unable to create quote' }
 
+  let warning: string | undefined
+  try {
+    await linkRunAndConfirmReview(supabase, {
+      quoteId, aiDraftRunId: parsed.data.aiDraftRunId, userId: allowedUser.user.id,
+      confirm: Boolean(parsed.data.syncJobber && parsed.data.aiReviewConfirmed),
+    })
+  } catch (error) {
+    warning = safeErrorMessage(error, 'quotes.createQuote.aiReview', 'Quote saved, but the AI review record could not be updated. Review the draft again before the next sync.')
+  }
+
   if (parsed.data.syncJobber) {
     await scheduleSavedQuoteToJobber(supabase, quoteId, ['/quotes', `/quotes/${quoteId}`])
   }
 
   revalidatePath('/quotes')
   revalidatePath(`/quotes/${quoteId}`)
-  return { ok: true, data: { id: quoteId } }
+  return { ok: true, data: { id: quoteId, ...(warning ? { warning } : {}) } }
 }
 
-export async function updateQuote(input: unknown): Promise<ActionResult<{ id: string }>> {
+export async function updateQuote(input: unknown): Promise<ActionResult<{ id: string; warning?: string }>> {
   const inputRecord = typeof input === 'object' && input !== null ? input as Record<string, unknown> : {}
   const id = typeof inputRecord.id === 'string' ? inputRecord.id : ''
   if (!id.trim()) return { ok: false, error: 'Quote id is required' }
@@ -1307,6 +1325,7 @@ export async function updateQuote(input: unknown): Promise<ActionResult<{ id: st
   }
 
   if (isDevNoAuthMode()) {
+    if (parsed.data.aiDraftRunId) return { ok: false, code: 'VALIDATION', error: 'AI drafting requires authentication.' }
     const { updateDevQuote, getDevQuote, resolveDevQuotePaintComparison } = await import('@/lib/dev-data')
     const prepared = resolveDevQuotePaintComparison(parsed.data, getDevQuote(id))
     if (!prepared.ok) return prepared
@@ -1325,6 +1344,12 @@ export async function updateQuote(input: unknown): Promise<ActionResult<{ id: st
   if (expectedVersion === undefined) {
     return { ok: false, error: 'Quote version is required. Refresh and try again.' }
   }
+
+  const aiGate = await enforceAiReviewGate(supabase, {
+    userId: allowedUser.user.id, quoteId: id, aiDraftRunId: parsed.data.aiDraftRunId,
+    aiReviewConfirmed: parsed.data.aiReviewConfirmed, syncJobber: parsed.data.syncJobber ?? false,
+  })
+  if (!aiGate.ok) return aiGate
 
   const { data: existingQuote, error: existingQuoteError } = await supabase
     .from('quotes')
@@ -1430,13 +1455,23 @@ export async function updateQuote(input: unknown): Promise<ActionResult<{ id: st
     .rpc('update_quote_with_jobber_sync', { payload: payload as unknown as Json })
   if (quoteError) return { ok: false, error: quoteLifecycleError(quoteError.message) }
 
+  let warning: string | undefined
+  try {
+    await linkRunAndConfirmReview(supabase, {
+      quoteId: id, aiDraftRunId: parsed.data.aiDraftRunId, userId: allowedUser.user.id,
+      confirm: Boolean(parsed.data.syncJobber && parsed.data.aiReviewConfirmed),
+    })
+  } catch (error) {
+    warning = safeErrorMessage(error, 'quotes.updateQuote.aiReview', 'Quote saved, but the AI review record could not be updated. Review the draft again before the next sync.')
+  }
+
   if (parsed.data.syncJobber) {
     await scheduleSavedQuoteToJobber(supabase, id, ['/quotes', `/quotes/${id}`])
   }
 
   revalidatePath('/quotes')
   revalidatePath(`/quotes/${id}`)
-  return { ok: true, data: { id } }
+  return { ok: true, data: { id, ...(warning ? { warning } : {}) } }
 }
 
 export async function duplicateQuote(sourceQuoteId: string): Promise<ActionResult<{ id: string }>> {
