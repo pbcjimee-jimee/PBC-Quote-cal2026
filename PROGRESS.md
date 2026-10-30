@@ -5,7 +5,23 @@
 
 ---
 
-## [설계 2026-10-30] AI 견적 자동화 — 설계·구현 계획 작성 완료, 구현 미착수
+## [구현 2026-10-30] AI 견적 자동화 P0+P1 — 로컬 구현·검증 완료, 운영 미적용
+
+- **Model:** Claude Code 팀장(Opus 5.5/high)이 분배·리뷰·통합·브라우저 QA를 하고, Orca Codex 워커(implementer `gpt-6.1-sol`/high)가 계획 Task 1~16과 후속 수정을 구현·검증했다.
+- **구현:**
+  - Settings > AI: 과거 견적 분석(결정적 통계 + Claude 가이드) → 검토·수정 → 승인. 선택 기능으로 정확도 비교(샘플 10건 제안, AI 메모 역작성·누출 표시, 비교 지표·중앙값) 제공.
+  - 견적 화면 `Draft with AI`: 메모 입력 → 초안(발견 사항·확인 질문·고객용 라인·자재/일수/인원·공식 추천) → 항목 선택 적용 → 계산기 총액(GST 제외)을 AI 비중대로 고객용 라인에 배분. 수동 라인 금액은 먼저 제외한다.
+  - Jobber 보호: AI 초안 견적은 `I reviewed the AI draft lines and prices` 체크 없이는 Save & Sync를 서버가 거부한다. 앱 저장(Save)은 그대로.
+  - 보안: admin 전용, same-origin, 하루 한도(초안 20·분석 3·비교 각 20), 연락처 마스킹, 프롬프트 데이터 이스케이프, 카탈로그 ID 대조·수치 범위 재검증, AI 테이블 RLS·INSERT/UPDATE 가드·상태 전이 제한, Preview에서 AI 차단·키 금지.
+  - 의존성: `@anthropic-ai/sdk ^1.3.0` 추가(G1 승인). 보안 권고 대응으로 `next`/`eslint-config-next` 16.3.8→16.4.3, `zod` ^4.4.3→^4.6.6 업그레이드(사용자 승인).
+- **검증:** 팀장 최종 `npm run verify` exit 0 — Vitest **2,045 pass / 19 환경 skip (168 files)**, coverage S/B/F/L **88.79/78.52/95.87/92.96%**, typecheck·lint 0 오류, Next 16.4.3 build 24/24, production audit **0 vulnerabilities**. PGlite SQL 테스트로 AI 테이블 RLS·가드 검증.
+- **브라우저 QA(모의 응답 임시 페이지, 커밋 안 함):** 1280px·375px에서 메모 입력 → 초안 → 검토 → 적용까지 콘솔 오류 0, 가로 스크롤 없음, 적용 후 Jobber sync preview 차이 $0.00, 검토 체크 전 Save & Sync 비활성 확인. Settings > AI 탭 두 폭 확인. 검토 목록이 길어 Areas 그룹 제거·Why 인라인화로 축소했다.
+- **미실행·제한:** 실제 Claude API 호출(키 미입력), 실제 Supabase 인증 환경 전체 흐름, Preview/운영 DB 마이그레이션(`20261030120000`), Vercel 환경 변수, push·배포, 물리 모바일은 미실행. 비용·응답 시간은 실측 전 추정이며 과거 견적 분석이 Vercel 300초 제한 안에 끝나는지 실제 실행으로 확인해야 한다. OneDrive 사진(P2)은 미착수.
+- **근거:** `docs/superpowers/specs/2026-10-30-ai-quote-automation-design.md`, `docs/superpowers/plans/2026-10-30-ai-quote-automation-p0-p1.md`, 브랜치 `quote-automation-ai-estimate` 커밋 `3570667..03145d8`.
+
+---
+
+## [설계 2026-10-30] AI 견적 자동화 — 설계·구현 계획 작성 완료
 
 - **Model:** Claude Code 팀장(Opus 5.5/high)이 기존 구조를 분석하고 설계·구현 계획을 작성했다. 코드 변경과 구현 분배는 하지 않았다.
 - **범위:** 입력창에 견적 설명·아이템을 글로 적으면 Claude API가 PBC 과거 견적 분석 가이드와 유사 견적을 참고해 고객용 라인, 내부 계산 행, 공식 선택 초안을 만든다. 사용자가 검토·적용한 뒤 앱에만 저장하고, Jobber Sync는 서버 검토 게이트를 거친다. P0(과거 견적 분석 가이드)+P1(메모 기반 초안)을 먼저 구현하고, OneDrive 현장 사진(P2)은 다음 단계로 둔다.
