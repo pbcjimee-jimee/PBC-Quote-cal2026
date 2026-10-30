@@ -287,7 +287,7 @@ describe('quote workspace structure', () => {
       .mockResolvedValueOnce(failArea ? { ok: false, error: 'Area unavailable' } : { ok: true, data: { id: 'ai-area-2', name: 'Hallway', scope: 'interior', active: true, position: 1 } })
     const mounted = await mountQuoteForm()
     try {
-      const notes = mounted.container.querySelectorAll('textarea').find(element => element.getAttribute('placeholder')?.startsWith('Interior repaint:'))!
+      const notes = mounted.container.querySelectorAll('textarea').find(element => element.getAttribute('placeholder')?.startsWith('e.g. Interior repaint:'))!
       expect(notes).toBeDefined()
       await act(async () => { notes.value = 'Repaint bedroom'; notes.dispatchEvent(new Event('input', { bubbles: true })) })
       await act(async () => findButton(mounted.container, 'Create draft')!.dispatchEvent(new Event('click', { bubbles: true })))
@@ -326,7 +326,7 @@ describe('quote workspace structure', () => {
     globalThis.fetch = vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => ({ ok: true, data: { runId: '00000000-0000-4000-8000-000000000001', draft: { ...aiDraft, areas: [], workItems: [] } } }) })
     const mounted = await mountQuoteForm()
     try {
-      const notes = mounted.container.querySelectorAll('textarea').find(element => element.getAttribute('placeholder')?.startsWith('Interior repaint:'))!
+      const notes = mounted.container.querySelectorAll('textarea').find(element => element.getAttribute('placeholder')?.startsWith('e.g. Interior repaint:'))!
       await act(async () => { notes.value = 'Repaint bedroom'; notes.dispatchEvent(new Event('input', { bubbles: true })) })
       await act(async () => findButton(mounted.container, 'Create draft')!.dispatchEvent(new Event('click', { bubbles: true })))
       await act(async () => findButton(mounted.container, 'Apply to quote')!.dispatchEvent(new Event('click', { bubbles: true })))

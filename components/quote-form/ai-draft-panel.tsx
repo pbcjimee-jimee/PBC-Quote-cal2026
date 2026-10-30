@@ -17,6 +17,7 @@ export interface AiDraftPanelProps {
 }
 
 type DraftResult = { runId: string; draft: AiQuoteDraft }
+const APPLIED_STATUS = 'AI draft applied - review the lines and prices before Save & Sync.'
 
 function Checklist({ title, items, selected, onToggle }: {
   title: string
@@ -24,13 +25,28 @@ function Checklist({ title, items, selected, onToggle }: {
   selected: Set<string>
   onToggle(id: string): void
 }) {
+  const id = useId()
+  const [expanded, setExpanded] = useState<Set<string>>(new Set())
+
+  function toggleRationale(key: string) {
+    setExpanded(current => {
+      const next = new Set(current)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
+  }
+
   return (
     <fieldset className="pbc-ai-draft__group">
       <legend>{title}</legend>
-      {items.length === 0 ? <p className="pbc-bodytext">None suggested.</p> : items.map(item => (
+      {items.length === 0 ? <p className="pbc-bodytext">None suggested.</p> : items.map((item, index) => (
         <div key={item.id} className="pbc-ai-draft__item">
-          <label><input type="checkbox" checked={selected.has(item.id)} onChange={() => onToggle(item.id)} /> <span>{item.label}</span></label>
-          <details><summary>Why?</summary><p>{item.rationale}</p></details>
+          <div className="pbc-ai-draft__row">
+            <label><input type="checkbox" checked={selected.has(item.id)} onChange={() => onToggle(item.id)} /> <span>{item.label}</span></label>
+            <button type="button" className="pbc-ai-draft__why" aria-expanded={expanded.has(item.id)} aria-controls={`${id}-rationale-${index}`} aria-label={`Why? ${item.label}`} onClick={() => toggleRationale(item.id)}>Why?</button>
+          </div>
+          {expanded.has(item.id) ? <p id={`${id}-rationale-${index}`} className="pbc-ai-draft__rationale">{item.rationale}</p> : null}
         </div>
       ))}
     </fieldset>
@@ -55,7 +71,7 @@ export function AiDraftPanel({ availability, hasActiveKnowledge, jobberContext, 
   const headingRef = useRef<HTMLHeadingElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const disabled = !availability.enabled || !hasActiveKnowledge || dailyLimit
-  const hasSelection = Object.values(selection).some(items => items.size > 0)
+  const hasSelection = [selection.publicLines, selection.workItems, selection.formulaScopes].some(items => items.size > 0)
 
   useEffect(() => () => requestRef.current?.abort(), [])
   useEffect(() => {
@@ -144,7 +160,7 @@ export function AiDraftPanel({ availability, hasActiveKnowledge, jobberContext, 
       await onApply({ ...result, selection, mode })
       setHasApplied(true)
       setResult(null)
-      setStatus('AI draft applied - review the lines and prices before Save & Sync.')
+      setStatus(APPLIED_STATUS)
       inputRef.current?.focus?.()
     } catch {
       setError('apply')
@@ -155,7 +171,7 @@ export function AiDraftPanel({ availability, hasActiveKnowledge, jobberContext, 
     }
   }
 
-  function toggle(group: keyof AiDraftSelection, key: string) {
+  function toggle(group: Exclude<keyof AiDraftSelection, 'areas'>, key: string) {
     setSelection(current => {
       const next = new Set<string>(current[group])
       if (next.has(key)) next.delete(key)
@@ -170,22 +186,21 @@ export function AiDraftPanel({ availability, hasActiveKnowledge, jobberContext, 
       <h2 id={`${id}-title`} className="pbc-paneltitle">Draft with AI</h2>
       <p>Describe the job and list the items to quote. AI fills the quote lines and prices for you to review.</p>
       {!availability.enabled ? <p className="pbc-bodytext">{availability.message}</p> : !hasActiveKnowledge ? <p className="pbc-bodytext">An approved AI guide is needed. <a href="/settings?tab=ai">Approve an AI guide in Settings &gt; AI</a></p> : null}
-      {appliedRunId ? <div className="pbc-alert pbc-alert--warning"><p>AI draft applied - review the lines and prices before Save &amp; Sync.</p><button type="button" className="pbc-btn pbc-btn--ghost pbc-btn--sm" onClick={onReallocate} disabled={loading || applying}>Recalculate AI prices</button></div> : null}
+      {appliedRunId ? <div className="pbc-alert pbc-alert--warning"><p>{APPLIED_STATUS}</p><button type="button" className="pbc-btn pbc-btn--ghost pbc-btn--sm" onClick={onReallocate} disabled={loading || applying}>Recalculate AI prices</button></div> : null}
       {!draft ? <>
         <label className="pbc-field__label" htmlFor={`${id}-notes`}>Job notes</label>
-        <textarea ref={inputRef} id={`${id}-notes`} className="pbc-textarea" rows={5} maxLength={8000} value={memo} onChange={event => setMemo(event.target.value.slice(0, 8000))} disabled={disabled || loading || applying} aria-describedby={`${id}-privacy ${id}-count`} placeholder="Interior repaint: 3 bedrooms walls and ceilings, hallway, living room walls only. Bed 2 cracks above window need patching. Doors and frames in enamel. Low sheen." />
+        <textarea ref={inputRef} id={`${id}-notes`} className="pbc-textarea" rows={5} maxLength={8000} value={memo} onChange={event => setMemo(event.target.value.slice(0, 8000))} disabled={disabled || loading || applying} aria-describedby={`${id}-privacy ${id}-count`} placeholder="e.g. Interior repaint: 3 bedrooms walls and ceilings, hallway, living room walls only. Bed 2 cracks above window need patching. Doors and frames in enamel. Low sheen." />
         <div className="pbc-ai-draft__notes"><span id={`${id}-privacy`}>Do not include client names or phone numbers.</span><span id={`${id}-count`}>{memo.length} / 8000</span></div>
         <div className="pbc-ai-draft__actions"><button type="button" className="pbc-btn pbc-btn--primary" disabled={disabled || loading || applying || !memo.trim()} onClick={() => void createDraft()}>{loading ? `Creating draft... ${elapsed}s` : appliedRunId || hasApplied ? 'Create new draft' : 'Create draft'}</button>{loading ? <button type="button" className="pbc-btn pbc-btn--ghost" onClick={cancel}>Cancel</button> : null}</div>
       </> : null}
-      <div aria-live="polite" aria-atomic="true"><p role="status">{status}</p>{error ? <button type="button" className="pbc-btn pbc-btn--ghost" disabled={applying} onClick={() => void (error === 'apply' ? apply() : createDraft())}>Try again</button> : null}</div>
+      <div aria-live="polite" aria-atomic="true"><p role="status" className={status === APPLIED_STATUS ? 'sr-only' : undefined}>{status}</p>{error ? <button type="button" className="pbc-btn pbc-btn--ghost" disabled={applying} onClick={() => void (error === 'apply' ? apply() : createDraft())}>Try again</button> : null}</div>
       {draft ? <div className="pbc-ai-draft__result" aria-live="polite">
         <h3 ref={headingRef} tabIndex={-1}>Review AI draft</h3>
         <p>{draft.summary}</p>
-        {draft.questions.length + draft.warnings.length > 0 ? <div className="pbc-alert pbc-alert--warning"><h4>Check before saving</h4><ul>{[...draft.questions, ...draft.warnings].map((text, index) => <li key={index}>{text}</li>)}</ul></div> : null}
+        {draft.questions.length + draft.warnings.length > 0 ? <div className="pbc-alert pbc-alert--warning pbc-ai-draft__warnings"><h4>Check before saving</h4><ul>{[...draft.questions, ...draft.warnings].map((text, index) => <li key={index}>{text}</li>)}</ul></div> : null}
         {draft.findings.length > 0 ? <><h4>Findings</h4><ul>{draft.findings.map((finding, index) => <li key={index}>{finding.area}: {finding.issue} — {finding.evidence} <span className="pbc-bodytext">({finding.confidence} confidence)</span></li>)}</ul></> : null}
-        <Checklist title="Areas" items={draft.areas.map(area => ({ id: `${area.scope}:${area.name}`, label: `${area.name} · ${AREA_SCOPE_LABELS[area.scope]}`, rationale: draft.workItems.find(item => item.areaScope === area.scope && item.areaName === area.name)?.rationale ?? draft.publicLines.find(line => line.areaName === area.name)?.rationale ?? 'Groups the suggested work in this area.' }))} selected={selection.areas} onToggle={key => toggle('areas', key)} />
         <Checklist title="Quote lines" items={draft.publicLines.map(line => ({ id: line.id, label: `${line.name} · Qty ${line.quantity}`, rationale: line.rationale }))} selected={selection.publicLines} onToggle={key => toggle('publicLines', key)} />
-        <Checklist title="Materials and labour" items={draft.workItems.map(item => ({ id: item.id, label: `${item.product.name} · ${item.areaName} · Qty ${item.quantity} · ${item.workingDays} days · ${item.labourPerDay} people`, rationale: item.rationale }))} selected={selection.workItems} onToggle={key => toggle('workItems', key)} />
+        <Checklist title="Materials and labour" items={draft.workItems.map(item => ({ id: item.id, label: `${item.product.name} · ${item.areaName} · Qty ${item.quantity} · ${item.workingDays} ${Number(item.workingDays) === 1 ? 'day' : 'days'} · ${item.labourPerDay} ${Number(item.labourPerDay) === 1 ? 'person' : 'people'}`, rationale: item.rationale }))} selected={selection.workItems} onToggle={key => toggle('workItems', key)} />
         <Checklist title="Formula picks" items={draft.formulaSelections.map(formula => ({ id: formula.scope, label: `${AREA_SCOPE_LABELS[formula.scope]}: low Formula ${formula.selectedMin}, high Formula ${formula.selectedMax}`, rationale: formula.rationale }))} selected={selection.formulaScopes} onToggle={key => toggle('formulaScopes', key)} />
         {hasExistingPublicLines ? <fieldset className="pbc-ai-draft__group"><legend>Apply quote lines</legend><label><input type="radio" name={`${id}-mode`} checked={mode === 'append'} onChange={() => setMode('append')} /> Add to existing lines</label><label><input type="radio" name={`${id}-mode`} checked={mode === 'replace'} onChange={() => setMode('replace')} /> Replace AI-editable lines</label></fieldset> : null}
         {!hasSelection ? <p className="pbc-bodytext" role="status">Select at least one item to apply.</p> : null}

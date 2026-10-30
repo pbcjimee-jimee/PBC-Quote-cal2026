@@ -63,9 +63,9 @@ describe('AI draft panel', () => {
   it('starts directly with the client directive without a UTF-8 BOM', () => {
     expect(readFileSync('components/quote-form/ai-draft-panel.tsx', 'utf8').startsWith("'use client'")).toBe(true)
   })
-  it('describes area scopes and low/high formula picks in plain words', async () => {
+  it('keeps areas implicit and describes low/high formula picks in plain words', async () => {
     await mount(); await generate()
-    expect(container.textContent).toContain('Bedroom · Interior')
+    expect(Array.from(container.querySelectorAll('legend')).map(legend => legend.textContent)).not.toContain('Areas')
     expect(container.textContent).toContain('Interior: low Formula 4, high Formula 1')
   })
   it('keeps selections independent and prevents applying an empty selection', async () => {
@@ -74,10 +74,10 @@ describe('AI draft panel', () => {
     await mount(); await generate()
     const checks = Array.from(container.querySelectorAll('input')).filter(input => input.getAttribute('type') === 'checkbox')
     await act(async () => { checks[1].checked = false; checks[1].dispatchEvent(new Event('change', { bubbles: true })) })
-    expect(checks.map(input => input.checked)).toEqual([true, false, true, true])
+    expect(checks.map(input => input.checked)).toEqual([true, false, true])
     await act(async () => { checks[2].checked = false; checks[2].dispatchEvent(new Event('change', { bubbles: true })) })
-    expect(checks.map(input => input.checked)).toEqual([true, false, false, true])
-    for (const index of [0, 3]) await act(async () => { checks[index].checked = false; checks[index].dispatchEvent(new Event('change', { bubbles: true })) })
+    expect(checks.map(input => input.checked)).toEqual([true, false, false])
+    await act(async () => { checks[0].checked = false; checks[0].dispatchEvent(new Event('change', { bubbles: true })) })
     expect(button('Apply to quote').disabled).toBe(true)
     expect(container.textContent).toContain('Select at least one item to apply.')
     await click('Apply to quote')
@@ -86,7 +86,7 @@ describe('AI draft panel', () => {
     expect(button('Apply to quote').disabled).toBe(false)
     expect(container.textContent).not.toContain('Select at least one item to apply.')
     await click('Apply to quote')
-    expect(onApply).toHaveBeenCalledWith(expect.objectContaining({ selection: { areas: new Set(['interior:Bedroom']), publicLines: new Set(), workItems: new Set(), formulaScopes: new Set() } }))
+    expect(onApply).toHaveBeenCalledWith(expect.objectContaining({ selection: { areas: new Set(['interior:Bedroom']), publicLines: new Set(['line-1']), workItems: new Set(), formulaScopes: new Set() } }))
   })
   it('explains preview and missing approved guide states', () => {
     expect(renderToStaticMarkup(createElement(AiDraftPanel, { ...props, availability: { enabled: false, reason: 'preview', message: 'AI quoting is unavailable in Preview.' } }))).toContain('AI quoting is unavailable in Preview.')
@@ -96,6 +96,7 @@ describe('AI draft panel', () => {
   })
   it('limits notes to 8000 characters and displays the count', async () => {
     await mount(); await notes('a'.repeat(8100))
+    expect(container.querySelectorAll('textarea')[0].getAttribute('placeholder')).toMatch(/^e\.g\. /)
     expect(container.querySelectorAll('textarea')[0].value.length).toBe(8000)
     expect(container.textContent).toContain('8000 / 8000')
   })
@@ -126,11 +127,45 @@ describe('AI draft panel', () => {
   })
   it('shows summary, findings, questions, warnings and selected groups with hidden rationale', async () => {
     await mount(); await generate()
-    for (const text of ['Repaint bedroom walls.', 'medium confidence', 'Confirm the colour.', 'Check preparation time.', 'Areas', 'Quote lines', 'Materials and labour', 'Formula picks']) expect(container.textContent).toContain(text)
+    for (const text of ['Repaint bedroom walls.', 'medium confidence', 'Confirm the colour.', 'Check preparation time.', 'Quote lines', 'Materials and labour', 'Formula picks']) expect(container.textContent).toContain(text)
     const checks = Array.from(container.querySelectorAll('input')).filter(input => input.getAttribute('type') === 'checkbox')
-    expect(checks).toHaveLength(3)
+    expect(checks.length).toBe(2)
     expect(checks.every(input => input.checked)).toBe(true)
-    expect(Array.from(container.querySelectorAll('details')).every(detail => !detail.hasAttribute('open'))).toBe(true)
+    const toggles = Array.from(container.querySelectorAll('button')).filter(element => element.textContent === 'Why?')
+    expect(toggles).toHaveLength(2)
+    expect(toggles.every(toggle => toggle.getAttribute('aria-expanded') === 'false')).toBe(true)
+    expect(container.textContent).not.toContain('Walls were requested.')
+  })
+  it('expands rationale below the item without changing its selection', async () => {
+    await mount(); await generate()
+    const toggle = button('Why?')
+    const row = toggle.parentElement!
+    expect(row.querySelectorAll('label')).toHaveLength(1)
+    await act(async () => toggle.dispatchEvent(new MouseEvent('click', { bubbles: true })))
+    expect(toggle.getAttribute('aria-expanded')).toBe('true')
+    const rationale = Array.from(container.querySelectorAll('p')).find(element => element.textContent === 'Walls were requested.')!
+    expect(rationale.getAttribute('id')).toBe(toggle.getAttribute('aria-controls'))
+    expect(rationale.parentElement).toBe(row.parentElement)
+    expect(row.querySelectorAll('input')[0].checked).toBe(true)
+    await act(async () => toggle.dispatchEvent(new MouseEvent('click', { bubbles: true })))
+    expect(toggle.getAttribute('aria-expanded')).toBe('false')
+    expect(container.textContent).not.toContain('Walls were requested.')
+  })
+  it.each([['1', '1', '1 day · 1 person'], ['1.5', '2', '1.5 days · 2 people'], ['2', '1.00', '2 days · 1.00 person']])('uses singular and plural units for %s days and %s people', async (workingDays, labourPerDay, expected) => {
+    const withWork: AiQuoteDraft = { ...draft, workItems: [{ id: 'work-1', product: { id: 'paint-1', name: 'Wall paint', manufacturer: null, type: null, unit: '4L', marketPrice: '80', actualPrice: '50', active: true, colorCode: null }, areaScope: 'interior', areaName: 'Bedroom', quantity: '1', workingDays, labourPerDay, rationale: 'Requested repaint.' }] }
+    fetchMock.mockResolvedValue({ ok: true, status: 200, json: async () => ({ ok: true, data: { runId: 'run-1', draft: withWork } }) })
+    await mount(); await generate()
+    expect(container.textContent).toContain(`Wall paint · Bedroom · Qty 1 · ${expected}`)
+  })
+  it('keeps the applied announcement available to screen readers without repeating visible banner text', async () => {
+    await mount(); await generate(); await click('Apply to quote')
+    await act(async () => root!.render(createElement(AiDraftPanel, { ...props, appliedRunId: 'run-1' })))
+    const messages = Array.from(container.querySelectorAll('p')).filter(element => element.textContent === 'AI draft applied - review the lines and prices before Save & Sync.')
+    expect(messages).toHaveLength(2)
+    expect(messages.filter(element => element.getAttribute('class') === 'sr-only')).toHaveLength(1)
+    const announcement = messages.find(element => element.getAttribute('role') === 'status')!
+    expect(announcement.getAttribute('class')).toBe('sr-only')
+    expect(announcement.parentElement?.getAttribute('aria-live')).toBe('polite')
   })
   it('only offers append and replace when quote lines exist and applies selected items', async () => {
     await mount({ hasExistingPublicLines: true }); await generate()
