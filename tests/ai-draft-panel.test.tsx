@@ -2,6 +2,7 @@ import { act, createElement, type ComponentProps } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { readFileSync } from 'node:fs'
 import { AiDraftPanel } from '@/components/quote-form/ai-draft-panel'
 import type { AiQuoteDraft } from '@/lib/ai-quote/types'
 import { installTestDom, TestElement } from '@/tests/helpers/test-dom'
@@ -59,6 +60,34 @@ async function notes(value = 'Repaint bedroom walls') {
 async function generate() { await notes(); await click('Create draft') }
 
 describe('AI draft panel', () => {
+  it('starts directly with the client directive without a UTF-8 BOM', () => {
+    expect(readFileSync('components/quote-form/ai-draft-panel.tsx', 'utf8').startsWith("'use client'")).toBe(true)
+  })
+  it('describes area scopes and low/high formula picks in plain words', async () => {
+    await mount(); await generate()
+    expect(container.textContent).toContain('Bedroom · Interior')
+    expect(container.textContent).toContain('Interior: low Formula 4, high Formula 1')
+  })
+  it('keeps selections independent and prevents applying an empty selection', async () => {
+    const withWork: AiQuoteDraft = { ...draft, workItems: [{ id: 'work-1', product: { id: 'paint-1', name: 'Wall paint', manufacturer: null, type: null, unit: '4L', marketPrice: '80', actualPrice: '50', active: true, colorCode: null }, areaScope: 'interior', areaName: 'Bedroom', quantity: '1', workingDays: '2', labourPerDay: '1', rationale: 'Requested repaint.' }] }
+    fetchMock.mockResolvedValue({ ok: true, status: 200, json: async () => ({ ok: true, data: { runId: 'run-1', draft: withWork } }) })
+    await mount(); await generate()
+    const checks = Array.from(container.querySelectorAll('input')).filter(input => input.getAttribute('type') === 'checkbox')
+    await act(async () => { checks[1].checked = false; checks[1].dispatchEvent(new Event('change', { bubbles: true })) })
+    expect(checks.map(input => input.checked)).toEqual([true, false, true, true])
+    await act(async () => { checks[2].checked = false; checks[2].dispatchEvent(new Event('change', { bubbles: true })) })
+    expect(checks.map(input => input.checked)).toEqual([true, false, false, true])
+    for (const index of [0, 3]) await act(async () => { checks[index].checked = false; checks[index].dispatchEvent(new Event('change', { bubbles: true })) })
+    expect(button('Apply to quote').disabled).toBe(true)
+    expect(container.textContent).toContain('Select at least one item to apply.')
+    await click('Apply to quote')
+    expect(onApply).not.toHaveBeenCalled()
+    await act(async () => { checks[0].checked = true; checks[0].dispatchEvent(new Event('change', { bubbles: true })) })
+    expect(button('Apply to quote').disabled).toBe(false)
+    expect(container.textContent).not.toContain('Select at least one item to apply.')
+    await click('Apply to quote')
+    expect(onApply).toHaveBeenCalledWith(expect.objectContaining({ selection: { areas: new Set(['interior:Bedroom']), publicLines: new Set(), workItems: new Set(), formulaScopes: new Set() } }))
+  })
   it('explains preview and missing approved guide states', () => {
     expect(renderToStaticMarkup(createElement(AiDraftPanel, { ...props, availability: { enabled: false, reason: 'preview', message: 'AI quoting is unavailable in Preview.' } }))).toContain('AI quoting is unavailable in Preview.')
     const html = renderToStaticMarkup(createElement(AiDraftPanel, { ...props, hasActiveKnowledge: false }))

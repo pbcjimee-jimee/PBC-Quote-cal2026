@@ -30,6 +30,8 @@ const settingsDataMocks = vi.hoisted(() => ({
   listQuoteLineTemplates: vi.fn(),
   listAiQuoteKnowledge: vi.fn(),
 }))
+const settingsNavigationMocks = vi.hoisted(() => ({ search: '' }))
+vi.mock('next/navigation', () => ({ useSearchParams: () => new URLSearchParams(settingsNavigationMocks.search) }))
 
 const dynamicTabMocks = vi.hoisted(() => ({
   registrations: 0,
@@ -122,6 +124,28 @@ function deferred<T>() {
   })
   return { promise, resolve }
 }
+
+it.each(['?tab=ai', '?tab=unknown', ''])('opens the requested initial settings tab for %s and loads AI data only when selected', async search => {
+  settingsNavigationMocks.search = search
+  settingsDataMocks.listAiQuoteKnowledge.mockReset().mockReturnValue(new Promise(() => {}))
+  const { cleanup } = installTestDom()
+  let root: Root | null = null
+  try {
+    const { createRoot } = await import('react-dom/client')
+    const container = document.createElement('div')
+    root = createRoot(container)
+    await act(async () => root!.render(createElement(SettingsForm, { initialSettings: DEFAULT_PRICING_SETTINGS, aiAvailability: { enabled: true } })))
+    const aiTab = Array.from(container.querySelectorAll('button')).find(button => button.getAttribute('id') === 'settings-section-ai')!
+    const labourTab = Array.from(container.querySelectorAll('button')).find(button => button.getAttribute('id') === 'settings-section-labour')!
+    expect(aiTab.getAttribute('aria-pressed')).toBe(String(search === '?tab=ai'))
+    expect(labourTab.getAttribute('aria-pressed')).toBe(String(search !== '?tab=ai'))
+    expect(settingsDataMocks.listAiQuoteKnowledge).toHaveBeenCalledTimes(search === '?tab=ai' ? 1 : 0)
+  } finally {
+    if (root) await act(async () => root!.unmount())
+    settingsNavigationMocks.search = ''
+    cleanup()
+  }
+})
 
 function submitTestForm(form: Element): void {
   const propsKey = Object.keys(form).find((key) => key.startsWith('__reactProps$'))

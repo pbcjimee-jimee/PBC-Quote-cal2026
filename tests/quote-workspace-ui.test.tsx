@@ -310,6 +310,7 @@ describe('quote workspace structure', () => {
         expect(new Decimal(stored.jobberQuoteLines[0].unitPrice).toFixed(2)).toBe(totals.finalTotal.div('1.10').toFixed(2))
         expect(mounted.container.textContent).toContain('AI draft applied -')
         const itemDays = findElement(mounted.container, 'input', input => input.value === '3')
+        expect(findElement(mounted.container, 'p', element => element.textContent === 'AI prices recalculated.')?.getAttribute('class')).toContain('pbc-alert--success')
         expect(itemDays).toBeDefined()
         await act(async () => { itemDays!.value = '6'; itemDays!.dispatchEvent(new Event('input', { bubbles: true })) })
         await act(async () => findButton(mounted.container, 'Recalculate AI prices')!.dispatchEvent(new Event('click', { bubbles: true })))
@@ -317,6 +318,19 @@ describe('quote workspace structure', () => {
         const recalculated = JSON.parse(mounted.storage.getItem(getQuoteDraftStorageKey('user-a'))!)
         expect(new Decimal(recalculated.jobberQuoteLines[0].unitPrice).gt(stored.jobberQuoteLines[0].unitPrice)).toBe(true)
       }
+    } finally { await mounted.cleanup(); globalThis.fetch = originalFetch }
+  })
+
+  it('keeps allocation problems styled as warnings', async () => {
+    const originalFetch = globalThis.fetch
+    globalThis.fetch = vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => ({ ok: true, data: { runId: '00000000-0000-4000-8000-000000000001', draft: { ...aiDraft, areas: [], workItems: [] } } }) })
+    const mounted = await mountQuoteForm()
+    try {
+      const notes = mounted.container.querySelectorAll('textarea').find(element => element.getAttribute('placeholder')?.startsWith('Interior repaint:'))!
+      await act(async () => { notes.value = 'Repaint bedroom'; notes.dispatchEvent(new Event('input', { bubbles: true })) })
+      await act(async () => findButton(mounted.container, 'Create draft')!.dispatchEvent(new Event('click', { bubbles: true })))
+      await act(async () => findButton(mounted.container, 'Apply to quote')!.dispatchEvent(new Event('click', { bubbles: true })))
+      expect(findElement(mounted.container, 'p', element => element.textContent === 'Add materials and labour before recalculating AI prices.')?.getAttribute('class')).toContain('pbc-alert--warning')
     } finally { await mounted.cleanup(); globalThis.fetch = originalFetch }
   })
 

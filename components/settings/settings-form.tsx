@@ -1,7 +1,8 @@
 'use client'
 
 import dynamic from 'next/dynamic'
-import { useRef, useState, useTransition } from 'react'
+import { useEffect, useEffectEvent, useRef, useState, useTransition } from 'react'
+import { useSearchParams } from 'next/navigation'
 import { createArea, deleteArea, listAreas, updateArea } from '@/lib/actions/areas'
 import { createProduct, deleteProduct, importProductsCSV, listProducts, updateProduct } from '@/lib/actions/products'
 import {
@@ -387,7 +388,8 @@ export function SettingsForm({
   aiAvailability = { enabled: false, reason: 'missing_key', message: 'AI quoting is not configured. Contact an administrator.' },
 }: SettingsFormProps) {
   const [isPending, startTransition] = useTransition()
-  const [activeTab, setActiveTab] = useState<SettingsTab>('labour')
+  const searchParams = useSearchParams()
+  const [activeTab, setActiveTab] = useState<SettingsTab>(() => searchParams?.get('tab') === 'ai' ? 'ai' : 'labour')
   const initiallyLoadedResources = useRef(new Set<SettingsResource>([
     ...(initialAreas !== undefined ? ['areas' as const] : []),
     ...(initialProducts !== undefined ? ['products' as const] : []),
@@ -531,6 +533,11 @@ export function SettingsForm({
       await loadSettingsResource('aiKnowledge', listAiQuoteKnowledge, setAiKnowledge)
     }
   }
+
+  const loadInitialAiTab = useEffectEvent(() => {
+    if (activeTab === 'ai') void ensureTabData('ai')
+  })
+  useEffect(() => { loadInitialAiTab() }, [])
 
   function setField(field: keyof typeof settings, value: string) {
     setSettings((current) => ({ ...current, [field]: value }))

@@ -1211,7 +1211,7 @@ export function QuoteForm({
             onApply={applyAiDraft}
             onReallocate={recalculateAiPrices}
           />
-          {aiPriceNotice ? <p className="pbc-alert pbc-alert--warning" role="status" aria-live="polite">{aiPriceNotice}</p> : null}
+          {aiPriceNotice ? <p className={`pbc-alert ${aiPriceNotice === 'AI prices recalculated.' ? 'pbc-alert--success' : 'pbc-alert--warning'}`} role="status" aria-live="polite">{aiPriceNotice}</p> : null}
         </section>
         <section id="quote-workspace-public" className="pbc-workspace pbc-quote-workspace-section" data-workspace-section="public" data-active={mobileState.activeSection === 'public'} tabIndex={-1} aria-label="Public quote">
           <JobberProductServiceEditor

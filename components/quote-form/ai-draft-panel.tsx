@@ -1,9 +1,10 @@
-﻿'use client'
+'use client'
 
 import { useEffect, useId, useRef, useState } from 'react'
 import type { AiQuoteAvailability } from '@/lib/ai-quote/config'
 import type { AiQuoteDraft, DraftJobberContext } from '@/lib/ai-quote/types'
 import type { AiDraftSelection, AiLineApplyMode } from './ai-draft-apply'
+import { AREA_SCOPE_LABELS } from '@/lib/areas/constants'
 
 export interface AiDraftPanelProps {
   availability: AiQuoteAvailability
@@ -54,6 +55,7 @@ export function AiDraftPanel({ availability, hasActiveKnowledge, jobberContext, 
   const headingRef = useRef<HTMLHeadingElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const disabled = !availability.enabled || !hasActiveKnowledge || dailyLimit
+  const hasSelection = Object.values(selection).some(items => items.size > 0)
 
   useEffect(() => () => requestRef.current?.abort(), [])
   useEffect(() => {
@@ -134,7 +136,7 @@ export function AiDraftPanel({ availability, hasActiveKnowledge, jobberContext, 
   }
 
   async function apply() {
-    if (!result || applyingRef.current) return
+    if (!result || applyingRef.current || !hasSelection) return
     applyingRef.current = true
     setApplying(true)
     setError(null)
@@ -181,12 +183,13 @@ export function AiDraftPanel({ availability, hasActiveKnowledge, jobberContext, 
         <p>{draft.summary}</p>
         {draft.questions.length + draft.warnings.length > 0 ? <div className="pbc-alert pbc-alert--warning"><h4>Check before saving</h4><ul>{[...draft.questions, ...draft.warnings].map((text, index) => <li key={index}>{text}</li>)}</ul></div> : null}
         {draft.findings.length > 0 ? <><h4>Findings</h4><ul>{draft.findings.map((finding, index) => <li key={index}>{finding.area}: {finding.issue} — {finding.evidence} <span className="pbc-bodytext">({finding.confidence} confidence)</span></li>)}</ul></> : null}
-        <Checklist title="Areas" items={draft.areas.map(area => ({ id: `${area.scope}:${area.name}`, label: `${area.name} (${area.scope})`, rationale: draft.workItems.find(item => item.areaScope === area.scope && item.areaName === area.name)?.rationale ?? draft.publicLines.find(line => line.areaName === area.name)?.rationale ?? 'Groups the suggested work in this area.' }))} selected={selection.areas} onToggle={key => toggle('areas', key)} />
+        <Checklist title="Areas" items={draft.areas.map(area => ({ id: `${area.scope}:${area.name}`, label: `${area.name} · ${AREA_SCOPE_LABELS[area.scope]}`, rationale: draft.workItems.find(item => item.areaScope === area.scope && item.areaName === area.name)?.rationale ?? draft.publicLines.find(line => line.areaName === area.name)?.rationale ?? 'Groups the suggested work in this area.' }))} selected={selection.areas} onToggle={key => toggle('areas', key)} />
         <Checklist title="Quote lines" items={draft.publicLines.map(line => ({ id: line.id, label: `${line.name} · Qty ${line.quantity}`, rationale: line.rationale }))} selected={selection.publicLines} onToggle={key => toggle('publicLines', key)} />
         <Checklist title="Materials and labour" items={draft.workItems.map(item => ({ id: item.id, label: `${item.product.name} · ${item.areaName} · Qty ${item.quantity} · ${item.workingDays} days · ${item.labourPerDay} people`, rationale: item.rationale }))} selected={selection.workItems} onToggle={key => toggle('workItems', key)} />
-        <Checklist title="Formula picks" items={draft.formulaSelections.map(formula => ({ id: formula.scope, label: `${formula.scope}: Formula ${formula.selectedMin} / ${formula.selectedMax}`, rationale: formula.rationale }))} selected={selection.formulaScopes} onToggle={key => toggle('formulaScopes', key)} />
+        <Checklist title="Formula picks" items={draft.formulaSelections.map(formula => ({ id: formula.scope, label: `${AREA_SCOPE_LABELS[formula.scope]}: low Formula ${formula.selectedMin}, high Formula ${formula.selectedMax}`, rationale: formula.rationale }))} selected={selection.formulaScopes} onToggle={key => toggle('formulaScopes', key)} />
         {hasExistingPublicLines ? <fieldset className="pbc-ai-draft__group"><legend>Apply quote lines</legend><label><input type="radio" name={`${id}-mode`} checked={mode === 'append'} onChange={() => setMode('append')} /> Add to existing lines</label><label><input type="radio" name={`${id}-mode`} checked={mode === 'replace'} onChange={() => setMode('replace')} /> Replace AI-editable lines</label></fieldset> : null}
-        <div className="pbc-ai-draft__actions"><button type="button" className="pbc-btn pbc-btn--primary" disabled={applying} onClick={() => void apply()}>{applying ? 'Applying draft...' : 'Apply to quote'}</button><button type="button" className="pbc-btn pbc-btn--ghost" disabled={applying} onClick={() => { setResult(null); setError(null); setStatus('Draft discarded.') }}>Discard</button></div>
+        {!hasSelection ? <p className="pbc-bodytext" role="status">Select at least one item to apply.</p> : null}
+        <div className="pbc-ai-draft__actions"><button type="button" className="pbc-btn pbc-btn--primary" disabled={applying || !hasSelection} onClick={() => void apply()}>{applying ? 'Applying draft...' : 'Apply to quote'}</button><button type="button" className="pbc-btn pbc-btn--ghost" disabled={applying} onClick={() => { setResult(null); setError(null); setStatus('Draft discarded.') }}>Discard</button></div>
       </div> : null}
     </section>
   )
