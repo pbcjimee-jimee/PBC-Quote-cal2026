@@ -31,18 +31,21 @@ vi.mock('@/lib/actions/auth', () => ({
 }))
 
 function getMediaBlock(css: string, query: string): string {
-  const start = css.indexOf(`@media (${query})`)
-  if (start < 0) return ''
-
-  const openingBrace = css.indexOf('{', start)
-  let depth = 0
-  for (let index = openingBrace; index < css.length; index += 1) {
-    if (css[index] === '{') depth += 1
-    if (css[index] === '}') depth -= 1
-    if (depth === 0) return css.slice(openingBrace + 1, index)
+  const marker = `@media (${query})`
+  const blocks: string[] = []
+  for (let start = css.indexOf(marker); start >= 0; start = css.indexOf(marker, start + marker.length)) {
+    const openingBrace = css.indexOf('{', start)
+    let depth = 0
+    for (let index = openingBrace; index < css.length; index += 1) {
+      if (css[index] === '{') depth += 1
+      if (css[index] === '}') depth -= 1
+      if (depth === 0) {
+        blocks.push(css.slice(openingBrace + 1, index))
+        break
+      }
+    }
   }
-
-  return ''
+  return blocks.join('\n')
 }
 
 describe('PWA mobile UX', () => {
@@ -238,10 +241,7 @@ describe('PWA mobile UX', () => {
 
   it('keeps component-specific 1080px layouts while moving shell transitions to lg', () => {
     const css = readFileSync('app/styles/components.css', 'utf8')
-    const legacyResponsive = css.slice(
-      css.indexOf('@media (max-width: 1080px)'),
-      css.indexOf('@media (max-width: 1023.98px)')
-    )
+    const legacyResponsive = getMediaBlock(css, 'max-width: 1080px')
     const lgResponsive = getMediaBlock(css, 'max-width: 1023.98px')
 
     expect(legacyResponsive).toContain('.pbc-grid')
