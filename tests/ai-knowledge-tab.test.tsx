@@ -6,9 +6,11 @@ import { installTestDom } from '@/tests/helpers/test-dom'
 import { buildKnowledgeStats } from '@/lib/ai-quote/knowledge-stats'
 import type { AiKnowledgeRecord } from '@/lib/actions/ai-quote'
 
-const mocks = vi.hoisted(() => ({ list: vi.fn(), update: vi.fn(), activate: vi.fn(), fetch: vi.fn() }))
+const mocks = vi.hoisted(() => ({ list: vi.fn(), update: vi.fn(), activate: vi.fn(), fetch: vi.fn(),
+  evalList: vi.fn(), evalPropose: vi.fn(), evalUpdate: vi.fn(), evalRemove: vi.fn() }))
 vi.mock('@/lib/actions/ai-quote', () => ({
   listAiQuoteKnowledge: mocks.list, updateAiQuoteKnowledgeDraft: mocks.update, activateAiQuoteKnowledge: mocks.activate,
+  listEvalCases: mocks.evalList, proposeEvalSet: mocks.evalPropose, updateEvalCaseMemo: mocks.evalUpdate, removeEvalCase: mocks.evalRemove,
 }))
 
 import AiKnowledgeTab from '@/components/settings/tabs/ai-knowledge-tab'
@@ -33,6 +35,7 @@ beforeEach(() => {
   mocks.list.mockResolvedValue({ ok: true, data: [draft] })
   mocks.update.mockResolvedValue({ ok: true, data: draft })
   mocks.activate.mockResolvedValue({ ok: true, data: { id } })
+  mocks.evalList.mockResolvedValue({ ok: true, data: [] })
 })
 afterEach(async () => {
   if (root) await act(async () => root!.unmount())
@@ -74,6 +77,24 @@ function pending<T>() {
 }
 
 describe('AI knowledge tab', () => {
+  it('places the optional collapsed accuracy check after the guide', () => {
+    const markup = renderToStaticMarkup(createElement(AiKnowledgeTab, { initialKnowledge: [{ ...draft, status: 'active' }], aiAvailability: { enabled: true } }))
+    expect(markup.indexOf('Accuracy check (optional)')).toBeGreaterThan(markup.indexOf('View active guide'))
+    expect(markup).toMatch(/<details class="pbc-ai-eval"><summary>Accuracy check \(optional\)/)
+  })
+
+  it('resets the optional check when a guide is first approved so saved samples load on opening', async () => {
+    await mount([draft])
+    const section = Array.from(container.querySelectorAll('details')).find(element => element.getAttribute('class') === 'pbc-ai-eval')!
+    await act(async () => { section.open = true; section.dispatchEvent(new Event('toggle')) })
+    expect(mocks.evalList).not.toHaveBeenCalled()
+    mocks.list.mockResolvedValue({ ok: true, data: [{ ...draft, status: 'active' }] })
+    await click('Approve and use')
+    const ready = Array.from(container.querySelectorAll('details')).find(element => element.getAttribute('class') === 'pbc-ai-eval')!
+    expect(ready.open).not.toBe(true)
+    await act(async () => { ready.open = true; ready.dispatchEvent(new Event('toggle')) })
+    expect(mocks.evalList).toHaveBeenCalledWith({ setLabel: 'Accuracy check' })
+  })
   it('shows the unavailable reason and disables Analyze', () => {
     const markup = renderToStaticMarkup(createElement(AiKnowledgeTab, {
       initialKnowledge: [], aiAvailability: { enabled: false, reason: 'missing_key', message: 'AI quoting is not configured.' },

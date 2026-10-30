@@ -6,6 +6,7 @@ import {
 } from '@/lib/actions/ai-quote'
 import type { AiQuoteAvailability } from '@/lib/ai-quote/config'
 import type { StatSummary } from '@/lib/ai-quote/knowledge-stats'
+import AiEvalSection from '@/components/settings/tabs/ai-eval-section'
 
 interface AiKnowledgeTabProps {
   initialKnowledge: AiKnowledgeRecord[]
@@ -241,6 +242,7 @@ export default function AiKnowledgeTab({ initialKnowledge, aiAvailability, onKno
             </table>
           </div>
         </details> : null}
+        <AiEvalSection key={active?.id ?? 'no-active-guide'} hasActiveGuide={Boolean(active)} aiAvailability={aiAvailability} />
       </div>
       {confirmation ? <div className="pbc-dialogbackdrop" role="presentation">
         <div className="pbc-dialog" role="dialog" aria-modal="true" aria-labelledby="ai-analyze-title" aria-describedby="ai-analyze-description" onKeyDown={event => {

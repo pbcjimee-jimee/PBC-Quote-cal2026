@@ -192,6 +192,27 @@ Jobs의 speculative 월간 조회는 저장된 Jobber 사용자 ID가 있을 때
 
 ---
 
+## AI 견적 자동화 (2026-10-30 로컬 구현)
+
+`lib/ai-quote/`는 과거 견적 가이드와 메모 기반 견적 초안, 정확도 비교를 담당한다. 금액은 기존 decimal.js 계산기가 산출하며 모델이 단가·총액을 정하지 않는다.
+
+| 모듈 | 역할 |
+|---|---|
+| `config.ts`, `anthropic.ts` | 환경별 가용성·모델·한도·프롬프트 버전, 서버 전용 구조화 Claude 호출과 오류 분류 |
+| `types.ts`, `pii.ts`, `cost.ts` | 공용 초안 타입, 연락처 마스킹, 토큰 비용 계산 |
+| `data.ts`, `runs.ts` | 고객 식별 컬럼을 제외한 자료·활성 카탈로그·비교 케이스 로더, 실행 시작·종료와 사용량 기록 |
+| `knowledge-stats.ts`, `knowledge-prompt.ts` | 과거 견적의 결정적 통계와 작성·가격 가이드 프롬프트 |
+| `similar-quotes.ts` | 유사 예시 선택; 비교 시 기준 견적 자신을 제외 |
+| `draft-schema.ts`, `draft-prompt.ts`, `draft-validation.ts`, `draft-service.ts` | 초안 구조·프롬프트·카탈로그 재검증·실행 수명 관리 |
+| `price-allocation.ts` | 계산기 총액을 고객용 라인에 결정적으로 배분 |
+| `eval-select.ts`, `eval-memo.ts`, `eval-metrics.ts` | scope별 샘플 선택, 정답 필드를 배제한 현장 메모 작성·누출 검사, 실제 계산기 기반 차이·중앙값·출시 기준 |
+
+- `/api/ai/knowledge`, `/api/ai/quote-draft`, `/api/ai/eval/memo`, `/api/ai/eval/run`은 가용성·admin·same-origin·종류별 한도를 확인한다. 비교는 요청 하나당 케이스 하나이며 UI가 순차 호출하고 취소 시 AbortSignal을 전달한다.
+- Settings > AI는 가이드 검토·승인 뒤 접힌 `Accuracy check (optional)`를 제공한다. `lib/actions/ai-quote.ts`가 제안·목록·메모 수정·케이스 제거를 담당하며 고객 이름은 화면에 전달하지 않는다. 메모 수정 시 기존 비교 결과를 비워 오래된 지표를 표시하지 않는다.
+- 비교 케이스는 `ai_quote_eval_cases`에, 누출 경고는 연결된 메모 실행의 `output`에 기록한다. 목록 액션은 현재 수정된 메모의 경고를 다시 계산한다. 기준 견적·계산 행·Jobber 라인은 변경하지 않는다.
+- 폼 적용은 `components/quote-form/ai-draft-apply.ts`가 기존 계산 행 형식과 영역을 재사용한다. UI는 저장 전 검토하고 Jobber Sync는 서버 검토 확인을 요구한다.
+- 이 상태는 로컬 구현이다. 운영 키·월 한도, 실제 호출 비용·정확도, 운영 DB 적용과 배포는 사용자 승인 및 별도 통합 검증이 필요하다.
+
 ## 관련 문서
 
 - DB 테이블·인덱스·RLS DDL: `docs/DB-SCHEMA.md`
