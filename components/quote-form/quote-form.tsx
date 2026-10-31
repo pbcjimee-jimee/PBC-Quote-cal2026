@@ -372,6 +372,7 @@ export function QuoteForm({
   const useMobileActions = useSyncExternalStore(subscribeToQuoteActionLayout, getQuoteMobileActionsSnapshot, () => false)
   const [aiLineMeta, setAiLineMeta] = useState<NonNullable<QuoteFormDraft['aiLineMeta']>>({})
   const [aiPriceNotice, setAiPriceNotice] = useState('')
+  const [aiPriceNoticeSuccess, setAiPriceNoticeSuccess] = useState(false)
   const aiApplyRequestRef = useRef(false)
   const createdAiAreasRef = useRef<AreaRecord[]>([])
   const [customerName, setCustomerName] = useState(initialQuote?.customerName ?? '')
@@ -920,7 +921,7 @@ export function QuoteForm({
     aiApplyRequestRef.current = true
     try {
       const updatedAreas = [...quoteAreas, ...createdAiAreasRef.current.filter(created => !quoteAreas.some(area => area.id === created.id))]
-      const plan = planAiDraftApplication({ draft, selection, mode, current: { materials, jobberQuoteLines, areaFormulaSelections, areas: updatedAreas } })
+      const plan = planAiDraftApplication({ draft, selection, mode, templates: quoteLineTemplates, current: { materials, jobberQuoteLines, areaFormulaSelections, areas: updatedAreas } })
       for (const area of plan.areasToCreate) {
         const result = await createQuoteArea(area.scope, area.name, false)
         if (!result.ok) throw new Error('Unable to create quote area')
@@ -931,9 +932,10 @@ export function QuoteForm({
       const metadata: NonNullable<QuoteFormDraft['aiLineMeta']> = Object.fromEntries(
         Object.entries(aiLineMeta).filter(([id]) => next.jobberQuoteLines.some(line => line.id === id)),
       )
-      draft.publicLines.filter(line => selection.publicLines.has(line.id)).forEach((line, index) => {
-        metadata[next.appliedLineIds[index]] = { priceSource: line.priceSource, priceWeight: line.priceWeight, catalogUnitPrice: line.catalogUnitPrice }
+      next.appliedLineIds.forEach(id => {
+        metadata[id] = { priceSource: 'none', priceWeight: 0, catalogUnitPrice: null }
       })
+      metadata[next.totalLineId] = { priceSource: 'allocated', priceWeight: 100, catalogUnitPrice: null }
       const nextTotals = calculateMainQuoteTotals({ materials: next.materials, selectedMin, selectedMax, areaFormulaSelections: next.areaFormulaSelections, settings })
       const allocated = reallocateAiLinePrices(next.jobberQuoteLines, metadata, nextTotals.finalTotal)
       setQuoteAreas(sortQuoteAreas(updatedAreas))
@@ -943,7 +945,12 @@ export function QuoteForm({
       setAiLineMeta(metadata)
       setAiDraftRunId(runId)
       setAiReviewConfirmed(false)
-      setAiPriceNotice(describeAiAllocation(allocated.result))
+      setAiPriceNotice([
+        describeAiAllocation(allocated.result),
+        next.removedDuplicateCount > 0 ? `Removed ${next.removedDuplicateCount} duplicate ${next.removedDuplicateCount === 1 ? 'line' : 'lines'}.` : '',
+        next.basicTemplateApplied ? '' : 'Basic template not found.',
+      ].filter(Boolean).join(' '))
+      setAiPriceNoticeSuccess(allocated.result.status === 'allocated' && allocated.result.residual === '0.00')
       createdAiAreasRef.current = []
     } finally {
       aiApplyRequestRef.current = false
@@ -954,6 +961,7 @@ export function QuoteForm({
     const allocated = reallocateAiLinePrices(jobberQuoteLines, aiLineMeta, totals.finalTotal)
     changeJobberQuoteLines(allocated.lines)
     setAiPriceNotice(describeAiAllocation(allocated.result))
+    setAiPriceNoticeSuccess(allocated.result.status === 'allocated' && allocated.result.residual === '0.00')
   }
 
   function applyJobberDraftToForm(draft: JobberQuoteDraft, lookup: string) {
@@ -1211,7 +1219,7 @@ export function QuoteForm({
             onApply={applyAiDraft}
             onReallocate={recalculateAiPrices}
           />
-          {aiPriceNotice ? <p className={`pbc-alert ${aiPriceNotice === 'AI prices recalculated.' ? 'pbc-alert--success' : 'pbc-alert--warning'}`} role="status" aria-live="polite">{aiPriceNotice}</p> : null}
+          {aiPriceNotice ? <p className={`pbc-alert ${aiPriceNoticeSuccess ? 'pbc-alert--success' : 'pbc-alert--warning'}`} role="status" aria-live="polite">{aiPriceNotice}</p> : null}
         </section>
         <section id="quote-workspace-public" className="pbc-workspace pbc-quote-workspace-section" data-workspace-section="public" data-active={mobileState.activeSection === 'public'} tabIndex={-1} aria-label="Public quote">
           <JobberProductServiceEditor

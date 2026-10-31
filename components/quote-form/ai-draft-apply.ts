@@ -5,6 +5,7 @@ import {
 } from '@/lib/ai-quote/price-allocation'
 import type { AiPriceSource, AiQuoteDraft, AiQuoteDraftWorkItem, AiScope } from '@/lib/ai-quote/types'
 import type { AreaRecord } from '@/lib/areas/types'
+import type { QuoteLineTemplateRecord } from '@/lib/quote-line-templates/types'
 import { createProductMaterialItem } from './material-item-factory'
 import type { AreaFormulaSelections, JobberQuoteLineItemDraft, MaterialItem } from './types'
 
@@ -24,11 +25,18 @@ export interface AiDraftApplyPlan {
     jobberQuoteLines: JobberQuoteLineItemDraft[]
     areaFormulaSelections: AreaFormulaSelections
     appliedLineIds: string[]
+    totalLineId: string
+    removedDuplicateCount: number
+    basicTemplateApplied: boolean
   }
 }
 
 function areaKey(scope: AiScope, name: string): string {
   return `${scope}:${name.trim().toLowerCase()}`
+}
+
+function lineKey(name: string): string {
+  return name.trim().replace(/\s+/g, ' ').toLowerCase()
 }
 
 export function createAiDraftMaterialItem(
@@ -51,6 +59,7 @@ export function planAiDraftApplication(input: {
   draft: AiQuoteDraft
   selection: AiDraftSelection
   mode: AiLineApplyMode
+  templates?: QuoteLineTemplateRecord[]
   current: {
     materials: MaterialItem[]
     jobberQuoteLines: JobberQuoteLineItemDraft[]
@@ -62,6 +71,7 @@ export function planAiDraftApplication(input: {
   const { draft, selection, mode, current, generateId = () => crypto.randomUUID() } = input
   const workItems = draft.workItems.filter((item) => selection.workItems.has(item.id))
   const publicLines = draft.publicLines.filter((line) => selection.publicLines.has(line.id))
+  const basicTemplate = input.templates?.find(template => /basic/i.test(template.name))
   const knownAreaKeys = new Set(current.areas.map((area) => areaKey(area.scope, area.name)))
   const areasToCreate: AiDraftApplyPlan['areasToCreate'] = []
   const requiredAreas = [
@@ -85,17 +95,58 @@ export function planAiDraftApplication(input: {
         const area = areaRecords.get(areaKey(item.areaScope, item.areaName))
         return createAiDraftMaterialItem(item, area ?? { scope: item.areaScope, name: item.areaName.trim() })
       })
-      const jobberQuoteLines: JobberQuoteLineItemDraft[] = publicLines.map((line) => ({
-        id: generateId(),
-        kind: line.kind,
-        name: line.name,
-        description: line.description,
-        quantity: line.quantity,
-        unitPrice: '0.00',
-        taxable: line.taxable,
-        clientVisible: true,
-        linkedProductOrServiceId: line.productServiceId ?? undefined,
-      }))
+      const jobberQuoteLines: JobberQuoteLineItemDraft[] = []
+      const appliedLineIds: string[] = []
+      const seenKeys = new Set<string>()
+      let removedDuplicateCount = 0
+      for (const line of current.jobberQuoteLines) {
+        if (mode !== 'append' && !line.jobberLineItemId) continue
+        const key = lineKey(line.name)
+        if (seenKeys.has(key) && !line.jobberLineItemId) {
+          removedDuplicateCount++
+          continue
+        }
+        seenKeys.add(key)
+        jobberQuoteLines.push(line)
+      }
+      const totalIndex = jobberQuoteLines.findIndex(line => line.kind === 'line_item' && line.optional !== true && /^total\b/i.test(line.name.trim()))
+      const existingTotal = totalIndex < 0 ? undefined : jobberQuoteLines.splice(totalIndex, 1)[0]
+      // Saved Basic wording takes priority over AI versions of standard terms.
+      const templateKeys = new Set(basicTemplate?.items.map(line => lineKey(line.name)))
+      for (const line of publicLines) {
+        const key = lineKey(line.name)
+        if (seenKeys.has(key) || templateKeys.has(key)) {
+          removedDuplicateCount++
+          continue
+        }
+        seenKeys.add(key)
+        const id = generateId()
+        appliedLineIds.push(id)
+        jobberQuoteLines.push({
+          id, kind: line.kind, name: line.name, description: line.description,
+          quantity: line.quantity, unitPrice: '0.00', taxable: line.taxable, clientVisible: true,
+          linkedProductOrServiceId: line.productServiceId ?? undefined,
+        })
+      }
+      for (const line of basicTemplate?.items ?? []) {
+        const key = lineKey(line.name)
+        if (seenKeys.has(key)) {
+          removedDuplicateCount++
+          continue
+        }
+        seenKeys.add(key)
+        jobberQuoteLines.push({
+          id: generateId(), kind: line.kind, name: line.name, description: line.description ?? '',
+          quantity: line.quantity ?? '1', unitPrice: line.unitPrice ?? '0',
+          taxable: line.kind === 'line_item' ? line.taxable : false, clientVisible: line.clientVisible,
+          linkedProductOrServiceId: line.linkedProductOrServiceId ?? undefined,
+        })
+      }
+      const totalLine: JobberQuoteLineItemDraft = existingTotal ?? {
+        id: generateId(), kind: 'line_item', name: 'Total', description: '', quantity: '1',
+        unitPrice: '0.00', taxable: true, clientVisible: true,
+      }
+      jobberQuoteLines.push(totalLine)
       const areaFormulaSelections = { ...current.areaFormulaSelections }
       for (const formula of draft.formulaSelections) {
         if (selection.formulaScopes.has(formula.scope)) {
@@ -108,12 +159,12 @@ export function planAiDraftApplication(input: {
 
       return {
         materials: [...current.materials, ...materials],
-        jobberQuoteLines: [
-          ...current.jobberQuoteLines.filter((line) => mode === 'append' || Boolean(line.jobberLineItemId)),
-          ...jobberQuoteLines,
-        ],
+        jobberQuoteLines,
         areaFormulaSelections,
-        appliedLineIds: jobberQuoteLines.map((line) => line.id),
+        appliedLineIds,
+        totalLineId: totalLine.id,
+        removedDuplicateCount,
+        basicTemplateApplied: Boolean(basicTemplate),
       }
     },
   }

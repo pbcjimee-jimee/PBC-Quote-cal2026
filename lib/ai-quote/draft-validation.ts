@@ -69,6 +69,8 @@ export function validateAiQuoteDraft(
 
   const publicLines: AiQuoteDraft['publicLines'] = []
   for (const line of cap(input.publicLines, 60, 'Public lines')) {
+    const service = line.productServiceId === null ? undefined : services.get(line.productServiceId)
+    if (/^total\b/i.test(line.name.trim()) || /^total\b/i.test(service?.name.trim() ?? '')) continue
     const amount = quantity(line.quantity)
     const name = line.name.trim().slice(0, 200)
     if (amount === null) continue
@@ -76,20 +78,15 @@ export function validateAiQuoteDraft(
       warnings.push('A public line with an empty name was removed.')
       continue
     }
-    const service = line.productServiceId === null ? undefined : services.get(line.productServiceId)
     if (line.productServiceId !== null && !service) warnings.push('An unavailable product/service link was removed.')
-    const priceSource = line.kind === 'text' ? 'none'
-      : line.priceSource === 'catalog' && !service ? 'allocated' : line.priceSource
     // A linked service keeps its stored name and description verbatim, like picking it by hand.
     publicLines.push({
-      ...line, id: createId(),
+      ...line, id: createId(), kind: 'text',
       name: service ? service.name : name,
       description: service?.description ? service.description : line.description.slice(0, 4000),
       quantity: amount,
-      productServiceId: service?.id ?? null, priceSource,
-      priceWeight: Number.isFinite(line.priceWeight) ? Math.min(100, Math.max(0, line.priceWeight)) : 0,
-      catalogUnitPrice: priceSource === 'catalog' ? service?.unitPrice ?? null : null,
-      taxable: line.kind === 'text' ? false : service?.taxable ?? true,
+      productServiceId: service?.id ?? null, priceSource: 'none', priceWeight: 0,
+      catalogUnitPrice: null, taxable: false,
       areaName: line.areaName?.trim().slice(0, 80) || null,
     })
   }

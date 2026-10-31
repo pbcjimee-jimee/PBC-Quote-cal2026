@@ -39,11 +39,11 @@ describe('draft output schema', () => {
 })
 
 describe('draft server validation', () => {
-  it('nulls unknown productServiceId and switches catalog pricing to allocated with a warning', () => {
+  it('nulls unknown productServiceId and keeps text pricing with a warning', () => {
     const input = raw()
     input.publicLines[0].productServiceId = 'unknown'
     const result = validate(input)
-    expect(result.publicLines[0]).toMatchObject({ productServiceId: null, priceSource: 'allocated', catalogUnitPrice: null })
+    expect(result.publicLines[0]).toMatchObject({ productServiceId: null, priceSource: 'none', catalogUnitPrice: null })
     expect(result.warnings.length).toBeGreaterThan(0)
   })
 
@@ -72,8 +72,25 @@ describe('draft server validation', () => {
     expect(validate().publicLines[0]).toMatchObject({ name: 'Painting', description: 'Prepare and paint' })
   })
 
-  it('fills catalogUnitPrice and taxable from the catalog', () => {
-    expect(validate().publicLines[0]).toMatchObject({ id: 'id-1', catalogUnitPrice: '321.09', taxable: false })
+  it('forces public lines to descriptive text without catalog prices or tax', () => {
+    const input = raw()
+    input.publicLines.push({ ...input.publicLines[0], productServiceId: null, priceSource: 'allocated' })
+    const result = validate(input, { ...catalog, productServices: [{ ...catalog.productServices[0], taxable: true }] })
+    expect(result.publicLines).toHaveLength(2)
+    for (const line of result.publicLines) {
+      expect(line).toMatchObject({ kind: 'text', priceSource: 'none', priceWeight: 0, catalogUnitPrice: null, taxable: false })
+    }
+  })
+
+  it('silently drops Total lines including linked services named Total', () => {
+    const input = raw()
+    input.publicLines.push(...[' Total ', 'TOTAL ex GST', 'Total: painting'].map(name => ({ ...input.publicLines[0], productServiceId: null, name })))
+    input.publicLines.push({ ...input.publicLines[0], productServiceId: 'total-service' })
+    input.publicLines.push({ ...input.publicLines[0], productServiceId: null, name: 'Totally painted' })
+    const result = validate(input, { ...catalog, productServices: [...catalog.productServices,
+      { ...catalog.productServices[0], id: 'total-service', name: 'Total' }] })
+    expect(result.publicLines.map(line => line.name)).toEqual(['Painting', 'Totally painted'])
+    expect(result.warnings).toEqual([])
   })
 
   it('attaches the full ProductRecord to each work item', () => {
@@ -120,12 +137,12 @@ describe('draft server validation', () => {
     expect(result.workItems[0]).toMatchObject({ quantity: '2.35', workingDays: '1.01', labourPerDay: '2.34' })
   })
 
-  it('clamps priceWeight to 0..100 and forces text lines to priceSource none', () => {
+  it('zeros priceWeight regardless of model kind or weight', () => {
     const input = raw()
     input.publicLines[0].priceWeight = 110
     input.publicLines.push({ ...input.publicLines[0], priceWeight: -1 }, { ...input.publicLines[0], kind: 'text' })
     const result = validate(input)
-    expect(result.publicLines.map(line => line.priceWeight)).toEqual([100, 0, 100])
+    expect(result.publicLines.map(line => line.priceWeight)).toEqual([0, 0, 0])
     expect(result.publicLines[2]).toMatchObject({ priceSource: 'none', catalogUnitPrice: null })
   })
 

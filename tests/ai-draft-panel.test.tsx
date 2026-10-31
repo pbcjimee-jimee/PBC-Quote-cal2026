@@ -68,6 +68,13 @@ describe('AI draft panel', () => {
     expect(Array.from(container.querySelectorAll('legend')).map(legend => legend.textContent)).not.toContain('Areas')
     expect(container.textContent).toContain('Interior: low Formula 4, high Formula 1')
   })
+  it('explains automatic Basic template and Total lines below the quote checklist', async () => {
+    await mount(); await generate()
+    const note = Array.from(container.querySelectorAll('p')).find(element => element.textContent === 'The Basic template and a Total line are added automatically.')
+    expect(note?.getAttribute('class')).toContain('pbc-bodytext')
+    expect(container.textContent.indexOf('Quote lines')).toBeLessThan(container.textContent.indexOf(note!.textContent))
+    expect(container.textContent.indexOf(note!.textContent)).toBeLessThan(container.textContent.indexOf('Materials and labour'))
+  })
   it('keeps selections independent and prevents applying an empty selection', async () => {
     const withWork: AiQuoteDraft = { ...draft, workItems: [{ id: 'work-1', product: { id: 'paint-1', name: 'Wall paint', manufacturer: null, type: null, unit: '4L', marketPrice: '80', actualPrice: '50', active: true, colorCode: null }, areaScope: 'interior', areaName: 'Bedroom', quantity: '1', workingDays: '2', labourPerDay: '1', rationale: 'Requested repaint.' }] }
     fetchMock.mockResolvedValue({ ok: true, status: 200, json: async () => ({ ok: true, data: { runId: 'run-1', draft: withWork } }) })
@@ -208,9 +215,16 @@ describe('AI draft panel', () => {
     expect(container.textContent).not.toContain('AI draft applied -')
   })
   it('explains the daily limit and keeps generation disabled', async () => {
-    fetchMock.mockResolvedValue({ ok: false, status: 429, json: async () => ({ ok: false, error: 'limit' }) })
+    fetchMock.mockResolvedValue({ ok: false, status: 429, json: async () => ({ ok: false }) })
     await mount(); await generate()
     expect(container.textContent).toContain('daily limit')
+    expect(button('Create draft').disabled).toBe(true)
+  })
+  it('shows the server limit message such as the monthly budget', async () => {
+    const message = 'Monthly AI budget reached ($30.00 of $30.00). Change it in Settings > AI.'
+    fetchMock.mockResolvedValue({ ok: false, status: 429, json: async () => ({ ok: false, error: message }) })
+    await mount(); await generate()
+    expect(container.textContent).toContain(message)
     expect(button('Create draft').disabled).toBe(true)
   })
   it('times out after five minutes and ignores a late response', async () => {
