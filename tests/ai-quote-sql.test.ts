@@ -17,7 +17,7 @@ describe.skipIf(!pgliteAvailable)('AI quote migration on ephemeral PostgreSQL', 
   let version = 0
 
   beforeAll(async () => {
-    db = await bootstrap({ through: '20261030235959' })
+    db = await bootstrap({ through: '20261031235959' })
     await db.exec(`CREATE OR REPLACE FUNCTION auth.uid() RETURNS UUID LANGUAGE sql STABLE AS $$
       SELECT nullif(current_setting('request.jwt.claim.sub', true), '')::UUID $$;
       INSERT INTO auth.users(id,email) VALUES ('${otherId}','other@example.test'),('${supervisorId}','supervisor@example.test');
@@ -51,6 +51,41 @@ describe.skipIf(!pgliteAvailable)('AI quote migration on ephemeral PostgreSQL', 
       (${entries.map(([key]) => key).join(',')}) VALUES (${entries.map((_, index) => `$${index + 1}`).join(',')}) RETURNING id,created_by`,
     entries.map(([, value]) => typeof value === 'object' && value !== null ? JSON.stringify(value) : value))).rows[0]
   }
+
+  it('seeds a single monthly budget row with a 30 dollar default', async () => {
+    expect((await db.query('SELECT id,monthly_budget_usd FROM public.ai_quote_settings')).rows).toEqual([{ id: true, monthly_budget_usd: '30.00' }])
+  })
+
+  it('hides budget settings and prevents updates for non-admins', async () => {
+    await login(supervisorId)
+    expect((await db.query('SELECT * FROM public.ai_quote_settings')).rows).toEqual([])
+    expect((await db.query('UPDATE public.ai_quote_settings SET monthly_budget_usd=50 RETURNING id')).rows).toEqual([])
+  })
+
+  it('lets admins update the limit while forcing actor, timestamp and singleton identity', async () => {
+    expect((await db.query(`UPDATE public.ai_quote_settings SET id=false,monthly_budget_usd=50,updated_by=$1,updated_at='2000-01-01'
+      RETURNING id,monthly_budget_usd,updated_by,updated_at`, [otherId])).rows).toEqual([
+      { id: true, monthly_budget_usd: '50.00', updated_by: actorId, updated_at: expect.any(Date) },
+    ])
+    await db.exec('UPDATE public.ai_quote_settings SET monthly_budget_usd=30')
+  })
+
+  it.each([0, 1001])('rejects invalid monthly budget %s', async value => {
+    await expect(db.query('UPDATE public.ai_quote_settings SET monthly_budget_usd=$1', [value])).rejects.toMatchObject({ code: '23514' })
+  })
+
+  it.each(['anon', 'service_role'])('denies budget access to %s', async role => {
+    await db.exec(`RESET ROLE; SET ROLE ${role}`)
+    await expect(db.query('SELECT * FROM public.ai_quote_settings')).rejects.toMatchObject({ code: '42501' })
+  })
+
+  it('does not permit client insert, delete or direct trigger execution', async () => {
+    await expect(db.query('INSERT INTO public.ai_quote_settings DEFAULT VALUES')).rejects.toMatchObject({ code: '42501' })
+    await expect(db.query('DELETE FROM public.ai_quote_settings')).rejects.toMatchObject({ code: '42501' })
+    expect((await db.query(`SELECT prosecdef,proconfig,has_function_privilege('authenticated',p.oid,'execute') AS executable
+      FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE n.nspname='app_auth' AND p.proname='guard_ai_quote_settings_update'`)).rows)
+      .toEqual([{ prosecdef: false, proconfig: ['search_path=""'], executable: false }])
+  })
 
   it('lets an admin insert a run attributed to themselves', async () => {
     expect((await insert('ai_quote_runs')).created_by).toBe(actorId)

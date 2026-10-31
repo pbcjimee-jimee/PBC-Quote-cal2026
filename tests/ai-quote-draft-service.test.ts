@@ -57,7 +57,7 @@ describe('generate quote draft', () => {
     await generateQuoteDraft(supabase, { ...input(), kind: 'eval_draft', memo })
     expect(mocks.startRun).toHaveBeenCalledExactlyOnceWith(supabase, {
       kind: 'eval_draft', memo: 'call [phone] or [email] about walls', knowledgeId: 'guide-1',
-      jobberQuoteId: null, promptVersion: 'quote-draft-v2', model: 'claude-opus-5-5',
+      jobberQuoteId: null, promptVersion: 'quote-draft-v3', model: 'claude-opus-5-5',
     })
     const request = mocks.runStructuredClaudeRequest.mock.calls[0][1]
     expect(JSON.stringify(request)).not.toMatch(/0412|paint@example.com/)
@@ -88,7 +88,7 @@ describe('generate quote draft', () => {
     const result = await generateQuoteDraft(supabase, { ...input(), signal })
     expect(result.ok).toBe(true)
     if (!result.ok) throw new Error('Expected success')
-    expect(result.draft.publicLines[0]).toMatchObject({ productServiceId: null, priceSource: 'allocated', catalogUnitPrice: null })
+    expect(result.draft.publicLines[0]).toMatchObject({ kind: 'text', productServiceId: null, priceSource: 'none', priceWeight: 0, catalogUnitPrice: null, taxable: false })
     expect(result.draft.warnings.length).toBeGreaterThan(0)
     expect(mocks.runStructuredClaudeRequest).toHaveBeenCalledWith(client, expect.objectContaining({ maxTokens: 32000, signal }))
     expect(mocks.createAnthropicClient).not.toHaveBeenCalled()

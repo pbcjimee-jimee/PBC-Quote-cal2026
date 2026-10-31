@@ -2,10 +2,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { AUTHENTICATION_REQUIRED_ERROR } from '@/lib/security/auth-policy'
 
 const mocks = vi.hoisted(() => ({
-  availability: vi.fn(), requireRole: vi.fn(), createClient: vi.fn(), loadKnowledgeSource: vi.fn(),
+  budget: vi.fn(), availability: vi.fn(), requireRole: vi.fn(), createClient: vi.fn(), loadKnowledgeSource: vi.fn(),
   loadDraftCatalog: vi.fn(), countRecentRuns: vi.fn(), startRun: vi.fn(), finishRun: vi.fn(),
   insertKnowledgeDraft: vi.fn(), createAnthropicClient: vi.fn(), runStructuredClaudeRequest: vi.fn(),
 }))
+vi.mock('@/lib/ai-quote/budget', () => ({ getAiMonthlyBudgetStatus: mocks.budget }))
 vi.mock('@/lib/ai-quote/config', () => ({
   getAiQuoteAvailability: mocks.availability, AI_QUOTE_MODEL: 'claude-opus-5-5',
   AI_QUOTE_PROMPT_VERSIONS: { knowledge: 'knowledge-v1' }, AI_QUOTE_LIMITS: { knowledgeBuildsPerDay: 3, knowledgeMaxTokens: 64000 },
@@ -33,6 +34,7 @@ const request = (signal?: AbortSignal, site = 'same-origin') => new Request('htt
 
 beforeEach(() => {
   vi.resetAllMocks()
+  mocks.budget.mockResolvedValue({ budgetUsd: '30.00', spentUsd: '1.00', remainingUsd: '29.00', reached: false })
   vi.spyOn(console, 'error').mockImplementation(() => {})
   mocks.availability.mockReturnValue({ enabled: true })
   mocks.requireRole.mockResolvedValue({ ok: true, user: { id: 'admin-1' }, profile: { role: 'admin' } })
@@ -144,6 +146,16 @@ describe('POST knowledge', () => {
     })
     expect((await POST(request(controller.signal))).status).toBe(504)
     expect(mocks.finishRun).toHaveBeenCalledExactlyOnceWith(supabase, 'run-1', expect.objectContaining({ status: 'failed', errorCode: 'timeout' }))
+  })
+
+  it('returns the monthly budget message before starting any AI call', async () => {
+    mocks.budget.mockResolvedValue({ budgetUsd: '30.00', spentUsd: '30.01', remainingUsd: '0.00', reached: true })
+    const response = await POST(request())
+    expect(response.status).toBe(429)
+    expect(await response.json()).toMatchObject({ ok: false, error: expect.stringContaining('Monthly AI budget reached ($30.01 of $30.00). Change it in Settings > AI.') })
+    expect(mocks.budget).toHaveBeenCalledWith(supabase)
+    expect(mocks.startRun).not.toHaveBeenCalled()
+    expect(mocks.runStructuredClaudeRequest).not.toHaveBeenCalled()
   })
 
   it('exports a 300 second maximum duration', () => expect(maxDuration).toBe(300))

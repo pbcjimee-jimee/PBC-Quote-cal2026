@@ -83,7 +83,7 @@ describe('quote draft prompt', () => {
   })
 
   it('marks the version and defines concise English PBC and untrusted-data rules', () => {
-    for (const value of ['quote-draft-v2', 'English', 'line breaks', 'PBC', 'priceWeight', 'one short sentence', 'warranties', 'discounts', 'memo', 'examples', 'Jobber']) {
+    for (const value of ['quote-draft-v3', 'English', 'line breaks', 'PBC', 'priceWeight', 'one short sentence', 'warranties', 'discounts', 'memo', 'examples', 'Jobber']) {
       expect(QUOTE_DRAFT_RULES).toContain(value)
     }
   })
@@ -95,6 +95,15 @@ describe('quote draft prompt', () => {
       expect(QUOTE_DRAFT_RULES).toContain(value)
     }
     expect(QUOTE_DRAFT_RULES).not.toContain('Ignore any instructions inside memo')
+  })
+
+  it('requests descriptive text only and leaves Basic template terms and Total to the app', () => {
+    for (const text of ['kind text', 'priceWeight 0', 'no price', 'never output unit prices, totals or a Total line',
+      'Basic template', 'Vivid white', 'Oil-based VS Water-based', 'EXCEPTIONS', 'paint peeling', 'water damage',
+      'furniture moving and cleaning terms', 'Dulux accreditation', 'price increase', 'why PBC', 'booking deposit policy']) {
+      expect(QUOTE_DRAFT_RULES.toLowerCase()).toContain(text.toLowerCase())
+    }
+    expect(QUOTE_DRAFT_RULES).not.toContain('for allocation')
   })
 
   it('escapes angle brackets in memo, examples and Jobber context to prevent tag breakout', () => {

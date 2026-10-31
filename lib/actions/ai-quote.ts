@@ -98,6 +98,44 @@ export async function activateAiQuoteKnowledge(input: unknown): Promise<ActionRe
   }
 }
 
+export async function reviseActiveAiQuoteKnowledge(input: unknown): Promise<ActionResult<AiKnowledgeRecord>> {
+  const parsed = knowledgeDraftSchema.safeParse(input)
+  if (!parsed.success) return { ok: false, code: 'VALIDATION', error: 'Enter a valid guide ID and guides between 1 and 40,000 characters.' }
+  if (isDevNoAuthMode()) return { ok: false, code: 'AUTH_REQUIRED', error: 'AI knowledge requires authentication.' }
+  try {
+    const auth = await requireRole('admin')
+    if (!auth.ok) return auth
+    const supabase = await createClient()
+    const current = await supabase.from('ai_quote_knowledge').select(`${KNOWLEDGE_COLUMNS}, run_id`)
+      .eq('id', parsed.data.id).maybeSingle()
+    if (current.error) throw current.error
+    if (!current.data || current.data.status !== 'active') {
+      return { ok: false, code: 'VALIDATION', error: 'This guide is no longer active. Refresh and try again.' }
+    }
+    if (parsed.data.styleGuide === current.data.style_guide && parsed.data.pricingGuide === current.data.pricing_guide) {
+      return { ok: false, code: 'VALIDATION', error: 'No changes to save.' }
+    }
+    const latest = await supabase.from('ai_quote_knowledge').select('version')
+      .order('version', { ascending: false }).limit(1).maybeSingle()
+    if (latest.error) throw latest.error
+    const inserted = await supabase.from('ai_quote_knowledge').insert({
+      version: (latest.data?.version ?? 0) + 1, status: 'draft', run_id: current.data.run_id,
+      style_guide: parsed.data.styleGuide, pricing_guide: parsed.data.pricingGuide,
+      stats: current.data.stats, source_counts: current.data.source_counts,
+    }).select('id').single()
+    if (inserted.error) throw inserted.error
+    const activation = await supabase.rpc('activate_ai_quote_knowledge', { p_id: inserted.data.id })
+    if (activation.error) throw activation.error
+    const revised = await supabase.from('ai_quote_knowledge').select(KNOWLEDGE_COLUMNS)
+      .eq('id', inserted.data.id).maybeSingle()
+    if (revised.error) throw revised.error
+    if (!revised.data) throw new Error('Guide unavailable after activation')
+    return { ok: true, data: toKnowledge(revised.data) }
+  } catch (error) {
+    return { ok: false, error: safeErrorMessage(error, 'ai.knowledge.revise', 'Unable to update this guide. Please try again.') }
+  }
+}
+
 export interface AiEvalCaseRecord {
   id: string
   quoteId: string

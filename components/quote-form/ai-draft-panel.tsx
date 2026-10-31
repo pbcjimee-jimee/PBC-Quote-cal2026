@@ -116,7 +116,7 @@ export function AiDraftPanel({ availability, hasActiveKnowledge, jobberContext, 
       if (controller.signal.aborted) return
       if (response.status === 429) {
         setDailyLimit(true)
-        setStatus('The daily limit has been reached. Try again tomorrow.')
+        setStatus(typeof body?.error === 'string' && body.error ? body.error : 'The daily limit has been reached. Try again tomorrow.')
         return
       }
       if (!response.ok || !body.ok || !body.data?.runId || !body.data?.draft) throw new Error('Draft unavailable')
@@ -200,6 +200,7 @@ export function AiDraftPanel({ availability, hasActiveKnowledge, jobberContext, 
         {draft.questions.length + draft.warnings.length > 0 ? <div className="pbc-alert pbc-alert--warning pbc-ai-draft__warnings"><h4>Check before saving</h4><ul>{[...draft.questions, ...draft.warnings].map((text, index) => <li key={index}>{text}</li>)}</ul></div> : null}
         {draft.findings.length > 0 ? <><h4>Findings</h4><ul>{draft.findings.map((finding, index) => <li key={index}>{finding.area}: {finding.issue} — {finding.evidence} <span className="pbc-bodytext">({finding.confidence} confidence)</span></li>)}</ul></> : null}
         <Checklist title="Quote lines" items={draft.publicLines.map(line => ({ id: line.id, label: `${line.name} · Qty ${line.quantity}`, rationale: line.rationale }))} selected={selection.publicLines} onToggle={key => toggle('publicLines', key)} />
+        <p className="pbc-bodytext">The Basic template and a Total line are added automatically.</p>
         <Checklist title="Materials and labour" items={draft.workItems.map(item => ({ id: item.id, label: `${item.product.name} · ${item.areaName} · Qty ${item.quantity} · ${item.workingDays} ${Number(item.workingDays) === 1 ? 'day' : 'days'} · ${item.labourPerDay} ${Number(item.labourPerDay) === 1 ? 'person' : 'people'}`, rationale: item.rationale }))} selected={selection.workItems} onToggle={key => toggle('workItems', key)} />
         <Checklist title="Formula picks" items={draft.formulaSelections.map(formula => ({ id: formula.scope, label: `${AREA_SCOPE_LABELS[formula.scope]}: low Formula ${formula.selectedMin}, high Formula ${formula.selectedMax}`, rationale: formula.rationale }))} selected={selection.formulaScopes} onToggle={key => toggle('formulaScopes', key)} />
         {hasExistingPublicLines ? <fieldset className="pbc-ai-draft__group"><legend>Apply quote lines</legend><label><input type="radio" name={`${id}-mode`} checked={mode === 'append'} onChange={() => setMode('append')} /> Add to existing lines</label><label><input type="radio" name={`${id}-mode`} checked={mode === 'replace'} onChange={() => setMode('replace')} /> Replace AI-editable lines</label></fieldset> : null}

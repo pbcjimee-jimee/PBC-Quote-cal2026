@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { getAiMonthlyBudgetStatus } from '@/lib/ai-quote/budget'
 import { safeErrorMessage } from '@/lib/actions/action-error'
 import { AI_QUOTE_LIMITS, getAiQuoteAvailability } from '@/lib/ai-quote/config'
 import { generateQuoteDraft } from '@/lib/ai-quote/draft-service'
@@ -42,6 +43,10 @@ export async function POST(request: Request) {
     const since = new Date(Date.now() - 24 * 60 * 60 * 1000)
     if (await countRecentRuns(supabase, auth.user.id, 'quote_draft', since) >= AI_QUOTE_LIMITS.draftsPerDay) {
       return errorResponse(null, 429, 'Daily draft limit reached. Try again later.')
+    }
+    const budget = await getAiMonthlyBudgetStatus(supabase)
+    if (budget.reached) {
+      return errorResponse(null, 429, `Monthly AI budget reached ($${budget.spentUsd} of $${budget.budgetUsd}). Change it in Settings > AI.`)
     }
     const result = await generateQuoteDraft(supabase, { ...parsed.data, kind: 'quote_draft', signal: request.signal })
     if (result.ok) return NextResponse.json({ ok: true, data: { runId: result.runId, draft: result.draft } })

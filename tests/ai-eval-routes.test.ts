@@ -1,11 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { AUTHENTICATION_REQUIRED_ERROR } from '@/lib/security/auth-policy'
 
-const mocks = vi.hoisted(() => ({ availability: vi.fn(), requireRole: vi.fn(), createClient: vi.fn(), countRecentRuns: vi.fn(),
+const mocks = vi.hoisted(() => ({ budget: vi.fn(), availability: vi.fn(), requireRole: vi.fn(), createClient: vi.fn(), countRecentRuns: vi.fn(),
   startRun: vi.fn(), finishRun: vi.fn(), structured: vi.fn(), client: vi.fn(), reference: vi.fn(), loadCase: vi.fn(),
   upsertCase: vi.fn(), saveResult: vi.fn(), generateQuoteDraft: vi.fn(), compare: vi.fn(), settings: vi.fn() }))
+vi.mock('@/lib/ai-quote/budget', () => ({ getAiMonthlyBudgetStatus: mocks.budget }))
 vi.mock('@/lib/ai-quote/config', () => ({ getAiQuoteAvailability: mocks.availability,
-  AI_QUOTE_LIMITS: { evalMemosPerDay: 20, evalDraftsPerDay: 20, evalMemoMaxTokens: 4000 },
+  AI_QUOTE_LIMITS: { evalMemosPerDay: 30, evalDraftsPerDay: 30, evalMemoMaxTokens: 4000 },
   AI_QUOTE_MODEL: 'claude-opus-5-5', AI_QUOTE_PROMPT_VERSIONS: { evalMemo: 'eval-memo-v1' } }))
 vi.mock('@/lib/security/require-app-user', () => ({ requireRole: mocks.requireRole }))
 vi.mock('@/lib/supabase/server', () => ({ createClient: mocks.createClient }))
@@ -38,6 +39,7 @@ function request(body: unknown, signal?: AbortSignal, site = 'same-origin') {
 
 beforeEach(() => {
   vi.resetAllMocks()
+  mocks.budget.mockResolvedValue({ budgetUsd: '30.00', spentUsd: '1.00', remainingUsd: '29.00', reached: false })
   vi.spyOn(console, 'error').mockImplementation(() => {})
   mocks.availability.mockReturnValue({ enabled: true })
   mocks.requireRole.mockResolvedValue({ ok: true, user: { id: 'admin-1' } })
@@ -84,8 +86,8 @@ describe.each(endpoints)('eval $name gates', ({ post, body, kind }) => {
       headers: { 'sec-fetch-site': 'same-origin' }, body: '{' }))).status).toBe(400)
   })
 
-  it('applies a separate rolling daily limit of 20', async () => {
-    mocks.countRecentRuns.mockResolvedValue(20)
+  it('applies a separate rolling daily limit of 30', async () => {
+    mocks.countRecentRuns.mockResolvedValue(30)
     const before = Date.now() - 24 * 60 * 60 * 1000
     expect((await post(request(body))).status).toBe(429)
     const call = mocks.countRecentRuns.mock.calls[0]
@@ -93,6 +95,17 @@ describe.each(endpoints)('eval $name gates', ({ post, body, kind }) => {
     expect(call[3].getTime()).toBeGreaterThanOrEqual(before)
     expect(mocks.startRun).not.toHaveBeenCalled()
     expect(mocks.generateQuoteDraft).not.toHaveBeenCalled()
+  })
+
+  it('returns the monthly budget message before starting any AI call', async () => {
+    mocks.budget.mockResolvedValue({ budgetUsd: '30.00', spentUsd: '30.01', remainingUsd: '0.00', reached: true })
+    const response = await post(request(body))
+    expect(response.status).toBe(429)
+    expect(await response.json()).toMatchObject({ ok: false, error: expect.stringContaining('Monthly AI budget reached ($30.01 of $30.00). Change it in Settings > AI.') })
+    expect(mocks.budget).toHaveBeenCalledWith(supabase)
+    expect(mocks.structured).not.toHaveBeenCalled()
+    expect(mocks.generateQuoteDraft).not.toHaveBeenCalled()
+    expect(mocks.startRun).not.toHaveBeenCalled()
   })
 
   it('returns 504 before calling AI for an already aborted request', async () => {

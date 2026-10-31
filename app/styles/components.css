@@ -1994,3 +1994,11 @@
     border-radius: var(--r-md);
   }
 }
+
+.pbc-ai-budget { display: grid; gap: 12px; min-width: 0; }
+.pbc-ai-budget__progress { height: 8px; overflow: hidden; border-radius: var(--r-sm); background: var(--surface-soft); }
+.pbc-ai-budget__progress > span { display: block; height: 100%; background: var(--primary); }
+.pbc-ai-budget--warning .pbc-ai-budget__progress > span { background: var(--warning); }
+.pbc-ai-budget--reached .pbc-ai-budget__progress > span { background: var(--danger); }
+.pbc-ai-budget__form { display: flex; flex-wrap: wrap; align-items: end; gap: 12px; }
+.pbc-ai-budget__form .pbc-field { flex: 1 1 180px; max-width: 280px; min-width: 0; }

@@ -2,10 +2,11 @@
 
 import { useEffect, useRef, useState } from 'react'
 import {
-  activateAiQuoteKnowledge, listAiQuoteKnowledge, updateAiQuoteKnowledgeDraft, type AiKnowledgeRecord,
+  activateAiQuoteKnowledge, listAiQuoteKnowledge, reviseActiveAiQuoteKnowledge, updateAiQuoteKnowledgeDraft, type AiKnowledgeRecord,
 } from '@/lib/actions/ai-quote'
 import type { AiQuoteAvailability } from '@/lib/ai-quote/config'
 import type { StatSummary } from '@/lib/ai-quote/knowledge-stats'
+import AiBudgetSection from '@/components/settings/tabs/ai-budget-section'
 import AiEvalSection from '@/components/settings/tabs/ai-eval-section'
 
 interface AiKnowledgeTabProps {
@@ -14,7 +15,7 @@ interface AiKnowledgeTabProps {
   onKnowledgeChange?: (knowledge: AiKnowledgeRecord[]) => void
 }
 
-type Operation = 'analyzing' | 'saving' | 'approving' | 'refreshing'
+type Operation = 'analyzing' | 'saving' | 'approving' | 'refreshing' | 'revising'
 
 export default function AiKnowledgeTab({ initialKnowledge, aiAvailability, onKnowledgeChange }: AiKnowledgeTabProps) {
   const [knowledge, setKnowledge] = useState(initialKnowledge)
@@ -23,6 +24,7 @@ export default function AiKnowledgeTab({ initialKnowledge, aiAvailability, onKno
   const guide = draft ?? active
   const [styleGuide, setStyleGuide] = useState(draft?.styleGuide ?? '')
   const [pricingGuide, setPricingGuide] = useState(draft?.pricingGuide ?? '')
+  const [activeEdit, setActiveEdit] = useState<{ styleGuide: string; pricingGuide: string } | null>(null)
   const [pending, setPending] = useState<Operation | null>(null)
   const [confirmation, setConfirmation] = useState(false)
   const [elapsed, setElapsed] = useState(0)
@@ -33,6 +35,16 @@ export default function AiKnowledgeTab({ initialKnowledge, aiAvailability, onKno
   const triggerRef = useRef<HTMLButtonElement | null>(null)
   const cancelRef = useRef<HTMLButtonElement>(null)
   const confirmRef = useRef<HTMLButtonElement>(null)
+  const editRef = useRef<HTMLButtonElement>(null)
+  const activeStyleRef = useRef<HTMLTextAreaElement>(null)
+  const wasEditingRef = useRef(false)
+  const editingActive = activeEdit !== null
+
+  useEffect(() => {
+    if (editingActive) activeStyleRef.current?.focus?.()
+    else if (wasEditingRef.current) editRef.current?.focus?.()
+    wasEditingRef.current = editingActive
+  }, [editingActive])
 
   useEffect(() => {
     if (!confirmation) return
@@ -53,18 +65,19 @@ export default function AiKnowledgeTab({ initialKnowledge, aiAvailability, onKno
     controllerRef.current = null
   }, [])
 
-  function applyKnowledge(records: AiKnowledgeRecord[]) {
+  function applyKnowledge(records: AiKnowledgeRecord[], preserveDraftEdits = false) {
     setKnowledge(records)
     onKnowledgeChange?.(records)
+    if (preserveDraftEdits) return
     const nextDraft = records.find(record => record.status === 'draft')
     setStyleGuide(nextDraft?.styleGuide ?? '')
     setPricingGuide(nextDraft?.pricingGuide ?? '')
   }
 
-  async function refreshKnowledge() {
+  async function refreshKnowledge(preserveDraftEdits = false) {
     const result = await listAiQuoteKnowledge()
     if (!result.ok) throw new Error('Unable to load guides')
-    applyKnowledge(result.data)
+    applyKnowledge(result.data, preserveDraftEdits)
   }
 
   async function analyze() {
@@ -84,6 +97,11 @@ export default function AiKnowledgeTab({ initialKnowledge, aiAvailability, onKno
       const result: unknown = await response.json()
       if (controller.signal.aborted) return
       if (!response.ok || !result || typeof result !== 'object' || !('ok' in result) || result.ok !== true) {
+        // Daily and monthly limit messages are written by our own route, so show them as-is.
+        if (response.status === 429 && result && typeof result === 'object' && 'error' in result && typeof result.error === 'string') {
+          setError({ message: result.error, retry: 'analyzing' })
+          return
+        }
         throw new Error('Analysis failed')
       }
       generated = true
@@ -119,6 +137,38 @@ export default function AiKnowledgeTab({ initialKnowledge, aiAvailability, onKno
   const dirty = !!draft && (styleGuide !== draft.styleGuide || pricingGuide !== draft.pricingGuide)
   const validGuides = styleGuide.trim().length > 0 && pricingGuide.trim().length > 0
     && styleGuide.length <= 40000 && pricingGuide.length <= 40000
+  const validActiveEdit = !!activeEdit && activeEdit.styleGuide.trim().length > 0 && activeEdit.pricingGuide.trim().length > 0
+    && activeEdit.styleGuide.length <= 40000 && activeEdit.pricingGuide.length <= 40000
+  const activeDirty = !!activeEdit && !!active
+    && (activeEdit.styleGuide.trim() !== active.styleGuide || activeEdit.pricingGuide.trim() !== active.pricingGuide)
+
+  async function reviseActiveGuide() {
+    if (!active || !activeEdit || runningRef.current || !aiAvailability.enabled || !validActiveEdit || !activeDirty) return
+    runningRef.current = true
+    setPending('revising')
+    setError(null)
+    setNotice('')
+    try {
+      const result = await reviseActiveAiQuoteKnowledge({ id: active.id, ...activeEdit })
+      if (!result.ok) {
+        setError({ message: result.error, retry: 'revising' })
+        return
+      }
+      applyKnowledge([result.data, ...knowledge.map(record => record.status === 'active' ? { ...record, status: 'archived' as const } : record)], true)
+      setActiveEdit(null)
+      setNotice('Guide updated and in use.')
+      try {
+        await refreshKnowledge(true)
+      } catch {
+        setError({ message: 'Your guide is active, but we couldn’t reload its details.', retry: 'refreshing' })
+      }
+    } catch {
+      setError({ message: 'We couldn’t update this guide; your edits are still here.', retry: 'revising' })
+    } finally {
+      runningRef.current = false
+      setPending(null)
+    }
+  }
 
   async function saveOrApprove(operation: 'saving' | 'approving') {
     if (!draft || runningRef.current || !validGuides) return
@@ -161,6 +211,8 @@ export default function AiKnowledgeTab({ initialKnowledge, aiAvailability, onKno
     if (!error || runningRef.current) return
     if (error.retry === 'analyzing') {
       setConfirmation(true)
+    } else if (error.retry === 'revising') {
+      await reviseActiveGuide()
     } else if (error.retry === 'refreshing') {
       runningRef.current = true
       setPending('refreshing')
@@ -198,7 +250,7 @@ export default function AiKnowledgeTab({ initialKnowledge, aiAvailability, onKno
           <strong>{status}</strong>
           {pending === 'analyzing' ? ` · Analyzing past quotes — ${elapsed} seconds elapsed.` : notice ? ` · ${notice}` : ''}
         </p>
-        {!aiAvailability.enabled ? <p className="pbc-alert pbc-alert--warning">{aiAvailability.message}</p> : null}
+        {!aiAvailability.enabled ? <p className="pbc-alert pbc-alert--warning">{aiAvailability.message}</p> : <AiBudgetSection />}
         {error ? <div className="space-y-3">
           <p role="alert" className="pbc-alert pbc-alert--danger">{error.message}</p>
           <button type="button" className="pbc-btn pbc-btn--ghost" disabled={pending !== null} onClick={() => void retry()}>Try again</button>
@@ -225,10 +277,28 @@ export default function AiKnowledgeTab({ initialKnowledge, aiAvailability, onKno
               {pending === 'approving' ? 'Approving…' : 'Approve and use'}
             </button>
           </div>
-        </section> : active ? <details className="pbc-formula-description">
+        </section> : null}
+        {active ? <details className="pbc-formula-description">
           <summary>View active guide</summary>
-          <h3 className="pbc-paneltitle mt-3">Style guide</h3><p className="whitespace-pre-wrap">{active.styleGuide}</p>
-          <h3 className="pbc-paneltitle mt-4">Pricing guide</h3><p className="whitespace-pre-wrap">{active.pricingGuide}</p>
+          {activeEdit ? <div className="space-y-4 mt-3">
+            <p id="ai-active-guide-help" className="pbc-panelsub">Saving creates a new version and uses it right away.</p>
+            <label className="pbc-field" htmlFor="ai-active-style-guide"><span className="pbc-field__label">Style guide</span>
+              <textarea ref={activeStyleRef} id="ai-active-style-guide" className="pbc-textarea" rows={9} maxLength={40000} value={activeEdit.styleGuide} disabled={!aiAvailability.enabled || pending !== null} onChange={event => setActiveEdit({ ...activeEdit, styleGuide: event.target.value })} />
+            </label>
+            <label className="pbc-field" htmlFor="ai-active-pricing-guide"><span className="pbc-field__label">Pricing guide</span>
+              <textarea id="ai-active-pricing-guide" className="pbc-textarea" rows={9} maxLength={40000} value={activeEdit.pricingGuide} disabled={!aiAvailability.enabled || pending !== null} onChange={event => setActiveEdit({ ...activeEdit, pricingGuide: event.target.value })} />
+            </label>
+            <div className="flex flex-wrap gap-3">
+              <button type="button" className="pbc-btn pbc-btn--primary" aria-describedby="ai-active-guide-help" disabled={!aiAvailability.enabled || pending !== null || !validActiveEdit || !activeDirty} onClick={() => void reviseActiveGuide()}>
+                {pending === 'revising' ? 'Saving…' : 'Save and use'}
+              </button>
+              <button type="button" className="pbc-btn pbc-btn--ghost" disabled={pending !== null} onClick={() => { setActiveEdit(null); setError(null) }}>Cancel</button>
+            </div>
+          </div> : <>
+            <h3 className="pbc-paneltitle mt-3">Style guide</h3><p className="whitespace-pre-wrap">{active.styleGuide}</p>
+            <h3 className="pbc-paneltitle mt-4">Pricing guide</h3><p className="whitespace-pre-wrap">{active.pricingGuide}</p>
+            <button ref={editRef} type="button" className="pbc-btn pbc-btn--ghost mt-3" disabled={!aiAvailability.enabled || pending !== null} onClick={() => { setActiveEdit({ styleGuide: active.styleGuide, pricingGuide: active.pricingGuide }); setError(null); setNotice('') }}>Edit guide</button>
+          </>}
         </details> : null}
         {guide ? <details className="pbc-formula-description">
           <summary>Statistics used</summary>

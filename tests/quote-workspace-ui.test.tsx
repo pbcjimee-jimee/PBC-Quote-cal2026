@@ -8,6 +8,7 @@ import { createQuote, updateQuote } from '@/lib/actions/quotes'
 import { searchProducts } from '@/lib/actions/products'
 import { createArea } from '@/lib/actions/areas'
 import type { AiQuoteDraft } from '@/lib/ai-quote/types'
+import type { QuoteLineTemplateRecord } from '@/lib/quote-line-templates/types'
 import Decimal from 'decimal.js'
 import { calculateMainQuoteTotals } from '@/components/quote-form/quote-calculation-totals'
 import { DEFAULT_PRICING_SETTINGS } from '@/lib/calculator'
@@ -170,6 +171,7 @@ async function mountQuoteForm(options: {
   jobberEnabled?: boolean
   jobberNotice?: string
   aiReviewPending?: boolean
+  quoteLineTemplates?: QuoteLineTemplateRecord[]
 } = {}) {
   const installed = installTestDom()
   const restoreElementRuntime = installElementRuntime()
@@ -205,7 +207,7 @@ async function mountQuoteForm(options: {
     root.render(createElement(QuoteForm, {
       userId: options.userId ?? 'user-a',
       settings: DEFAULT_PRICING_SETTINGS,
-      areas: options.areas ?? [], productServices: [], quoteLineTemplates: [],
+      areas: options.areas ?? [], productServices: [], quoteLineTemplates: options.quoteLineTemplates ?? [],
       initialQuote: options.initialQuote,
       jobberEnabled: options.jobberEnabled,
       jobberNotice: options.jobberNotice,
@@ -274,7 +276,7 @@ describe('quote workspace structure', () => {
   const aiDraft: AiQuoteDraft = {
     summary: 'Bedroom repaint', findings: [], questions: [], warnings: [],
     areas: [{ scope: 'interior', name: 'Bedroom' }, { scope: 'interior', name: 'Hallway' }],
-    publicLines: [{ id: 'ai-line', kind: 'line_item', name: 'AI wall painting', description: '', quantity: '1', productServiceId: null, priceSource: 'allocated', priceWeight: 100, catalogUnitPrice: null, taxable: true, areaName: 'Bedroom', rationale: 'Requested.' }],
+    publicLines: [{ id: 'ai-line', kind: 'text', name: 'AI wall painting', description: '', quantity: '1', productServiceId: null, priceSource: 'none', priceWeight: 0, catalogUnitPrice: null, taxable: false, areaName: 'Bedroom', rationale: 'Requested.' }],
     workItems: [{ id: 'ai-work', product: { id: 'paint-1', name: 'AI wall paint', manufacturer: 'Dulux', type: 'Paint', unit: '4L', marketPrice: '80', rrpPrice: '90', actualPrice: '50', colorCode: null, active: true, productCode: 'WALL' }, areaScope: 'interior', areaName: 'Bedroom', quantity: '2', workingDays: '3', labourPerDay: '2', rationale: 'Two coats.' }],
     formulaSelections: [{ scope: 'interior', selectedMin: 4, selectedMax: 1, rationale: 'Standard.' }],
   }
@@ -307,17 +309,51 @@ describe('quote workspace structure', () => {
         expect(stored.aiDraftRunId).toBe('00000000-0000-4000-8000-000000000001')
         expect(stored.materials[0]).toMatchObject({ name: 'AI wall paint', areaId: 'ai-area-1', quantity: '2' })
         const totals = calculateMainQuoteTotals({ materials: stored.materials, selectedMin: stored.selectedMin, selectedMax: stored.selectedMax, areaFormulaSelections: stored.areaFormulaSelections, settings: DEFAULT_PRICING_SETTINGS })
-        expect(new Decimal(stored.jobberQuoteLines[0].unitPrice).toFixed(2)).toBe(totals.finalTotal.div('1.10').toFixed(2))
+        expect(stored.jobberQuoteLines[0]).toMatchObject({ kind: 'text', unitPrice: '0.00' })
+        expect(stored.jobberQuoteLines.at(-1)).toMatchObject({ name: 'Total', quantity: '1', kind: 'line_item' })
+        expect(stored.aiLineMeta[stored.jobberQuoteLines.at(-1).id]).toEqual({ priceSource: 'allocated', priceWeight: 100, catalogUnitPrice: null })
+        expect(new Decimal(stored.jobberQuoteLines.at(-1).unitPrice).toFixed(2)).toBe(totals.finalTotal.div('1.10').toFixed(2))
         expect(mounted.container.textContent).toContain('AI draft applied -')
         const itemDays = findElement(mounted.container, 'input', input => input.value === '3')
-        expect(findElement(mounted.container, 'p', element => element.textContent === 'AI prices recalculated.')?.getAttribute('class')).toContain('pbc-alert--success')
+        expect(findElement(mounted.container, 'p', element => element.textContent === 'AI prices recalculated. Basic template not found.')?.getAttribute('class')).toContain('pbc-alert--success')
         expect(itemDays).toBeDefined()
         await act(async () => { itemDays!.value = '6'; itemDays!.dispatchEvent(new Event('input', { bubbles: true })) })
         await act(async () => findButton(mounted.container, 'Recalculate AI prices')!.dispatchEvent(new Event('click', { bubbles: true })))
         await act(async () => window.dispatchEvent(new Event('pagehide')))
         const recalculated = JSON.parse(mounted.storage.getItem(getQuoteDraftStorageKey('user-a'))!)
-        expect(new Decimal(recalculated.jobberQuoteLines[0].unitPrice).gt(stored.jobberQuoteLines[0].unitPrice)).toBe(true)
+        expect(recalculated.jobberQuoteLines[0].unitPrice).toBe('0.00')
+        expect(new Decimal(recalculated.jobberQuoteLines.at(-1).unitPrice).gt(stored.jobberQuoteLines.at(-1).unitPrice)).toBe(true)
       }
+    } finally { await mounted.cleanup(); globalThis.fetch = originalFetch }
+  })
+
+  it('passes Basic templates to AI application, reports duplicates and tracks only applied lines', async () => {
+    const originalFetch = globalThis.fetch
+    const publicLines = [{ ...aiDraft.publicLines[0], id: 'duplicate', name: ' vivid  WHITE ' }, ...aiDraft.publicLines]
+    const quoteLineTemplates: QuoteLineTemplateRecord[] = [{
+      id: 'basic', name: 'Basic tam', active: true, createdAt: '', updatedAt: '', items: [{
+        id: 'basic-item', templateId: 'basic', kind: 'text', name: 'Vivid white', description: 'Saved wording',
+        quantity: null, unitPrice: null, taxable: false, clientVisible: true, linkedProductOrServiceId: null,
+        position: 0, createdAt: '', updatedAt: '',
+      }],
+    }]
+    globalThis.fetch = vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => ({ ok: true, data: {
+      runId: '00000000-0000-4000-8000-000000000001', draft: { ...aiDraft, publicLines, areas: [], workItems: [] },
+    } }) })
+    const mounted = await mountQuoteForm({ quoteLineTemplates })
+    try {
+      const notes = mounted.container.querySelectorAll('textarea').find(element => element.getAttribute('placeholder')?.startsWith('e.g. Interior repaint:'))!
+      await act(async () => { notes.value = 'Repaint bedroom'; notes.dispatchEvent(new Event('input', { bubbles: true })) })
+      await act(async () => findButton(mounted.container, 'Create draft')!.dispatchEvent(new Event('click', { bubbles: true })))
+      await act(async () => findButton(mounted.container, 'Apply to quote')!.dispatchEvent(new Event('click', { bubbles: true })))
+      await act(async () => window.dispatchEvent(new Event('pagehide')))
+      const stored = JSON.parse(mounted.storage.getItem(getQuoteDraftStorageKey('user-a'))!)
+      expect(stored.jobberQuoteLines.map((line: { name: string }) => line.name)).toEqual(['AI wall painting', 'Vivid white', 'Total'])
+      expect(stored.jobberQuoteLines[1].description).toBe('Saved wording')
+      expect(Object.keys(stored.aiLineMeta).sort()).toEqual([stored.jobberQuoteLines[0].id, stored.jobberQuoteLines[2].id].sort())
+      expect(stored.aiLineMeta[stored.jobberQuoteLines[0].id]).toEqual({ priceSource: 'none', priceWeight: 0, catalogUnitPrice: null })
+      expect(mounted.container.textContent).toContain('Removed 1 duplicate line.')
+      expect(mounted.container.textContent).not.toContain('Basic template not found.')
     } finally { await mounted.cleanup(); globalThis.fetch = originalFetch }
   })
 
@@ -330,7 +366,7 @@ describe('quote workspace structure', () => {
       await act(async () => { notes.value = 'Repaint bedroom'; notes.dispatchEvent(new Event('input', { bubbles: true })) })
       await act(async () => findButton(mounted.container, 'Create draft')!.dispatchEvent(new Event('click', { bubbles: true })))
       await act(async () => findButton(mounted.container, 'Apply to quote')!.dispatchEvent(new Event('click', { bubbles: true })))
-      expect(findElement(mounted.container, 'p', element => element.textContent === 'Add materials and labour before recalculating AI prices.')?.getAttribute('class')).toContain('pbc-alert--warning')
+      expect(findElement(mounted.container, 'p', element => element.textContent === 'Add materials and labour before recalculating AI prices. Basic template not found.')?.getAttribute('class')).toContain('pbc-alert--warning')
     } finally { await mounted.cleanup(); globalThis.fetch = originalFetch }
   })
 

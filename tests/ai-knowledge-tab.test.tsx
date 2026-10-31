@@ -6,11 +6,17 @@ import { installTestDom } from '@/tests/helpers/test-dom'
 import { buildKnowledgeStats } from '@/lib/ai-quote/knowledge-stats'
 import type { AiKnowledgeRecord } from '@/lib/actions/ai-quote'
 
-const mocks = vi.hoisted(() => ({ list: vi.fn(), update: vi.fn(), activate: vi.fn(), fetch: vi.fn(),
+const mocks = vi.hoisted(() => ({ list: vi.fn(), update: vi.fn(), activate: vi.fn(), revise: vi.fn(), fetch: vi.fn(),
   evalList: vi.fn(), evalPropose: vi.fn(), evalUpdate: vi.fn(), evalRemove: vi.fn() }))
 vi.mock('@/lib/actions/ai-quote', () => ({
   listAiQuoteKnowledge: mocks.list, updateAiQuoteKnowledgeDraft: mocks.update, activateAiQuoteKnowledge: mocks.activate,
+  reviseActiveAiQuoteKnowledge: mocks.revise,
   listEvalCases: mocks.evalList, proposeEvalSet: mocks.evalPropose, updateEvalCaseMemo: mocks.evalUpdate, removeEvalCase: mocks.evalRemove,
+}))
+
+vi.mock('@/lib/actions/ai-budget', () => ({
+  getAiBudgetStatus: async () => ({ ok: true, data: { budgetUsd: '30.00', spentUsd: '2.87', remainingUsd: '27.13', reached: false, monthStart: '2026-10-31T13:00:00.000Z' } }),
+  updateAiMonthlyBudget: vi.fn(),
 }))
 
 import AiKnowledgeTab from '@/components/settings/tabs/ai-knowledge-tab'
@@ -46,11 +52,11 @@ afterEach(async () => {
   vi.unstubAllGlobals()
 })
 
-async function mount(initialKnowledge: AiKnowledgeRecord[] = []) {
+async function mount(initialKnowledge: AiKnowledgeRecord[] = [], enabled = true) {
   cleanup = installTestDom().cleanup
   container = document.createElement('div')
   root = createRoot(container)
-  await act(async () => root!.render(createElement(AiKnowledgeTab, { initialKnowledge, aiAvailability: { enabled: true } })))
+  await act(async () => root!.render(createElement(AiKnowledgeTab, { initialKnowledge, aiAvailability: enabled ? { enabled: true } : { enabled: false, reason: 'missing_key', message: 'AI is unavailable.' } })))
 }
 function button(label: string) {
   const result = Array.from(container.querySelectorAll('button')).find(element => element.textContent === label)
@@ -77,6 +83,102 @@ function pending<T>() {
 }
 
 describe('AI knowledge tab', () => {
+  const active: AiKnowledgeRecord = { ...draft, id: '00000000-0000-4000-8000-000000000002', version: 1, status: 'active',
+    styleGuide: 'Active style.', pricingGuide: 'Active pricing.' }
+
+  it('edits the active guide, saves a new version and announces success', async () => {
+    await mount([active])
+    await click('Edit guide')
+    expect(getByLabelText('Style guide').defaultValue).toBe(active.styleGuide)
+    expect(getByLabelText('Pricing guide').defaultValue).toBe(active.pricingGuide)
+    expect(getByLabelText('Style guide').getAttribute('maxLength')).toBe('40000')
+    expect(container.textContent).toContain('Saving creates a new version and uses it right away.')
+    await act(async () => {
+      const field = getByLabelText('Style guide')
+      field.value = 'Edited active style.'
+      field.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    const revised = { ...active, id, version: 3, styleGuide: 'Edited active style.' }
+    mocks.revise.mockResolvedValue({ ok: true, data: revised })
+    mocks.list.mockResolvedValue({ ok: true, data: [revised, { ...active, status: 'archived' }] })
+    await click('Save and use')
+    expect(mocks.revise).toHaveBeenCalledExactlyOnceWith({ id: active.id, styleGuide: 'Edited active style.', pricingGuide: active.pricingGuide })
+    expect(mocks.list).toHaveBeenCalledTimes(1)
+    expect(container.querySelectorAll('textarea')).toHaveLength(0)
+    expect(Array.from(container.querySelectorAll('p')).find(element => element.getAttribute('role') === 'status')?.textContent).toContain('Guide updated and in use.')
+  })
+
+  it('cancels active edits and restores the read-only guide', async () => {
+    await mount([active])
+    await click('Edit guide')
+    await act(async () => {
+      const field = getByLabelText('Style guide')
+      field.value = 'Discard these edits.'
+      field.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    await click('Cancel')
+    expect(container.querySelectorAll('textarea')).toHaveLength(0)
+    expect(container.textContent).toContain(active.styleGuide)
+    expect(container.textContent).not.toContain('Discard these edits.')
+    expect(mocks.revise).not.toHaveBeenCalled()
+    await click('Edit guide')
+    expect(getByLabelText('Style guide').defaultValue).toBe(active.styleGuide)
+  })
+
+  it('keeps a separate draft and its unsaved edits when the active guide changes', async () => {
+    await mount([draft, active])
+    await act(async () => {
+      const field = getByLabelText('Style guide')
+      field.value = 'Unsaved draft style.'
+      field.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    await click('Edit guide')
+    const fields = Array.from(container.querySelectorAll('textarea'))
+    await act(async () => {
+      fields[2].value = 'Revised active style.'
+      fields[2].dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    const revised = { ...active, id: '00000000-0000-4000-8000-000000000003', version: 3, styleGuide: 'Revised active style.' }
+    mocks.revise.mockResolvedValue({ ok: true, data: revised })
+    mocks.list.mockResolvedValue({ ok: true, data: [revised, draft, { ...active, status: 'archived' }] })
+    await click('Save and use')
+    expect(mocks.update).not.toHaveBeenCalled()
+    expect(mocks.activate).not.toHaveBeenCalled()
+    expect(getByLabelText('Style guide').value).toBe('Unsaved draft style.')
+    expect(container.textContent).toContain('Review draft')
+  })
+
+  it('disables active editing when AI is unavailable', async () => {
+    await mount([active], false)
+    expect(button('Edit guide').disabled).toBe(true)
+  })
+
+  it('disables other operations and invalid or unchanged active edits', async () => {
+    await mount([active])
+    await click('Edit guide')
+    expect(button('Save and use').disabled).toBe(true)
+    await act(async () => {
+      const field = getByLabelText('Style guide')
+      field.value = ' '
+      field.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    expect(button('Save and use').disabled).toBe(true)
+    await act(async () => {
+      const field = getByLabelText('Style guide')
+      field.value = 'New active style.'
+      field.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    const response = pending<unknown>()
+    mocks.revise.mockReturnValue(response.promise)
+    await click('Save and use')
+    expect(button('Analyze past quotes').disabled).toBe(true)
+    expect(button('Cancel').disabled).toBe(true)
+    expect(getByLabelText('Style guide').disabled).toBe(true)
+    await act(async () => response.resolve({ ok: false, error: 'Please try again.' }))
+    expect(getByLabelText('Style guide').value).toBe('New active style.')
+    expect(Array.from(container.querySelectorAll('p')).find(element => element.getAttribute('role') === 'alert')?.textContent).toContain('Please try again.')
+  })
+
   it('places the optional collapsed accuracy check after the guide', () => {
     const markup = renderToStaticMarkup(createElement(AiKnowledgeTab, { initialKnowledge: [{ ...draft, status: 'active' }], aiAvailability: { enabled: true } }))
     expect(markup.indexOf('Accuracy check (optional)')).toBeGreaterThan(markup.indexOf('View active guide'))
@@ -148,7 +250,7 @@ describe('AI knowledge tab', () => {
   it('renders labelled draft textareas and saves edits', async () => {
     await mount([draft])
     expect(container.textContent).toContain('Review draft')
-    expect(Array.from(container.querySelectorAll('label')).map(label => label.textContent)).toEqual(['Style guide', 'Pricing guide'])
+    expect(Array.from(container.querySelectorAll('label')).map(label => label.textContent)).toEqual(['Monthly limit (USD)', 'Style guide', 'Pricing guide'])
     expect(getByLabelText('Style guide').getAttribute('id')).toBe('ai-style-guide')
     expect(getByLabelText('Pricing guide').getAttribute('id')).toBe('ai-pricing-guide')
     const field = getByLabelText('Style guide')

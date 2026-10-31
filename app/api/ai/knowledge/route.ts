@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { getAiMonthlyBudgetStatus } from '@/lib/ai-quote/budget'
 import { safeErrorMessage } from '@/lib/actions/action-error'
 import { createAnthropicClient, runStructuredClaudeRequest } from '@/lib/ai-quote/anthropic'
 import { AI_QUOTE_LIMITS, AI_QUOTE_MODEL, AI_QUOTE_PROMPT_VERSIONS, getAiQuoteAvailability } from '@/lib/ai-quote/config'
@@ -35,6 +36,10 @@ export async function POST(request: Request) {
     const since = new Date(Date.now() - 24 * 60 * 60 * 1000)
     if (await countRecentRuns(supabase, auth.user.id, 'knowledge_build', since) >= AI_QUOTE_LIMITS.knowledgeBuildsPerDay) {
       return errorResponse(null, 429, 'Daily knowledge build limit reached. Try again later.')
+    }
+    const budget = await getAiMonthlyBudgetStatus(supabase)
+    if (budget.reached) {
+      return errorResponse(null, 429, `Monthly AI budget reached ($${budget.spentUsd} of $${budget.budgetUsd}). Change it in Settings > AI.`)
     }
     const runId = await startRun(supabase, {
       kind: 'knowledge_build', promptVersion: AI_QUOTE_PROMPT_VERSIONS.knowledge, model: AI_QUOTE_MODEL,

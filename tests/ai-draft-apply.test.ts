@@ -9,6 +9,7 @@ import {
 import type { AreaFormulaSelections, JobberQuoteLineItemDraft } from '@/components/quote-form/types'
 import type { AiQuoteDraft, AiQuoteDraftPublicLine, AiQuoteDraftWorkItem } from '@/lib/ai-quote/types'
 import type { AreaRecord } from '@/lib/areas/types'
+import type { QuoteLineTemplateRecord } from '@/lib/quote-line-templates/types'
 
 const product: AiQuoteDraftWorkItem['product'] = {
   id: 'paint-1', name: 'Wall paint', manufacturer: 'Dulux', type: 'Paint', unit: '4L',
@@ -26,9 +27,9 @@ function workItem(overrides: Partial<AiQuoteDraftWorkItem> = {}): AiQuoteDraftWo
 
 function publicLine(overrides: Partial<AiQuoteDraftPublicLine> = {}): AiQuoteDraftPublicLine {
   return {
-    id: 'draft-line-1', kind: 'line_item', productServiceId: 'service-1',
+    id: 'draft-line-1', kind: 'text', productServiceId: 'service-1',
     name: 'Paint walls', description: 'Prepare and paint walls', quantity: '2.00',
-    priceSource: 'catalog', priceWeight: 0, catalogUnitPrice: '50.00',
+    priceSource: 'none', priceWeight: 0, catalogUnitPrice: null,
     taxable: false, areaName: 'Bedroom 1', rationale: 'Requested work',
     ...overrides,
   }
@@ -71,6 +72,24 @@ function formLine(overrides: Partial<JobberQuoteLineItemDraft> = {}): JobberQuot
 
 const bedroom: AreaRecord = {
   id: 'area-1', scope: 'interior', name: 'Bedroom 1', active: true, position: 0,
+}
+
+function template(names = ['Vivid white', 'EXCEPTIONS']): QuoteLineTemplateRecord {
+  return {
+    id: 'basic', name: 'Basic tam', active: true, createdAt: '', updatedAt: '',
+    items: names.map((name, position) => ({
+      id: `item-${position}`, templateId: 'basic', kind: 'text', name,
+      description: position === 0 ? 'Saved template wording\n  Keep spacing' : null,
+      quantity: null, unitPrice: null, taxable: true, clientVisible: true,
+      linkedProductOrServiceId: position === 0 ? 'template-service' : null,
+      position, createdAt: '', updatedAt: '',
+    })),
+  }
+}
+
+function generateLineIds() {
+  let id = 0
+  return () => `new-line-${++id}`
 }
 
 describe('planAiDraftApplication', () => {
@@ -119,14 +138,15 @@ describe('planAiDraftApplication', () => {
         publicLines: [publicLine(), publicLine({ id: 'unselected-line' })],
       }),
       selection: selection({ areas: new Set(), formulaScopes: new Set() }), mode: 'append',
-      current: { ...current(), materials: [existing] }, generateId: () => 'new-line',
+      current: { ...current(), materials: [existing] }, generateId: generateLineIds(),
     })
     const result = plan.build([bedroom])
 
     expect(plan.areasToCreate).toEqual([{ scope: 'interior', name: 'Bedroom 1' }])
     expect(result.materials).toHaveLength(2)
     expect(result.materials[0]).toBe(existing)
-    expect(result.jobberQuoteLines.map((line) => line.id)).toEqual(['new-line'])
+    expect(result.jobberQuoteLines.map((line) => line.id)).toEqual(['new-line-1', 'new-line-2'])
+    expect(result.appliedLineIds).toEqual(['new-line-1'])
     expect(result.areaFormulaSelections).toEqual(current().areaFormulaSelections)
   })
 
@@ -134,13 +154,13 @@ describe('planAiDraftApplication', () => {
     const existing = formLine()
     const plan = planAiDraftApplication({
       draft: draft(), selection: selection(), mode: 'append',
-      current: { ...current(), jobberQuoteLines: [existing] }, generateId: () => 'new-line',
+      current: { ...current(), jobberQuoteLines: [existing] }, generateId: generateLineIds(),
     })
     const result = plan.build([bedroom])
 
-    expect(result.jobberQuoteLines.map((line) => line.id)).toEqual(['manual-1', 'new-line'])
+    expect(result.jobberQuoteLines.map((line) => line.id)).toEqual(['manual-1', 'new-line-1', 'new-line-2'])
     expect(result.jobberQuoteLines[0]).toBe(existing)
-    expect(result.appliedLineIds).toEqual(['new-line'])
+    expect(result.appliedLineIds).toEqual(['new-line-1'])
   })
 
   it('replaces only non-Jobber-linked lines in replace mode', () => {
@@ -148,28 +168,113 @@ describe('planAiDraftApplication', () => {
     const plan = planAiDraftApplication({
       draft: draft(), selection: selection(), mode: 'replace',
       current: { ...current(), jobberQuoteLines: [formLine(), linked, formLine({ id: 'manual-2' })] },
-      generateId: () => 'new-line',
+      generateId: generateLineIds(),
     })
     const result = plan.build([bedroom])
 
-    expect(result.jobberQuoteLines.map((line) => line.id)).toEqual(['linked-1', 'new-line'])
+    expect(result.jobberQuoteLines.map((line) => line.id)).toEqual(['linked-1', 'new-line-1', 'new-line-2'])
     expect(result.jobberQuoteLines[0]).toBe(linked)
   })
 
   it('copies catalog linking and tax flags while leaving initial unit prices zero', () => {
     const result = planAiDraftApplication({
-      draft: draft({ publicLines: [publicLine(), publicLine({ id: 'text-1', kind: 'text', productServiceId: null, taxable: true })] }),
+      draft: draft({ publicLines: [publicLine(), publicLine({ id: 'text-1', name: 'Eaves', productServiceId: null })] }),
       selection: selection({ publicLines: new Set(['draft-line-1', 'text-1']) }), mode: 'append', current: current(),
     }).build([bedroom])
 
     expect(result.jobberQuoteLines[0]).toMatchObject({
-      kind: 'line_item', name: 'Paint walls', description: 'Prepare and paint walls', quantity: '2.00',
+      kind: 'text', name: 'Paint walls', description: 'Prepare and paint walls', quantity: '2.00',
       linkedProductOrServiceId: 'service-1', taxable: false, clientVisible: true, unitPrice: '0.00',
     })
-    expect(result.jobberQuoteLines[1]).toMatchObject({ kind: 'text', taxable: true, clientVisible: true, unitPrice: '0.00' })
+    expect(result.jobberQuoteLines[1]).toMatchObject({ kind: 'text', taxable: false, clientVisible: true, unitPrice: '0.00' })
     expect(result.jobberQuoteLines[1].linkedProductOrServiceId).toBeUndefined()
     expect(result.jobberQuoteLines.every((line) => !line.jobberLineItemId)).toBe(true)
-    expect(result.appliedLineIds).toEqual(result.jobberQuoteLines.map((line) => line.id))
+    expect(result.appliedLineIds).toEqual(result.jobberQuoteLines.slice(0, 2).map((line) => line.id))
+  })
+
+  it('appends AI scope, the first Basic template in supplied order and one priced Total last', () => {
+    const result = planAiDraftApplication({
+      draft: draft(), selection: selection(), mode: 'append', current: current(),
+      templates: [{ ...template(['Other terms']), name: 'Other' }, template(), template(['Later basic terms'])],
+    }).build([bedroom])
+
+    expect(result.jobberQuoteLines.map(line => line.name)).toEqual(['Paint walls', 'Vivid white', 'EXCEPTIONS', 'Total'])
+    expect(result.jobberQuoteLines[1]).toMatchObject({
+      kind: 'text', description: 'Saved template wording\n  Keep spacing', quantity: '1', unitPrice: '0',
+      taxable: false, clientVisible: true, linkedProductOrServiceId: 'template-service',
+    })
+    expect(result.jobberQuoteLines[2]).toMatchObject({ description: '', linkedProductOrServiceId: undefined })
+    expect(result.jobberQuoteLines.at(-1)).toMatchObject({
+      id: result.totalLineId, kind: 'line_item', name: 'Total', description: '', quantity: '1',
+      unitPrice: '0.00', taxable: true, clientVisible: true,
+    })
+    expect(result).toMatchObject({ basicTemplateApplied: true, removedDuplicateCount: 0 })
+    expect(result.appliedLineIds).toEqual([result.jobberQuoteLines[0].id])
+  })
+
+  it('keeps the saved template version instead of an AI duplicate and preserves applied id order', () => {
+    const lines = [publicLine({ id: 'terms', name: ' vivid  WHITE ' }), publicLine(),
+      publicLine({ id: 'duplicate', name: ' paint\tWALLS ' }), publicLine({ id: 'eaves', name: 'Eaves' })]
+    const result = planAiDraftApplication({
+      draft: draft({ publicLines: lines }), selection: selection({ publicLines: new Set(lines.map(line => line.id)) }),
+      mode: 'append', current: current(), templates: [template()], generateId: generateLineIds(),
+    }).build([bedroom])
+
+    expect(result.jobberQuoteLines.map(line => line.name)).toEqual(['Paint walls', 'Eaves', 'Vivid white', 'EXCEPTIONS', 'Total'])
+    expect(result.jobberQuoteLines[2].description).toBe('Saved template wording\n  Keep spacing')
+    expect(result.appliedLineIds).toEqual(['new-line-1', 'new-line-2'])
+    expect(result.removedDuplicateCount).toBe(2)
+  })
+
+  it('reuses and moves a kept Jobber-linked Total line to the end without losing its identities', () => {
+    const total = formLine({ id: 'existing-total', name: ' TOTAL ex GST ', jobberLineItemId: 'jobber-total' })
+    const linked = formLine({ id: 'linked-scope', kind: 'text', name: 'Existing scope', jobberLineItemId: 'jobber-scope' })
+    const result = planAiDraftApplication({
+      draft: draft(), selection: selection(), mode: 'replace',
+      current: { ...current(), jobberQuoteLines: [total, formLine(), linked] }, templates: [template()],
+    }).build([bedroom])
+
+    expect(result.jobberQuoteLines.map(line => line.name)).toEqual(['Existing scope', 'Paint walls', 'Vivid white', 'EXCEPTIONS', ' TOTAL ex GST '])
+    expect(result.jobberQuoteLines.at(-1)).toBe(total)
+    expect(result.totalLineId).toBe('existing-total')
+  })
+
+  it('drops later unlinked current duplicates but preserves every Jobber-linked duplicate', () => {
+    const first = formLine({ name: ' Existing  scope ' })
+    const linked = formLine({ id: 'linked', name: 'existing scope', jobberLineItemId: 'jobber-scope' })
+    const result = planAiDraftApplication({
+      draft: draft({ publicLines: [publicLine({ name: 'existing scope' })] }), selection: selection(), mode: 'append',
+      current: { ...current(), jobberQuoteLines: [first, formLine({ id: 'duplicate', name: 'existing\tscope' }), linked] },
+      templates: [template(['EXISTING SCOPE'])],
+    }).build([bedroom])
+
+    expect(result.jobberQuoteLines.slice(0, 2)).toEqual([first, linked])
+    expect(result.jobberQuoteLines.map(line => line.id)).toEqual(['manual-1', 'linked', result.totalLineId])
+    expect(result.removedDuplicateCount).toBe(3)
+    expect(result.appliedLineIds).toEqual([])
+  })
+
+  it.each([
+    { label: 'omitted', templates: undefined }, { label: 'empty', templates: [] },
+    { label: 'unmatched', templates: [{ ...template(), name: 'Other' }] },
+  ])('adds Total safely without a Basic template: $label', ({ templates }) => {
+    const result = planAiDraftApplication({
+      draft: draft(), selection: selection(), mode: 'append', current: current(), templates,
+    }).build([bedroom])
+
+    expect(result.jobberQuoteLines.map(line => line.name)).toEqual(['Paint walls', 'Total'])
+    expect(result.basicTemplateApplied).toBe(false)
+  })
+
+  it('keeps an optional Total separate from the main Total line', () => {
+    const optional = formLine({ name: 'Total (option)', optional: true, jobberLineItemId: 'jobber-option' })
+    const result = planAiDraftApplication({
+      draft: draft(), selection: selection(), mode: 'append', current: { ...current(), jobberQuoteLines: [optional] },
+    }).build([bedroom])
+
+    expect(result.jobberQuoteLines[0]).toBe(optional)
+    expect(result.jobberQuoteLines.at(-1)?.name).toBe('Total')
+    expect(result.totalLineId).not.toBe(optional.id)
   })
 
   it('generates fresh public and material identities each time a draft is applied', () => {
@@ -225,6 +330,20 @@ describe('createAiDraftMaterialItem', () => {
 })
 
 describe('reallocateAiLinePrices', () => {
+  it('puts the whole allocatable ex-GST amount on Total and keeps AI text at zero on recalculation', () => {
+    const built = planAiDraftApplication({
+      draft: draft(), selection: selection(), mode: 'append', templates: [template()],
+      current: { ...current(), jobberQuoteLines: [formLine({ unitPrice: '300.00' }), formLine({ id: 'option', name: 'Extra option', optional: true, unitPrice: '50.00' })] },
+    }).build([bedroom])
+    const metadata = {
+      [built.appliedLineIds[0]]: { priceSource: 'none' as const, priceWeight: 0, catalogUnitPrice: null },
+      [built.totalLineId]: { priceSource: 'allocated' as const, priceWeight: 100, catalogUnitPrice: null },
+    }
+    const allocated = reallocateAiLinePrices(built.jobberQuoteLines, metadata, '1100')
+    expect(allocated.lines.map(line => line.unitPrice)).toEqual(['300.00', '50.00', '0.00', '0', '0', '700.00'])
+    expect(allocated.result.status).toBe('allocated')
+    expect(reallocateAiLinePrices(allocated.lines, metadata, '2200').lines.at(-1)?.unitPrice).toBe('1700.00')
+  })
   it('only reallocates AI lines, preserving manual prices and ignoring stale metadata', () => {
     const manual = formLine({ unitPrice: '900.00' })
     const lines = [manual, formLine({ id: 'ai-catalog', quantity: '2' }), formLine({ id: 'ai-weighted' }), formLine({ id: 'ai-text', kind: 'text' })]

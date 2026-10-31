@@ -16,11 +16,15 @@ type Batch = 'notes' | 'comparison'
 const SET_LABEL = 'Accuracy check'
 const LEAK_LABELS: Record<string, string> = { price: 'price', days_or_litres: 'days or litres', product: 'a product name' }
 
+class LimitError extends Error {}
+
 async function postEval<T>(path: string, body: unknown, signal: AbortSignal): Promise<T> {
   const response = await fetch(path, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body), signal })
   signal.throwIfAborted()
-  const result: { ok?: boolean; data?: T } = await response.json()
+  const result: { ok?: boolean; data?: T; error?: unknown } = await response.json()
   signal.throwIfAborted()
+  // Daily and monthly limit messages come from our own routes, so they are shown as-is.
+  if (response.status === 429 && typeof result?.error === 'string') throw new LimitError(result.error)
   if (!response.ok || !result?.ok || !result.data) throw new Error('Comparison request failed')
   return result.data
 }
@@ -148,9 +152,9 @@ export default function AiEvalSection({ hasActiveGuide, aiAvailability }: AiEval
         }
       }
       setNotice(kind === 'notes' ? 'Sample notes are ready; review them before comparing.' : 'Comparison complete.')
-    } catch {
+    } catch (caught) {
       if (!controller.signal.aborted && !disposedRef.current) setError({
-        message: kind === 'notes' ? 'We couldn’t finish writing notes; completed notes are saved.' : 'We couldn’t finish the comparison; completed results are saved.',
+        message: caught instanceof LimitError ? caught.message : kind === 'notes' ? 'We couldn’t finish writing notes; completed notes are saved.' : 'We couldn’t finish the comparison; completed results are saved.',
         retry: () => setConfirmation(kind),
       })
     } finally {
@@ -189,7 +193,7 @@ export default function AiEvalSection({ hasActiveGuide, aiAvailability }: AiEval
         <button type="button" className="pbc-btn pbc-btn--ghost" disabled={disabled} onClick={error.retry}>Try again</button></div> : null}
       <section className="space-y-3" aria-labelledby={`${prefix}-pick`}>
         <h3 id={`${prefix}-pick`} className="pbc-paneltitle">1. Pick sample quotes</h3>
-        <button type="button" className="pbc-btn pbc-btn--ghost" disabled={disabled || editing !== null} onClick={() => void suggest()}>Suggest 10 quotes</button>
+        <button type="button" className="pbc-btn pbc-btn--ghost" disabled={disabled || editing !== null} onClick={() => void suggest()}>Suggest 20 quotes</button>
         {samples.length ? <ul className="pbc-ai-eval__samples">{samples.map(sample => <li key={sample.quoteId}>
           <span>{sample.quoteLabel}</span>
           <button type="button" className="pbc-btn pbc-btn--ghost pbc-btn--sm" disabled={disabled || editing !== null}
@@ -248,8 +252,8 @@ export default function AiEvalSection({ hasActiveGuide, aiAvailability }: AiEval
       }}>
       <h2 id={`${prefix}-confirm`}>{confirmation === 'notes' ? 'Write sample notes?' : 'Run the comparison?'}</h2>
       <p id={`${prefix}-cost`}>{confirmation === 'notes'
-        ? 'AI will write notes one quote at a time; a set of 10 costs about $0.5.'
-        : 'AI will compare one quote at a time; a set of 10 costs about $2–5.'} You can cancel at any time.</p>
+        ? 'AI will write notes one quote at a time; a set of 20 costs about $1.'
+        : 'AI will compare one quote at a time; a set of 20 costs about $8–10.'} You can cancel at any time.</p>
       <div className="pbc-dialog__actions"><button ref={cancelRef} type="button" className="pbc-btn pbc-btn--ghost" onClick={() => setConfirmation(null)}>Cancel</button>
         <button ref={confirmRef} type="button" className="pbc-btn pbc-btn--primary" onClick={() => void runBatch(confirmation)}>{confirmation === 'notes' ? 'Write notes' : 'Start comparison'}</button></div>
     </div></div> : null}

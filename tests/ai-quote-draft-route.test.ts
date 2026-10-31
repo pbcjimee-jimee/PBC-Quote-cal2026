@@ -3,8 +3,9 @@ import { AUTHENTICATION_REQUIRED_ERROR } from '@/lib/security/auth-policy'
 import { aiQuoteDraftRequestSchema } from '@/lib/validators'
 
 const mocks = vi.hoisted(() => ({
-  availability: vi.fn(), requireRole: vi.fn(), createClient: vi.fn(), countRecentRuns: vi.fn(), generateQuoteDraft: vi.fn(),
+  budget: vi.fn(), availability: vi.fn(), requireRole: vi.fn(), createClient: vi.fn(), countRecentRuns: vi.fn(), generateQuoteDraft: vi.fn(),
 }))
+vi.mock('@/lib/ai-quote/budget', () => ({ getAiMonthlyBudgetStatus: mocks.budget }))
 vi.mock('@/lib/ai-quote/config', () => ({
   getAiQuoteAvailability: mocks.availability, AI_QUOTE_LIMITS: { draftsPerDay: 20 },
 }))
@@ -27,6 +28,7 @@ function request(body: unknown = { memo: 'Paint walls', jobberContext: null }, s
 
 beforeEach(() => {
   vi.resetAllMocks()
+  mocks.budget.mockResolvedValue({ budgetUsd: '30.00', spentUsd: '1.00', remainingUsd: '29.00', reached: false })
   vi.spyOn(console, 'error').mockImplementation(() => {})
   mocks.availability.mockReturnValue({ enabled: true })
   mocks.requireRole.mockResolvedValue({ ok: true, user: { id: 'admin-1' } })
@@ -126,6 +128,15 @@ describe('POST quote draft', () => {
     const controller = new AbortController()
     mocks.generateQuoteDraft.mockImplementation(async () => { controller.abort(); throw new Error('Abort') })
     expect((await POST(request(undefined, controller.signal))).status).toBe(504)
+  })
+
+  it('returns the monthly budget message before starting any AI call', async () => {
+    mocks.budget.mockResolvedValue({ budgetUsd: '30.00', spentUsd: '30.01', remainingUsd: '0.00', reached: true })
+    const response = await POST(request())
+    expect(response.status).toBe(429)
+    expect(await response.json()).toMatchObject({ ok: false, error: expect.stringContaining('Monthly AI budget reached ($30.01 of $30.00). Change it in Settings > AI.') })
+    expect(mocks.budget).toHaveBeenCalledWith(supabase)
+    expect(mocks.generateQuoteDraft).not.toHaveBeenCalled()
   })
 
   it('exports maxDuration = 300', () => expect(maxDuration).toBe(300))
