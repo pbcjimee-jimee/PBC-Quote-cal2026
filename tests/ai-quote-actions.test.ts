@@ -8,7 +8,7 @@ vi.mock('@/lib/security/require-app-user', () => ({ requireRole: mocks.requireRo
 vi.mock('@/lib/actions/types', () => ({ isDevNoAuthMode: mocks.isDevNoAuthMode }))
 vi.mock('@/lib/ai-quote/data', () => ({ loadEvalCandidates: mocks.candidates, loadEvalCases: mocks.cases, loadEvalCase: mocks.evalCase }))
 
-import { activateAiQuoteKnowledge, listAiQuoteKnowledge, updateAiQuoteKnowledgeDraft,
+import { activateAiQuoteKnowledge, listAiQuoteKnowledge, updateAiQuoteKnowledgeDraft, reviseActiveAiQuoteKnowledge,
   proposeEvalSet, listEvalCases, updateEvalCaseMemo, removeEvalCase } from '@/lib/actions/ai-quote'
 
 const id = '00000000-0000-4000-8000-000000000001'
@@ -21,8 +21,9 @@ const input = { id, styleGuide: 'Updated style.', pricingGuide: 'Updated pricing
 
 function setup(response: { data: unknown; error: unknown } = { data: row, error: null }) {
   const builder = {
-    select: vi.fn(() => builder), update: vi.fn(() => builder), eq: vi.fn(() => builder),
+    select: vi.fn(() => builder), update: vi.fn(() => builder), insert: vi.fn(() => builder), eq: vi.fn(() => builder),
     order: vi.fn(() => builder), limit: vi.fn(() => builder), maybeSingle: vi.fn(async () => response),
+    single: vi.fn(async () => response),
     then: (resolve: (value: unknown) => unknown) => resolve(response),
   }
   const client = { from: vi.fn(() => builder), rpc: vi.fn(async () => ({ data: id, error: null as unknown })) }
@@ -82,13 +83,13 @@ describe('AI eval actions', () => {
     expect(builder.select.mock.calls[0][0]).not.toMatch(/customer|address|phone|email|\*/i)
   })
 
-  it('limits proposed sets to ten eligible quotes', async () => {
-    evalSetup(Array.from({ length: 15 }, (_, i) => ({ id: `quote-${i}`, work_type: 'Interior', quote_number: String(3000 + i), quote_items: [] })))
-    mocks.candidates.mockResolvedValue(Array.from({ length: 15 }, (_, i) => ({ id: `quote-${i}`, createdAt: '2026-10-30Z', scopes: ['interior'],
+  it('limits proposed sets to twenty eligible quotes', async () => {
+    evalSetup(Array.from({ length: 25 }, (_, i) => ({ id: `quote-${i}`, work_type: 'Interior', quote_number: String(3000 + i), quote_items: [] })))
+    mocks.candidates.mockResolvedValue(Array.from({ length: 25 }, (_, i) => ({ id: `quote-${i}`, createdAt: '2026-10-30Z', scopes: ['interior'],
       itemCount: 2, pricedLineCount: 1, finalTotal: '1100' })))
     expect(await proposeEvalSet({ setLabel: 'Launch' })).toMatchObject({ ok: true, data: { quoteIds: expect.any(Array) } })
     const result = await proposeEvalSet({ setLabel: 'Launch' })
-    if (result.ok) expect(result.data.quoteIds).toHaveLength(10)
+    if (result.ok) expect(result.data.quoteIds).toHaveLength(20)
   })
 
   it('lists saved notes, recomputes current leak flags and never exposes identity or product metadata', async () => {
@@ -147,6 +148,7 @@ const actions = [
   ['list', () => listAiQuoteKnowledge()],
   ['update', () => updateAiQuoteKnowledgeDraft(input)],
   ['activate', () => activateAiQuoteKnowledge({ id })],
+  ['revise', () => reviseActiveAiQuoteKnowledge(input)],
 ] as const
 
 describe('AI knowledge actions', () => {
@@ -201,6 +203,63 @@ describe('AI knowledge actions', () => {
     const { client } = setup()
     expect(await activateAiQuoteKnowledge({ id })).toEqual({ ok: true, data: { id } })
     expect(client.rpc).toHaveBeenCalledWith('activate_ai_quote_knowledge', { p_id: id })
+  })
+
+  it.each([null, { ...row, status: 'draft' }, { ...row, status: 'archived' }])('rejects revising a missing or non-active guide', async data => {
+    const { builder, client } = setup({ data, error: null })
+    expect(await reviseActiveAiQuoteKnowledge(input)).toEqual({ ok: false, code: 'VALIDATION', error: 'This guide is no longer active. Refresh and try again.' })
+    expect(builder.eq).toHaveBeenCalledWith('id', id)
+    expect(builder.insert).not.toHaveBeenCalled()
+    expect(client.rpc).not.toHaveBeenCalled()
+  })
+
+  it('rejects unchanged active guides without creating a version', async () => {
+    const { builder } = setup({ data: { ...row, status: 'active' }, error: null })
+    expect(await reviseActiveAiQuoteKnowledge({ id, styleGuide: row.style_guide, pricingGuide: row.pricing_guide }))
+      .toEqual({ ok: false, code: 'VALIDATION', error: 'No changes to save.' })
+    expect(builder.insert).not.toHaveBeenCalled()
+  })
+
+  it.each([{ ...input, id: 'bad' }, { ...input, styleGuide: ' ' }, { ...input, pricingGuide: 'x'.repeat(40001) }])('validates active guide revisions before database access', async value => {
+    expect(await reviseActiveAiQuoteKnowledge(value)).toMatchObject({ ok: false, code: 'VALIDATION' })
+    expect(mocks.createClient).not.toHaveBeenCalled()
+  })
+
+  function revisionSetup() {
+    const nextId = '00000000-0000-4000-8000-000000000003'
+    const active = { ...row, status: 'active', run_id: '00000000-0000-4000-8000-000000000004' }
+    const revised = { ...row, id: nextId, version: 8, status: 'active', style_guide: input.styleGuide,
+      pricing_guide: input.pricingGuide, approved_at: '2026-10-31T00:00:00Z' }
+    const { builder, client } = setup()
+    builder.maybeSingle.mockResolvedValueOnce({ data: active, error: null })
+      .mockResolvedValueOnce({ data: { version: 7 }, error: null })
+      .mockResolvedValueOnce({ data: revised, error: null })
+    builder.single.mockResolvedValue({ data: { ...revised, status: 'draft', approved_at: null }, error: null })
+    return { builder, client, active, nextId }
+  }
+
+  it('creates the next version with the active sources and activates only the new guide', async () => {
+    const { builder, client, active, nextId } = revisionSetup()
+    expect(await reviseActiveAiQuoteKnowledge(input)).toEqual({ ok: true, data: {
+      id: nextId, version: 8, status: 'active', styleGuide: input.styleGuide, pricingGuide: input.pricingGuide,
+      stats: row.stats, sourceCounts: row.source_counts, createdAt: row.created_at, approvedAt: '2026-10-31T00:00:00Z',
+    } })
+    expect(builder.insert).toHaveBeenCalledExactlyOnceWith({ version: 8, status: 'draft', run_id: active.run_id,
+      style_guide: input.styleGuide, pricing_guide: input.pricingGuide, stats: row.stats, source_counts: row.source_counts })
+    expect(builder.order).toHaveBeenCalledWith('version', { ascending: false })
+    expect(builder.limit).toHaveBeenCalledWith(1)
+    expect(client.rpc).toHaveBeenCalledExactlyOnceWith('activate_ai_quote_knowledge', { p_id: nextId })
+    expect(builder.update).not.toHaveBeenCalled()
+  })
+
+  it('returns a safe failure and retains the new draft when activation fails', async () => {
+    const { builder, client } = revisionSetup()
+    client.rpc.mockResolvedValue({ data: id, error: { message: 'private@example.com' } })
+    const result = await reviseActiveAiQuoteKnowledge(input)
+    expect(result).toMatchObject({ ok: false, error: expect.stringContaining('(Ref:') })
+    expect(JSON.stringify(result)).not.toContain('private@example.com')
+    expect(builder.insert).toHaveBeenCalledTimes(1)
+    expect(builder.update).not.toHaveBeenCalled()
   })
 
   it('rejects invalid activation ids', async () => {
