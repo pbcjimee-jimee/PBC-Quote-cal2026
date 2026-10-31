@@ -62,8 +62,9 @@
 
 **Files:**
 - Modify: `lib/ai-quote/config.ts`, `lib/ai-quote/types.ts`, `lib/ai-quote/anthropic.ts`, `lib/ai-quote/cost.ts`
+- Create: `lib/ai-quote/photo-findings.ts`(Task 4·5가 함께 쓰는 순수 검증 함수)
 - Modify(호출부): `lib/ai-quote/draft-service.ts`, `app/api/ai/knowledge/route.ts`, `app/api/ai/eval/memo/route.ts`, `lib/ai-quote/runs.ts`(`finishRun`의 비용 계산 호출부가 있다면)
-- Test: `tests/ai-quote-config.test.ts`, `tests/ai-quote-cost.test.ts`, `tests/ai-quote-anthropic.test.ts`, 영향받는 route/service 테스트
+- Test: `tests/ai-quote-config.test.ts`, `tests/ai-quote-cost.test.ts`, `tests/ai-quote-anthropic.test.ts`, `tests/ai-photo-findings.test.ts`, 영향받는 route/service 테스트
 
 **Interfaces:**
 - Produces:
@@ -77,10 +78,12 @@
   - `AiQuoteDraft`에 `photoFindings: AiPhotoFinding[]`을 추가한다(사진이 없으면 `[]`).
   - `StructuredRequest<T>`에 `model: string`(필수)을 추가한다.
   - `estimateCostUsd(usage: AiUsage, model: string): string`. 모르는 모델은 Opus 단가로 계산한다(보수적).
+  - `lib/ai-quote/photo-findings.ts`: `validatePhotoFindings(raw: unknown, photoCount: number): AiPhotoFinding[]`. 배열이 아니거나 필드가 틀린 항목은 버리고, 범위 밖 사진 번호(1..photoCount 밖)를 버린다. 근거가 없어진 finding은 제거하고 최대 40개만 남긴다. 문자열은 잘라 낸다(area 80, issue 300, suggestedTreatment 300).
 - 사용처: 과거 견적 분석 = `analysis`, 메모 초안 · `eval_draft` · 정확도 비교 메모 = `draft`.
 
 - [ ] **Step 1: 실패하는 테스트**
   - `config`: `AI_QUOTE_MODELS` 값과 새 한도 값을 단언한다.
+  - `photo-findings`: `photoRefs [0, 2, 31]`, 사진 수 30 → `[2]`. 근거가 모두 범위 밖인 finding은 제거된다. `kind: 'other'`인 항목은 버려진다.
   - `cost`: `estimateCostUsd({inputTokens:1_000_000,outputTokens:0,cacheReadTokens:0,cacheWriteTokens:0}, 'claude-sonnet-5-5') === '2.0000'`, 같은 사용량에 `'claude-opus-5-5'`는 `'4.0000'`.
   - `anthropic`: `client.beta.messages.stream`이 `request.model`로 호출되는지 단언한다.
   - `draft-service`: `startRun`의 `model`이 `'claude-sonnet-5-5'`인지 단언한다.
@@ -193,9 +196,7 @@
   - `photoAnalysisOutputSchema` (zod)
     - `{ findings: Array<{ area; kind: 'problem'|'access'; issue; suggestedTreatment; photoRefs: number[]; confidence: 'low'|'medium'|'high' }> }`
     - 길이·범위 제약은 넣지 않는다(서버 검증).
-  - `validatePhotoFindings(raw, photoCount): AiPhotoFinding[]`
-    - 범위 밖 번호를 버리고 근거 없는 finding을 제거한다.
-    - 최대 40개, 문자열은 잘라 낸다.
+  - (검증은 Task 1의 `validatePhotoFindings`를 쓴다.)
   - `buildPhotoAnalysisPrompt({ knowledge, memo, jobberContext, photos })` → `{ system, messages }`
     - user content는 사진마다 `[{type:'text', text:'photo 01'}, {type:'image', source:{type:'base64', media_type, data}}]`를 반복하고, 맨 끝에 `<memo>…</memo>` + Jobber 작업 종류·고객 유형·면적을 둔다.
     - 메모는 기존 escape·연락처 가림을 거친다.
@@ -215,7 +216,7 @@
 - [ ] **Step 1: 실패하는 테스트**
   - `parseQuoteNumber('quote 3000 - 15 Kingsway')` → `'3000'`
   - `matchPhotoFolders`: 번호 일치 1개 → `selected`. 번호 중복 2개 → 후보 2개, `selected: null`(Review Focus 3). 번호가 없을 때 `'15 Kingsway, Dee Why NSW 2099'`가 `'15 Kingsway  Dee Why'`를 1위로 고른다.
-  - `validatePhotoFindings`: `photoRefs [0, 2, 31]`에 사진 수 30 → `[2]`. 근거가 모두 범위 밖이면 제거한다(Review Focus 4).
+  - 서비스가 모델 출력에 `validatePhotoFindings`를 적용해 범위 밖 번호를 버리는지(Review Focus 4)
   - 프롬프트: 파일 이름·폴더 이름 문자열이 system/messages 어디에도 없다. 사진 라벨은 `photo 01`이다. 이미지 블록 수는 사진 수와 같다.
   - 서비스: 썸네일 1장이 `null`이면 `skippedCount` 1. 이미지 0장 → `no_photos`(Review Focus 2). `MicrosoftAuthError` → `reconnect_required`(Review Focus 1). 모델 인자가 `'claude-opus-5-5'`다.
   - 경로: 허용되지 않은 사용자 403, 하루 한도 429, 예산 도달 429(모델 미호출), 미연결 409.
@@ -230,7 +231,7 @@
 - Test: `tests/ai-quote-draft-validation.test.ts`, `tests/ai-quote-draft-prompt.test.ts`, `tests/ai-quote-draft-service.test.ts`, `tests/ai-quote-draft-route.test.ts`
 
 **Interfaces:**
-- Consumes: Task 1 `AiPhotoFinding`/`AiPhotoAdjustment`/상수, Task 2 `photo_analysis`.
+- Consumes: Task 1 `AiPhotoFinding`/`AiPhotoAdjustment`/`validatePhotoFindings`/상수, Task 2 `photo_analysis`.
 - Produces:
   - 모델 출력 스키마: 작업 항목에 `photoAdjustment: { workingDays: string; labourPerDay: string; reason: string; photoRefs: number[] } | null`을 추가한다.
   - `buildQuoteDraftPrompt(input)`의 입력에 `photoFindings: AiPhotoFinding[]`을 추가한다. 비어 있지 않으면 메모 뒤에 `<photo_findings>`(escape된 JSON)를 넣는다.
