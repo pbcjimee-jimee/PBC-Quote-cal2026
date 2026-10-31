@@ -8,7 +8,7 @@ import type { AiQuoteDraft } from '@/lib/ai-quote/types'
 import { installTestDom, TestElement } from '@/tests/helpers/test-dom'
 
 const draft: AiQuoteDraft = {
-  summary: 'Repaint bedroom walls.',
+  summary: 'Repaint bedroom walls.', photoFindings: [],
   findings: [{ area: 'Bedroom', issue: 'Cracks', evidence: 'Job notes', confidence: 'medium' }],
   questions: ['Confirm the colour.'], warnings: ['Check preparation time.'],
   areas: [{ scope: 'interior', name: 'Bedroom' }],
@@ -76,7 +76,7 @@ describe('AI draft panel', () => {
     expect(container.textContent.indexOf(note!.textContent)).toBeLessThan(container.textContent.indexOf('Materials and labour'))
   })
   it('keeps selections independent and prevents applying an empty selection', async () => {
-    const withWork: AiQuoteDraft = { ...draft, workItems: [{ id: 'work-1', product: { id: 'paint-1', name: 'Wall paint', manufacturer: null, type: null, unit: '4L', marketPrice: '80', actualPrice: '50', active: true, colorCode: null }, areaScope: 'interior', areaName: 'Bedroom', quantity: '1', workingDays: '2', labourPerDay: '1', rationale: 'Requested repaint.' }] }
+    const withWork: AiQuoteDraft = { ...draft, workItems: [{ id: 'work-1', product: { id: 'paint-1', name: 'Wall paint', manufacturer: null, type: null, unit: '4L', marketPrice: '80', actualPrice: '50', active: true, colorCode: null }, areaScope: 'interior', areaName: 'Bedroom', quantity: '1', workingDays: '2', labourPerDay: '1', rationale: 'Requested repaint.', photoAdjustment: null }] }
     fetchMock.mockResolvedValue({ ok: true, status: 200, json: async () => ({ ok: true, data: { runId: 'run-1', draft: withWork } }) })
     await mount(); await generate()
     const checks = Array.from(container.querySelectorAll('input')).filter(input => input.getAttribute('type') === 'checkbox')
@@ -159,7 +159,7 @@ describe('AI draft panel', () => {
     expect(container.textContent).not.toContain('Walls were requested.')
   })
   it.each([['1', '1', '1 day · 1 person'], ['1.5', '2', '1.5 days · 2 people'], ['2', '1.00', '2 days · 1.00 person']])('uses singular and plural units for %s days and %s people', async (workingDays, labourPerDay, expected) => {
-    const withWork: AiQuoteDraft = { ...draft, workItems: [{ id: 'work-1', product: { id: 'paint-1', name: 'Wall paint', manufacturer: null, type: null, unit: '4L', marketPrice: '80', actualPrice: '50', active: true, colorCode: null }, areaScope: 'interior', areaName: 'Bedroom', quantity: '1', workingDays, labourPerDay, rationale: 'Requested repaint.' }] }
+    const withWork: AiQuoteDraft = { ...draft, workItems: [{ id: 'work-1', product: { id: 'paint-1', name: 'Wall paint', manufacturer: null, type: null, unit: '4L', marketPrice: '80', actualPrice: '50', active: true, colorCode: null }, areaScope: 'interior', areaName: 'Bedroom', quantity: '1', workingDays, labourPerDay, rationale: 'Requested repaint.', photoAdjustment: null }] }
     fetchMock.mockResolvedValue({ ok: true, status: 200, json: async () => ({ ok: true, data: { runId: 'run-1', draft: withWork } }) })
     await mount(); await generate()
     expect(container.textContent).toContain(`Wall paint · Bedroom · Qty 1 · ${expected}`)

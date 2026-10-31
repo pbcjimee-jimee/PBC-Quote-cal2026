@@ -26,6 +26,12 @@ function validate(input = raw(), data = catalog) {
 }
 
 describe('draft output schema', () => {
+  it('defaults photo findings and work adjustments for memo-only drafts', () => {
+    const draft = validate()
+    expect(draft.photoFindings).toEqual([])
+    expect(draft.workItems[0].photoAdjustment).toBeNull()
+  })
+
   it('accepts the structured shape without bounds and omits server fields', () => {
     const input = raw()
     input.publicLines[0].quantity = '-100'

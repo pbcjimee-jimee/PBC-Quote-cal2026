@@ -83,7 +83,7 @@ describe('quote draft prompt', () => {
   })
 
   it('marks the version and defines concise English PBC and untrusted-data rules', () => {
-    for (const value of ['quote-draft-v3', 'English', 'line breaks', 'PBC', 'priceWeight', 'one short sentence', 'warranties', 'discounts', 'memo', 'examples', 'Jobber']) {
+    for (const value of ['quote-draft-v4', 'English', 'line breaks', 'PBC', 'priceWeight', 'one short sentence', 'warranties', 'discounts', 'memo', 'examples', 'Jobber']) {
       expect(QUOTE_DRAFT_RULES).toContain(value)
     }
   })

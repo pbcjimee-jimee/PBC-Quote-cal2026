@@ -289,10 +289,10 @@ describe('quote workspace structure', () => {
   })
 
   const aiDraft: AiQuoteDraft = {
-    summary: 'Bedroom repaint', findings: [], questions: [], warnings: [],
+    summary: 'Bedroom repaint', findings: [], photoFindings: [], questions: [], warnings: [],
     areas: [{ scope: 'interior', name: 'Bedroom' }, { scope: 'interior', name: 'Hallway' }],
     publicLines: [{ id: 'ai-line', kind: 'text', name: 'AI wall painting', description: '', quantity: '1', productServiceId: null, priceSource: 'none', priceWeight: 0, catalogUnitPrice: null, taxable: false, areaName: 'Bedroom', rationale: 'Requested.' }],
-    workItems: [{ id: 'ai-work', product: { id: 'paint-1', name: 'AI wall paint', manufacturer: 'Dulux', type: 'Paint', unit: '4L', marketPrice: '80', rrpPrice: '90', actualPrice: '50', colorCode: null, active: true, productCode: 'WALL' }, areaScope: 'interior', areaName: 'Bedroom', quantity: '2', workingDays: '3', labourPerDay: '2', rationale: 'Two coats.' }],
+    workItems: [{ id: 'ai-work', product: { id: 'paint-1', name: 'AI wall paint', manufacturer: 'Dulux', type: 'Paint', unit: '4L', marketPrice: '80', rrpPrice: '90', actualPrice: '50', colorCode: null, active: true, productCode: 'WALL' }, areaScope: 'interior', areaName: 'Bedroom', quantity: '2', workingDays: '3', labourPerDay: '2', rationale: 'Two coats.', photoAdjustment: null }],
     formulaSelections: [{ scope: 'interior', selectedMin: 4, selectedMax: 1, rationale: 'Standard.' }],
   }
 

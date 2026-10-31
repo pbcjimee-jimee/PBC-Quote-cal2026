@@ -26,7 +26,7 @@ function database(responses: Array<{ data: unknown; error: unknown; count?: numb
 }
 
 describe('AI run bookkeeping', () => {
-  it.each<AiRunKind>(['knowledge_build', 'quote_draft', 'eval_memo', 'eval_draft'])('counts %s for only the user and time window', async kind => {
+  it.each<AiRunKind>(['knowledge_build', 'quote_draft', 'eval_memo', 'eval_draft', 'photo_analysis'])('counts %s for only the user and time window', async kind => {
     const db = database([{ data: null, error: null, count: 7 }])
     expect(await countRecentRuns(db.client, 'user-1', kind, new Date('2026-10-29T00:00:00Z'))).toBe(7)
     expect(db.from).toHaveBeenCalledWith('ai_quote_runs')
@@ -72,13 +72,37 @@ describe('AI run bookkeeping', () => {
   })
 
   it.each(['failed', 'refused'] as const)('finishes %s runs without usage and preserves the initial model', async status => {
-    const db = database([{ data: null, error: null }])
+    const db = database([{ data: { model: 'claude-sonnet-5-5' }, error: null }, { data: null, error: null }])
     await finishRun(db.client, 'run-1', { status, errorCode: 'refusal' })
-    expect(db.chains[0].update.mock.calls[0][0]).toMatchObject({
+    expect(db.chains[1].update.mock.calls[0][0]).toMatchObject({
       status, error_code: 'refusal', cost_usd: '0.0000', input_tokens: 0, output_tokens: 0,
       cache_read_tokens: 0, cache_write_tokens: 0,
     })
-    expect(db.chains[0].update.mock.calls[0][0]).not.toHaveProperty('model')
+    expect(db.chains[1].update.mock.calls[0][0]).not.toHaveProperty('model')
+  })
+
+  it('uses the returned model to price usage without reading the stored model', async () => {
+    const db = database([{ data: null, error: null }])
+    await finishRun(db.client, 'run-1', { status: 'succeeded', model: 'claude-sonnet-5-5',
+      usage: { inputTokens: 1_000_000, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 } })
+    expect(db.from).toHaveBeenCalledTimes(1)
+    expect(db.chains[0].update.mock.calls[0][0]).toMatchObject({ model: 'claude-sonnet-5-5', cost_usd: '2.0000' })
+  })
+
+  it('prices usage using the stored model when no response model is available', async () => {
+    const db = database([{ data: { model: 'claude-sonnet-5-5' }, error: null }, { data: null, error: null }])
+    await finishRun(db.client, 'run-1', { status: 'failed',
+      usage: { inputTokens: 1_000_000, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 } })
+    expect(db.chains[0].select).toHaveBeenCalledWith('model')
+    expect(db.chains[0].eq).toHaveBeenCalledWith('id', 'run-1')
+    expect(db.chains[1].update.mock.calls[0][0]).toMatchObject({ cost_usd: '2.0000' })
+    expect(db.chains[1].update.mock.calls[0][0]).not.toHaveProperty('model')
+  })
+
+  it('propagates update errors after reading the stored model', async () => {
+    const error = { code: '42501', message: 'denied' }
+    const db = database([{ data: { model: 'claude-sonnet-5-5' }, error: null }, { data: null, error }])
+    await expect(finishRun(db.client, 'run-1', { status: 'failed' })).rejects.toBe(error)
   })
 
   it.each([null, { version: 6 }])('increments the highest knowledge version from %j', async previous => {

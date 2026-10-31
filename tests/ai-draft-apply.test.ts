@@ -20,7 +20,7 @@ const product: AiQuoteDraftWorkItem['product'] = {
 function workItem(overrides: Partial<AiQuoteDraftWorkItem> = {}): AiQuoteDraftWorkItem {
   return {
     id: 'work-1', product, areaScope: 'interior', areaName: 'Bedroom 1',
-    quantity: '2.50', workingDays: '3.25', labourPerDay: '2.00', rationale: 'Two coats',
+    quantity: '2.50', workingDays: '3.25', labourPerDay: '2.00', rationale: 'Two coats', photoAdjustment: null,
     ...overrides,
   }
 }
@@ -37,7 +37,7 @@ function publicLine(overrides: Partial<AiQuoteDraftPublicLine> = {}): AiQuoteDra
 
 function draft(overrides: Partial<AiQuoteDraft> = {}): AiQuoteDraft {
   return {
-    summary: 'Paint bedroom', findings: [], questions: [], warnings: [],
+    summary: 'Paint bedroom', findings: [], photoFindings: [], questions: [], warnings: [],
     areas: [{ scope: 'interior', name: 'Bedroom 1' }],
     publicLines: [publicLine()], workItems: [workItem()],
     formulaSelections: [{ scope: 'interior', selectedMin: 3, selectedMax: 5, rationale: 'Typical work' }],

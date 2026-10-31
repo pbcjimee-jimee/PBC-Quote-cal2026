@@ -108,6 +108,7 @@ export function validateAiQuoteDraft(
       id: createId(), product, areaScope: item.areaScope, areaName, quantity: amount,
       workingDays: clamp(item.workingDays, 60, 'Working days'),
       labourPerDay: clamp(item.labourPerDay, 12, 'Labour per day'), rationale: item.rationale,
+      photoAdjustment: null,
     })
   }
   for (const area of input.areas) addArea(area.scope, area.name)
@@ -122,6 +123,7 @@ export function validateAiQuoteDraft(
   }
   return {
     summary: input.summary, findings: cap(input.findings, 30, 'Findings'),
+    photoFindings: [],
     questions: cap(input.questions, 20, 'Questions'), warnings, areas, publicLines, workItems, formulaSelections,
   }
 }

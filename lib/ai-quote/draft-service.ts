@@ -3,7 +3,7 @@ import 'server-only'
 import type Anthropic from '@anthropic-ai/sdk'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { createAnthropicClient, runStructuredClaudeRequest, type AiErrorCode } from '@/lib/ai-quote/anthropic'
-import { AI_QUOTE_LIMITS, AI_QUOTE_MODEL, AI_QUOTE_PROMPT_VERSIONS } from '@/lib/ai-quote/config'
+import { AI_QUOTE_LIMITS, AI_QUOTE_MODELS, AI_QUOTE_PROMPT_VERSIONS } from '@/lib/ai-quote/config'
 import { loadActiveKnowledge, loadDraftCatalog, loadQuoteExamples, loadSimilarQuoteCandidates } from '@/lib/ai-quote/data'
 import { buildQuoteDraftPrompt } from '@/lib/ai-quote/draft-prompt'
 import { aiDraftModelOutputSchema } from '@/lib/ai-quote/draft-schema'
@@ -34,7 +34,7 @@ export async function generateQuoteDraft(supabase: SupabaseClient<Database>, inp
     input.signal?.throwIfAborted()
     runId = await startRun(supabase, {
       kind: input.kind, memo, knowledgeId: knowledge.id, jobberQuoteId: input.jobberContext?.jobberQuoteId ?? null,
-      promptVersion: AI_QUOTE_PROMPT_VERSIONS.draft, model: AI_QUOTE_MODEL,
+      promptVersion: AI_QUOTE_PROMPT_VERSIONS.draft, model: AI_QUOTE_MODELS.draft,
     })
     let outcome: Parameters<typeof finishRun>[2] = { status: 'failed', errorCode: 'api_error' }
     try {
@@ -56,9 +56,9 @@ export async function generateQuoteDraft(supabase: SupabaseClient<Database>, inp
       const prompt = buildQuoteDraftPrompt({ knowledge, catalog, examples, jobberContext: input.jobberContext, memo })
       input.signal?.throwIfAborted()
       const result = await runStructuredClaudeRequest(input.client ?? createAnthropicClient(), {
-        ...prompt, schema: aiDraftModelOutputSchema, maxTokens: AI_QUOTE_LIMITS.draftMaxTokens, signal: input.signal,
+        ...prompt, model: AI_QUOTE_MODELS.draft, schema: aiDraftModelOutputSchema, maxTokens: AI_QUOTE_LIMITS.draftMaxTokens, signal: input.signal,
       })
-      outcome = { ...outcome, model: result.model ?? AI_QUOTE_MODEL, usage: result.usage ?? undefined }
+      outcome = { ...outcome, model: result.model ?? AI_QUOTE_MODELS.draft, usage: result.usage ?? undefined }
       input.signal?.throwIfAborted()
       if (!result.ok) {
         outcome.status = result.errorCode === 'refusal' ? 'refused' : 'failed'

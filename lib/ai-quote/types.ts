@@ -12,6 +12,22 @@ export interface AiUsage {
   cacheWriteTokens: number
 }
 
+export interface AiPhotoFinding {
+  area: string
+  kind: 'problem' | 'access'
+  issue: string
+  suggestedTreatment: string
+  photoRefs: number[]
+  confidence: 'low' | 'medium' | 'high'
+}
+
+export interface AiPhotoAdjustment {
+  workingDays: string
+  labourPerDay: string
+  reason: string
+  photoRefs: number[]
+}
+
 export interface AiQuoteDraftPublicLine {
   id: string
   kind: 'line_item' | 'text'
@@ -36,11 +52,13 @@ export interface AiQuoteDraftWorkItem {
   workingDays: string
   labourPerDay: string
   rationale: string
+  photoAdjustment: AiPhotoAdjustment | null
 }
 
 export interface AiQuoteDraft {
   summary: string
   findings: AiDraftModelOutput['findings']
+  photoFindings: AiPhotoFinding[]
   questions: string[]
   warnings: string[]
   areas: Array<{ scope: AiScope; name: string }>
