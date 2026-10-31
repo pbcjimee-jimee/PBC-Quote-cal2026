@@ -8,7 +8,7 @@ import { getPricingSettings } from '@/lib/actions/settings'
 import { isJobberDisabledInPreview, JOBBER_DISABLED_MESSAGE } from '@/lib/jobber/environment'
 import { isDevNoAuthMode } from '@/lib/actions/types'
 import { requireRole } from '@/lib/security/require-app-user'
-import { getAiQuoteAvailability } from '@/lib/ai-quote/config'
+import { getAiQuoteAvailabilityForUser } from '@/lib/ai-quote/access'
 import { loadActiveKnowledge } from '@/lib/ai-quote/data'
 import { hasPendingAiReview } from '@/lib/ai-quote/runs'
 import { createClient } from '@/lib/supabase/server'
@@ -45,7 +45,7 @@ export default async function QuoteEditPage({ params }: QuoteEditPageProps) {
     : null
   const appUser = isDevNoAuthMode() ? null : await requireRole('admin')
   const userId = appUser === null ? 'dev-no-auth' : appUser.ok ? appUser.user.id : undefined
-  const aiAvailability = getAiQuoteAvailability()
+  const aiAvailability = getAiQuoteAvailabilityForUser(appUser?.ok ? appUser.user.email ?? appUser.profile.email : null)
   let hasActiveAiKnowledge = false
   let aiReviewPending = false
   if (appUser?.ok) {

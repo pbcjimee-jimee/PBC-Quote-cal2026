@@ -5,6 +5,7 @@ import {
   AI_QUOTE_MODEL,
   AI_QUOTE_PROMPT_VERSIONS,
   getAiQuoteAvailability,
+  isAiQuoteUserAllowed,
 } from '@/lib/ai-quote/config'
 
 afterEach(() => vi.unstubAllEnvs())
@@ -58,5 +59,16 @@ describe('AI quote availability', () => {
     expect(AI_QUOTE_PROMPT_VERSIONS).toEqual({
       draft: 'quote-draft-v3', knowledge: 'knowledge-v1', evalMemo: 'eval-memo-v1',
     })
+  })
+})
+
+
+describe('AI quote allowed account', () => {
+  it.each(['jimee@paintbuddyco.com.au', ' JIMEE@PAINTBUDDYCO.COM.AU '])('allows the configured account: %s', email => {
+    expect(isAiQuoteUserAllowed(email)).toBe(true)
+  })
+
+  it.each([null, undefined, '', '  ', 'other@paintbuddyco.com.au', 'jimee@paintbuddyco.com.au.example'])('rejects other accounts: %s', email => {
+    expect(isAiQuoteUserAllowed(email)).toBe(false)
   })
 })

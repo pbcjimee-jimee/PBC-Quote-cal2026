@@ -1210,7 +1210,7 @@ export function QuoteForm({
             jobberEnabled={jobberEnabled}
             jobberNotice={jobberNotice}
           />
-          <AiDraftPanel
+          {aiAvailability.enabled || aiAvailability.reason !== 'not_allowed' ? <AiDraftPanel
             availability={aiAvailability}
             hasActiveKnowledge={hasActiveAiKnowledge}
             jobberContext={aiJobberContext}
@@ -1218,7 +1218,7 @@ export function QuoteForm({
             appliedRunId={aiDraftRunId}
             onApply={applyAiDraft}
             onReallocate={recalculateAiPrices}
-          />
+          /> : null}
           {aiPriceNotice ? <p className={`pbc-alert ${aiPriceNoticeSuccess ? 'pbc-alert--success' : 'pbc-alert--warning'}`} role="status" aria-live="polite">{aiPriceNotice}</p> : null}
         </section>
         <section id="quote-workspace-public" className="pbc-workspace pbc-quote-workspace-section" data-workspace-section="public" data-active={mobileState.activeSection === 'public'} tabIndex={-1} aria-label="Public quote">

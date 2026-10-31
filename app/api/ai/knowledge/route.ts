@@ -8,7 +8,7 @@ import { buildKnowledgePrompt, knowledgeOutputSchema } from '@/lib/ai-quote/know
 import { buildKnowledgeStats } from '@/lib/ai-quote/knowledge-stats'
 import { countRecentRuns, finishRun, insertKnowledgeDraft, startRun } from '@/lib/ai-quote/runs'
 import { AUTHENTICATION_REQUIRED_ERROR } from '@/lib/security/auth-policy'
-import { requireRole } from '@/lib/security/require-app-user'
+import { requireAiQuoteUser } from '@/lib/ai-quote/access'
 import { isSameOriginRequest } from '@/lib/security/request-origin'
 import { createClient } from '@/lib/supabase/server'
 
@@ -26,7 +26,7 @@ export async function POST(request: Request) {
   if (!availability.enabled) return errorResponse(null, 503, availability.message)
 
   try {
-    const auth = await requireRole('admin')
+    const auth = await requireAiQuoteUser()
     if (!auth.ok) {
       return errorResponse(null, auth.error === AUTHENTICATION_REQUIRED_ERROR ? 401 : 403, auth.error)
     }
