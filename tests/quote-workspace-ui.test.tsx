@@ -12,6 +12,7 @@ import type { AiQuoteDraft } from '@/lib/ai-quote/types'
 import type { QuoteLineTemplateRecord } from '@/lib/quote-line-templates/types'
 import Decimal from 'decimal.js'
 import { calculateMainQuoteTotals } from '@/components/quote-form/quote-calculation-totals'
+import { buildQuoteSavePayload } from '@/components/quote-form/quote-save-payload'
 import { DEFAULT_PRICING_SETTINGS } from '@/lib/calculator'
 import type { QuoteRecord } from '@/lib/dev-data'
 import { installTestDom, TestElement } from '@/tests/helpers/test-dom'
@@ -295,6 +296,40 @@ describe('quote workspace structure', () => {
     workItems: [{ id: 'ai-work', product: { id: 'paint-1', name: 'AI wall paint', manufacturer: 'Dulux', type: 'Paint', unit: '4L', marketPrice: '80', rrpPrice: '90', actualPrice: '50', colorCode: null, active: true, productCode: 'WALL' }, areaScope: 'interior', areaName: 'Bedroom', quantity: '2', workingDays: '3', labourPerDay: '2', rationale: 'Two coats.', photoAdjustment: null }],
     formulaSelections: [{ scope: 'interior', selectedMin: 4, selectedMax: 1, rationale: 'Standard.' }],
   }
+
+  it.each([true, false])('passes the Jobber photo lookup and recalculates Total with the selected labour (photo adjustment: %s)', async include => {
+    const originalFetch = globalThis.fetch
+    const photoDraft: AiQuoteDraft = { ...aiDraft, areas: [aiDraft.areas[0]], workItems: [{ ...aiDraft.workItems[0], product: { ...aiDraft.workItems[0].product, id: '00000000-0000-4000-8000-000000000002' }, workingDays: '2', labourPerDay: '1', photoAdjustment: { workingDays: '3', labourPerDay: '3', reason: 'High ceiling', photoRefs: [7] } }] }
+    const fetchMock = vi.fn().mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ ok: true, data: { connected: true, selected: { id: 'folder-1', name: 'quote 3000 - Main St' }, candidates: [], photoCount: 8 } }) })
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ ok: true, data: { runId: 'photo-run', photoLabels: [], skippedCount: 0 } }) })
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ ok: true, data: { runId: '00000000-0000-4000-8000-000000000001', draft: photoDraft } }) })
+    globalThis.fetch = fetchMock
+    vi.mocked(updateQuote).mockReset().mockResolvedValue({ ok: false, error: 'Held for inspection' })
+    const initialQuote = createQuoteRecord({ jobberQuoteId: 'jobber-1', jobberSnapshot: {
+      jobberQuoteId: 'jobber-1', sourceType: 'quote', quoteNumber: '3000', createdAt: '2026-10-31', customerName: 'Client', customerAddress: 'Old address', workType: 'Interior', areaSqft: null, customerType: 'Residential', sourceUrl: '', productsAndServices: [], jobExpenses: [], jobExpensesError: null,
+      financialSummary: { quoteTotal: 0, expensesTotal: 0, profit: 0, profitMarginPercent: null },
+    } })
+    const mounted = await mountQuoteForm({ initialQuote, areas: [{ id: '00000000-0000-4000-8000-000000000003', name: 'Bedroom', scope: 'interior', active: true, position: 0 }] })
+    try {
+      expect(fetchMock.mock.calls[0][0]).toBe('/api/ai/photos/folders')
+      expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({ quoteNumber: '3000', address: '10 Main St' })
+      const notes = mounted.container.querySelectorAll('textarea').find(element => element.getAttribute('placeholder')?.startsWith('e.g. Interior repaint:'))!
+      await act(async () => { notes.value = 'Repaint bedroom'; notes.dispatchEvent(new Event('input', { bubbles: true })) })
+      await act(async () => findButton(mounted.container, 'Create draft')!.dispatchEvent(new Event('click', { bubbles: true })))
+      if (!include) {
+        const checkbox = findElement(mounted.container, 'input', input => input.getAttribute('aria-label')?.startsWith('Include photo adjustment for') === true)!
+        await act(async () => { checkbox.checked = false; checkbox.dispatchEvent(new Event('change', { bubbles: true })) })
+      }
+      await act(async () => findButton(mounted.container, 'Apply to quote')!.dispatchEvent(new Event('click', { bubbles: true })))
+      await act(async () => findButton(mounted.container, 'Save changes')!.dispatchEvent(new Event('click', { bubbles: true })))
+      expect(updateQuote).toHaveBeenCalledOnce()
+      const saved = vi.mocked(updateQuote).mock.calls[0][0] as ReturnType<typeof buildQuoteSavePayload>
+      expect(saved.items[0]).toMatchObject({ workingDays: include ? 3 : 2, labourPerDay: include ? 3 : 1 })
+      const material = { id: 'material-1', name: 'AI wall paint', marketPrice: '90', actualPrice: '90', isCustom: false, quantity: '2', workingDays: include ? '3' : '2', labourPerDay: include ? '3' : '1', areaScope: 'interior' as const, areaName: 'Bedroom' }
+      const totals = calculateMainQuoteTotals({ materials: [material], selectedMin: 4, selectedMax: 1, areaFormulaSelections: { interior: { selectedMin: 4, selectedMax: 1 }, exterior: { selectedMin: 4, selectedMax: 1 }, roof: { selectedMin: 4, selectedMax: 1 } }, settings: DEFAULT_PRICING_SETTINGS })
+      expect(new Decimal(saved.jobberQuoteLines.at(-1)!.unitPrice).toFixed(2)).toBe(totals.finalTotal.div('1.10').toFixed(2))
+    } finally { await mounted.cleanup(); globalThis.fetch = originalFetch }
+  })
 
   it.each([false, true])('applies AI areas, materials and allocated prices atomically (area failure: %s)', async (failArea) => {
     const originalFetch = globalThis.fetch

@@ -22,7 +22,7 @@ let root: Root | null = null
 let cleanup: (() => void) | undefined
 let container: HTMLDivElement
 const props: ComponentProps<typeof AiDraftPanel> = {
-  availability: { enabled: true }, hasActiveKnowledge: true, jobberContext: null,
+  availability: { enabled: true }, hasActiveKnowledge: true, jobberContext: null, photoLookup: null,
   hasExistingPublicLines: false, appliedRunId: null, onApply, onReallocate,
 }
 
@@ -60,6 +60,146 @@ async function notes(value = 'Repaint bedroom walls') {
 async function generate() { await notes(); await click('Create draft') }
 
 describe('AI draft panel', () => {
+  const photoLookup = { quoteNumber: '3000', address: '15 Kingsway' }
+  const folder = { id: 'folder-1', name: 'quote 3000 - Kingsway' }
+  const photoDraft: AiQuoteDraft = { ...draft,
+    photoFindings: [{ area: 'Bedroom', kind: 'access', issue: 'High ceiling', suggestedTreatment: 'Use a platform', photoRefs: [7, 8], confidence: 'high' }],
+    workItems: [{ id: 'work-1', product: { id: 'paint-1', name: 'Wall paint', manufacturer: null, type: null, unit: '4L', marketPrice: '80', actualPrice: '50', active: true, colorCode: null }, areaScope: 'interior', areaName: 'Bedroom', quantity: '1', workingDays: '2', labourPerDay: '1', rationale: 'Requested repaint.', photoAdjustment: { workingDays: '3', labourPerDay: '3', reason: 'High ceiling', photoRefs: [7] } }],
+  }
+  function response(data: unknown, status = 200) {
+    return { ok: status === 200, status, json: async () => ({ ok: status === 200, data }) }
+  }
+  function photoResponses(overrides = {}) {
+    fetchMock.mockResolvedValueOnce(response({ connected: true, selected: folder, candidates: [], photoCount: 35, ...overrides }))
+      .mockResolvedValueOnce(response({ runId: 'photo-run', photoCount: 8, skippedCount: 1, findings: photoDraft.photoFindings, photoLabels: [{ ref: 7, name: 'ceiling.jpg' }, { ref: 8, name: 'platform.jpg' }] }))
+      .mockResolvedValueOnce(response({ runId: 'run-1', draft: photoDraft }))
+  }
+  async function changeInput(label: string, checked: boolean) {
+    const element = Array.from(container.querySelectorAll('label')).find(element => element.textContent.includes(label))!.querySelectorAll('input')[0]
+    await act(async () => { element.checked = checked; element.dispatchEvent(new Event('change', { bubbles: true })) })
+  }
+  it('looks up the folder and analyzes photos before writing, then reviews and applies adjustments', async () => {
+    photoResponses()
+    await mount({ photoLookup })
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual(photoLookup)
+    expect(container.textContent).toContain('Include site photos')
+    expect(container.textContent).toContain('First 30 of 35 photos')
+    await generate()
+    expect(fetchMock.mock.calls.map(call => call[0])).toEqual(['/api/ai/photos/folders', '/api/ai/photos/analyze', '/api/ai/quote-draft'])
+    expect(JSON.parse(fetchMock.mock.calls[1][1].body).folderId).toBe(folder.id)
+    expect(JSON.parse(fetchMock.mock.calls[2][1].body).photoAnalysisRunId).toBe('photo-run')
+    expect(container.textContent).toContain('Found in photos')
+    expect(container.textContent).toContain('Bedroom — High ceiling')
+    expect(container.textContent).toContain('photo 07, 08')
+    expect(Array.from(container.querySelectorAll('span')).some(element => element.getAttribute('title') === 'ceiling.jpg')).toBe(true)
+    expect(container.textContent).toContain('2 → 3 days · 1 → 3 people')
+    expect(container.textContent).toContain('1 photo skipped')
+    await changeInput('Include photo adjustment', false)
+    await click('Apply to quote')
+    expect(onApply.mock.calls[0][0].selection.photoAdjustments).toEqual(new Set())
+  })
+  it('defaults photo adjustments on when applying', async () => {
+    photoResponses(); await mount({ photoLookup }); await generate(); await click('Apply to quote')
+    expect(onApply.mock.calls[0][0].selection.photoAdjustments).toEqual(new Set(['work-1']))
+  })
+  it.each([0, 8])('writes without analyzing when photos are empty or unchecked (%s)', async photoCount => {
+    fetchMock.mockResolvedValueOnce(response({ connected: true, selected: folder, candidates: [], photoCount }))
+    await mount({ photoLookup })
+    if (photoCount === 0) expect(container.textContent).toContain('No photos in this folder')
+    else await changeInput('Include site photos', false)
+    await generate()
+    expect(fetchMock.mock.calls.map(call => call[0])).toEqual(['/api/ai/photos/folders', '/api/ai/quote-draft'])
+    expect(JSON.parse(fetchMock.mock.calls[1][1].body).photoAnalysisRunId).toBeUndefined()
+  })
+  it.each([409, 422, 429, 502])('offers a memo-only continuation after analysis failure %s', async status => {
+    photoResponses()
+    fetchMock.mockReset().mockResolvedValueOnce(response({ connected: true, selected: folder, candidates: [], photoCount: 8 }))
+      .mockResolvedValueOnce(response(null, status)).mockResolvedValueOnce(response({ runId: 'run-1', draft }))
+    await mount({ photoLookup }); await generate()
+    expect(container.textContent).toContain(status === 409 ? 'Reconnect OneDrive in Settings > AI.' : "Photos couldn't be analysed.")
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    await click('Continue without photos')
+    expect(fetchMock.mock.calls[2][0]).toBe('/api/ai/quote-draft')
+    expect(JSON.parse(fetchMock.mock.calls[2][1].body).photoAnalysisRunId).toBeUndefined()
+  })
+  it('selects an address candidate and can change or skip the folder', async () => {
+    photoResponses({ selected: null, candidates: [{ ...folder, score: 1 }], photoCount: null })
+    await mount({ photoLookup })
+    expect(container.textContent).toContain('No folder found for quote 3000')
+    await changeInput(folder.name, true)
+    await click('Change folder')
+    expect(button("Don't use photos")).toBeDefined()
+    await changeInput(folder.name, true)
+    await generate()
+    expect(JSON.parse(fetchMock.mock.calls[1][1].body).folderId).toBe(folder.id)
+  })
+  it('keeps the candidate available after choosing not to use photos', async () => {
+    photoResponses({ selected: null, candidates: [{ ...folder, score: 1 }], photoCount: null })
+    await mount({ photoLookup }); await click("Don't use photos")
+    expect(container.textContent).not.toContain('Photo folder')
+    await click('Change folder')
+    await changeInput(folder.name, true)
+    await generate()
+    expect(JSON.parse(fetchMock.mock.calls[1][1].body).folderId).toBe(folder.id)
+  })
+  it.each([409, 502])('offers a photo-free continuation when folder lookup fails (%s)', async status => {
+    fetchMock.mockResolvedValueOnce(response(null, status))
+    await mount({ photoLookup }); await notes(); await click('Continue without photos')
+    expect(fetchMock.mock.calls[1][0]).toBe('/api/ai/quote-draft')
+  })
+  it('clears a pending lookup when the Jobber quote is removed', async () => {
+    fetchMock.mockReturnValueOnce(new Promise(() => {}))
+    await mount({ photoLookup })
+    await act(async () => root!.render(createElement(AiDraftPanel, props)))
+    expect(fetchMock.mock.calls[0][1].signal.aborted).toBe(true)
+    await notes()
+    expect(button('Create draft').disabled).toBe(false)
+  })
+  it('times out photo analysis and still offers continuation', async () => {
+    vi.useFakeTimers()
+    fetchMock.mockResolvedValueOnce(response({ connected: true, selected: folder, candidates: [], photoCount: 8 }))
+      .mockReturnValueOnce(new Promise(() => {}))
+    await mount({ photoLookup }); await generate()
+    await act(async () => { vi.advanceTimersByTime(300000) })
+    expect(fetchMock.mock.calls[1][1].signal.aborted).toBe(true)
+    expect(button('Continue without photos').disabled).toBe(false)
+  })
+  it('can continue without photos if writing fails after a successful analysis', async () => {
+    fetchMock.mockResolvedValueOnce(response({ connected: true, selected: folder, candidates: [], photoCount: 8 }))
+      .mockResolvedValueOnce(response({ runId: 'photo-run', photoLabels: [], skippedCount: 0 }))
+      .mockResolvedValueOnce(response(null, 502))
+    await mount({ photoLookup }); await generate(); await click('Continue without photos')
+    expect(JSON.parse(fetchMock.mock.calls[3][1].body).photoAnalysisRunId).toBeUndefined()
+    expect(fetchMock.mock.calls[3][0]).toBe('/api/ai/quote-draft')
+  })
+  it('shows a Settings link when OneDrive is disconnected', async () => {
+    fetchMock.mockResolvedValueOnce(response({ connected: false, selected: null, candidates: [], photoCount: null }))
+    await mount({ photoLookup })
+    expect(container.textContent).toContain('Connect OneDrive in Settings > AI to include site photos.')
+    await generate()
+    expect(fetchMock.mock.calls[1][0]).toBe('/api/ai/quote-draft')
+  })
+  it('changes progress between stages, restarts the timer and cancels a late analysis', async () => {
+    vi.useFakeTimers()
+    let resolve!: (value: unknown) => void
+    fetchMock.mockResolvedValueOnce(response({ connected: true, selected: folder, candidates: [], photoCount: 8 }))
+      .mockReturnValueOnce(new Promise(done => { resolve = done })).mockReturnValueOnce(new Promise(() => {}))
+    await mount({ photoLookup }); await generate()
+    await act(async () => { vi.advanceTimersByTime(4000) })
+    expect(button('Analysing photos… 4s').disabled).toBe(true)
+    await act(async () => resolve(response({ runId: 'photo-run', photoLabels: [], skippedCount: 0 })))
+    expect(button('Writing the quote… 0s').disabled).toBe(true)
+    await click('Cancel')
+    expect(fetchMock.mock.calls[2][1].signal.aborted).toBe(true)
+  })
+  it('cancels analysis without starting the draft on a late response', async () => {
+    let resolve!: (value: unknown) => void
+    fetchMock.mockResolvedValueOnce(response({ connected: true, selected: folder, candidates: [], photoCount: 8 }))
+      .mockReturnValueOnce(new Promise(done => { resolve = done }))
+    await mount({ photoLookup }); await generate(); await click('Cancel')
+    await act(async () => resolve(response({ runId: 'photo-run' })))
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+  })
   it('starts directly with the client directive without a UTF-8 BOM', () => {
     expect(readFileSync('components/quote-form/ai-draft-panel.tsx', 'utf8').startsWith("'use client'")).toBe(true)
   })
@@ -93,7 +233,7 @@ describe('AI draft panel', () => {
     expect(button('Apply to quote').disabled).toBe(false)
     expect(container.textContent).not.toContain('Select at least one item to apply.')
     await click('Apply to quote')
-    expect(onApply).toHaveBeenCalledWith(expect.objectContaining({ selection: { areas: new Set(['interior:Bedroom']), publicLines: new Set(['line-1']), workItems: new Set(), formulaScopes: new Set() } }))
+    expect(onApply).toHaveBeenCalledWith(expect.objectContaining({ selection: { areas: new Set(['interior:Bedroom']), publicLines: new Set(['line-1']), workItems: new Set(), formulaScopes: new Set(), photoAdjustments: new Set() } }))
   })
   it('explains preview and missing approved guide states', () => {
     expect(renderToStaticMarkup(createElement(AiDraftPanel, { ...props, availability: { enabled: false, reason: 'preview', message: 'AI quoting is unavailable in Preview.' } }))).toContain('AI quoting is unavailable in Preview.')
@@ -122,8 +262,8 @@ describe('AI draft panel', () => {
     fetchMock.mockReturnValue(new Promise(done => { resolve = done }))
     await mount(); await generate()
     await act(async () => { vi.advanceTimersByTime(25000) })
-    expect(button('Creating draft... 25s').disabled).toBe(true)
-    await click('Creating draft... 25s')
+    expect(button('Writing the quote… 25s').disabled).toBe(true)
+    await click('Writing the quote… 25s')
     expect(fetchMock).toHaveBeenCalledTimes(1)
     await click('Cancel')
     expect(fetchMock.mock.calls[0][1].signal.aborted).toBe(true)
@@ -179,7 +319,7 @@ describe('AI draft panel', () => {
     expect(container.textContent).toContain('Add to existing lines')
     expect(container.textContent).toContain('Replace AI-editable lines')
     await click('Apply to quote')
-    expect(onApply).toHaveBeenCalledWith({ runId: 'run-1', draft, selection: { areas: new Set(['interior:Bedroom']), publicLines: new Set(['line-1']), workItems: new Set(), formulaScopes: new Set(['interior']) }, mode: 'append' })
+    expect(onApply).toHaveBeenCalledWith({ runId: 'run-1', draft, selection: { areas: new Set(['interior:Bedroom']), publicLines: new Set(['line-1']), workItems: new Set(), formulaScopes: new Set(['interior']), photoAdjustments: new Set() }, mode: 'append' })
     expect(container.textContent).not.toContain('Apply to quote')
     expect(button('Create new draft')).toBeDefined()
   })

@@ -48,7 +48,7 @@ function draft(overrides: Partial<AiQuoteDraft> = {}): AiQuoteDraft {
 function selection(overrides: Partial<AiDraftSelection> = {}): AiDraftSelection {
   return {
     areas: new Set(['interior:Bedroom 1']), publicLines: new Set(['draft-line-1']),
-    workItems: new Set(['work-1']), formulaScopes: new Set(['interior']),
+    workItems: new Set(['work-1']), formulaScopes: new Set(['interior']), photoAdjustments: new Set(),
     ...overrides,
   }
 }
@@ -93,6 +93,12 @@ function generateLineIds() {
 }
 
 describe('planAiDraftApplication', () => {
+  it.each([true, false])('applies photo-adjusted labour only when selected (%s)', include => {
+    const item = workItem({ workingDays: '2', labourPerDay: '1', photoAdjustment: { workingDays: '3', labourPerDay: '3', reason: 'High ceiling', photoRefs: [7, 8] } })
+    const result = planAiDraftApplication({ draft: draft({ workItems: [item] }), selection: selection({ photoAdjustments: new Set(include ? ['work-1'] : []) }), mode: 'append', current: current() }).build([bedroom])
+    expect(result.materials[0]).toMatchObject({ workingDays: include ? '3' : '2', labourPerDay: include ? '3' : '1', memo: include ? 'AI: Two coats · Photo: High ceiling (photo 07, 08)' : 'AI: Two coats' })
+    expect(item.workingDays).toBe('2')
+  })
   it('reuses existing areas regardless of case and surrounding spaces', () => {
     const plan = planAiDraftApplication({
       draft: draft({ areas: [{ scope: 'interior', name: 'bedroom 1 ' }], workItems: [workItem({ areaName: ' BEDROOM 1 ' })] }),

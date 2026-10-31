@@ -1214,6 +1214,7 @@ export function QuoteForm({
             availability={aiAvailability}
             hasActiveKnowledge={hasActiveAiKnowledge}
             jobberContext={aiJobberContext}
+            photoLookup={jobberQuoteDraft ? { quoteNumber: jobberQuoteDraft.quoteNumber, address: customerAddress } : null}
             hasExistingPublicLines={jobberQuoteLines.length > 0}
             appliedRunId={aiDraftRunId}
             onApply={applyAiDraft}

@@ -14,6 +14,7 @@ export interface AiDraftSelection {
   publicLines: Set<string>
   workItems: Set<string>
   formulaScopes: Set<AiScope>
+  photoAdjustments: Set<string>
 }
 
 export type AiLineApplyMode = 'append' | 'replace'
@@ -42,16 +43,18 @@ function lineKey(name: string): string {
 export function createAiDraftMaterialItem(
   workItem: AiQuoteDraftWorkItem,
   area: { id?: string; name: string; scope: AiScope },
+  includePhotoAdjustment = false,
 ): MaterialItem {
+  const adjustment = includePhotoAdjustment ? workItem.photoAdjustment : null
   return {
     ...createProductMaterialItem(workItem.product),
     quantity: workItem.quantity,
-    workingDays: workItem.workingDays,
-    labourPerDay: workItem.labourPerDay,
+    workingDays: adjustment?.workingDays ?? workItem.workingDays,
+    labourPerDay: adjustment?.labourPerDay ?? workItem.labourPerDay,
     areaId: area.id,
     areaName: area.name,
     areaScope: area.scope,
-    memo: `AI: ${workItem.rationale}`.slice(0, 500),
+    memo: `AI: ${workItem.rationale}${adjustment ? ` · Photo: ${adjustment.reason} (photo ${adjustment.photoRefs.map(ref => String(ref).padStart(2, '0')).join(', ')})` : ''}`.slice(0, 500),
   }
 }
 
@@ -93,7 +96,7 @@ export function planAiDraftApplication(input: {
       const areaRecords = new Map([...current.areas, ...areas].map((area) => [areaKey(area.scope, area.name), area]))
       const materials = workItems.map((item) => {
         const area = areaRecords.get(areaKey(item.areaScope, item.areaName))
-        return createAiDraftMaterialItem(item, area ?? { scope: item.areaScope, name: item.areaName.trim() })
+        return createAiDraftMaterialItem(item, area ?? { scope: item.areaScope, name: item.areaName.trim() }, selection.photoAdjustments.has(item.id))
       })
       const jobberQuoteLines: JobberQuoteLineItemDraft[] = []
       const appliedLineIds: string[] = []

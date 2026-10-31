@@ -21,6 +21,8 @@ vi.mock('@/lib/actions/ai-budget', () => ({
 
 import AiKnowledgeTab from '@/components/settings/tabs/ai-knowledge-tab'
 
+vi.mock('@/components/settings/tabs/onedrive-section', () => ({ default: () => createElement('section', null, 'OneDrive photos mock') }))
+
 const id = '00000000-0000-4000-8000-000000000001'
 const stats = buildKnowledgeStats([])
 stats.areas['interior:bedroom'] = {
@@ -83,6 +85,13 @@ function pending<T>() {
 }
 
 describe('AI knowledge tab', () => {
+  it('places OneDrive just after the monthly budget only when AI is available', async () => {
+    await mount()
+    expect(container.textContent).toContain('OneDrive photos mock')
+    expect(container.textContent.indexOf('OneDrive photos mock')).toBeGreaterThan(container.textContent.indexOf('Monthly limit (USD)'))
+    await act(async () => root!.render(createElement(AiKnowledgeTab, { initialKnowledge: [], aiAvailability: { enabled: false, reason: 'preview', message: 'Unavailable' } })))
+    expect(container.textContent).not.toContain('OneDrive photos mock')
+  })
   const active: AiKnowledgeRecord = { ...draft, id: '00000000-0000-4000-8000-000000000002', version: 1, status: 'active',
     styleGuide: 'Active style.', pricingGuide: 'Active pricing.' }
 
