@@ -34,6 +34,17 @@ export type Database = {
   }
   public: {
     Tables: {
+      ai_quote_settings: {
+        Row: {
+          id: boolean
+          monthly_budget_usd: string
+          updated_by: string | null
+          updated_at: string
+        }
+        Insert: Partial<Database['public']['Tables']['ai_quote_settings']['Row']>
+        Update: Partial<Database['public']['Tables']['ai_quote_settings']['Row']>
+        Relationships: []
+      }
       ai_quote_runs: {
         Row: {
           id: string
