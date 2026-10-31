@@ -57,7 +57,7 @@ describe('generate quote draft', () => {
     await generateQuoteDraft(supabase, { ...input(), kind: 'eval_draft', memo })
     expect(mocks.startRun).toHaveBeenCalledExactlyOnceWith(supabase, {
       kind: 'eval_draft', memo: 'call [phone] or [email] about walls', knowledgeId: 'guide-1',
-      jobberQuoteId: null, promptVersion: 'quote-draft-v1', model: 'claude-opus-5-5',
+      jobberQuoteId: null, promptVersion: 'quote-draft-v2', model: 'claude-opus-5-5',
     })
     const request = mocks.runStructuredClaudeRequest.mock.calls[0][1]
     expect(JSON.stringify(request)).not.toMatch(/0412|paint@example.com/)

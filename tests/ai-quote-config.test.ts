@@ -55,7 +55,7 @@ describe('AI quote availability', () => {
       evalMemoMaxTokens: 4000,
     })
     expect(AI_QUOTE_PROMPT_VERSIONS).toEqual({
-      draft: 'quote-draft-v1', knowledge: 'knowledge-v1', evalMemo: 'eval-memo-v1',
+      draft: 'quote-draft-v2', knowledge: 'knowledge-v1', evalMemo: 'eval-memo-v1',
     })
   })
 })

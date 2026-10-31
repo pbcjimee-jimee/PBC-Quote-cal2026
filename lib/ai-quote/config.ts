@@ -4,7 +4,7 @@ import { isDevNoAuthMode } from '@/lib/actions/types'
 export const AI_QUOTE_MODEL = 'claude-opus-5-5'
 
 export const AI_QUOTE_PROMPT_VERSIONS = {
-  draft: 'quote-draft-v1',
+  draft: 'quote-draft-v2',
   knowledge: 'knowledge-v1',
   evalMemo: 'eval-memo-v1',
 } as const
