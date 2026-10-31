@@ -55,6 +55,23 @@ describe('draft server validation', () => {
     expect(result.warnings).toHaveLength(2)
   })
 
+  it('uses the linked service stored name and description verbatim', () => {
+    const service = { ...catalog.productServices[0], name: 'Interior  Painting ', description: 'Walls:\n  - two coats\r\n\nCeilings\tone coat' }
+    const line = validate(raw(), { ...catalog, productServices: [service] }).publicLines[0]
+    expect(line).toMatchObject({ name: 'Interior  Painting ', description: 'Walls:\n  - two coats\r\n\nCeilings\tone coat' })
+  })
+
+  it('keeps AI line breaks on unlinked lines and strips other control characters', () => {
+    const input = raw()
+    input.publicLines[0] = { ...input.publicLines[0], productServiceId: null, priceSource: 'allocated',
+      description: 'Prepare:\r\n- fill cracks\u0007\n\n- sand\tsmooth' }
+    expect(validate(input).publicLines[0].description).toBe('Prepare:\n- fill cracks\n\n- sand\tsmooth')
+  })
+
+  it('keeps the AI description when the linked service has none', () => {
+    expect(validate().publicLines[0]).toMatchObject({ name: 'Painting', description: 'Prepare and paint' })
+  })
+
   it('fills catalogUnitPrice and taxable from the catalog', () => {
     expect(validate().publicLines[0]).toMatchObject({ id: 'id-1', catalogUnitPrice: '321.09', taxable: false })
   })
@@ -66,6 +83,7 @@ describe('draft server validation', () => {
 
   it('truncates name to 200 and description to 4000 characters', () => {
     const input = raw()
+    input.publicLines[0].productServiceId = null
     input.publicLines[0].name = 'n'.repeat(201)
     input.publicLines[0].description = 'd'.repeat(4001)
     expect(validate(input).publicLines[0]).toMatchObject({ name: 'n'.repeat(200), description: 'd'.repeat(4000) })

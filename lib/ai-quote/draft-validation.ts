@@ -3,8 +3,9 @@ import type { DraftCatalog } from '@/lib/ai-quote/data'
 import type { AiDraftModelOutput } from '@/lib/ai-quote/draft-schema'
 import type { AiQuoteDraft, AiScope } from '@/lib/ai-quote/types'
 
+// Keep line breaks and tabs: quote line descriptions are multi-line.
 function cleanStrings<T>(value: T): T {
-  if (typeof value === 'string') return value.replace(/\p{Cc}/gu, '') as T
+  if (typeof value === 'string') return value.replace(/\r\n?/g, '\n').replace(/[^\P{Cc}\n\t]/gu, '') as T
   if (Array.isArray(value)) return value.map(cleanStrings) as T
   if (value !== null && typeof value === 'object') {
     return Object.fromEntries(Object.entries(value).map(([key, entry]) => [key, cleanStrings(entry)])) as T
@@ -30,7 +31,7 @@ export function validateAiQuoteDraft(
 ): AiQuoteDraft {
   const input = cleanStrings(raw)
   const warnings: string[] = []
-  const services = new Map(cleanStrings(catalog.productServices).map(row => [row.id, row]))
+  const services = new Map(catalog.productServices.map(row => [row.id, row]))
   const products = new Map(cleanStrings(catalog.products).filter(row => row.active).map(row => [row.id, row]))
   function cap<T>(rows: T[], max: number, label: string): T[] {
     if (rows.length > max) warnings.push(`${label} limited to ${max}.`)
@@ -79,8 +80,12 @@ export function validateAiQuoteDraft(
     if (line.productServiceId !== null && !service) warnings.push('An unavailable product/service link was removed.')
     const priceSource = line.kind === 'text' ? 'none'
       : line.priceSource === 'catalog' && !service ? 'allocated' : line.priceSource
+    // A linked service keeps its stored name and description verbatim, like picking it by hand.
     publicLines.push({
-      ...line, id: createId(), name, description: line.description.slice(0, 4000), quantity: amount,
+      ...line, id: createId(),
+      name: service ? service.name : name,
+      description: service?.description ? service.description : line.description.slice(0, 4000),
+      quantity: amount,
       productServiceId: service?.id ?? null, priceSource,
       priceWeight: Number.isFinite(line.priceWeight) ? Math.min(100, Math.max(0, line.priceWeight)) : 0,
       catalogUnitPrice: priceSource === 'catalog' ? service?.unitPrice ?? null : null,
