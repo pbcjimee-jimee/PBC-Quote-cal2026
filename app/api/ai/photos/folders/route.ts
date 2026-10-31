@@ -3,7 +3,7 @@ import { safeErrorMessage } from '@/lib/actions/action-error'
 import { requireAiQuoteUser } from '@/lib/ai-quote/access'
 import { getAiQuoteAvailability } from '@/lib/ai-quote/config'
 import { matchPhotoFolders } from '@/lib/ai-quote/photo-folders'
-import { getMicrosoftConfig } from '@/lib/microsoft/config'
+import { getMicrosoftConfig, getMissingMicrosoftConfigKeys } from '@/lib/microsoft/config'
 import { listFolderImages, listQuotePhotoFolders, MicrosoftAuthError } from '@/lib/microsoft/graph'
 import { getUsableMicrosoftAccessToken } from '@/lib/microsoft/tokens'
 import { AUTHENTICATION_REQUIRED_ERROR } from '@/lib/security/auth-policy'
@@ -33,13 +33,13 @@ export async function POST(request: Request) {
     const parsed = aiPhotoFoldersRequestSchema.safeParse(body)
     if (!parsed.success) return errorResponse(null, 400, 'Check the quote number and address and try again.')
 
+    const notConnected = NextResponse.json({ ok: true, data: { connected: false, selected: null, candidates: [], photoCount: null } })
+    const config = getMicrosoftConfig()
+    // Until OneDrive is configured there is nothing to look up, so skip the token table entirely.
+    if (getMissingMicrosoftConfigKeys(config).length) return notConnected
     const supabase = await createClient()
-    const token = await getUsableMicrosoftAccessToken(supabase, auth.user.id, getMicrosoftConfig())
-    if (!token.ok) {
-      return token.reason === 'not_connected'
-        ? NextResponse.json({ ok: true, data: { connected: false, selected: null, candidates: [], photoCount: null } })
-        : errorResponse(null, 409, 'Reconnect OneDrive in Settings > AI')
-    }
+    const token = await getUsableMicrosoftAccessToken(supabase, auth.user.id, config)
+    if (!token.ok) return token.reason === 'not_connected' ? notConnected : errorResponse(null, 409, 'Reconnect OneDrive in Settings > AI')
     const folders = await listQuotePhotoFolders(token.accessToken)
     const match = matchPhotoFolders(folders, parsed.data)
     const photoCount = match.selected ? (await listFolderImages(token.accessToken, match.selected.id)).length : null

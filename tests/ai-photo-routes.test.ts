@@ -36,6 +36,7 @@ function request(body: unknown, site = 'same-origin') {
 beforeEach(() => {
   vi.resetAllMocks()
   vi.spyOn(console, 'error').mockImplementation(() => {})
+  for (const name of ['MICROSOFT_TENANT_ID', 'MICROSOFT_CLIENT_ID', 'MICROSOFT_CLIENT_SECRET', 'MICROSOFT_REDIRECT_URI']) vi.stubEnv(name, 'set')
   mocks.availability.mockReturnValue({ enabled: true })
   mocks.requireRole.mockResolvedValue({ ok: true, user: { id: 'admin-1', email: 'jimee@paintbuddyco.com.au' },
     profile: { email: 'jimee@paintbuddyco.com.au', role: 'admin' } })
@@ -47,7 +48,7 @@ beforeEach(() => {
   mocks.folders.mockResolvedValue([folder])
   mocks.images.mockResolvedValue([{ id: 'image-1', name: 'site.png' }])
 })
-afterEach(() => vi.restoreAllMocks())
+afterEach(() => { vi.restoreAllMocks(); vi.unstubAllEnvs() })
 
 describe.each([
   ['folders', folders, folderInput], ['analyze', analyze, analyzeInput],
@@ -84,6 +85,14 @@ describe.each([
 })
 
 describe('photo folders route', () => {
+  it('reports not connected without reading tokens while OneDrive is not configured', async () => {
+    vi.stubEnv('MICROSOFT_CLIENT_ID', '')
+    const response = await folders(request(folderInput))
+    expect(await response.json()).toEqual({ ok: true, data: { connected: false, selected: null, candidates: [], photoCount: null } })
+    expect(mocks.createClient).not.toHaveBeenCalled()
+    expect(mocks.token).not.toHaveBeenCalled()
+  })
+
   it('counts images only for a uniquely selected folder', async () => {
     const response = await folders(request(folderInput))
     expect(await response.json()).toEqual({ ok: true, data: { connected: true, selected: folder, candidates: [], photoCount: 1 } })
