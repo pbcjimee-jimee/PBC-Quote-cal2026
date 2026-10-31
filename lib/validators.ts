@@ -495,4 +495,5 @@ export const aiEvalMemoRequestSchema = z.object({
 
 export const aiEvalRunRequestSchema = z.object({
   caseId: z.string().uuid(),
+  model: z.enum(['sonnet', 'opus']).default('sonnet'),
 })

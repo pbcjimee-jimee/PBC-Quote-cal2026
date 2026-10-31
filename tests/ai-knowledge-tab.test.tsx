@@ -259,7 +259,7 @@ describe('AI knowledge tab', () => {
   it('renders labelled draft textareas and saves edits', async () => {
     await mount([draft])
     expect(container.textContent).toContain('Review draft')
-    expect(Array.from(container.querySelectorAll('label')).map(label => label.textContent)).toEqual(['Monthly limit (USD)', 'Style guide', 'Pricing guide'])
+    expect(Array.from(container.querySelectorAll('label')).map(label => label.textContent)).toEqual(['Monthly limit (USD)', 'Style guide', 'Pricing guide', 'Model'])
     expect(getByLabelText('Style guide').getAttribute('id')).toBe('ai-style-guide')
     expect(getByLabelText('Pricing guide').getAttribute('id')).toBe('ai-pricing-guide')
     const field = getByLabelText('Style guide')

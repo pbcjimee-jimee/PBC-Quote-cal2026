@@ -103,9 +103,39 @@ describe('AI eval actions', () => {
     const { builder } = evalSetup()
     const result = await listEvalCases({ setLabel: 'Launch' })
     expect(result).toEqual({ ok: true, data: [{ id, quoteId, quoteLabel: '#3000 · Interior',
-      memo: 'Paint with DULUX WASH for 3 days', leaks: ['days_or_litres', 'product'], lastMetrics: null }] })
+      memo: 'Paint with DULUX WASH for 3 days', leaks: ['days_or_litres', 'product'], lastMetrics: null, lastModel: null }] })
     expect(JSON.stringify(result)).not.toContain('PRIVATE CUSTOMER')
     expect(builder.select.mock.calls[0][0]).not.toMatch(/customer|address|phone|email|\*/i)
+  })
+
+  it('lists the model from each last draft run and handles missing runs', async () => {
+    const { client, builder } = evalSetup()
+    mocks.cases.mockResolvedValue([
+      { id, quote_id: quoteId, memo: 'Paint', last_metrics: null, last_draft_run_id: 'sonnet-run' },
+      { id: 'case-2', quote_id: quoteId, memo: 'Paint', last_metrics: null, last_draft_run_id: 'opus-run' },
+      { id: 'case-3', quote_id: quoteId, memo: 'Paint', last_metrics: null, last_draft_run_id: 'missing-run' },
+      { id: 'case-4', quote_id: quoteId, memo: 'Paint', last_metrics: null, last_draft_run_id: null },
+    ])
+    const runs = { select: vi.fn().mockReturnThis(), in: vi.fn().mockResolvedValue({ data: [
+      { id: 'opus-run', model: 'claude-opus-5-5' }, { id: 'sonnet-run', model: 'claude-sonnet-5-5' },
+    ], error: null }) }
+    client.from.mockImplementation(table => table === 'ai_quote_runs' ? runs : builder)
+    const result = await listEvalCases({ setLabel: 'Launch' })
+    expect(result.ok).toBe(true)
+    if (!result.ok) throw new Error('Expected cases')
+    expect(result.data.map(record => record.lastModel)).toEqual(['claude-sonnet-5-5', 'claude-opus-5-5', null, null])
+    expect(runs.select).toHaveBeenCalledWith('id, model')
+    expect(runs.in).toHaveBeenCalledWith('id', ['sonnet-run', 'opus-run', 'missing-run'])
+  })
+
+  it('returns a safe failure when loading last draft models fails', async () => {
+    const { client, builder } = evalSetup()
+    mocks.cases.mockResolvedValue([{ id, quote_id: quoteId, memo: 'Paint', last_metrics: null, last_draft_run_id: 'run' }])
+    const runs = { select: vi.fn().mockReturnThis(), in: vi.fn().mockResolvedValue({ data: null, error: { message: 'private@example.com' } }) }
+    client.from.mockImplementation(table => table === 'ai_quote_runs' ? runs : builder)
+    const result = await listEvalCases({ setLabel: 'Launch' })
+    expect(result).toMatchObject({ ok: false })
+    expect(JSON.stringify(result)).not.toContain('private@example.com')
   })
 
   it('redacts edited notes and clears stale results', async () => {

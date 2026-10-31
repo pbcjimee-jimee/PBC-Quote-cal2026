@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { getAiMonthlyBudgetStatus } from '@/lib/ai-quote/budget'
 import { safeErrorMessage } from '@/lib/actions/action-error'
 import { getPricingSettings } from '@/lib/actions/settings'
-import { AI_QUOTE_LIMITS, getAiQuoteAvailability } from '@/lib/ai-quote/config'
+import { AI_QUOTE_LIMITS, AI_QUOTE_MODELS, getAiQuoteAvailability } from '@/lib/ai-quote/config'
 import { loadEvalCase, loadEvalReference, saveEvalResult } from '@/lib/ai-quote/data'
 import { generateQuoteDraft } from '@/lib/ai-quote/draft-service'
 import { compareDraftWithQuote } from '@/lib/ai-quote/eval-metrics'
@@ -57,6 +57,7 @@ export async function POST(request: Request) {
     request.signal.throwIfAborted()
     const result = await generateQuoteDraft(supabase, {
       kind: 'eval_draft', memo: redactContactDetails(evalCase.memo), jobberContext: null,
+      model: parsed.data.model === 'opus' ? AI_QUOTE_MODELS.analysis : AI_QUOTE_MODELS.draft,
       excludeQuoteIds: [evalCase.quote_id], signal: request.signal,
     })
     request.signal.throwIfAborted()

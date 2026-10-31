@@ -7,7 +7,7 @@ const mocks = vi.hoisted(() => ({ budget: vi.fn(), availability: vi.fn(), requir
 vi.mock('@/lib/ai-quote/budget', () => ({ getAiMonthlyBudgetStatus: mocks.budget }))
 vi.mock('@/lib/ai-quote/config', async (importOriginal) => ({
   ...await importOriginal<typeof import('@/lib/ai-quote/config')>(), getAiQuoteAvailability: mocks.availability,
-  AI_QUOTE_LIMITS: { evalMemosPerDay: 30, evalDraftsPerDay: 30, evalMemoMaxTokens: 4000 },
+  AI_QUOTE_LIMITS: { evalMemosPerDay: 30, evalDraftsPerDay: 45, evalMemoMaxTokens: 4000 },
   AI_QUOTE_MODELS: { analysis: 'claude-opus-5-5', draft: 'claude-sonnet-5-5' }, AI_QUOTE_PROMPT_VERSIONS: { evalMemo: 'eval-memo-v1' } }))
 vi.mock('@/lib/security/require-app-user', () => ({ requireRole: mocks.requireRole }))
 vi.mock('@/lib/supabase/server', () => ({ createClient: mocks.createClient }))
@@ -98,8 +98,8 @@ describe.each(endpoints)('eval $name gates', ({ post, body, kind }) => {
       headers: { 'sec-fetch-site': 'same-origin' }, body: '{' }))).status).toBe(400)
   })
 
-  it('applies a separate rolling daily limit of 30', async () => {
-    mocks.countRecentRuns.mockResolvedValue(30)
+  it('applies the separate rolling daily limit', async () => {
+    mocks.countRecentRuns.mockResolvedValue(kind === 'eval_draft' ? 45 : 30)
     const before = Date.now() - 24 * 60 * 60 * 1000
     expect((await post(request(body))).status).toBe(429)
     const call = mocks.countRecentRuns.mock.calls[0]
@@ -192,11 +192,28 @@ describe('eval memo execution', () => {
 })
 
 describe('eval draft execution', () => {
+  it.each([[undefined, 'claude-sonnet-5-5'], ['sonnet', 'claude-sonnet-5-5'], ['opus', 'claude-opus-5-5']])
+    ('maps model %s to %s', async (model, expectedModel) => {
+      expect((await runPost(request({ caseId, model }))).status).toBe(200)
+      expect(mocks.generateQuoteDraft).toHaveBeenCalledWith(supabase, expect.objectContaining({ model: expectedModel }))
+    })
+
+  it.each(['other', 'claude-opus-5-5', '', null, 5])('rejects unsupported model %j before database access', async model => {
+    expect((await runPost(request({ caseId, model }))).status).toBe(400)
+    expect(mocks.createClient).not.toHaveBeenCalled()
+    expect(mocks.generateQuoteDraft).not.toHaveBeenCalled()
+  })
+
+  it('allows a second twenty-sample comparison within the daily limit', async () => {
+    mocks.countRecentRuns.mockResolvedValue(39)
+    expect((await runPost(request({ caseId, model: 'opus' }))).status).toBe(200)
+  })
+
   it('excludes the reference, compares with current settings and saves only the metrics', async () => {
     const req = request({ caseId })
     expect(await (await runPost(req)).json()).toEqual({ ok: true, data: { runId: 'draft-run', metrics } })
     expect(mocks.generateQuoteDraft).toHaveBeenCalledExactlyOnceWith(supabase, { kind: 'eval_draft',
-      memo: 'Paint walls. Call [email]', jobberContext: null, excludeQuoteIds: [quoteId], signal: req.signal })
+      memo: 'Paint walls. Call [email]', jobberContext: null, model: 'claude-sonnet-5-5', excludeQuoteIds: [quoteId], signal: req.signal })
     expect(mocks.compare).toHaveBeenCalledWith({ draft: { summary: 'Draft' }, settings: { f1LabourRate: 1000 }, reference })
     expect(mocks.saveResult).toHaveBeenCalledExactlyOnceWith(supabase, caseId, { runId: 'draft-run', metrics })
     expect(mocks.finishRun).not.toHaveBeenCalled()

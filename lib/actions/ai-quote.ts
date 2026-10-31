@@ -143,6 +143,7 @@ export interface AiEvalCaseRecord {
   memo: string
   leaks: string[]
   lastMetrics: AiDraftComparison | null
+  lastModel: string | null
 }
 
 const evalSetSchema = z.object({ setLabel: z.string().trim().min(1).max(60) })
@@ -197,12 +198,20 @@ export async function listEvalCases(input: unknown): Promise<ActionResult<AiEval
     if (!client.ok) return client
     const cases = await loadEvalCases(client.data, parsed.data.setLabel)
     const details = await loadEvalQuoteDetails(client.data, cases.map(record => record.quote_id))
+    const runIds = [...new Set(cases.flatMap(record => record.last_draft_run_id ? [record.last_draft_run_id] : []))]
+    const models = new Map<string, string>()
+    if (runIds.length) {
+      const { data, error } = await client.data.from('ai_quote_runs').select('id, model').in('id', runIds)
+      if (error) throw error
+      for (const run of data ?? []) models.set(run.id, run.model)
+    }
     return { ok: true, data: cases.flatMap(record => {
       const quote = details.get(record.quote_id)
       if (!quote) return []
       const memo = redactContactDetails(record.memo)
       return [{ id: record.id, quoteId: record.quote_id, quoteLabel: quote.quoteLabel, memo,
-        leaks: detectEvalMemoLeaks(memo, quote.productNames), lastMetrics: record.last_metrics as unknown as AiDraftComparison | null }]
+        leaks: detectEvalMemoLeaks(memo, quote.productNames), lastMetrics: record.last_metrics as unknown as AiDraftComparison | null,
+        lastModel: record.last_draft_run_id ? models.get(record.last_draft_run_id) ?? null : null }]
     }) }
   } catch (error) {
     return { ok: false, error: safeErrorMessage(error, 'ai.eval.list', 'Unable to load sample quotes. Please try again.') }

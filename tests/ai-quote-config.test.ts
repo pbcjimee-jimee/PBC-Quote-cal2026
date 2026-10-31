@@ -47,7 +47,7 @@ describe('AI quote availability', () => {
       draftsPerDay: 20,
       knowledgeBuildsPerDay: 3,
       evalMemosPerDay: 30,
-      evalDraftsPerDay: 30,
+      evalDraftsPerDay: 45,
       evalSetSize: 20,
       memoMaxLength: 8000,
       existingLinesMax: 60,
