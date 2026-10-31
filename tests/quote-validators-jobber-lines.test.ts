@@ -1,7 +1,20 @@
 import { describe, expect, it } from 'vitest'
-import { jobberQuoteLineSchema, jobberSaveModeSchema, quoteSchema, paintComparisonSchema } from '@/lib/validators'
+import { jobberQuoteLineSchema, jobberSaveModeSchema, quoteSchema, paintComparisonSchema, draftJobberContextSchema } from '@/lib/validators'
 
 describe('Jobber quote line validators', () => {
+  it('preserves validated AI run and review fields and rejects malformed values', () => {
+    const input = { workingDays: 0, labourPerDay: 0, materialMarket: 0, materialActual: 0, selectedMin: 1, selectedMax: 1, items: [], aiDraftRunId: '00000000-0000-4000-8000-000000000001', aiReviewConfirmed: true }
+    expect(quoteSchema.parse(input)).toMatchObject({ aiDraftRunId: input.aiDraftRunId, aiReviewConfirmed: true })
+    expect(quoteSchema.safeParse({ ...input, aiDraftRunId: 'invalid' }).success).toBe(false)
+    expect(quoteSchema.safeParse({ ...input, aiReviewConfirmed: 'true' }).success).toBe(false)
+  })
+  it('bounds every allowed AI Jobber context string', () => {
+    const context = { jobberQuoteId: 'a'.repeat(200), workType: 'b'.repeat(200), customerType: 'c'.repeat(200), areaSqft: null, existingLines: [{ name: 'n'.repeat(200), description: 'd'.repeat(4000), quantity: 1, unitPrice: 0 }] }
+    expect(draftJobberContextSchema.safeParse(context).success).toBe(true)
+    for (const field of ['jobberQuoteId', 'workType', 'customerType']) expect(draftJobberContextSchema.safeParse({ ...context, [field]: 'a'.repeat(201) }).success).toBe(false)
+    expect(draftJobberContextSchema.safeParse({ ...context, existingLines: [{ ...context.existingLines[0], name: 'a'.repeat(201) }] }).success).toBe(false)
+    expect(draftJobberContextSchema.safeParse({ ...context, existingLines: [{ ...context.existingLines[0], description: 'a'.repeat(4001) }] }).success).toBe(false)
+  })
   const base = { workingDays: 0, labourPerDay: 0, materialMarket: 10, materialActual: 10,
     selectedMin: 1, selectedMax: 1, items: [{ logicalKey: '00000000-0000-4000-8000-000000000201',
       timberRole: 'shared', productNameSnapshot: 'Prep', marketPriceSnapshot: 10,

@@ -6,6 +6,9 @@ import { getPricingSettings } from '@/lib/actions/settings'
 import { isJobberDisabledInPreview, JOBBER_DISABLED_MESSAGE } from '@/lib/jobber/environment'
 import { isDevNoAuthMode } from '@/lib/actions/types'
 import { requireRole } from '@/lib/security/require-app-user'
+import { getAiQuoteAvailability } from '@/lib/ai-quote/config'
+import { loadActiveKnowledge } from '@/lib/ai-quote/data'
+import { createClient } from '@/lib/supabase/server'
 
 export default async function QuoteNewPage() {
   const jobberEnabled = !isJobberDisabledInPreview()
@@ -28,6 +31,15 @@ export default async function QuoteNewPage() {
     : null
   const appUser = isDevNoAuthMode() ? null : await requireRole('admin')
   const userId = appUser === null ? 'dev-no-auth' : appUser.ok ? appUser.user.id : undefined
+  const aiAvailability = getAiQuoteAvailability()
+  let hasActiveAiKnowledge = false
+  if (appUser?.ok && aiAvailability.enabled) {
+    try {
+      hasActiveAiKnowledge = await loadActiveKnowledge(await createClient()) !== null
+    } catch {
+      hasActiveAiKnowledge = false
+    }
+  }
 
   return (
     <>
@@ -39,6 +51,8 @@ export default async function QuoteNewPage() {
       <QuoteForm
         key={userId}
         userId={userId}
+        aiAvailability={aiAvailability}
+        hasActiveAiKnowledge={hasActiveAiKnowledge}
         areas={areas.value.data}
         quoteLineTemplates={templates ?? []}
         settings={settings.value.data}

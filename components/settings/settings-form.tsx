@@ -1,7 +1,8 @@
 'use client'
 
 import dynamic from 'next/dynamic'
-import { useRef, useState, useTransition } from 'react'
+import { useEffect, useEffectEvent, useRef, useState, useTransition } from 'react'
+import { useSearchParams } from 'next/navigation'
 import { createArea, deleteArea, listAreas, updateArea } from '@/lib/actions/areas'
 import { createProduct, deleteProduct, importProductsCSV, listProducts, updateProduct } from '@/lib/actions/products'
 import {
@@ -18,6 +19,8 @@ import {
   updateQuoteLineTemplate,
 } from '@/lib/actions/quote-line-templates'
 import { updatePricingSettings } from '@/lib/actions/settings'
+import { listAiQuoteKnowledge, type AiKnowledgeRecord } from '@/lib/actions/ai-quote'
+import type { AiQuoteAvailability } from '@/lib/ai-quote/config'
 import type { ActionResult } from '@/lib/actions/types'
 import { Icons } from '@/components/ui/icons'
 import type { JobberQuoteLineItemDraft } from '@/components/quote-form/types'
@@ -55,6 +58,10 @@ const AreaSettingsTab = dynamic(
   () => import('@/components/settings/tabs/area-settings-tab'),
   { loading: () => <SettingsTabModuleLoading label="Area settings" /> }
 )
+const AiKnowledgeTab = dynamic(
+  () => import('@/components/settings/tabs/ai-knowledge-tab'),
+  { loading: () => <SettingsTabModuleLoading label="AI settings" /> }
+)
 
 type MaterialUpdateInput = {
   id: string
@@ -73,10 +80,12 @@ interface SettingsFormProps {
   initialProductServices?: ProductServiceRecord[]
   initialQuoteLineTemplates?: QuoteLineTemplateRecord[]
   initialSettings: PricingSettings
+  initialAiKnowledge?: AiKnowledgeRecord[]
+  aiAvailability?: AiQuoteAvailability
 }
 
-type SettingsTab = 'labour' | 'material' | 'productService' | 'template' | 'area'
-type SettingsResource = 'areas' | 'products' | 'productServices' | 'quoteLineTemplates'
+type SettingsTab = 'labour' | 'material' | 'productService' | 'template' | 'area' | 'ai'
+type SettingsResource = 'areas' | 'products' | 'productServices' | 'quoteLineTemplates' | 'aiKnowledge'
 
 const SETTINGS_TAB_RESOURCES: Record<SettingsTab, SettingsResource[]> = {
   labour: [],
@@ -84,6 +93,7 @@ const SETTINGS_TAB_RESOURCES: Record<SettingsTab, SettingsResource[]> = {
   productService: ['productServices'],
   template: ['quoteLineTemplates', 'productServices'],
   area: ['areas'],
+  ai: ['aiKnowledge'],
 }
 
 function formatSettingsLoadError(error: unknown): string {
@@ -374,18 +384,23 @@ export function SettingsForm({
   initialProductServices,
   initialQuoteLineTemplates,
   initialSettings,
+  initialAiKnowledge,
+  aiAvailability = { enabled: false, reason: 'missing_key', message: 'AI quoting is not configured. Contact an administrator.' },
 }: SettingsFormProps) {
   const [isPending, startTransition] = useTransition()
-  const [activeTab, setActiveTab] = useState<SettingsTab>('labour')
+  const searchParams = useSearchParams()
+  const [activeTab, setActiveTab] = useState<SettingsTab>(() => searchParams?.get('tab') === 'ai' ? 'ai' : 'labour')
   const initiallyLoadedResources = useRef(new Set<SettingsResource>([
     ...(initialAreas !== undefined ? ['areas' as const] : []),
     ...(initialProducts !== undefined ? ['products' as const] : []),
     ...(initialProductServices !== undefined ? ['productServices' as const] : []),
     ...(initialQuoteLineTemplates !== undefined ? ['quoteLineTemplates' as const] : []),
+    ...(initialAiKnowledge !== undefined || !aiAvailability.enabled ? ['aiKnowledge' as const] : []),
   ]))
   const loadingResourcesRef = useRef(new Set<SettingsResource>())
   const [loadingResources, setLoadingResources] = useState<ReadonlySet<SettingsResource>>(new Set())
   const [resourceErrors, setResourceErrors] = useState<Partial<Record<SettingsResource, string>>>({})
+  const [aiKnowledge, setAiKnowledge] = useState(initialAiKnowledge ?? [])
   const [materialQuery, setMaterialQuery] = useState('')
   const [materialPage, setMaterialPage] = useState(1)
   const [materialProducts, setMaterialProducts] = useState(initialProducts ?? [])
@@ -514,7 +529,15 @@ export function SettingsForm({
     if (tab === 'area') {
       await loadSettingsResource('areas', listAreas, setAreas)
     }
+    if (tab === 'ai') {
+      await loadSettingsResource('aiKnowledge', listAiQuoteKnowledge, setAiKnowledge)
+    }
   }
+
+  const loadInitialAiTab = useEffectEvent(() => {
+    if (activeTab === 'ai') void ensureTabData('ai')
+  })
+  useEffect(() => { loadInitialAiTab() }, [])
 
   function setField(field: keyof typeof settings, value: string) {
     setSettings((current) => ({ ...current, [field]: value }))
@@ -1046,6 +1069,7 @@ export function SettingsForm({
     { key: 'productService', label: 'Product & Service', icon: Icons.template({ size: 16 }) },
     { key: 'template', label: 'Template', icon: Icons.layers({ size: 16 }) },
     { key: 'area', label: 'Area', icon: Icons.pin({ size: 16 }) },
+    { key: 'ai', label: 'AI', icon: Icons.template({ size: 16 }) },
   ]
   const activeResources = SETTINGS_TAB_RESOURCES[activeTab]
   const activeLoadError = activeResources.map((resource) => resourceErrors[resource]).find(Boolean)
@@ -1226,6 +1250,8 @@ export function SettingsForm({
           onEdit={editTemplate}
           onDelete={removeTemplate}
         />
+      ) : activeTab === 'ai' ? (
+        <AiKnowledgeTab initialKnowledge={aiKnowledge} aiAvailability={aiAvailability} onKnowledgeChange={setAiKnowledge} />
       ) : (
         <AreaSettingsTab
           areas={areas}

@@ -71,11 +71,12 @@
 D = working_days
 formula_1 = 500 × D + material_market               (마진 0)
 formula_2 = 460 × D / 0.70 + material_market        (인건비에만 30%)
-formula_3 = (460 × D + material_market) / 0.70      (총액 30%)
+formula_3 = (460 × D + material_actual) / 0.70      (총액 30%)
 formula_4 = 380 × D / 0.75 + material_market        (인건비에만 25%)
-formula_5 = (380 × D + material_market) / 0.70      (총액 30%)
+formula_5 = (380 × D + material_actual) / 0.70      (총액 30%)
 ```
 
+- 2026-10-30 사용자 확정: 공식 3·5의 자재 기준은 **actual(실구매가)**이다. `lib/calculator.ts`의 실제 동작이 기준이며, 이전 문서의 `material_market` 표기를 정정했다. 계산 동작은 바뀌지 않았다.
 - 숫자(500/460/380, 0.30/0.25)는 `pricing_settings` 테이블에서 가져옴
 - **하드코딩 금지**
 - 자세한 명세: `docs/CALCULATION.md`
@@ -168,6 +169,23 @@ formula_5 = (380 × D + material_market) / 0.70      (총액 30%)
 - 서비스 워커는 새 런타임 의존성 없는 최소 구현을 사용한다.
 - 오프라인은 안내 페이지만 제공한다. 인증된 HTML, 견적·가격 데이터, API, Supabase, Server Actions, RSC payload는 캐시하지 않는다.
 - Android는 브라우저 설치 프롬프트를 연결하고, iOS Safari는 `공유 → 홈 화면에 추가` 수동 안내를 제공한다. 설치 안내 저장소에는 dismiss 선호만 저장한다.
+
+---
+
+## 13. AI 견적 자동화 (2026-10-30 로컬 구현, 운영 미배포)
+
+- 견적 화면 입력창에 견적 설명과 아이템을 글로 적으면 Claude API가 고객용 Product/Service 라인과 내부 계산 행(제품·수량·작업일수·인원·영역), 영역별 공식 선택을 **초안**으로 채운다. 입력 1회에 초안 1회 생성이며, 채팅식 이어서 수정은 하지 않는다.
+- "학습"은 파인튜닝이 아니다. 과거 견적을 AI가 먼저 분석해 PBC 작성·가격 가이드를 만들고, 사용자가 승인한 가이드와 유사 과거 견적 예시를 참고 자료로 쓴다.
+- AI는 단가·총액을 만들지 않는다. 금액은 기존 decimal.js 계산기가 계산하고, 고객용 라인 단가는 계산기 총액(GST 제외)을 AI가 제안한 라인별 비중대로 배분한다(카탈로그 고정가 라인은 카탈로그 단가 유지).
+- AI 결과는 폼 상태에만 들어가며 저장은 앱에만 한다. AI 초안이 포함된 견적의 Jobber Sync는 사용자의 검토 확인이 있어야 하고, 서버가 이를 강제한다.
+- 사용 한도는 사용자당 24시간 초안 20회, 가이드 분석 3회다. AI 기능은 admin 전용이며 Preview에서는 끈다.
+- 현장 사진은 다음 단계(P2)에서 Microsoft 365 업무 계정 OneDrive와 연동한다. 폴더 이름 규칙은 `quote 3000 - address`이고, 사진은 분석 후 즉시 폐기한다.
+- 과거 견적에는 메모가 없으므로 정확도 비교용 메모는 AI가 과거 견적을 분석해 역작성한다.
+- Settings > AI의 `Accuracy check (optional)`에서 샘플을 제안받아 제거하고, 비용 확인 후 메모 작성·비교를 한 건씩 실행한다. 메모 수정·누출 경고, 취소·재시도와 중앙값 지표를 지원한다. 기준 견적은 유사 예시에서 제외하지만 가이드 통계에는 포함되어 있으므로 화면에 결과가 유리할 수 있음을 표시한다.
+- 비용은 아직 실측하지 않았다. 10건 기준 메모 약 USD $0.3~0.5, 비교 초안 약 USD $2~5는 추정값이며 실제 호출·키 설정·운영 DB 적용·push·배포는 해당 사용자 승인 후 진행한다.
+- 이 기능은 `@anthropic-ai/sdk` 새 의존성과 `ANTHROPIC_API_KEY` 서버 전용 환경 변수를 필요로 하며, 둘 다 사용자 명시 승인 후 추가한다.
+- 설계: `docs/superpowers/specs/2026-10-30-ai-quote-automation-design.md`
+- 구현 계획(P0+P1): `docs/superpowers/plans/2026-10-30-ai-quote-automation-p0-p1.md`
 
 ---
 

@@ -177,6 +177,8 @@ export const paintComparisonSchema = z.object({
 })
 
 export const quoteSchema = z.object({
+  aiDraftRunId: z.string().uuid().optional(),
+  aiReviewConfirmed: z.boolean().optional(),
   paintComparisons: z.array(paintComparisonSchema).max(1).default([]),
   expectedVersion: z.number().int().positive().optional(),
   syncJobber: z.boolean().optional(),
@@ -455,3 +457,30 @@ export const areaDeleteSchema = z.object({
 })
 
 export type AreaInput = z.infer<typeof areaSchema>
+
+export const draftJobberContextSchema = z.object({
+  jobberQuoteId: z.string().max(200).nullable(),
+  workType: z.string().max(200),
+  customerType: z.string().max(200),
+  areaSqft: z.number().nullable(),
+  existingLines: z.array(z.object({
+    name: z.string().max(200),
+    description: z.string().max(4000),
+    quantity: z.number(),
+    unitPrice: z.number(),
+  })).max(60),
+})
+
+export const aiQuoteDraftRequestSchema = z.object({
+  memo: z.string().trim().min(1).max(8000),
+  jobberContext: draftJobberContextSchema.nullable(),
+})
+
+export const aiEvalMemoRequestSchema = z.object({
+  setLabel: z.string().trim().min(1).max(60),
+  quoteId: z.string().uuid(),
+})
+
+export const aiEvalRunRequestSchema = z.object({
+  caseId: z.string().uuid(),
+})

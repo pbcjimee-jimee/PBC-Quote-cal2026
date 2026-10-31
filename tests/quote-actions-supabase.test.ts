@@ -17,6 +17,8 @@ const mocks = vi.hoisted(() => {
 
   return {
     createClient: vi.fn(),
+    enforceAiReviewGate: vi.fn(),
+    linkRunAndConfirmReview: vi.fn(),
     createServiceClient: vi.fn(),
     getPricingSettings: vi.fn(),
     isDevNoAuthMode: vi.fn(),
@@ -45,6 +47,10 @@ const mocks = vi.hoisted(() => {
 vi.mock('@/lib/supabase/server', () => ({
   createClient: mocks.createClient,
   createServiceClient: mocks.createServiceClient,
+}))
+vi.mock('@/lib/ai-quote/runs', () => ({
+  enforceAiReviewGate: mocks.enforceAiReviewGate,
+  linkRunAndConfirmReview: mocks.linkRunAndConfirmReview,
 }))
 
 vi.mock('@/lib/actions/settings', () => ({
@@ -367,6 +373,48 @@ function rpcPayload(rpc: ReturnType<typeof persistenceFixture>['rpc'], name = 'u
 }
 
 describe('quote actions against Supabase', () => {
+  const aiDraftRunId = '00000000-0000-4000-8000-000000000801'
+  it.each(['create', 'update'] as const)('%s: runs the AI gate before the save RPC and blocks unconfirmed sync', async mode => {
+    const { rpc } = persistenceFixture()
+    mocks.enforceAiReviewGate.mockResolvedValueOnce({ ok: false, code: 'VALIDATION', error: 'Confirm the AI draft review before syncing to Jobber.' })
+    const result = mode === 'create'
+      ? await createQuote({ ...quoteInput, aiDraftRunId, syncJobber: true })
+      : await updateQuote({ ...quoteInput, id: quoteId, aiDraftRunId, syncJobber: true })
+    expect(result).toEqual({ ok: false, code: 'VALIDATION', error: 'Confirm the AI draft review before syncing to Jobber.' })
+    expect(rpc.mock.calls.some(([name]) => name === `${mode}_quote_with_jobber_sync`)).toBe(false)
+    expect(mocks.linkRunAndConfirmReview).not.toHaveBeenCalled()
+    expect(mocks.enforceAiReviewGate).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ userId: 'user-1', quoteId: mode === 'create' ? null : quoteId, aiDraftRunId, syncJobber: true }))
+  })
+  it('checks saved-quote review even if the request omits the AI run ID', async () => {
+    persistenceFixture()
+    mocks.enforceAiReviewGate.mockResolvedValueOnce({ ok: false, code: 'VALIDATION', error: 'Confirm the AI draft review before syncing to Jobber.' })
+    expect(await updateQuote({ ...quoteInput, id: quoteId, syncJobber: true })).toMatchObject({ ok: false, code: 'VALIDATION' })
+    expect(mocks.enforceAiReviewGate).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ quoteId, aiDraftRunId: undefined, syncJobber: true }))
+  })
+  it.each(['create', 'update'] as const)('%s: links an AI run only after a successful local save without confirming it', async mode => {
+    const { rpc } = persistenceFixture()
+    mocks.linkRunAndConfirmReview.mockImplementationOnce(async () => {
+      expect(rpc.mock.calls.some(([name]) => name === `${mode}_quote_with_jobber_sync`)).toBe(true)
+    })
+    const input = { ...quoteInput, aiDraftRunId }
+    expect((mode === 'create' ? await createQuote(input) : await updateQuote({ ...input, id: quoteId })).ok).toBe(true)
+    expect(mocks.linkRunAndConfirmReview).toHaveBeenCalledWith(expect.anything(), { quoteId, aiDraftRunId, confirm: false, userId: 'user-1' })
+  })
+  it.each(['create', 'update'] as const)('%s: preserves a successful save and returns a safe warning when AI bookkeeping fails', async mode => {
+    const { rpc } = persistenceFixture()
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {})
+    mocks.linkRunAndConfirmReview.mockRejectedValueOnce(new Error('private database detail'))
+    try {
+      const input = { ...quoteInput, aiDraftRunId, syncJobber: true, aiReviewConfirmed: true }
+      const result = mode === 'create' ? await createQuote(input) : await updateQuote({ ...input, id: quoteId })
+      expect(result).toMatchObject({ ok: true, data: { id: quoteId, warning: expect.stringContaining('AI review') } })
+      expect(JSON.stringify(result)).not.toContain('private database detail')
+      expect(mocks.linkRunAndConfirmReview).toHaveBeenCalledWith(expect.anything(), { quoteId, aiDraftRunId, confirm: true, userId: 'user-1' })
+      expect(rpc.mock.calls.some(([name]) => name === `${mode}_quote_with_jobber_sync`)).toBe(true)
+      expect(log).toHaveBeenCalled()
+      expect(mocks.after).toHaveBeenCalled()
+    } finally { log.mockRestore() }
+  })
   const logicalKey = '00000000-0000-4000-8000-000000000211'
   const comparisonKey = '00000000-0000-4000-8000-000000000411'
   const aquaProductId = '00000000-0000-4000-8000-000000000911'
@@ -504,6 +552,8 @@ describe('quote actions against Supabase', () => {
   })
   beforeEach(() => {
     vi.clearAllMocks()
+    mocks.enforceAiReviewGate.mockReset().mockResolvedValue({ ok: true, data: null })
+    mocks.linkRunAndConfirmReview.mockReset().mockResolvedValue(undefined)
     mocks.syncJobberQuoteLineItems.mockReset()
     mocks.fetchJobberQuote.mockReset()
     mocks.createClient.mockReset()

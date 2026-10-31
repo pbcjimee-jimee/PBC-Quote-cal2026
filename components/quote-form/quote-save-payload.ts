@@ -12,6 +12,8 @@ import { isLocalDraftJobberQuoteDraft } from './quote-draft'
 import type { AreaFormulaSelections, FormulaNumber, JobberQuoteLineItemDraft, MaterialItem, QuoteMemoItem, QuoteOptionItem } from './types'
 
 export interface QuoteFormSavePayloadInput {
+  aiDraftRunId?: string
+  aiReviewConfirmed?: boolean
   settings: PricingSettings
   initialQuoteId?: string
   initialQuoteVersion?: number
@@ -80,6 +82,8 @@ export function calculateJobberSyncPreview({ pbcSubtotal, jobberQuoteLines }: Jo
 }
 
 export function buildQuoteSavePayload({
+  aiDraftRunId,
+  aiReviewConfirmed,
   settings,
   customerName,
   customerAddress,
@@ -116,6 +120,8 @@ export function buildQuoteSavePayload({
     : undefined
 
   return {
+    ...(aiDraftRunId ? { aiDraftRunId } : {}),
+    ...(aiReviewConfirmed === undefined ? {} : { aiReviewConfirmed }),
     customerName,
     customerAddress,
     jobberQuoteId: jobberQuoteId || undefined,

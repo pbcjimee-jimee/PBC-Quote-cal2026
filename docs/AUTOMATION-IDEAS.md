@@ -6,6 +6,10 @@
 >
 > 설계 담당: **GPT-6 Astra max**. 실제 구현은 확정 후 **GPT-6 Astra medium**이 수행한다(대규모·장시간 구현은 **GPT-6 Astra high**).
 > 출처: 2026-07-06 전면 감사 워크플로(Opus 4.8) 자동화 설계 결과.
+>
+> **2026-10-30 갱신:** C1·C2·C4(AI 구조화·작업일수·고객용 문구)와 B1·B3(과거 실적·유사 견적)은
+> `docs/superpowers/specs/2026-10-30-ai-quote-automation-design.md`로 승격·통합됐다. 해당 항목은 그 설계 문서를 기준으로 한다.
+> 아래 "Jobber 읽기 전용" 원칙은 2026-05-19 write-back 결정(`docs/DECISIONS.md` §2)으로 대체됐고, C 항목의 모델 표기(`claude-opus-4-8`)는 새 설계에서 `claude-opus-5-5`로 바뀌었다.
 
 ---
 

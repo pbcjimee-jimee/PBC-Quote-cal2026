@@ -10,6 +10,11 @@ vi.mock('next/cache', () => ({
 vi.mock('server-only', () => ({}))
 
 describe('quote actions', () => {
+  it('rejects an AI run in dev no-auth mode instead of saving unverifiable provenance', async () => {
+    const input = { workingDays: 0, labourPerDay: 0, materialMarket: 0, materialActual: 0, selectedMin: 1, selectedMax: 1, items: [], aiDraftRunId: '00000000-0000-4000-8000-000000000001' }
+    expect(await createQuote(input)).toMatchObject({ ok: false, code: 'VALIDATION' })
+    expect(await updateQuote({ ...input, id: 'quote-1' })).toMatchObject({ ok: false, code: 'VALIDATION' })
+  })
   it('round-trips Timber comparisons and duplicates with fresh keys and current Aqua pricing', async () => {
     const product = await createProduct({ productLine: 'Synthetic Aquanamel', rrpPrice: 30 })
     if (!product.ok) throw new Error(product.error)

@@ -8,6 +8,10 @@ import { getPricingSettings } from '@/lib/actions/settings'
 import { isJobberDisabledInPreview, JOBBER_DISABLED_MESSAGE } from '@/lib/jobber/environment'
 import { isDevNoAuthMode } from '@/lib/actions/types'
 import { requireRole } from '@/lib/security/require-app-user'
+import { getAiQuoteAvailability } from '@/lib/ai-quote/config'
+import { loadActiveKnowledge } from '@/lib/ai-quote/data'
+import { hasPendingAiReview } from '@/lib/ai-quote/runs'
+import { createClient } from '@/lib/supabase/server'
 
 interface QuoteEditPageProps {
   params: Promise<{ id: string }>
@@ -41,6 +45,23 @@ export default async function QuoteEditPage({ params }: QuoteEditPageProps) {
     : null
   const appUser = isDevNoAuthMode() ? null : await requireRole('admin')
   const userId = appUser === null ? 'dev-no-auth' : appUser.ok ? appUser.user.id : undefined
+  const aiAvailability = getAiQuoteAvailability()
+  let hasActiveAiKnowledge = false
+  let aiReviewPending = false
+  if (appUser?.ok) {
+    try {
+      const supabase = await createClient()
+      const [knowledge, review] = await Promise.allSettled([
+        aiAvailability.enabled ? loadActiveKnowledge(supabase) : Promise.resolve(null),
+        hasPendingAiReview(supabase, id),
+      ])
+      hasActiveAiKnowledge = knowledge.status === 'fulfilled' && knowledge.value !== null
+      aiReviewPending = review.status === 'fulfilled' ? review.value : true
+    } catch {
+      hasActiveAiKnowledge = false
+      aiReviewPending = true
+    }
+  }
 
   return (
     <>
@@ -52,6 +73,9 @@ export default async function QuoteEditPage({ params }: QuoteEditPageProps) {
       <QuoteForm
         key={userId}
         userId={userId}
+        aiAvailability={aiAvailability}
+        hasActiveAiKnowledge={hasActiveAiKnowledge}
+        aiReviewPending={aiReviewPending}
         areas={areas.value.data}
         quoteLineTemplates={templates ?? []}
         initialQuote={quote.value.data}

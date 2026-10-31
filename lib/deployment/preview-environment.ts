@@ -38,4 +38,8 @@ export function assertPreviewEnvironment(env: Record<string, string | undefined>
   ].some(key => Boolean(env[key]))) {
     throw new Error('Preview must not contain Jobber credentials or callback configuration.')
   }
+
+  if (env.ANTHROPIC_API_KEY) {
+    throw new Error('Preview must not contain Anthropic credentials.')
+  }
 }

@@ -6,6 +6,10 @@ import { QuoteForm } from '@/components/quote-form/quote-form'
 import { createEmptyQuoteFormDraft, getQuoteDraftStorageKey } from '@/components/quote-form/quote-draft'
 import { createQuote, updateQuote } from '@/lib/actions/quotes'
 import { searchProducts } from '@/lib/actions/products'
+import { createArea } from '@/lib/actions/areas'
+import type { AiQuoteDraft } from '@/lib/ai-quote/types'
+import Decimal from 'decimal.js'
+import { calculateMainQuoteTotals } from '@/components/quote-form/quote-calculation-totals'
 import { DEFAULT_PRICING_SETTINGS } from '@/lib/calculator'
 import type { QuoteRecord } from '@/lib/dev-data'
 import { installTestDom, TestElement } from '@/tests/helpers/test-dom'
@@ -22,6 +26,7 @@ vi.mock('@/lib/actions/quotes', () => ({
   updateQuote: vi.fn(),
 }))
 vi.mock('@/lib/actions/products', () => ({ searchProducts: vi.fn() }))
+vi.mock('@/lib/actions/areas', () => ({ createArea: vi.fn() }))
 
 class MemoryStorage {
   private readonly values = new Map<string, string>()
@@ -164,6 +169,7 @@ async function mountQuoteForm(options: {
   viewportWidth?: number
   jobberEnabled?: boolean
   jobberNotice?: string
+  aiReviewPending?: boolean
 } = {}) {
   const installed = installTestDom()
   const restoreElementRuntime = installElementRuntime()
@@ -180,7 +186,7 @@ async function mountQuoteForm(options: {
     scrollBy: vi.fn(),
     setTimeout: globalThis.setTimeout.bind(globalThis),
     matchMedia: vi.fn((query: string) => ({
-      matches: query === '(max-width: 720px)' ? (options.viewportWidth ?? 1280) <= 720 : false,
+      matches: query === '(max-width: 720px)' ? (options.viewportWidth ?? 1280) <= 720 : query === '(max-width: 1023.98px)' ? (options.viewportWidth ?? 1280) < 1024 : false,
       media: query,
       onchange: null,
       addEventListener: vi.fn(),
@@ -203,6 +209,9 @@ async function mountQuoteForm(options: {
       initialQuote: options.initialQuote,
       jobberEnabled: options.jobberEnabled,
       jobberNotice: options.jobberNotice,
+      aiAvailability: { enabled: true },
+      hasActiveAiKnowledge: true,
+      aiReviewPending: options.aiReviewPending,
     }))
   })
   await settle()
@@ -218,6 +227,113 @@ async function mountQuoteForm(options: {
 }
 
 describe('quote workspace structure', () => {
+  it.each([375, 1280])('requires one review checkbox before either Sync button but keeps Save available at %spx', async viewportWidth => {
+    vi.mocked(updateQuote).mockReset().mockResolvedValueOnce({ ok: false, error: 'Hold for inspection' }).mockResolvedValueOnce({ ok: true, data: { id: 'quote-workspace-1' } })
+    const mounted = await mountQuoteForm({ viewportWidth, aiReviewPending: true, initialQuote: createQuoteRecord({ jobberQuoteId: 'jobber-1' }) })
+    try {
+      const controls = mounted.container.querySelectorAll('input').filter(input => input.getAttribute('aria-label') === 'I reviewed the AI draft lines and prices')
+      expect(controls).toHaveLength(1)
+      const checkbox = controls[0]
+      expect(checkbox.parentElement?.parentElement?.getAttribute('class')).toContain(viewportWidth === 375 ? 'pbc-mobile-totalbar' : 'pbc-topbar__right')
+      expect(checkbox.checked).toBe(false)
+      expect(findButton(mounted.container, 'Save')?.disabled).toBe(false)
+      expect(findButton(mounted.container, 'Save & Sync')?.disabled).toBe(true)
+      expect(findButton(mounted.container, 'Save & Sync to Jobber')?.disabled).toBe(true)
+      await act(async () => findButton(mounted.container, 'Save')!.dispatchEvent(new Event('click', { bubbles: true })))
+      expect(updateQuote).toHaveBeenCalledWith(expect.objectContaining({ syncJobber: false, aiReviewConfirmed: false }))
+      await act(async () => { checkbox.checked = true; checkbox.dispatchEvent(new Event('change', { bubbles: true })) })
+      expect(findButton(mounted.container, 'Save & Sync')?.disabled).toBe(false)
+      await act(async () => findButton(mounted.container, 'Save & Sync')!.dispatchEvent(new Event('click', { bubbles: true })))
+      expect(updateQuote).toHaveBeenLastCalledWith(expect.objectContaining({ syncJobber: true, aiReviewConfirmed: true }))
+      expect(mounted.container.querySelectorAll('input').find(input => input.getAttribute('aria-label') === 'I reviewed the AI draft lines and prices')?.checked).toBe(false)
+    } finally { await mounted.cleanup() }
+  })
+
+  it('does not show AI review controls for a manual quote', async () => {
+    const mounted = await mountQuoteForm({ initialQuote: createQuoteRecord({ jobberQuoteId: 'jobber-1' }) })
+    try {
+      expect(mounted.container.textContent).not.toContain('I reviewed the AI draft lines and prices')
+      expect(findButton(mounted.container, 'Save & Sync')?.disabled).toBe(false)
+    } finally { await mounted.cleanup() }
+  })
+
+  it('restores AI run provenance, requires review and forwards it when saving locally', async () => {
+    vi.mocked(createQuote).mockReset().mockResolvedValueOnce({ ok: false, error: 'Hold for inspection' })
+    const storage = new MemoryStorage()
+    const aiDraftRunId = '00000000-0000-4000-8000-000000000001'
+    storage.setItem(getQuoteDraftStorageKey('user-a'), JSON.stringify({ ...createEmptyQuoteFormDraft(), ownerId: 'user-a', aiDraftRunId, updatedAt: new Date().toISOString() }))
+    const mounted = await mountQuoteForm({ storage })
+    try {
+      await act(async () => findButton(mounted.container, 'Restore Draft')!.dispatchEvent(new Event('click', { bubbles: true })))
+      expect(mounted.container.textContent).toContain('I reviewed the AI draft lines and prices')
+      await act(async () => findButton(mounted.container, 'Save')!.dispatchEvent(new Event('click', { bubbles: true })))
+      expect(createQuote).toHaveBeenCalledWith(expect.objectContaining({ aiDraftRunId, aiReviewConfirmed: false, syncJobber: false }))
+    } finally { await mounted.cleanup() }
+  })
+
+  const aiDraft: AiQuoteDraft = {
+    summary: 'Bedroom repaint', findings: [], questions: [], warnings: [],
+    areas: [{ scope: 'interior', name: 'Bedroom' }, { scope: 'interior', name: 'Hallway' }],
+    publicLines: [{ id: 'ai-line', kind: 'line_item', name: 'AI wall painting', description: '', quantity: '1', productServiceId: null, priceSource: 'allocated', priceWeight: 100, catalogUnitPrice: null, taxable: true, areaName: 'Bedroom', rationale: 'Requested.' }],
+    workItems: [{ id: 'ai-work', product: { id: 'paint-1', name: 'AI wall paint', manufacturer: 'Dulux', type: 'Paint', unit: '4L', marketPrice: '80', rrpPrice: '90', actualPrice: '50', colorCode: null, active: true, productCode: 'WALL' }, areaScope: 'interior', areaName: 'Bedroom', quantity: '2', workingDays: '3', labourPerDay: '2', rationale: 'Two coats.' }],
+    formulaSelections: [{ scope: 'interior', selectedMin: 4, selectedMax: 1, rationale: 'Standard.' }],
+  }
+
+  it.each([false, true])('applies AI areas, materials and allocated prices atomically (area failure: %s)', async (failArea) => {
+    const originalFetch = globalThis.fetch
+    vi.mocked(createArea).mockReset()
+    globalThis.fetch = vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => ({ ok: true, data: { runId: '00000000-0000-4000-8000-000000000001', draft: aiDraft } }) })
+    vi.mocked(createArea).mockResolvedValueOnce({ ok: true, data: { id: 'ai-area-1', name: 'Bedroom', scope: 'interior', active: true, position: 0 } })
+      .mockResolvedValueOnce(failArea ? { ok: false, error: 'Area unavailable' } : { ok: true, data: { id: 'ai-area-2', name: 'Hallway', scope: 'interior', active: true, position: 1 } })
+    const mounted = await mountQuoteForm()
+    try {
+      const notes = mounted.container.querySelectorAll('textarea').find(element => element.getAttribute('placeholder')?.startsWith('e.g. Interior repaint:'))!
+      expect(notes).toBeDefined()
+      await act(async () => { notes.value = 'Repaint bedroom'; notes.dispatchEvent(new Event('input', { bubbles: true })) })
+      await act(async () => findButton(mounted.container, 'Create draft')!.dispatchEvent(new Event('click', { bubbles: true })))
+      await act(async () => findButton(mounted.container, 'Apply to quote')!.dispatchEvent(new Event('click', { bubbles: true })))
+      await settle()
+      await act(async () => window.dispatchEvent(new Event('pagehide')))
+      if (failArea) {
+        expect(mounted.container.textContent).toContain('Unable to apply')
+        expect(mounted.container.textContent).not.toContain('AI draft applied -')
+        expect(mounted.storage.getItem(getQuoteDraftStorageKey('user-a'))).toBeNull()
+        vi.mocked(createArea).mockResolvedValueOnce({ ok: true, data: { id: 'ai-area-2', name: 'Hallway', scope: 'interior', active: true, position: 1 } })
+        await act(async () => findButton(mounted.container, 'Try again')!.dispatchEvent(new Event('click', { bubbles: true })))
+        expect(createArea).toHaveBeenCalledTimes(3)
+        expect(mounted.container.textContent).toContain('AI draft applied -')
+      } else {
+        const stored = JSON.parse(mounted.storage.getItem(getQuoteDraftStorageKey('user-a'))!)
+        expect(stored.aiDraftRunId).toBe('00000000-0000-4000-8000-000000000001')
+        expect(stored.materials[0]).toMatchObject({ name: 'AI wall paint', areaId: 'ai-area-1', quantity: '2' })
+        const totals = calculateMainQuoteTotals({ materials: stored.materials, selectedMin: stored.selectedMin, selectedMax: stored.selectedMax, areaFormulaSelections: stored.areaFormulaSelections, settings: DEFAULT_PRICING_SETTINGS })
+        expect(new Decimal(stored.jobberQuoteLines[0].unitPrice).toFixed(2)).toBe(totals.finalTotal.div('1.10').toFixed(2))
+        expect(mounted.container.textContent).toContain('AI draft applied -')
+        const itemDays = findElement(mounted.container, 'input', input => input.value === '3')
+        expect(findElement(mounted.container, 'p', element => element.textContent === 'AI prices recalculated.')?.getAttribute('class')).toContain('pbc-alert--success')
+        expect(itemDays).toBeDefined()
+        await act(async () => { itemDays!.value = '6'; itemDays!.dispatchEvent(new Event('input', { bubbles: true })) })
+        await act(async () => findButton(mounted.container, 'Recalculate AI prices')!.dispatchEvent(new Event('click', { bubbles: true })))
+        await act(async () => window.dispatchEvent(new Event('pagehide')))
+        const recalculated = JSON.parse(mounted.storage.getItem(getQuoteDraftStorageKey('user-a'))!)
+        expect(new Decimal(recalculated.jobberQuoteLines[0].unitPrice).gt(stored.jobberQuoteLines[0].unitPrice)).toBe(true)
+      }
+    } finally { await mounted.cleanup(); globalThis.fetch = originalFetch }
+  })
+
+  it('keeps allocation problems styled as warnings', async () => {
+    const originalFetch = globalThis.fetch
+    globalThis.fetch = vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => ({ ok: true, data: { runId: '00000000-0000-4000-8000-000000000001', draft: { ...aiDraft, areas: [], workItems: [] } } }) })
+    const mounted = await mountQuoteForm()
+    try {
+      const notes = mounted.container.querySelectorAll('textarea').find(element => element.getAttribute('placeholder')?.startsWith('e.g. Interior repaint:'))!
+      await act(async () => { notes.value = 'Repaint bedroom'; notes.dispatchEvent(new Event('input', { bubbles: true })) })
+      await act(async () => findButton(mounted.container, 'Create draft')!.dispatchEvent(new Event('click', { bubbles: true })))
+      await act(async () => findButton(mounted.container, 'Apply to quote')!.dispatchEvent(new Event('click', { bubbles: true })))
+      expect(findElement(mounted.container, 'p', element => element.textContent === 'Add materials and labour before recalculating AI prices.')?.getAttribute('class')).toContain('pbc-alert--warning')
+    } finally { await mounted.cleanup(); globalThis.fetch = originalFetch }
+  })
+
   it('does not offer another user’s draft or an unowned legacy draft', async () => {
     const storage = new MemoryStorage()
     const draft = { ...createEmptyQuoteFormDraft(), customerName: 'Private A', updatedAt: new Date().toISOString() }

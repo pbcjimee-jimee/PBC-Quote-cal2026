@@ -3,9 +3,18 @@ import type { JobberQuoteDraft, JobberQuoteDraftLineItem } from '@/lib/jobber/ma
 import type { AreaFormulaSelections, FormulaSelection, JobberQuoteLineItemDraft, JobberSaveMode, MaterialItem, QuoteMemoItem, QuoteOptionItem } from './types'
 import { isDecimalInputValue } from './decimal-input-utils'
 import { z } from 'zod'
+import type { AiPriceSource } from '@/lib/ai-quote/types'
 import type { PaintComparison } from '@/lib/paint-comparison-types'
 
 const draftComparisonFieldSchema = z.object({ mode: z.enum(['inherit', 'override']), value: z.string() })
+const draftAiMetadataSchema = z.object({
+  aiDraftRunId: z.string().uuid().nullable().optional(),
+  aiLineMeta: z.record(z.string(), z.object({
+    priceSource: z.enum(['catalog', 'allocated', 'none']),
+    priceWeight: z.number().min(0).max(100),
+    catalogUnitPrice: z.string().refine(value => { try { return new Decimal(value).isFinite() && new Decimal(value).gte(0) } catch { return false } }).nullable(),
+  })).optional(),
+})
 const draftPaintComparisonSchema = z.object({
   version: z.literal(1), key: z.string().uuid(),
   alternatives: z.array(z.object({
@@ -65,6 +74,8 @@ export interface QuoteDraftReadableStorage {
 }
 
 export interface QuoteFormDraft {
+  aiDraftRunId?: string | null
+  aiLineMeta?: Record<string, { priceSource: AiPriceSource; priceWeight: number; catalogUnitPrice: string | null }>
   version: number
   customerName: string
   customerAddress: string
@@ -98,6 +109,8 @@ export function getQuoteDraftStorageKey(ownerId: string, quoteId?: string): stri
 export function createEmptyQuoteFormDraft(): QuoteFormDraft {
   return {
     version: QUOTE_DRAFT_VERSION,
+    aiDraftRunId: null,
+    aiLineMeta: {},
     customerName: '',
     customerAddress: '',
     jobberLookupType: 'quote',
@@ -534,6 +547,8 @@ export function parseQuoteFormDraft(value: string | null, now: Date = new Date()
   if (!isRecord(parsed) || (parsed.version !== 1 && parsed.version !== 2 && parsed.version !== QUOTE_DRAFT_VERSION)) return null
   const comparisonResult = parseDraftPaintComparison(parsed.paintComparison)
   if (!comparisonResult.ok) return null
+  const aiMetadata = draftAiMetadataSchema.safeParse(parsed)
+  if (!aiMetadata.success) return null
   const deletedJobberLineItemIds = readOptionalStringArray(parsed, 'deletedJobberLineItemIds')
   if (deletedJobberLineItemIds === null) return null
 
@@ -599,6 +614,8 @@ export function parseQuoteFormDraft(value: string | null, now: Date = new Date()
 
   return {
     version: QUOTE_DRAFT_VERSION,
+    aiDraftRunId: aiMetadata.data.aiDraftRunId ?? null,
+    aiLineMeta: aiMetadata.data.aiLineMeta ?? {},
     customerName,
     customerAddress,
     jobberLookupType,
@@ -655,6 +672,7 @@ export function readQuoteFormDraftFromStorage(
 
 export function hasMeaningfulQuoteDraft(draft: QuoteFormDraft): boolean {
   return Boolean(
+    draft.aiDraftRunId ||
     draft.customerName.trim() ||
     draft.paintComparison ||
     draft.customerAddress.trim() ||

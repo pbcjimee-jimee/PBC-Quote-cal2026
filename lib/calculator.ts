@@ -112,7 +112,7 @@ function formula2(D: Decimal, mm: Decimal, s: PricingSettings): Decimal {
   return labour.add(mm)
 }
 
-// formula_3 = (f3_labour_rate × D + material_market) / (1 - f3_margin)
+// formula_3 = (f3_labour_rate × D + material_actual) / (1 - f3_margin)
 function formula3(D: Decimal, ma: Decimal, s: PricingSettings): Decimal {
   return applyMargin(toDecimal(s.f3LabourRate).mul(D).add(ma), s.f3Margin)
 }
@@ -123,7 +123,7 @@ function formula4(D: Decimal, mm: Decimal, s: PricingSettings): Decimal {
   return labour.add(mm)
 }
 
-// formula_5 = (f5_labour_rate × D + material_market) / (1 - f5_margin)
+// formula_5 = (f5_labour_rate × D + material_actual) / (1 - f5_margin)
 function formula5(D: Decimal, ma: Decimal, s: PricingSettings): Decimal {
   return applyMargin(toDecimal(s.f5LabourRate).mul(D).add(ma), s.f5Margin)
 }

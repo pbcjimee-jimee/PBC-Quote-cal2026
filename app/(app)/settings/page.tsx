@@ -6,6 +6,7 @@ import type { ActionResult } from '@/lib/actions/types'
 import { DEFAULT_PRICING_SETTINGS } from '@/lib/calculator'
 import type { PricingSettings } from '@/lib/calculator'
 import { requireAdminPage } from '@/lib/security/page-role-guard'
+import { getAiQuoteAvailability } from '@/lib/ai-quote/config'
 
 function formatErrorMessage(error: unknown, label: string) {
   const text = error instanceof Error ? error.message : 'Unknown error'
@@ -52,6 +53,7 @@ export default async function SettingsPage() {
       </div>
       <SettingsForm
         initialSettings={settingsResult.ok ? settingsResult.data : DEFAULT_PRICING_SETTINGS}
+        aiAvailability={getAiQuoteAvailability()}
       />
       </div>
     </main>

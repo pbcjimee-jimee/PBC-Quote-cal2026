@@ -28,13 +28,16 @@ const settingsDataMocks = vi.hoisted(() => ({
   listProducts: vi.fn(),
   listProductServices: vi.fn(),
   listQuoteLineTemplates: vi.fn(),
+  listAiQuoteKnowledge: vi.fn(),
 }))
+const settingsNavigationMocks = vi.hoisted(() => ({ search: '' }))
+vi.mock('next/navigation', () => ({ useSearchParams: () => new URLSearchParams(settingsNavigationMocks.search) }))
 
 const dynamicTabMocks = vi.hoisted(() => ({
   registrations: 0,
-  requested: [0, 0, 0, 0],
-  mounted: [0, 0, 0, 0],
-  pending: [null, null, null, null] as Array<Promise<unknown> | null>,
+  requested: [0, 0, 0, 0, 0],
+  mounted: [0, 0, 0, 0, 0],
+  pending: [null, null, null, null, null] as Array<Promise<unknown> | null>,
 }))
 
 vi.mock('next/dynamic', async () => {
@@ -90,6 +93,12 @@ vi.mock('@/lib/actions/settings', () => ({
   updatePricingSettings: vi.fn(),
 }))
 
+vi.mock('@/lib/actions/ai-quote', () => ({
+  listAiQuoteKnowledge: settingsDataMocks.listAiQuoteKnowledge,
+  updateAiQuoteKnowledgeDraft: vi.fn(),
+  activateAiQuoteKnowledge: vi.fn(),
+}))
+
 function pricingSettingsFormState(
   overrides: Partial<Parameters<typeof savePricingSettingsForm>[0]> = {}
 ): Parameters<typeof savePricingSettingsForm>[0] {
@@ -115,6 +124,28 @@ function deferred<T>() {
   })
   return { promise, resolve }
 }
+
+it.each(['?tab=ai', '?tab=unknown', ''])('opens the requested initial settings tab for %s and loads AI data only when selected', async search => {
+  settingsNavigationMocks.search = search
+  settingsDataMocks.listAiQuoteKnowledge.mockReset().mockReturnValue(new Promise(() => {}))
+  const { cleanup } = installTestDom()
+  let root: Root | null = null
+  try {
+    const { createRoot } = await import('react-dom/client')
+    const container = document.createElement('div')
+    root = createRoot(container)
+    await act(async () => root!.render(createElement(SettingsForm, { initialSettings: DEFAULT_PRICING_SETTINGS, aiAvailability: { enabled: true } })))
+    const aiTab = Array.from(container.querySelectorAll('button')).find(button => button.getAttribute('id') === 'settings-section-ai')!
+    const labourTab = Array.from(container.querySelectorAll('button')).find(button => button.getAttribute('id') === 'settings-section-labour')!
+    expect(aiTab.getAttribute('aria-pressed')).toBe(String(search === '?tab=ai'))
+    expect(labourTab.getAttribute('aria-pressed')).toBe(String(search !== '?tab=ai'))
+    expect(settingsDataMocks.listAiQuoteKnowledge).toHaveBeenCalledTimes(search === '?tab=ai' ? 1 : 0)
+  } finally {
+    if (root) await act(async () => root!.unmount())
+    settingsNavigationMocks.search = ''
+    cleanup()
+  }
+})
 
 function submitTestForm(form: Element): void {
   const propsKey = Object.keys(form).find((key) => key.startsWith('__reactProps$'))
@@ -307,13 +338,14 @@ describe('settings material UI', () => {
     }))
 
     const navigation = markup.match(/<nav[^>]*aria-label="Settings sections"[\s\S]*?<\/nav>/)?.[0] ?? ''
-    expect(navigation.match(/<button/g)).toHaveLength(5)
+    expect(navigation.match(/<button/g)).toHaveLength(6)
     expect(navigation.match(/aria-pressed="true"/g)).toHaveLength(1)
     expect(navigation).toContain('Labour Rates')
     expect(navigation).toContain('Material')
     expect(navigation).toContain('Product &amp; Service')
     expect(navigation).toContain('Template')
     expect(navigation).toContain('Area')
+    expect(navigation).toContain('AI')
     expect(navigation).toContain('aria-controls="settings-active-section"')
     expect(markup).toContain('aria-labelledby="settings-section-labour"')
     expect(markup).not.toContain('pbc-settings-selector')
@@ -503,6 +535,7 @@ describe('settings material UI', () => {
     ['Product & Service', 1, 'listProductServices'],
     ['Template', 2, 'listQuoteLineTemplates'],
     ['Area', 3, 'listAreas'],
+    ['AI', 4, 'listAiQuoteKnowledge'],
   ] as const)('does not request the %s module until every exact resource is ready', async (tabLabel, moduleIndex, resourceMock) => {
     dynamicTabMocks.requested.fill(0)
     dynamicTabMocks.mounted.fill(0)
@@ -512,11 +545,13 @@ describe('settings material UI', () => {
       listProducts: deferred<{ ok: true; data: [] }>(),
       listProductServices: deferred<{ ok: true; data: [] }>(),
       listQuoteLineTemplates: deferred<{ ok: true; data: [] }>(),
+      listAiQuoteKnowledge: deferred<{ ok: true; data: [] }>(),
     }
     settingsDataMocks.listProducts.mockReset().mockReturnValue(resourceRequests.listProducts.promise)
     settingsDataMocks.listProductServices.mockReset().mockReturnValue(resourceRequests.listProductServices.promise)
     settingsDataMocks.listQuoteLineTemplates.mockReset().mockReturnValue(resourceRequests.listQuoteLineTemplates.promise)
     settingsDataMocks.listAreas.mockReset().mockReturnValue(resourceRequests.listAreas.promise)
+    settingsDataMocks.listAiQuoteKnowledge.mockReset().mockReturnValue(resourceRequests.listAiQuoteKnowledge.promise)
     const { cleanup } = installTestDom()
     let root: Root | null = null
 
@@ -526,11 +561,11 @@ describe('settings material UI', () => {
       root = createRoot(container)
 
       await act(async () => {
-        root!.render(createElement(SettingsForm, { initialSettings: DEFAULT_PRICING_SETTINGS }))
+        root!.render(createElement(SettingsForm, { initialSettings: DEFAULT_PRICING_SETTINGS, aiAvailability: { enabled: true } }))
       })
 
-      expect(dynamicTabMocks.requested).toEqual([0, 0, 0, 0])
-      expect(dynamicTabMocks.mounted).toEqual([0, 0, 0, 0])
+      expect(dynamicTabMocks.requested).toEqual([0, 0, 0, 0, 0])
+      expect(dynamicTabMocks.mounted).toEqual([0, 0, 0, 0, 0])
 
       const tab = Array.from(container.querySelectorAll('button')).find((button) => button.textContent.includes(tabLabel))
       expect(tab).toBeDefined()
@@ -541,13 +576,13 @@ describe('settings material UI', () => {
       })
 
       expect(settingsDataMocks[resourceMock]).toHaveBeenCalledTimes(1)
-      expect(dynamicTabMocks.requested).toEqual([0, 0, 0, 0])
-      expect(dynamicTabMocks.mounted).toEqual([0, 0, 0, 0])
+      expect(dynamicTabMocks.requested).toEqual([0, 0, 0, 0, 0])
+      expect(dynamicTabMocks.mounted).toEqual([0, 0, 0, 0, 0])
 
       if (tabLabel === 'Template') {
         resourceRequests.listQuoteLineTemplates.resolve({ ok: true, data: [] })
         await act(async () => { await resourceRequests.listQuoteLineTemplates.promise })
-        expect(dynamicTabMocks.requested).toEqual([0, 0, 0, 0])
+        expect(dynamicTabMocks.requested).toEqual([0, 0, 0, 0, 0])
         resourceRequests.listProductServices.resolve({ ok: true, data: [] })
         await act(async () => { await resourceRequests.listProductServices.promise })
       } else {
@@ -672,13 +707,14 @@ describe('settings material UI', () => {
     }
   })
 
-  it('keeps the four inactive tab modules behind dynamic-only value boundaries', () => {
+  it('keeps the five inactive tab modules behind dynamic-only value boundaries', () => {
     const entry = 'components/settings/settings-form.tsx'
     const targets = new Set([
       'components/settings/tabs/material-settings-tab.tsx',
       'components/settings/tabs/product-service-settings-tab.tsx',
       'components/settings/tabs/template-settings-tab.tsx',
       'components/settings/tabs/area-settings-tab.tsx',
+      'components/settings/tabs/ai-knowledge-tab.tsx',
     ])
     const result = inspectStaticModuleGraph({
       entry,
@@ -694,6 +730,7 @@ describe('settings material UI', () => {
 
     expect(result.valuePathsToTargets).toEqual([])
     expect(result.dynamicTargetSpecifiers.sort()).toEqual([
+      '@/components/settings/tabs/ai-knowledge-tab',
       '@/components/settings/tabs/area-settings-tab',
       '@/components/settings/tabs/material-settings-tab',
       '@/components/settings/tabs/product-service-settings-tab',

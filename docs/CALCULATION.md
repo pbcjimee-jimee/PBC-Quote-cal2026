@@ -59,12 +59,14 @@ formula_2 = (f2_labour_rate × D / (1 - f2_margin)) + material_market
 
 ⚠️ 마진은 **인건비에만** 적용. 자재비에는 적용되지 않음.
 
-### 공식 3: L460 & Market / 총액 30% Margin
+### 공식 3: L460 & Actual / 총액 30% Margin
 
 ```
-formula_3 = (f3_labour_rate × D + material_market) / (1 - f3_margin)
-         = (460 × D + material_market) / 0.70
+formula_3 = (f3_labour_rate × D + material_actual) / (1 - f3_margin)
+         = (460 × D + material_actual) / 0.70
 ```
+
+> 2026-10-30 사용자 확정: 공식 3·5는 **actual(실구매가)** 기준이다. `lib/calculator.ts` 실제 동작과 일치한다.
 
 **의도:** 총액 기반 마진. 공식 2와 일당 같지만 적용 방식이 다름 (인건비만 vs 총액).
 
@@ -77,11 +79,11 @@ formula_4 = (f4_labour_rate × D / (1 - f4_margin)) + material_market
 
 **의도:** 공식 2와 같은 인건비 마진 방식. 공식 2와 별도 일당·마진율을 설정할 수 있음.
 
-### 공식 5: L380 & Market / 총액 30% Margin
+### 공식 5: L380 & Actual / 총액 30% Margin
 
 ```
-formula_5 = (f5_labour_rate × D + material_market) / (1 - f5_margin)
-         = (380 × D + material_market) / 0.70
+formula_5 = (f5_labour_rate × D + material_actual) / (1 - f5_margin)
+         = (380 × D + material_actual) / 0.70
 ```
 
 **의도:** 공식 3과 같은 총액 마진 방식. 공식 3과 별도 일당·마진율을 설정할 수 있음.
