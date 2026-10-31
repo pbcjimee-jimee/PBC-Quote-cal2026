@@ -6,7 +6,16 @@
 
 ---
 
-## AI 견적 지식·실행·비교 세트 (2026-10-30, Preview/운영 미적용)
+## AI 견적 데이터 (운영 적용 2026-10-31, P2 마이그레이션은 미적용)
+
+- `20261030120000_add_ai_quote_knowledge_and_runs.sql`, `20261031090000_add_ai_quote_settings.sql`, `20261031110000_restrict_ai_quote_data_to_owner.sql`: 운영 적용 완료(2026-10-31).
+- `20261031130000_add_microsoft_tokens_and_photo_runs.sql`: P2, 운영 미적용(승인 필요).
+- 모든 AI 테이블 RLS는 `app_auth.is_ai_quote_user()`(활성 admin + auth 이메일 `jimee@paintbuddyco.com.au`)만 허용한다.
+- `ai_quote_settings`: 단일 행(`id = true`), `monthly_budget_usd NUMERIC(8,2)` 기본 30, 0 초과 1000 이하. 갱신자·시각은 트리거가 고정한다.
+- `microsoft_tokens`: `user_id` PK, `account_email`, 암호화된 `access_token`/`refresh_token`, `scope`, `expires_at`. 본인 행만 접근한다.
+- `ai_quote_runs.kind`에 `photo_analysis`를 추가한다(P2).
+
+### 지식·실행·비교 세트 (2026-10-30)
 
 Migration: `20261030120000_add_ai_quote_knowledge_and_runs.sql`. 기존 견적·계산·Jobber 저장 계약을 변경하지 않는다.
 

@@ -93,18 +93,20 @@
 
 ---
 
-## AI 견적 자동화 (로컬 구현, 운영 미적용)
+## AI 견적 자동화 (운영 DB 적용 2026-10-31, 배포 전)
 
 - **S1 — 키 보호:** `ANTHROPIC_API_KEY`의 실제 값은 `server-only` Anthropic 모듈에서 읽고 클라이언트 번들·응답·로그에 포함하지 않는다. 빌드 후 `.next/static`에서 키 식별 문자열이 없는지 검사한다.
-- **S2 — 요청 인가:** 지식·견적 초안·비교 메모·비교 초안 라우트는 admin 역할과 same-origin 요청을 확인한다. 비교 목록·수정·삭제 Server Action도 admin만 허용한다.
+- **S2 — 요청 인가:** 모든 AI·OneDrive 라우트와 Server Action은 `requireAiQuoteUser()`(활성 admin + `jimee@paintbuddyco.com.au`)와 same-origin 요청을 확인한다. 다른 계정에는 AI 화면을 숨긴다.
 - **S3 — 환경 격리:** Preview와 인증 없는 개발 모드에서는 AI 호출을 차단한다. Preview에 Anthropic 키를 주입하면 환경 검증이 실패한다.
 - **S4 — 호출 한도:** 사용자별 최근 24시간의 실행 종류를 분리해 초안 20회, 가이드 분석 3회, 비교 메모 20회, 비교 초안 20회를 제한한다.
 - **S5 — 입력·출력 경계:** 메모·과거 견적·Jobber 텍스트는 신뢰하지 않는 자료로 감싸며, 구조화 출력과 Zod 재검증·활성 카탈로그 ID 대조를 거친다. 비교 메모 입력 타입은 수치·제품·공식 필드를 받지 않고 허용 필드만 직렬화한다.
 - **S6 — 개인정보:** 고객 식별 컬럼을 AI 자료로 조회하지 않으며 메모·공개 문구의 이메일·전화번호를 마스킹한다. 비교 목록에는 Jobber 견적 번호와 작업 유형만 표시한다. 비교 메모의 금액·일수/리터·제품 이름 누출은 텍스트 경고로 표시하고 관리자가 수정할 수 있다.
 - **S7 — 저장·동기화:** AI와 비교 라우트는 `quotes`, `quote_items`, `jobber_quote_lines`를 직접 생성·수정하지 않는다. 초안은 폼에서 검토·적용하고 일반 저장 흐름을 사용하며, AI 견적의 Jobber Sync는 서버 검토 게이트를 통과해야 한다.
-- **S8 — DB 권한:** `ai_quote_*` 테이블은 admin RLS와 actor 보호를 사용한다. 실행·가이드의 DELETE는 허용하지 않으며, 관리자의 샘플 제거를 위한 `ai_quote_eval_cases` DELETE만 예외다. 샘플 제거는 기준 견적을 삭제하지 않는다.
+- **S8 — DB 권한:** `ai_quote_*`·`microsoft_tokens` 테이블과 가이드 승인 RPC는 `app_auth.is_ai_quote_user()`(소유자 계정 전용) RLS와 actor 보호를 사용한다. 실행·가이드의 DELETE는 허용하지 않으며, 관리자의 샘플 제거를 위한 `ai_quote_eval_cases` DELETE만 예외다. 샘플 제거는 기준 견적을 삭제하지 않는다.
 - **S9 — 오류·로그:** 오류는 `safeErrorMessage`로 반환한다. 프롬프트·메모·고객 자료·내부 가격을 로그에 기록하지 않는다. 실행에는 마스킹된 메모·검증된 출력과 사용량·오류 코드만 기록한다.
-- **S10 — 지출 통제:** Anthropic Console의 앱 전용 워크스페이스·키와 월 지출 한도는 사용자 수행 항목(G2)이다. 실제 정확도 비교 호출(G4), 운영 DB(G3), push·배포(G5)는 별도 승인 범위를 따른다.
+- **S10 — 지출 통제:** Anthropic Console 월 한도와 별도로 앱 월 예산(기본 $30, `ai_quote_settings`)을 모든 AI 호출 전에 검사한다. 사진 분석 1회에 이어지는 첫 초안만 예산 도달 후에도 허용한다.
+- **S11 — OneDrive:** 위임 권한은 `Files.Read`·`User.Read`·`offline_access`(읽기 전용)뿐이다. PKCE + state 쿠키를 쓰고, 콜백에서 Microsoft 계정 메일이 소유자 계정일 때만 토큰을 저장한다. 토큰은 `JOBBER_TOKEN_ENCRYPTION_KEY` 기반으로 암호화한다. `MICROSOFT_*`는 서버 전용이며 Preview에 있으면 빌드를 거부한다.
+- **S12 — 사진 개인정보:** 사진은 썸네일로 메모리에서만 쓰고 저장하지 않는다. JPEG EXIF(APP1)는 제거한다. Claude에는 `photo NN` 번호만 보내고 폴더·파일 이름과 주소는 보내지 않는다. 실행 기록에는 findings·사진 수·Graph 항목 ID만 남긴다.
 
 키·월 한도·실제 Claude 호출과 운영 DB/RLS 검증은 로컬 구현이나 모의 테스트 통과와 구분한다. 기준: `docs/superpowers/specs/2026-10-30-ai-quote-automation-design.md` §10·§12.
 
