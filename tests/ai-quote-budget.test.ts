@@ -31,7 +31,7 @@ beforeEach(() => {
   vi.useFakeTimers()
   vi.setSystemTime(new Date('2026-10-31T12:00:00Z'))
   mocks.devNoAuth.mockReturnValue(false)
-  mocks.requireRole.mockResolvedValue({ ok: true, user: { id: 'admin' } })
+  mocks.requireRole.mockResolvedValue({ ok: true, user: { id: 'admin', email: 'jimee@paintbuddyco.com.au' }, profile: { role: 'admin', email: 'jimee@paintbuddyco.com.au' } })
   vi.spyOn(console, 'error').mockImplementation(() => {})
 })
 afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks() })
@@ -85,6 +85,14 @@ describe('monthly AI budget', () => {
 })
 
 describe('budget actions', () => {
+  it.each(['get', 'update'])('rejects another admin account for %s', async action => {
+    mocks.requireRole.mockResolvedValue({ ok: true, user: { id: 'other-admin', email: 'other@paintbuddyco.com.au' },
+      profile: { role: 'admin', email: 'jimee@paintbuddyco.com.au' } })
+    const result = action === 'get' ? await getAiBudgetStatus() : await updateAiMonthlyBudget({ monthlyBudgetUsd: 40 })
+    expect(result).toEqual({ ok: false, error: 'AI quoting is not enabled for your account.' })
+    expect(mocks.createClient).not.toHaveBeenCalled()
+  })
+
   it.each(['get', 'update'])('rejects non-admin %s', async action => {
     mocks.requireRole.mockResolvedValue({ ok: false, code: 'FORBIDDEN', error: 'Admin access required.' })
     const result = action === 'get' ? await getAiBudgetStatus() : await updateAiMonthlyBudget({ monthlyBudgetUsd: 40 })

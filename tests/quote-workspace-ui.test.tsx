@@ -7,6 +7,7 @@ import { createEmptyQuoteFormDraft, getQuoteDraftStorageKey } from '@/components
 import { createQuote, updateQuote } from '@/lib/actions/quotes'
 import { searchProducts } from '@/lib/actions/products'
 import { createArea } from '@/lib/actions/areas'
+import type { AiQuoteAvailability } from '@/lib/ai-quote/config'
 import type { AiQuoteDraft } from '@/lib/ai-quote/types'
 import type { QuoteLineTemplateRecord } from '@/lib/quote-line-templates/types'
 import Decimal from 'decimal.js'
@@ -170,6 +171,7 @@ async function mountQuoteForm(options: {
   viewportWidth?: number
   jobberEnabled?: boolean
   jobberNotice?: string
+  aiAvailability?: AiQuoteAvailability
   aiReviewPending?: boolean
   quoteLineTemplates?: QuoteLineTemplateRecord[]
 } = {}) {
@@ -211,7 +213,7 @@ async function mountQuoteForm(options: {
       initialQuote: options.initialQuote,
       jobberEnabled: options.jobberEnabled,
       jobberNotice: options.jobberNotice,
-      aiAvailability: { enabled: true },
+      aiAvailability: options.aiAvailability ?? { enabled: true },
       hasActiveAiKnowledge: true,
       aiReviewPending: options.aiReviewPending,
     }))
@@ -229,6 +231,19 @@ async function mountQuoteForm(options: {
 }
 
 describe('quote workspace structure', () => {
+  it('hides AI drafting for a disallowed account while preserving an existing draft review', async () => {
+    const mounted = await mountQuoteForm({
+      aiAvailability: { enabled: false, reason: 'not_allowed', message: 'AI quoting is not enabled for your account.' },
+      aiReviewPending: true, initialQuote: createQuoteRecord({ jobberQuoteId: 'jobber-1' }),
+    })
+    try {
+      expect(mounted.container.textContent).not.toContain('Draft with AI')
+      expect(mounted.container.textContent).not.toContain('AI quoting is not enabled for your account.')
+      expect(mounted.container.textContent).toContain('I reviewed the AI draft lines and prices')
+      expect(findButton(mounted.container, 'Save & Sync')?.disabled).toBe(true)
+    } finally { await mounted.cleanup() }
+  })
+
   it.each([375, 1280])('requires one review checkbox before either Sync button but keeps Save available at %spx', async viewportWidth => {
     vi.mocked(updateQuote).mockReset().mockResolvedValueOnce({ ok: false, error: 'Hold for inspection' }).mockResolvedValueOnce({ ok: true, data: { id: 'quote-workspace-1' } })
     const mounted = await mountQuoteForm({ viewportWidth, aiReviewPending: true, initialQuote: createQuoteRecord({ jobberQuoteId: 'jobber-1' }) })

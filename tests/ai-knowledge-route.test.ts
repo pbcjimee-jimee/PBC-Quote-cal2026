@@ -7,7 +7,8 @@ const mocks = vi.hoisted(() => ({
   insertKnowledgeDraft: vi.fn(), createAnthropicClient: vi.fn(), runStructuredClaudeRequest: vi.fn(),
 }))
 vi.mock('@/lib/ai-quote/budget', () => ({ getAiMonthlyBudgetStatus: mocks.budget }))
-vi.mock('@/lib/ai-quote/config', () => ({
+vi.mock('@/lib/ai-quote/config', async (importOriginal) => ({
+  ...await importOriginal<typeof import('@/lib/ai-quote/config')>(),
   getAiQuoteAvailability: mocks.availability, AI_QUOTE_MODEL: 'claude-opus-5-5',
   AI_QUOTE_PROMPT_VERSIONS: { knowledge: 'knowledge-v1' }, AI_QUOTE_LIMITS: { knowledgeBuildsPerDay: 3, knowledgeMaxTokens: 64000 },
 }))
@@ -37,7 +38,7 @@ beforeEach(() => {
   mocks.budget.mockResolvedValue({ budgetUsd: '30.00', spentUsd: '1.00', remainingUsd: '29.00', reached: false })
   vi.spyOn(console, 'error').mockImplementation(() => {})
   mocks.availability.mockReturnValue({ enabled: true })
-  mocks.requireRole.mockResolvedValue({ ok: true, user: { id: 'admin-1' }, profile: { role: 'admin' } })
+  mocks.requireRole.mockResolvedValue({ ok: true, user: { id: 'admin-1', email: 'jimee@paintbuddyco.com.au' }, profile: { email: 'jimee@paintbuddyco.com.au', role: 'admin' } })
   mocks.createClient.mockResolvedValue(supabase)
   mocks.countRecentRuns.mockResolvedValue(0)
   mocks.startRun.mockResolvedValue('run-1')
@@ -50,6 +51,16 @@ beforeEach(() => {
 afterEach(() => vi.restoreAllMocks())
 
 describe('POST knowledge', () => {
+  it('rejects another admin account before any AI or database access', async () => {
+    mocks.requireRole.mockResolvedValue({ ok: true, user: { id: 'other-admin', email: 'other@paintbuddyco.com.au' },
+      profile: { role: 'admin', email: 'jimee@paintbuddyco.com.au' } })
+    const response = await POST(request())
+    expect(response.status).toBe(403)
+    expect(await response.json()).toMatchObject({ ok: false, error: expect.stringContaining('AI quoting is not enabled for your account.') })
+    expect(mocks.createClient).not.toHaveBeenCalled()
+    expect(mocks.runStructuredClaudeRequest).not.toHaveBeenCalled()
+  })
+
   it('returns 503 before authentication when AI is unavailable', async () => {
     mocks.availability.mockReturnValue({ enabled: false, reason: 'preview', message: 'AI unavailable in Preview.' })
     expect((await POST(request())).status).toBe(503)

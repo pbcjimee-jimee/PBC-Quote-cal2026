@@ -6,7 +6,9 @@ import type { ActionResult } from '@/lib/actions/types'
 import { DEFAULT_PRICING_SETTINGS } from '@/lib/calculator'
 import type { PricingSettings } from '@/lib/calculator'
 import { requireAdminPage } from '@/lib/security/page-role-guard'
-import { getAiQuoteAvailability } from '@/lib/ai-quote/config'
+import { getAiQuoteAvailabilityForUser } from '@/lib/ai-quote/access'
+import { isDevNoAuthMode } from '@/lib/actions/types'
+import { requireRole } from '@/lib/security/require-app-user'
 
 function formatErrorMessage(error: unknown, label: string) {
   const text = error instanceof Error ? error.message : 'Unknown error'
@@ -30,6 +32,8 @@ function normalizeResult<T>(result: ActionResult<T> | undefined | null, label: s
 
 export default async function SettingsPage() {
   await requireAdminPage()
+  const appUser = isDevNoAuthMode() ? null : await requireRole('admin')
+  const aiAvailability = getAiQuoteAvailabilityForUser(appUser?.ok ? appUser.user.email ?? appUser.profile.email : null)
   const rawSettingsResult = await safeResult(getPricingSettings(), 'Failed to load pricing settings')
   const settingsResult = normalizeResult(
     rawSettingsResult as ActionResult<PricingSettings> | undefined,
@@ -53,7 +57,7 @@ export default async function SettingsPage() {
       </div>
       <SettingsForm
         initialSettings={settingsResult.ok ? settingsResult.data : DEFAULT_PRICING_SETTINGS}
-        aiAvailability={getAiQuoteAvailability()}
+        aiAvailability={aiAvailability}
       />
       </div>
     </main>

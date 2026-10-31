@@ -35,7 +35,7 @@ beforeEach(() => {
   vi.resetAllMocks()
   vi.spyOn(console, 'error').mockImplementation(() => {})
   mocks.isDevNoAuthMode.mockReturnValue(false)
-  mocks.requireRole.mockResolvedValue({ ok: true, user: { id: 'admin-1' } })
+  mocks.requireRole.mockResolvedValue({ ok: true, user: { id: 'admin-1', email: 'jimee@paintbuddyco.com.au' }, profile: { role: 'admin', email: 'jimee@paintbuddyco.com.au' } })
 })
 
 describe('AI eval actions', () => {
@@ -61,6 +61,13 @@ describe('AI eval actions', () => {
     mocks.evalCase.mockResolvedValue({ id, quote_id: quoteId })
     return { builder, client, response }
   }
+
+  it.each(evalActions)('rejects another admin account for %s', async (_, action) => {
+    mocks.requireRole.mockResolvedValue({ ok: true, user: { id: 'other-admin', email: 'other@paintbuddyco.com.au' },
+      profile: { role: 'admin', email: 'jimee@paintbuddyco.com.au' } })
+    expect(await action()).toEqual({ ok: false, error: 'AI quoting is not enabled for your account.' })
+    expect(mocks.createClient).not.toHaveBeenCalled()
+  })
 
   it.each(evalActions)('requires admin for eval %s', async (_, action) => {
     mocks.requireRole.mockResolvedValue({ ok: false, error: 'Admin required' })
@@ -152,6 +159,13 @@ const actions = [
 ] as const
 
 describe('AI knowledge actions', () => {
+  it.each(actions)('rejects another admin account for %s', async (_, action) => {
+    mocks.requireRole.mockResolvedValue({ ok: true, user: { id: 'other-admin', email: 'other@paintbuddyco.com.au' },
+      profile: { role: 'admin', email: 'jimee@paintbuddyco.com.au' } })
+    expect(await action()).toEqual({ ok: false, error: 'AI quoting is not enabled for your account.' })
+    expect(mocks.createClient).not.toHaveBeenCalled()
+  })
+
   it.each(actions)('requires admin to %s', async (_, action) => {
     mocks.requireRole.mockResolvedValue({ ok: false, error: 'Admin access required' })
     expect(await action()).toMatchObject({ ok: false, error: 'Admin access required' })

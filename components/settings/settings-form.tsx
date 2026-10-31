@@ -389,7 +389,8 @@ export function SettingsForm({
 }: SettingsFormProps) {
   const [isPending, startTransition] = useTransition()
   const searchParams = useSearchParams()
-  const [activeTab, setActiveTab] = useState<SettingsTab>(() => searchParams?.get('tab') === 'ai' ? 'ai' : 'labour')
+  const aiVisible = aiAvailability.enabled || aiAvailability.reason !== 'not_allowed'
+  const [activeTab, setActiveTab] = useState<SettingsTab>(() => aiVisible && searchParams?.get('tab') === 'ai' ? 'ai' : 'labour')
   const initiallyLoadedResources = useRef(new Set<SettingsResource>([
     ...(initialAreas !== undefined ? ['areas' as const] : []),
     ...(initialProducts !== undefined ? ['products' as const] : []),
@@ -1082,7 +1083,7 @@ export function SettingsForm({
   return (
     <div className="pbc-settings">
       <nav className="pbc-tabs" aria-label="Settings sections">
-        {tabs.map((tab) => (
+        {tabs.filter(tab => tab.key !== 'ai' || aiVisible).map((tab) => (
           <button
             key={tab.key}
             id={`settings-section-${tab.key}`}

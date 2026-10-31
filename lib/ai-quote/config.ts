@@ -1,6 +1,12 @@
 import 'server-only'
 import { isDevNoAuthMode } from '@/lib/actions/types'
 
+export const AI_QUOTE_ALLOWED_EMAILS = ['jimee@paintbuddyco.com.au'] as const
+
+export function isAiQuoteUserAllowed(email: string | null | undefined): boolean {
+  return AI_QUOTE_ALLOWED_EMAILS.some(allowed => allowed === email?.trim().toLowerCase())
+}
+
 export const AI_QUOTE_MODEL = 'claude-opus-5-5'
 
 export const AI_QUOTE_PROMPT_VERSIONS = {
@@ -25,9 +31,10 @@ export const AI_QUOTE_LIMITS = {
 
 export type AiQuoteAvailability =
   | { enabled: true }
-  | { enabled: false; reason: 'preview' | 'dev_no_auth' | 'missing_key'; message: string }
+  | { enabled: false; reason: 'preview' | 'dev_no_auth' | 'missing_key' | 'not_allowed'; message: string }
 
-export const AI_QUOTE_DISABLED_MESSAGES: Record<'preview' | 'dev_no_auth' | 'missing_key', string> = {
+export const AI_QUOTE_DISABLED_MESSAGES: Record<'preview' | 'dev_no_auth' | 'missing_key' | 'not_allowed', string> = {
+  not_allowed: 'AI quoting is not enabled for your account.',
   preview: 'AI quoting is unavailable in Preview.',
   dev_no_auth: 'AI quoting requires authentication.',
   missing_key: 'AI quoting is not configured. Contact an administrator.',

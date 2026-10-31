@@ -5,7 +5,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { safeErrorMessage } from '@/lib/actions/action-error'
 import { isDevNoAuthMode, type ActionResult } from '@/lib/actions/types'
 import type { KnowledgeStats } from '@/lib/ai-quote/knowledge-stats'
-import { requireRole } from '@/lib/security/require-app-user'
+import { requireAiQuoteUser } from '@/lib/ai-quote/access'
 import { createClient } from '@/lib/supabase/server'
 import type { Database } from '@/lib/supabase/types'
 import { AI_QUOTE_LIMITS } from '@/lib/ai-quote/config'
@@ -51,7 +51,7 @@ function toKnowledge(row: KnowledgeRow): AiKnowledgeRecord {
 export async function listAiQuoteKnowledge(): Promise<ActionResult<AiKnowledgeRecord[]>> {
   if (isDevNoAuthMode()) return { ok: false, code: 'AUTH_REQUIRED', error: 'AI knowledge requires authentication.' }
   try {
-    const auth = await requireRole('admin')
+    const auth = await requireAiQuoteUser()
     if (!auth.ok) return auth
     const supabase = await createClient()
     const { data, error } = await supabase.from('ai_quote_knowledge').select(KNOWLEDGE_COLUMNS)
@@ -68,7 +68,7 @@ export async function updateAiQuoteKnowledgeDraft(input: unknown): Promise<Actio
   if (!parsed.success) return { ok: false, code: 'VALIDATION', error: 'Enter a valid guide ID and guides between 1 and 40,000 characters.' }
   if (isDevNoAuthMode()) return { ok: false, code: 'AUTH_REQUIRED', error: 'AI knowledge requires authentication.' }
   try {
-    const auth = await requireRole('admin')
+    const auth = await requireAiQuoteUser()
     if (!auth.ok) return auth
     const supabase = await createClient()
     const { data, error } = await supabase.from('ai_quote_knowledge').update({
@@ -87,7 +87,7 @@ export async function activateAiQuoteKnowledge(input: unknown): Promise<ActionRe
   if (!parsed.success) return { ok: false, code: 'VALIDATION', error: 'Enter a valid guide ID.' }
   if (isDevNoAuthMode()) return { ok: false, code: 'AUTH_REQUIRED', error: 'AI knowledge requires authentication.' }
   try {
-    const auth = await requireRole('admin')
+    const auth = await requireAiQuoteUser()
     if (!auth.ok) return auth
     const supabase = await createClient()
     const { data, error } = await supabase.rpc('activate_ai_quote_knowledge', { p_id: parsed.data.id })
@@ -103,7 +103,7 @@ export async function reviseActiveAiQuoteKnowledge(input: unknown): Promise<Acti
   if (!parsed.success) return { ok: false, code: 'VALIDATION', error: 'Enter a valid guide ID and guides between 1 and 40,000 characters.' }
   if (isDevNoAuthMode()) return { ok: false, code: 'AUTH_REQUIRED', error: 'AI knowledge requires authentication.' }
   try {
-    const auth = await requireRole('admin')
+    const auth = await requireAiQuoteUser()
     if (!auth.ok) return auth
     const supabase = await createClient()
     const current = await supabase.from('ai_quote_knowledge').select(`${KNOWLEDGE_COLUMNS}, run_id`)
@@ -150,7 +150,7 @@ const evalMemoSchema = knowledgeIdSchema.extend({ memo: z.string().trim().min(1)
 
 async function evalClient() {
   if (isDevNoAuthMode()) return { ok: false, code: 'AUTH_REQUIRED', error: 'Accuracy checks require authentication.' } as const
-  const auth = await requireRole('admin')
+  const auth = await requireAiQuoteUser()
   if (!auth.ok) return auth
   return { ok: true, data: await createClient() } as const
 }

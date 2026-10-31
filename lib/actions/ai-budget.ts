@@ -5,7 +5,7 @@ import { z } from 'zod'
 import { safeErrorMessage } from '@/lib/actions/action-error'
 import { isDevNoAuthMode, type ActionResult } from '@/lib/actions/types'
 import { getAiMonthlyBudgetStatus, type AiMonthlyBudgetStatus } from '@/lib/ai-quote/budget'
-import { requireRole } from '@/lib/security/require-app-user'
+import { requireAiQuoteUser } from '@/lib/ai-quote/access'
 import { createClient } from '@/lib/supabase/server'
 
 const budgetSchema = z.object({
@@ -15,7 +15,7 @@ const budgetSchema = z.object({
 export async function getAiBudgetStatus(): Promise<ActionResult<AiMonthlyBudgetStatus>> {
   if (isDevNoAuthMode()) return { ok: false, code: 'AUTH_REQUIRED', error: 'AI budgets require authentication.' }
   try {
-    const auth = await requireRole('admin')
+    const auth = await requireAiQuoteUser()
     if (!auth.ok) return auth
     return { ok: true, data: await getAiMonthlyBudgetStatus(await createClient()) }
   } catch (error) {
@@ -28,7 +28,7 @@ export async function updateAiMonthlyBudget(input: unknown): Promise<ActionResul
   if (!parsed.success) return { ok: false, code: 'VALIDATION', error: 'Enter a monthly limit greater than $0 and up to $1,000, with at most two decimal places.' }
   if (isDevNoAuthMode()) return { ok: false, code: 'AUTH_REQUIRED', error: 'AI budgets require authentication.' }
   try {
-    const auth = await requireRole('admin')
+    const auth = await requireAiQuoteUser()
     if (!auth.ok) return auth
     const supabase = await createClient()
     const { data, error } = await supabase.from('ai_quote_settings')

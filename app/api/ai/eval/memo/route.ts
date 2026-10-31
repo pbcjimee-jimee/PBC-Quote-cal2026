@@ -8,7 +8,7 @@ import { buildEvalMemoPrompt, detectEvalMemoLeaks, evalMemoOutputSchema } from '
 import { redactContactDetails } from '@/lib/ai-quote/pii'
 import { countRecentRuns, finishRun, startRun } from '@/lib/ai-quote/runs'
 import { AUTHENTICATION_REQUIRED_ERROR } from '@/lib/security/auth-policy'
-import { requireRole } from '@/lib/security/require-app-user'
+import { requireAiQuoteUser } from '@/lib/ai-quote/access'
 import { isSameOriginRequest } from '@/lib/security/request-origin'
 import { createClient } from '@/lib/supabase/server'
 import { aiEvalMemoRequestSchema } from '@/lib/validators'
@@ -24,7 +24,7 @@ export async function POST(request: Request) {
   if (!availability.enabled) return errorResponse(null, 503, availability.message)
 
   try {
-    const auth = await requireRole('admin')
+    const auth = await requireAiQuoteUser()
     if (!auth.ok) return errorResponse(null, auth.error === AUTHENTICATION_REQUIRED_ERROR ? 401 : 403, auth.error)
     if (!isSameOriginRequest(request)) return errorResponse(null, 403, 'A same-origin request is required.')
 

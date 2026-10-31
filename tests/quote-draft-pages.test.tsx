@@ -4,7 +4,7 @@ import { DEFAULT_PRICING_SETTINGS } from '@/lib/calculator'
 
 const mocks = vi.hoisted(() => ({ requireRole: vi.fn(), isDevNoAuthMode: vi.fn(), availability: vi.fn(), loadActiveKnowledge: vi.fn(), createClient: vi.fn(), hasPendingAiReview: vi.fn() }))
 vi.mock('@/lib/ai-quote/runs', () => ({ hasPendingAiReview: mocks.hasPendingAiReview }))
-vi.mock('@/lib/ai-quote/config', () => ({ getAiQuoteAvailability: mocks.availability }))
+vi.mock('@/lib/ai-quote/config', async (importOriginal) => ({ ...await importOriginal<typeof import('@/lib/ai-quote/config')>(), getAiQuoteAvailability: mocks.availability }))
 vi.mock('@/lib/ai-quote/data', () => ({ loadActiveKnowledge: mocks.loadActiveKnowledge }))
 vi.mock('@/lib/supabase/server', () => ({ createClient: mocks.createClient }))
 vi.mock('@/lib/security/require-app-user', () => ({ requireRole: mocks.requireRole }))
@@ -28,7 +28,7 @@ describe('server quote draft ownership', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mocks.isDevNoAuthMode.mockReturnValue(false)
-    mocks.requireRole.mockResolvedValue({ ok: true, user: { id: 'session-user' } })
+    mocks.requireRole.mockResolvedValue({ ok: true, user: { id: 'session-user', email: 'jimee@paintbuddyco.com.au' }, profile: { email: 'jimee@paintbuddyco.com.au' } })
     mocks.availability.mockReturnValue({ enabled: true })
     mocks.createClient.mockResolvedValue({})
     mocks.loadActiveKnowledge.mockResolvedValue({ id: 'knowledge-1' })
@@ -48,6 +48,19 @@ describe('server quote draft ownership', () => {
     it(`${mode}: passes AI availability and approved knowledge to the form`, async () => {
       expect(renderToStaticMarkup(await loadPage())).toContain('guide-ready ai-enabled')
       expect(mocks.loadActiveKnowledge).toHaveBeenCalledWith({})
+    })
+
+    it(`${mode}: does not load AI guides for another admin even when their profile has the allowed email`, async () => {
+      mocks.requireRole.mockResolvedValue({ ok: true, user: { id: 'session-user', email: 'other@paintbuddyco.com.au' },
+        profile: { email: 'jimee@paintbuddyco.com.au' } })
+      expect(renderToStaticMarkup(await loadPage())).toContain('guide-needed ai-disabled')
+      expect(mocks.loadActiveKnowledge).not.toHaveBeenCalled()
+    })
+
+    it(`${mode}: falls back to the profile only when the auth email is null`, async () => {
+      mocks.requireRole.mockResolvedValue({ ok: true, user: { id: 'session-user', email: null },
+        profile: { email: 'jimee@paintbuddyco.com.au' } })
+      expect(renderToStaticMarkup(await loadPage())).toContain('guide-ready ai-enabled')
     })
 
     it(`${mode}: disables drafting when no guide is approved or loading fails`, async () => {

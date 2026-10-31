@@ -147,6 +147,21 @@ it.each(['?tab=ai', '?tab=unknown', ''])('opens the requested initial settings t
   }
 })
 
+it.each(['?tab=ai', ''])('hides AI and uses Labour Rates for a disallowed account at %s', search => {
+  settingsNavigationMocks.search = search
+  settingsDataMocks.listAiQuoteKnowledge.mockReset()
+  try {
+    const markup = renderToStaticMarkup(createElement(SettingsForm, {
+      initialSettings: DEFAULT_PRICING_SETTINGS, initialAiKnowledge: [],
+      aiAvailability: { enabled: false, reason: 'not_allowed', message: 'AI quoting is not enabled for your account.' },
+    }))
+    expect(markup).not.toContain('id="settings-section-ai"')
+    expect(markup).toContain('aria-labelledby="settings-section-labour"')
+    expect(markup).not.toContain('AI quoting is not enabled for your account.')
+    expect(settingsDataMocks.listAiQuoteKnowledge).not.toHaveBeenCalled()
+  } finally { settingsNavigationMocks.search = '' }
+})
+
 function submitTestForm(form: Element): void {
   const propsKey = Object.keys(form).find((key) => key.startsWith('__reactProps$'))
   if (!propsKey) throw new Error('React form props were not attached')

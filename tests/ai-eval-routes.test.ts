@@ -5,7 +5,8 @@ const mocks = vi.hoisted(() => ({ budget: vi.fn(), availability: vi.fn(), requir
   startRun: vi.fn(), finishRun: vi.fn(), structured: vi.fn(), client: vi.fn(), reference: vi.fn(), loadCase: vi.fn(),
   upsertCase: vi.fn(), saveResult: vi.fn(), generateQuoteDraft: vi.fn(), compare: vi.fn(), settings: vi.fn() }))
 vi.mock('@/lib/ai-quote/budget', () => ({ getAiMonthlyBudgetStatus: mocks.budget }))
-vi.mock('@/lib/ai-quote/config', () => ({ getAiQuoteAvailability: mocks.availability,
+vi.mock('@/lib/ai-quote/config', async (importOriginal) => ({
+  ...await importOriginal<typeof import('@/lib/ai-quote/config')>(), getAiQuoteAvailability: mocks.availability,
   AI_QUOTE_LIMITS: { evalMemosPerDay: 30, evalDraftsPerDay: 30, evalMemoMaxTokens: 4000 },
   AI_QUOTE_MODEL: 'claude-opus-5-5', AI_QUOTE_PROMPT_VERSIONS: { evalMemo: 'eval-memo-v1' } }))
 vi.mock('@/lib/security/require-app-user', () => ({ requireRole: mocks.requireRole }))
@@ -42,7 +43,7 @@ beforeEach(() => {
   mocks.budget.mockResolvedValue({ budgetUsd: '30.00', spentUsd: '1.00', remainingUsd: '29.00', reached: false })
   vi.spyOn(console, 'error').mockImplementation(() => {})
   mocks.availability.mockReturnValue({ enabled: true })
-  mocks.requireRole.mockResolvedValue({ ok: true, user: { id: 'admin-1' } })
+  mocks.requireRole.mockResolvedValue({ ok: true, user: { id: 'admin-1', email: 'jimee@paintbuddyco.com.au' }, profile: { email: 'jimee@paintbuddyco.com.au', role: 'admin' } })
   mocks.createClient.mockResolvedValue(supabase)
   mocks.countRecentRuns.mockResolvedValue(0)
   mocks.startRun.mockResolvedValue('memo-run')
@@ -58,6 +59,17 @@ beforeEach(() => {
 afterEach(() => vi.restoreAllMocks())
 
 describe.each(endpoints)('eval $name gates', ({ post, body, kind }) => {
+  it('rejects another admin account before any AI or database access', async () => {
+    mocks.requireRole.mockResolvedValue({ ok: true, user: { id: 'other-admin', email: 'other@paintbuddyco.com.au' },
+      profile: { role: 'admin', email: 'jimee@paintbuddyco.com.au' } })
+    const response = await post(request(body))
+    expect(response.status).toBe(403)
+    expect(await response.json()).toMatchObject({ ok: false, error: expect.stringContaining('AI quoting is not enabled for your account.') })
+    expect(mocks.createClient).not.toHaveBeenCalled()
+    expect(mocks.structured).not.toHaveBeenCalled()
+    expect(mocks.generateQuoteDraft).not.toHaveBeenCalled()
+  })
+
   it('checks availability before authentication', async () => {
     mocks.availability.mockReturnValue({ enabled: false, message: 'Unavailable in Preview.' })
     expect((await post(request(body))).status).toBe(503)
