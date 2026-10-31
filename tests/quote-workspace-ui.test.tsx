@@ -232,15 +232,20 @@ async function mountQuoteForm(options: {
 }
 
 describe('quote workspace structure', () => {
-  it('hides AI drafting for a disallowed account while preserving an existing draft review', async () => {
+  it.each([375, 1280])('locks sync for a non-owner pending review and keeps local Save available at %spx', async viewportWidth => {
     const mounted = await mountQuoteForm({
       aiAvailability: { enabled: false, reason: 'not_allowed', message: 'AI quoting is not enabled for your account.' },
-      aiReviewPending: true, initialQuote: createQuoteRecord({ jobberQuoteId: 'jobber-1' }),
+      viewportWidth, aiReviewPending: true, initialQuote: createQuoteRecord({ jobberQuoteId: 'jobber-1' }),
     })
     try {
       expect(mounted.container.textContent).not.toContain('Draft with AI')
       expect(mounted.container.textContent).not.toContain('AI quoting is not enabled for your account.')
-      expect(mounted.container.textContent).toContain('I reviewed the AI draft lines and prices')
+      expect(mounted.container.textContent).not.toContain('I reviewed the AI draft lines and prices')
+      expect(mounted.container.querySelectorAll('input').filter(input => input.getAttribute('aria-label') === 'I reviewed the AI draft lines and prices')).toHaveLength(0)
+      expect(mounted.container.textContent).toContain('AI draft waiting for owner review. Save is available; Jobber sync is locked.')
+      expect(mounted.container.querySelectorAll('p').filter(element => element.getAttribute('role') === 'status' && element.textContent.includes('AI draft waiting for owner review.')).length).toBe(1)
+      expect(findButton(mounted.container, 'Save')?.disabled).toBe(false)
+      expect(findButton(mounted.container, 'Save & Sync to Jobber')?.disabled).toBe(true)
       expect(findButton(mounted.container, 'Save & Sync')?.disabled).toBe(true)
     } finally { await mounted.cleanup() }
   })

@@ -18,7 +18,7 @@ describe.skipIf(!pgliteAvailable)('AI quote migration on ephemeral PostgreSQL', 
   let version = 0
 
   beforeAll(async () => {
-    db = await bootstrap({ through: '20261031130000' })
+    db = await bootstrap({ through: '20261031150000' })
     await db.exec(`CREATE OR REPLACE FUNCTION auth.uid() RETURNS UUID LANGUAGE sql STABLE AS $$
       SELECT nullif(current_setting('request.jwt.claim.sub', true), '')::UUID $$;
       UPDATE auth.users SET email='jimee@paintbuddyco.com.au' WHERE id='${actorId}';
@@ -53,6 +53,56 @@ describe.skipIf(!pgliteAvailable)('AI quote migration on ephemeral PostgreSQL', 
       (${entries.map(([key]) => key).join(',')}) VALUES (${entries.map((_, index) => `$${index + 1}`).join(',')}) RETURNING id,created_by`,
     entries.map(([, value]) => typeof value === 'object' && value !== null ? JSON.stringify(value) : value))).rows[0]
   }
+
+  describe('quote AI review status', () => {
+    async function pendingQuote(status = 'succeeded') {
+      const payload = savePayload({ key: randomUUID(), logicalKey: randomUUID() })
+      const quote = await db.query<{ id: string }>('SELECT public.create_quote_with_children($1::jsonb) AS id', [JSON.stringify(payload)])
+      const quoteId = quote.rows[0].id
+      const run = await insert('ai_quote_runs', { quote_id: quoteId })
+      await db.query('UPDATE public.ai_quote_runs SET status=$2 WHERE id=$1', [run.id, status])
+      return { quoteId, runId: run.id }
+    }
+    async function isPending(quoteId: string) {
+      return (await db.query<{ pending: boolean }>('SELECT public.quote_has_pending_ai_review($1) AS pending', [quoteId])).rows[0].pending
+    }
+    it('returns only review status to another active admin without exposing AI rows', async () => {
+      const { quoteId, runId } = await pendingQuote()
+      await login(otherId)
+      expect(await isPending(quoteId)).toBe(true)
+      expect(await isPending(randomUUID())).toBe(false)
+      expect((await db.query('SELECT * FROM public.ai_quote_runs')).rows).toEqual([])
+      expect((await db.query('SELECT * FROM public.ai_quote_knowledge')).rows).toEqual([])
+      await login(actorId)
+      await db.query('UPDATE public.ai_quote_runs SET review_confirmed_at=now() WHERE id=$1', [runId])
+      await login(otherId)
+      expect(await isPending(quoteId)).toBe(false)
+    })
+    it('ignores failed drafts and successful runs of other kinds', async () => {
+      const { quoteId } = await pendingQuote('failed')
+      const photoRun = await insert('ai_quote_runs', { quote_id: quoteId, kind: 'photo_analysis' })
+      await db.query("UPDATE public.ai_quote_runs SET status='succeeded' WHERE id=$1", [photoRun.id])
+      await login(otherId)
+      expect(await isPending(quoteId)).toBe(false)
+    })
+    it('returns false for an inactive profile', async () => {
+      const { quoteId } = await pendingQuote()
+      await db.exec('RESET ROLE')
+      await db.query('UPDATE public.user_profiles SET is_active=false WHERE id=$1', [otherId])
+      try {
+        await login(otherId)
+        expect(await isPending(quoteId)).toBe(false)
+      } finally {
+        await db.exec('RESET ROLE')
+        await db.query('UPDATE public.user_profiles SET is_active=true WHERE id=$1', [otherId])
+      }
+    })
+    it.each(['anon', 'service_role'])('denies review status execution to %s', async role => {
+      const { quoteId } = await pendingQuote()
+      await db.exec(`RESET ROLE; SET ROLE ${role}`)
+      await expect(isPending(quoteId)).rejects.toMatchObject({ code: '42501' })
+    })
+  })
 
   describe('Microsoft connection tokens', () => {
     beforeEach(async () => {

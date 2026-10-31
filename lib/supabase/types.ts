@@ -821,6 +821,7 @@ export type Database = {
     }
     Functions: {
       activate_ai_quote_knowledge: { Args: { p_id: string }; Returns: string }
+      quote_has_pending_ai_review: { Args: { p_quote_id: string }; Returns: boolean }
       soft_delete_quote: {
         Args: { target_quote_id: string; expected_version: number }
         Returns: { id: string; version: number; deleted_at: string | null }[]
