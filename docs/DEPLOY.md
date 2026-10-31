@@ -111,7 +111,7 @@ git ls-remote origin main
 | 변수 | 환경 | 상태 |
 |---|---|---|
 | `ANTHROPIC_API_KEY` | Production only, Sensitive | 2026-10-31 등록 완료. Preview 금지(빌드 거부) |
-| `MICROSOFT_TENANT_ID`, `MICROSOFT_CLIENT_ID`, `MICROSOFT_CLIENT_SECRET`, `MICROSOFT_REDIRECT_URI` | Production only, 서버 전용 | P2. 미등록(사용자 승인 필요), Preview 금지(빌드 거부) |
+| `MICROSOFT_TENANT_ID`, `MICROSOFT_CLIENT_ID`, `MICROSOFT_CLIENT_SECRET`, `MICROSOFT_REDIRECT_URI` | Production only, 서버 전용 | P2. 로컬 `.env.local` 입력 완료(2026-10-31, Entra 앱 "PBC Quote OneDrive Photos", 시크릿 2028-10-30 만료). Vercel은 미등록(사용자 승인 필요), Preview 금지(빌드 거부) |
 
 **Entra 앱 등록(사용자 수행, P2-G2)**
 1. Microsoft Entra 관리 센터 > App registrations > New registration
