@@ -1,4 +1,5 @@
 import Decimal from 'decimal.js'
+import { AI_QUOTE_LIMITS } from '@/lib/ai-quote/config'
 import type { DraftCatalog } from '@/lib/ai-quote/data'
 import type { AiDraftModelOutput } from '@/lib/ai-quote/draft-schema'
 import type { AiQuoteDraft, AiScope } from '@/lib/ai-quote/types'
@@ -28,6 +29,7 @@ function isFormula(value: number): value is 1 | 2 | 3 | 4 | 5 {
 
 export function validateAiQuoteDraft(
   raw: AiDraftModelOutput, catalog: DraftCatalog, createId: () => string = () => crypto.randomUUID(),
+  photoCount = 0,
 ): AiQuoteDraft {
   const input = cleanStrings(raw)
   const warnings: string[] = []
@@ -104,11 +106,23 @@ export function validateAiQuoteDraft(
       if (!item.areaName.trim()) warnings.push('A work item with an empty area was removed.')
       continue
     }
+    const workingDays = clamp(item.workingDays, 60, 'Working days')
+    const labourPerDay = clamp(item.labourPerDay, 12, 'Labour per day')
+    let photoAdjustment: AiQuoteDraft['workItems'][number]['photoAdjustment'] = null
+    if (photoCount > 0 && item.photoAdjustment) {
+      const adjustment = item.photoAdjustment
+      const days = Decimal.min(60, new Decimal(workingDays).mul(AI_QUOTE_LIMITS.photoAdjustmentDaysFactor),
+        Decimal.max(workingDays, decimal(adjustment.workingDays) ?? workingDays)).toDecimalPlaces(2, Decimal.ROUND_DOWN)
+      const labour = Decimal.min(12, new Decimal(labourPerDay).add(AI_QUOTE_LIMITS.photoAdjustmentLabourAdd),
+        Decimal.max(labourPerDay, decimal(adjustment.labourPerDay) ?? labourPerDay)).toDecimalPlaces(2, Decimal.ROUND_DOWN)
+      if (days.gt(workingDays) || labour.gt(labourPerDay)) {
+        photoAdjustment = { workingDays: days.toString(), labourPerDay: labour.toString(), reason: adjustment.reason,
+          photoRefs: adjustment.photoRefs.filter(ref => Number.isInteger(ref) && ref >= 1 && ref <= photoCount) }
+      }
+    }
     workItems.push({
       id: createId(), product, areaScope: item.areaScope, areaName, quantity: amount,
-      workingDays: clamp(item.workingDays, 60, 'Working days'),
-      labourPerDay: clamp(item.labourPerDay, 12, 'Labour per day'), rationale: item.rationale,
-      photoAdjustment: null,
+      workingDays, labourPerDay, rationale: item.rationale, photoAdjustment,
     })
   }
   for (const area of input.areas) addArea(area.scope, area.name)

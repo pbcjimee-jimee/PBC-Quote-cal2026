@@ -474,6 +474,7 @@ export const draftJobberContextSchema = z.object({
 export const aiQuoteDraftRequestSchema = z.object({
   memo: z.string().trim().min(1).max(8000),
   jobberContext: draftJobberContextSchema.nullable(),
+  photoAnalysisRunId: z.string().uuid().optional(),
 })
 
 export const aiEvalMemoRequestSchema = z.object({

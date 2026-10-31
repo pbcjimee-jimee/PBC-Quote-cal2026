@@ -11,13 +11,15 @@ import { validateAiQuoteDraft } from '@/lib/ai-quote/draft-validation'
 import { redactContactDetails } from '@/lib/ai-quote/pii'
 import { finishRun, startRun } from '@/lib/ai-quote/runs'
 import { rankSimilarQuotes } from '@/lib/ai-quote/similar-quotes'
-import type { AiQuoteDraft, DraftJobberContext } from '@/lib/ai-quote/types'
+import type { AiPhotoFinding, AiQuoteDraft, DraftJobberContext } from '@/lib/ai-quote/types'
 import type { Database } from '@/lib/supabase/types'
 
 export async function generateQuoteDraft(supabase: SupabaseClient<Database>, input: {
   kind: 'quote_draft' | 'eval_draft'
   memo: string
   jobberContext: DraftJobberContext | null
+  photoFindings?: AiPhotoFinding[]
+  photoCount?: number
   excludeQuoteIds?: string[]
   signal?: AbortSignal
   client?: Anthropic
@@ -53,7 +55,8 @@ export async function generateQuoteDraft(supabase: SupabaseClient<Database>, inp
         const example = examplesById.get(id)
         return example ? [example] : []
       })
-      const prompt = buildQuoteDraftPrompt({ knowledge, catalog, examples, jobberContext: input.jobberContext, memo })
+      const photoFindings = input.photoFindings ?? []
+      const prompt = buildQuoteDraftPrompt({ knowledge, catalog, examples, jobberContext: input.jobberContext, memo, photoFindings })
       input.signal?.throwIfAborted()
       const result = await runStructuredClaudeRequest(input.client ?? createAnthropicClient(), {
         ...prompt, model: AI_QUOTE_MODELS.draft, schema: aiDraftModelOutputSchema, maxTokens: AI_QUOTE_LIMITS.draftMaxTokens, signal: input.signal,
@@ -66,7 +69,8 @@ export async function generateQuoteDraft(supabase: SupabaseClient<Database>, inp
           ? 'validation' : result.errorCode
         return { ok: false, runId, errorCode: result.errorCode }
       }
-      const draft = validateAiQuoteDraft(result.data, catalog)
+      const draft = validateAiQuoteDraft(result.data, catalog, undefined, input.photoCount ?? 0)
+      draft.photoFindings = photoFindings
       input.signal?.throwIfAborted()
       outcome = { status: 'succeeded', model: result.model, usage: result.usage, output: draft }
       return { ok: true, runId, draft }

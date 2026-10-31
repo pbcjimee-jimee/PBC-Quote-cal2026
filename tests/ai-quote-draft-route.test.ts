@@ -8,7 +8,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock('@/lib/ai-quote/budget', () => ({ getAiMonthlyBudgetStatus: mocks.budget }))
 vi.mock('@/lib/ai-quote/config', async (importOriginal) => ({
   ...await importOriginal<typeof import('@/lib/ai-quote/config')>(),
-  getAiQuoteAvailability: mocks.availability, AI_QUOTE_LIMITS: { draftsPerDay: 20 },
+  getAiQuoteAvailability: mocks.availability,
 }))
 vi.mock('@/lib/security/require-app-user', () => ({ requireRole: mocks.requireRole }))
 vi.mock('@/lib/supabase/server', () => ({ createClient: mocks.createClient }))
@@ -17,7 +17,26 @@ vi.mock('@/lib/ai-quote/draft-service', () => ({ generateQuoteDraft: mocks.gener
 
 import { POST, maxDuration } from '@/app/api/ai/quote-draft/route'
 
-const supabase = { client: 'session' }
+const photoRuns: Array<Record<string, unknown>> = []
+let lookupError: Error | null = null
+const supabase = { client: 'session', from(table: string) {
+  if (table !== 'ai_quote_runs') throw new Error(`Unexpected table ${table}`)
+  let rows = [...photoRuns]
+  const query = {
+    select() { return query },
+    eq(column: string, value: unknown) { rows = rows.filter(row => row[column] === value); return query },
+    gte(column: string, value: string) { rows = rows.filter(row => String(row[column]) >= value); return query },
+    async maybeSingle() { return { data: rows[0] ?? null, error: lookupError } },
+  }
+  return query
+} }
+const photoRunId = 'a0c33da7-d183-4f07-a260-3bb638863791'
+const finding = { area: 'Stairwell', kind: 'access', issue: 'High walls', suggestedTreatment: 'Use access equipment',
+  photoRefs: [1], confidence: 'high' }
+function photoRun(overrides: Record<string, unknown> = {}) {
+  return { id: photoRunId, kind: 'photo_analysis', status: 'succeeded', created_by: 'admin-1',
+    created_at: new Date(Date.now() - 30 * 60 * 1000).toISOString(), output: { findings: [finding], photoCount: 2 }, ...overrides }
+}
 const draft = { summary: 'Paint walls', publicLines: [], workItems: [] }
 const context = { jobberQuoteId: null, workType: 'Interior', customerType: 'Residential', areaSqft: null,
   existingLines: [{ name: 'Walls', description: 'Prepare and paint', quantity: 1, unitPrice: 100 }] }
@@ -29,6 +48,8 @@ function request(body: unknown = { memo: 'Paint walls', jobberContext: null }, s
 
 beforeEach(() => {
   vi.resetAllMocks()
+  photoRuns.length = 0
+  lookupError = null
   mocks.budget.mockResolvedValue({ budgetUsd: '30.00', spentUsd: '1.00', remainingUsd: '29.00', reached: false })
   vi.spyOn(console, 'error').mockImplementation(() => {})
   mocks.availability.mockReturnValue({ enabled: true })
@@ -40,6 +61,75 @@ beforeEach(() => {
 afterEach(() => vi.restoreAllMocks())
 
 describe('POST quote draft', () => {
+  it('validates an optional photo analysis UUID and rejects client findings', () => {
+    expect(aiQuoteDraftRequestSchema.safeParse({ memo: 'Paint', jobberContext: null, photoAnalysisRunId: 'not-a-uuid' }).success).toBe(false)
+    expect(aiQuoteDraftRequestSchema.parse({ memo: 'Paint', jobberContext: null, photoAnalysisRunId: photoRunId,
+      photoFindings: [finding], photoCount: 30 })).toEqual({ memo: 'Paint', jobberContext: null, photoAnalysisRunId: photoRunId })
+  })
+
+  it.each([
+    ['another owner', { created_by: 'other-admin' }],
+    ['two hours old', { created_at: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString() }],
+    ['failed', { status: 'failed' }], ['wrong kind', { kind: 'quote_draft' }],
+    ['another id', { id: 'b0c33da7-d183-4f07-a260-3bb638863791' }],
+  ])('rejects %s analysis records before calling the model', async (_label, overrides) => {
+    photoRuns.push(photoRun(overrides))
+    const response = await POST(request({ memo: 'Paint', jobberContext: null, photoAnalysisRunId: photoRunId }))
+    expect(response.status).toBe(400)
+    expect(await response.json()).toEqual({ ok: false, error: expect.stringContaining('Photo analysis expired. Create the draft again.') })
+    expect(mocks.generateQuoteDraft).not.toHaveBeenCalled()
+    expect(mocks.budget).not.toHaveBeenCalled()
+  })
+
+  it('rejects an unknown photo analysis record', async () => {
+    const response = await POST(request({ memo: 'Paint', jobberContext: null, photoAnalysisRunId: photoRunId }))
+    expect(response.status).toBe(400)
+    expect(mocks.generateQuoteDraft).not.toHaveBeenCalled()
+  })
+
+  it('uses revalidated stored findings and bypasses a reached monthly budget', async () => {
+    photoRuns.push(photoRun({ output: { photoCount: 2, findings: [
+      { ...finding, photoRefs: [0, 1, 2, 3, 31] }, { ...finding, photoRefs: [31] }, { ...finding, kind: 'unknown' },
+    ] } }))
+    mocks.budget.mockResolvedValue({ reached: true })
+    const req = request({ memo: 'Paint', jobberContext: null, photoAnalysisRunId: photoRunId,
+      photoFindings: [{ ...finding, issue: 'Forged finding' }], photoCount: 30 })
+    const response = await POST(req)
+    expect(response.status).toBe(200)
+    expect(mocks.budget).not.toHaveBeenCalled()
+    expect(mocks.generateQuoteDraft).toHaveBeenCalledExactlyOnceWith(supabase, {
+      kind: 'quote_draft', memo: 'Paint', jobberContext: null, signal: req.signal,
+      photoFindings: [{ ...finding, photoRefs: [1, 2] }], photoCount: 2,
+    })
+  })
+
+  it('accepts an analysis exactly one hour old', async () => {
+    vi.useFakeTimers()
+    try {
+      vi.setSystemTime(new Date('2026-10-31T12:00:00Z'))
+      photoRuns.push(photoRun({ created_at: '2026-10-31T11:00:00.000Z' }))
+      expect((await POST(request({ memo: 'Paint', jobberContext: null, photoAnalysisRunId: photoRunId }))).status).toBe(200)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('keeps the daily draft limit when using valid photo analysis', async () => {
+    photoRuns.push(photoRun())
+    mocks.countRecentRuns.mockResolvedValue(20)
+    expect((await POST(request({ memo: 'Paint', jobberContext: null, photoAnalysisRunId: photoRunId }))).status).toBe(429)
+    expect(mocks.generateQuoteDraft).not.toHaveBeenCalled()
+  })
+
+  it('fails safely when loading photo analysis fails', async () => {
+    lookupError = new Error('Private photo data')
+    photoRuns.push(photoRun())
+    const response = await POST(request({ memo: 'Paint', jobberContext: null, photoAnalysisRunId: photoRunId }))
+    expect(response.status).toBe(502)
+    expect(JSON.stringify(await response.json())).not.toContain('Private photo data')
+    expect(mocks.generateQuoteDraft).not.toHaveBeenCalled()
+  })
+
   it('rejects another admin account before any AI or database access', async () => {
     mocks.requireRole.mockResolvedValue({ ok: true, user: { id: 'other-admin', email: 'other@paintbuddyco.com.au' },
       profile: { role: 'admin', email: 'jimee@paintbuddyco.com.au' } })
