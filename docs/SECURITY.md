@@ -107,6 +107,11 @@
 - **S10 — 지출 통제:** Anthropic Console 월 한도와 별도로 앱 월 예산(기본 $30, `ai_quote_settings`)을 모든 AI 호출 전에 검사한다. 사진 분석 1회에 이어지는 첫 초안만 예산 도달 후에도 허용한다.
 - **S11 — OneDrive:** 위임 권한은 `Files.Read`·`User.Read`·`offline_access`(읽기 전용)뿐이다. PKCE + state 쿠키를 쓰고, 콜백에서 Microsoft 계정 메일이 소유자 계정일 때만 토큰을 저장한다. 토큰은 `JOBBER_TOKEN_ENCRYPTION_KEY` 기반으로 암호화한다. `MICROSOFT_*`는 서버 전용이며 Preview에 있으면 빌드를 거부한다.
 - **S12 — 사진 개인정보:** 사진은 썸네일로 메모리에서만 쓰고 저장하지 않는다. JPEG EXIF(APP1)는 제거한다. Claude에는 `photo NN` 번호만 보내고 폴더·파일 이름과 주소는 보내지 않는다. 실행 기록에는 findings·사진 수·Graph 항목 ID만 남긴다.
+- **S13 — AI 검토 잠금(2026-10-31):** AI 초안이 들어간 견적은 소유자가 검토를 확인하기 전까지 Jobber로 보낼 수 없다. 저장 후 동기화, 동기화 재시도, 다른 admin의 복제 모두 막는다. 다른 계정은 `public.quote_has_pending_ai_review()`(예/아니오만 반환, SECURITY DEFINER)로 대기 여부만 알 수 있다. AI 기록 연결이 실패하면 화면이 실행 ID를 유지하고 다시 저장하게 한다.
+- **남은 위험(수용):**
+  - DB 동기화 요청 RPC 자체는 AI 검토를 강제하지 않는다. 앱 서버를 거치지 않고 API를 직접 호출하는 admin은 막지 못한다. admin은 신뢰하는 직원이고 Jobber에도 직접 접근할 수 있어 업무 안전장치 수준으로 둔다.
+  - 동시 요청 경합으로 하루 한도나 사진 분석 1회 예산 예외가 한 번 더 쓰일 수 있다. 사용자 1명, 건당 약 $0.2 수준이다.
+  - 메모 등 자유 입력에 적힌 주소는 자동으로 걸러지지 않는다. 화면 안내로 입력하지 않게 한다.
 
 키·월 한도·실제 Claude 호출과 운영 DB/RLS 검증은 로컬 구현이나 모의 테스트 통과와 구분한다. 기준: `docs/superpowers/specs/2026-10-30-ai-quote-automation-design.md` §10·§12.
 
