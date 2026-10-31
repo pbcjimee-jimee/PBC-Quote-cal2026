@@ -383,7 +383,35 @@ describe('quote actions against Supabase', () => {
     expect(result).toEqual({ ok: false, code: 'VALIDATION', error: 'Confirm the AI draft review before syncing to Jobber.' })
     expect(rpc.mock.calls.some(([name]) => name === `${mode}_quote_with_jobber_sync`)).toBe(false)
     expect(mocks.linkRunAndConfirmReview).not.toHaveBeenCalled()
-    expect(mocks.enforceAiReviewGate).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ userId: 'user-1', quoteId: mode === 'create' ? null : quoteId, aiDraftRunId, syncJobber: true }))
+    expect(mocks.enforceAiReviewGate).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ userId: 'user-1', quoteId: mode === 'create' ? null : quoteId, aiDraftRunId, syncJobber: true, aiOwner: false }))
+  })
+  it.each(['create', 'update'] as const)('%s: derives AI ownership from the authenticated account, with profile fallback', async mode => {
+    for (const [email, profileEmail, aiOwner] of [
+      ['JIMEE@PAINTBUDDYCO.COM.AU', 'other@example.test', true],
+      ['other@example.test', 'jimee@paintbuddyco.com.au', false],
+      [undefined, 'jimee@paintbuddyco.com.au', true],
+    ] as const) {
+      persistenceFixture()
+      mocks.requireAllowedUser.mockResolvedValueOnce({ ok: true, user: { id: 'user-1', email }, profile: { email: profileEmail } })
+      const input = { ...quoteInput, aiReviewConfirmed: true }
+      expect((mode === 'create' ? await createQuote(input) : await updateQuote({ ...input, id: quoteId })).ok).toBe(true)
+      expect(mocks.enforceAiReviewGate).toHaveBeenLastCalledWith(expect.anything(), expect.objectContaining({ aiOwner }))
+      expect(mocks.linkRunAndConfirmReview).toHaveBeenLastCalledWith(expect.anything(), expect.objectContaining({ aiOwner }))
+    }
+  })
+  it.each(['create', 'update'] as const)('%s: rejects non-owner sync through the real gate even with forged review confirmation', async mode => {
+    const { enforceAiReviewGate } = await vi.importActual<typeof import('@/lib/ai-quote/runs')>('@/lib/ai-quote/runs')
+    mocks.enforceAiReviewGate.mockImplementationOnce(enforceAiReviewGate)
+    const { rpc } = persistenceFixture()
+    rpc.mockImplementation(async name => ({ data: name === 'quote_has_pending_ai_review' ? true : [], error: null }))
+    const input = { ...quoteInput, syncJobber: true, aiReviewConfirmed: true }
+    const result = mode === 'create'
+      ? await createQuote({ ...input, aiDraftRunId })
+      : await updateQuote({ ...input, id: quoteId })
+    expect(result).toEqual({ ok: false, code: 'VALIDATION', error: 'This quote has an AI draft waiting for the owner to review. Save is available; Jobber sync stays locked until it is reviewed.' })
+    expect(rpc.mock.calls.some(([name]) => name === `${mode}_quote_with_jobber_sync`)).toBe(false)
+    expect(mocks.linkRunAndConfirmReview).not.toHaveBeenCalled()
+    expect(mocks.after).not.toHaveBeenCalled()
   })
   it('checks saved-quote review even if the request omits the AI run ID', async () => {
     persistenceFixture()
@@ -398,7 +426,7 @@ describe('quote actions against Supabase', () => {
     })
     const input = { ...quoteInput, aiDraftRunId }
     expect((mode === 'create' ? await createQuote(input) : await updateQuote({ ...input, id: quoteId })).ok).toBe(true)
-    expect(mocks.linkRunAndConfirmReview).toHaveBeenCalledWith(expect.anything(), { quoteId, aiDraftRunId, confirm: false, userId: 'user-1' })
+    expect(mocks.linkRunAndConfirmReview).toHaveBeenCalledWith(expect.anything(), { quoteId, aiDraftRunId, confirm: false, userId: 'user-1', aiOwner: false })
   })
   it.each(['create', 'update'] as const)('%s: preserves a successful save and returns a safe warning when AI bookkeeping fails', async mode => {
     const { rpc } = persistenceFixture()
@@ -409,7 +437,7 @@ describe('quote actions against Supabase', () => {
       const result = mode === 'create' ? await createQuote(input) : await updateQuote({ ...input, id: quoteId })
       expect(result).toMatchObject({ ok: true, data: { id: quoteId, warning: expect.stringContaining('AI review') } })
       expect(JSON.stringify(result)).not.toContain('private database detail')
-      expect(mocks.linkRunAndConfirmReview).toHaveBeenCalledWith(expect.anything(), { quoteId, aiDraftRunId, confirm: true, userId: 'user-1' })
+      expect(mocks.linkRunAndConfirmReview).toHaveBeenCalledWith(expect.anything(), { quoteId, aiDraftRunId, confirm: true, userId: 'user-1', aiOwner: false })
       expect(rpc.mock.calls.some(([name]) => name === `${mode}_quote_with_jobber_sync`)).toBe(true)
       expect(log).toHaveBeenCalled()
       expect(mocks.after).toHaveBeenCalled()

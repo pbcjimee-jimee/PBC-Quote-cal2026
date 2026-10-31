@@ -11,20 +11,25 @@ import { safeErrorMessage } from '@/lib/actions/action-error'
 export type AiRunKind = 'knowledge_build' | 'quote_draft' | 'eval_memo' | 'eval_draft' | 'photo_analysis'
 
 export async function hasPendingAiReview(supabase: SupabaseClient<Database>, quoteId: string): Promise<boolean> {
-  const { count, error } = await supabase.from('ai_quote_runs').select('id', { count: 'exact', head: true })
-    .eq('quote_id', quoteId).eq('kind', 'quote_draft').eq('status', 'succeeded').is('review_confirmed_at', null)
+  const { data, error } = await supabase.rpc('quote_has_pending_ai_review', { p_quote_id: quoteId })
   if (error) throw error
-  return (count ?? 0) > 0
+  return data
 }
 
 export async function enforceAiReviewGate(supabase: SupabaseClient<Database>, input: {
   userId: string
+  aiOwner: boolean
   quoteId: string | null
   aiDraftRunId?: string
   aiReviewConfirmed?: boolean
   syncJobber: boolean
 }): Promise<ActionResult<null>> {
   try {
+    const reviewRequired = input.syncJobber && (!input.aiOwner || input.aiReviewConfirmed !== true)
+      && (input.aiDraftRunId || (input.quoteId && await hasPendingAiReview(supabase, input.quoteId)))
+    if (reviewRequired && !input.aiOwner) {
+      return { ok: false, code: 'VALIDATION', error: 'This quote has an AI draft waiting for the owner to review. Save is available; Jobber sync stays locked until it is reviewed.' }
+    }
     if (input.aiDraftRunId) {
       const { data: run, error } = await supabase.from('ai_quote_runs')
         .select('id, kind, status, created_by, quote_id').eq('id', input.aiDraftRunId).maybeSingle()
@@ -34,8 +39,7 @@ export async function enforceAiReviewGate(supabase: SupabaseClient<Database>, in
         return { ok: false, code: 'VALIDATION', error: 'The AI draft is invalid or unavailable. Create a new draft and try again.' }
       }
     }
-    if (input.syncJobber && input.aiReviewConfirmed !== true
-      && (input.aiDraftRunId || (input.quoteId && await hasPendingAiReview(supabase, input.quoteId)))) {
+    if (reviewRequired) {
       return { ok: false, code: 'VALIDATION', error: 'Confirm the AI draft review before syncing to Jobber.' }
     }
     return { ok: true, data: null }
@@ -48,6 +52,7 @@ export async function linkRunAndConfirmReview(supabase: SupabaseClient<Database>
   quoteId: string
   aiDraftRunId?: string
   confirm: boolean
+  aiOwner: boolean
   userId: string
 }): Promise<void> {
   if (input.aiDraftRunId) {
@@ -55,7 +60,7 @@ export async function linkRunAndConfirmReview(supabase: SupabaseClient<Database>
       .eq('id', input.aiDraftRunId).eq('created_by', input.userId).eq('kind', 'quote_draft').eq('status', 'succeeded')
     if (error) throw error
   }
-  if (input.confirm) {
+  if (input.confirm && input.aiOwner) {
     const { error } = await supabase.from('ai_quote_runs').update({ review_confirmed_at: new Date().toISOString() })
       .eq('quote_id', input.quoteId).eq('kind', 'quote_draft').eq('status', 'succeeded').is('review_confirmed_at', null)
     if (error) throw error

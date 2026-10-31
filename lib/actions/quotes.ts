@@ -26,6 +26,7 @@ import { calculateDisplayLabourTotals, calculateFormulaLabourDays, calculateLabo
 import { requireRole } from '@/lib/security/require-app-user'
 import { createClient } from '@/lib/supabase/server'
 import { enforceAiReviewGate, linkRunAndConfirmReview } from '@/lib/ai-quote/runs'
+import { isAiQuoteUserAllowed } from '@/lib/ai-quote/config'
 import type { Database, Json } from '@/lib/supabase/types'
 import { jobberQuoteSnapshotSchema, pricingSettingsSchema, quoteSchema, type QuoteInput } from '@/lib/validators'
 import { mapJobberQuoteToDraft, type JobberQuoteDraft } from '@/lib/jobber/mapper'
@@ -1231,7 +1232,9 @@ export async function createQuote(input: unknown): Promise<ActionResult<{ id: st
     })
   }
 
+  const aiOwner = isAiQuoteUserAllowed(allowedUser.user.email ?? allowedUser.profile.email)
   const aiGate = await enforceAiReviewGate(supabase, {
+    aiOwner,
     userId: allowedUser.user.id, quoteId: null, aiDraftRunId: parsed.data.aiDraftRunId,
     aiReviewConfirmed: parsed.data.aiReviewConfirmed, syncJobber: parsed.data.syncJobber ?? false,
   })
@@ -1295,6 +1298,7 @@ export async function createQuote(input: unknown): Promise<ActionResult<{ id: st
   let warning: string | undefined
   try {
     await linkRunAndConfirmReview(supabase, {
+      aiOwner,
       quoteId, aiDraftRunId: parsed.data.aiDraftRunId, userId: allowedUser.user.id,
       confirm: Boolean(parsed.data.syncJobber && parsed.data.aiReviewConfirmed),
     })
@@ -1345,7 +1349,9 @@ export async function updateQuote(input: unknown): Promise<ActionResult<{ id: st
     return { ok: false, error: 'Quote version is required. Refresh and try again.' }
   }
 
+  const aiOwner = isAiQuoteUserAllowed(allowedUser.user.email ?? allowedUser.profile.email)
   const aiGate = await enforceAiReviewGate(supabase, {
+    aiOwner,
     userId: allowedUser.user.id, quoteId: id, aiDraftRunId: parsed.data.aiDraftRunId,
     aiReviewConfirmed: parsed.data.aiReviewConfirmed, syncJobber: parsed.data.syncJobber ?? false,
   })
@@ -1458,6 +1464,7 @@ export async function updateQuote(input: unknown): Promise<ActionResult<{ id: st
   let warning: string | undefined
   try {
     await linkRunAndConfirmReview(supabase, {
+      aiOwner,
       quoteId: id, aiDraftRunId: parsed.data.aiDraftRunId, userId: allowedUser.user.id,
       confirm: Boolean(parsed.data.syncJobber && parsed.data.aiReviewConfirmed),
     })

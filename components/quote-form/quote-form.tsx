@@ -369,6 +369,8 @@ export function QuoteForm({
   const [aiDraftRunId, setAiDraftRunId] = useState<string | null>(null)
   const [aiReviewConfirmed, setAiReviewConfirmed] = useState(false)
   const hasAiReview = Boolean(aiDraftRunId) || aiReviewPending
+  const requiresOwnerReview = hasAiReview && !aiAvailability.enabled && aiAvailability.reason === 'not_allowed'
+  const isAiSyncBlocked = hasAiReview && (requiresOwnerReview || !aiReviewConfirmed)
   const useMobileActions = useSyncExternalStore(subscribeToQuoteActionLayout, getQuoteMobileActionsSnapshot, () => false)
   const [aiLineMeta, setAiLineMeta] = useState<NonNullable<QuoteFormDraft['aiLineMeta']>>({})
   const [aiPriceNotice, setAiPriceNotice] = useState('')
@@ -1047,7 +1049,7 @@ export function QuoteForm({
 
   function saveQuote(action: QuoteSaveAction = 'local') {
     if (action === 'sync' && !jobberEnabled) return
-    if (action === 'sync' && hasAiReview && !aiReviewConfirmed) return
+    if (action === 'sync' && isAiSyncBlocked) return
     if (copyMaterialsRequestRef.current || saveRequestRef.current) return
 
     const input: QuoteFormSavePayloadInput = {
@@ -1102,8 +1104,11 @@ export function QuoteForm({
     : 'Save & Sync to Jobber'
   const mobileSaveLabel = isPending && pendingSaveAction === 'local' ? 'Saving...' : 'Save'
   const isSaveBlocked = isPending || isCopyingMaterials
-  const isAiSyncBlocked = hasAiReview && !aiReviewConfirmed
-  const aiReviewControl = hasAiReview ? (
+  const aiReviewControl = requiresOwnerReview ? (
+    <p role="status" className="pbc-bodytext basis-full max-w-64">
+      AI draft waiting for owner review. Save is available; Jobber sync is locked.
+    </p>
+  ) : hasAiReview ? (
     <label className="pbc-ai-review-check">
       <input
         type="checkbox"
@@ -1142,7 +1147,7 @@ export function QuoteForm({
               type="button"
               onClick={() => saveQuote('sync')}
               disabled={isSaveBlocked || !canSyncJobberQuote || isAiSyncBlocked}
-              title={isAiSyncBlocked ? 'Confirm the AI draft review before syncing to Jobber.' : !jobberEnabled ? jobberNotice : canSyncJobberQuote ? 'Save app changes and update Jobber' : 'Fetch a Jobber quote before syncing'}
+              title={requiresOwnerReview ? 'AI draft waiting for owner review.' : isAiSyncBlocked ? 'Confirm the AI draft review before syncing to Jobber.' : !jobberEnabled ? jobberNotice : canSyncJobberQuote ? 'Save app changes and update Jobber' : 'Fetch a Jobber quote before syncing'}
               className="pbc-btn pbc-btn--ghost"
             >
               {Icons.refresh({ size: 15 })} {jobberSaveLabel}
@@ -1347,7 +1352,7 @@ export function QuoteForm({
         <button type="button" onClick={() => saveQuote('local')} disabled={isSaveBlocked} className="pbc-btn pbc-btn--primary pbc-btn--sm">
           {Icons.check({ size: 14 })} {mobileSaveLabel}
         </button>
-        <button type="button" onClick={() => saveQuote('sync')} disabled={isSaveBlocked || !canSyncJobberQuote || isAiSyncBlocked} title={isAiSyncBlocked ? 'Confirm the AI draft review before syncing to Jobber.' : !jobberEnabled ? jobberNotice : undefined} aria-label={jobberSaveLabel} className="pbc-btn pbc-btn--ghost pbc-btn--sm">
+        <button type="button" onClick={() => saveQuote('sync')} disabled={isSaveBlocked || !canSyncJobberQuote || isAiSyncBlocked} title={requiresOwnerReview ? 'AI draft waiting for owner review.' : isAiSyncBlocked ? 'Confirm the AI draft review before syncing to Jobber.' : !jobberEnabled ? jobberNotice : undefined} aria-label={jobberSaveLabel} className="pbc-btn pbc-btn--ghost pbc-btn--sm">
           {isPending && pendingSaveAction === 'sync' ? 'Syncing...' : 'Save & Sync'}
         </button>
       </div>
