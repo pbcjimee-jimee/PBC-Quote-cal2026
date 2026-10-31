@@ -35,7 +35,8 @@ const finding = { area: 'Stairwell', kind: 'access', issue: 'High walls', sugges
   photoRefs: [1], confidence: 'high' }
 function photoRun(overrides: Record<string, unknown> = {}) {
   return { id: photoRunId, kind: 'photo_analysis', status: 'succeeded', created_by: 'admin-1',
-    created_at: new Date(Date.now() - 30 * 60 * 1000).toISOString(), output: { findings: [finding], photoCount: 2 }, ...overrides }
+    created_at: new Date(Date.now() - 30 * 60 * 1000).toISOString(), completed_at: new Date(Date.now() - 29 * 60 * 1000).toISOString(),
+    output: { findings: [finding], photoCount: 2 }, ...overrides }
 }
 const draft = { summary: 'Paint walls', publicLines: [], workItems: [] }
 const context = { jobberQuoteId: null, workType: 'Interior', customerType: 'Residential', areaSqft: null,
@@ -87,7 +88,7 @@ describe('POST quote draft', () => {
     expect(mocks.generateQuoteDraft).not.toHaveBeenCalled()
   })
 
-  it('uses revalidated stored findings and bypasses a reached monthly budget', async () => {
+  it('uses revalidated stored findings and lets the first draft after an analysis pass a reached monthly budget', async () => {
     photoRuns.push(photoRun({ output: { photoCount: 2, findings: [
       { ...finding, photoRefs: [0, 1, 2, 3, 31] }, { ...finding, photoRefs: [31] }, { ...finding, kind: 'unknown' },
     ] } }))
@@ -96,11 +97,20 @@ describe('POST quote draft', () => {
       photoFindings: [{ ...finding, issue: 'Forged finding' }], photoCount: 30 })
     const response = await POST(req)
     expect(response.status).toBe(200)
-    expect(mocks.budget).not.toHaveBeenCalled()
+    expect(mocks.countRecentRuns).toHaveBeenLastCalledWith(supabase, 'admin-1', 'quote_draft', new Date(photoRuns[0].completed_at as string))
     expect(mocks.generateQuoteDraft).toHaveBeenCalledExactlyOnceWith(supabase, {
       kind: 'quote_draft', memo: 'Paint', jobberContext: null, signal: req.signal,
       photoFindings: [{ ...finding, photoRefs: [1, 2] }], photoCount: 2,
     })
+  })
+
+  it('re-applies the monthly budget when an analysis was already used for a draft', async () => {
+    photoRuns.push(photoRun())
+    mocks.budget.mockResolvedValue({ reached: true, spentUsd: '30.10', budgetUsd: '30.00' })
+    mocks.countRecentRuns.mockResolvedValueOnce(0).mockResolvedValueOnce(1)
+    const response = await POST(request({ memo: 'Paint', jobberContext: null, photoAnalysisRunId: photoRunId }))
+    expect(response.status).toBe(429)
+    expect(mocks.generateQuoteDraft).not.toHaveBeenCalled()
   })
 
   it('accepts an analysis exactly one hour old', async () => {

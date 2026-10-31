@@ -47,8 +47,9 @@ export async function POST(request: Request) {
     }
     const { photoAnalysisRunId, ...draftInput } = parsed.data
     let photoInput: Pick<Parameters<typeof generateQuoteDraft>[1], 'photoFindings' | 'photoCount'> = {}
+    let photoAnalysisCompletedAt: string | null = null
     if (photoAnalysisRunId) {
-      const { data, error } = await supabase.from('ai_quote_runs').select('output')
+      const { data, error } = await supabase.from('ai_quote_runs').select('output, completed_at')
         .eq('id', photoAnalysisRunId).eq('kind', 'photo_analysis').eq('status', 'succeeded')
         .eq('created_by', auth.user.id)
         .gte('created_at', new Date(Date.now() - AI_QUOTE_LIMITS.photoAnalysisMaxAgeMs).toISOString()).maybeSingle()
@@ -58,11 +59,14 @@ export async function POST(request: Request) {
       const photoCount = typeof output.photoCount === 'number' && Number.isInteger(output.photoCount)
         && output.photoCount >= 0 && output.photoCount <= AI_QUOTE_LIMITS.photoMax ? output.photoCount : 0
       photoInput = { photoFindings: validatePhotoFindings(output.findings, photoCount), photoCount }
-    } else {
-      const budget = await getAiMonthlyBudgetStatus(supabase)
-      if (budget.reached) {
-        return errorResponse(null, 429, `Monthly AI budget reached ($${budget.spentUsd} of $${budget.budgetUsd}). Change it in Settings > AI.`)
-      }
+      photoAnalysisCompletedAt = data.completed_at
+    }
+    const budget = await getAiMonthlyBudgetStatus(supabase)
+    // A paid photo analysis may finish its first draft past the budget, but only once.
+    const budgetExempt = budget.reached && photoAnalysisCompletedAt !== null
+      && await countRecentRuns(supabase, auth.user.id, 'quote_draft', new Date(photoAnalysisCompletedAt)) === 0
+    if (budget.reached && !budgetExempt) {
+      return errorResponse(null, 429, `Monthly AI budget reached ($${budget.spentUsd} of $${budget.budgetUsd}). Change it in Settings > AI.`)
     }
     const result = await generateQuoteDraft(supabase, { ...draftInput, ...photoInput, kind: 'quote_draft', signal: request.signal })
     if (result.ok) return NextResponse.json({ ok: true, data: { runId: result.runId, draft: result.draft } })
