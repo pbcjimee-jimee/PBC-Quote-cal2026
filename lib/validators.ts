@@ -477,6 +477,17 @@ export const aiQuoteDraftRequestSchema = z.object({
   photoAnalysisRunId: z.string().uuid().optional(),
 })
 
+export const aiPhotoFoldersRequestSchema = z.object({
+  quoteNumber: z.string().trim().max(200),
+  address: z.string().trim().max(200),
+})
+
+export const aiPhotoAnalysisRequestSchema = z.object({
+  folderId: z.string().trim().min(1).max(200),
+  memo: z.string().trim().max(8000),
+  jobberContext: draftJobberContextSchema.nullable(),
+})
+
 export const aiEvalMemoRequestSchema = z.object({
   setLabel: z.string().trim().min(1).max(60),
   quoteId: z.string().uuid(),
