@@ -11,6 +11,7 @@ interface SqlDb {
 const otherId = '00000000-0000-4000-8000-000000000002'
 const supervisorId = '00000000-0000-4000-8000-000000000003'
 const tables = ['ai_quote_runs', 'ai_quote_knowledge', 'ai_quote_eval_cases'] as const
+const aiTables = [...tables, 'ai_quote_settings'] as const
 
 describe.skipIf(!pgliteAvailable)('AI quote migration on ephemeral PostgreSQL', () => {
   let db: SqlDb
@@ -20,6 +21,7 @@ describe.skipIf(!pgliteAvailable)('AI quote migration on ephemeral PostgreSQL', 
     db = await bootstrap({ through: '20261031235959' })
     await db.exec(`CREATE OR REPLACE FUNCTION auth.uid() RETURNS UUID LANGUAGE sql STABLE AS $$
       SELECT nullif(current_setting('request.jwt.claim.sub', true), '')::UUID $$;
+      UPDATE auth.users SET email='jimee@paintbuddyco.com.au' WHERE id='${actorId}';
       INSERT INTO auth.users(id,email) VALUES ('${otherId}','other@example.test'),('${supervisorId}','supervisor@example.test');
       INSERT INTO public.user_profiles(id,email,role,is_active) VALUES
         ('${otherId}','other@example.test','admin',true),('${supervisorId}','supervisor@example.test','supervisor',true);`)
@@ -51,6 +53,76 @@ describe.skipIf(!pgliteAvailable)('AI quote migration on ephemeral PostgreSQL', 
       (${entries.map(([key]) => key).join(',')}) VALUES (${entries.map((_, index) => `$${index + 1}`).join(',')}) RETURNING id,created_by`,
     entries.map(([, value]) => typeof value === 'object' && value !== null ? JSON.stringify(value) : value))).rows[0]
   }
+
+  async function assertAiAccessDenied(id: string) {
+    const originals = new Map<string, unknown[]>()
+    for (const table of tables) await insert(table)
+    for (const table of aiTables) {
+      originals.set(table, (await db.query(`SELECT * FROM public.${table} ORDER BY id`)).rows)
+    }
+    const knowledge = await insert('ai_quote_knowledge')
+    originals.set('ai_quote_knowledge', (await db.query('SELECT * FROM public.ai_quote_knowledge ORDER BY id')).rows)
+    originals.set('ai_quote_runs', (await db.query('SELECT * FROM public.ai_quote_runs ORDER BY id')).rows)
+    await login(id)
+    for (const table of aiTables) {
+      expect((await db.query(`SELECT * FROM public.${table}`)).rows).toEqual([])
+      const update = table === 'ai_quote_settings' ? 'monthly_budget_usd=50' : "created_at='2000-01-01'"
+      expect((await db.query(`UPDATE public.${table} SET ${update} RETURNING id`)).rows).toEqual([])
+      if (table === 'ai_quote_settings') {
+        await expect(db.query('INSERT INTO public.ai_quote_settings DEFAULT VALUES')).rejects.toMatchObject({ code: '42501' })
+      } else {
+        const original = originals.get(table)![0]
+        await expect(db.query(`INSERT INTO public.${table} SELECT
+          (jsonb_populate_record(NULL::public.${table},$1::jsonb||jsonb_build_object('id',$2::text,'created_by',$3::text))).*`,
+        [JSON.stringify(original), randomUUID(), id])).rejects.toMatchObject({ code: '42501' })
+      }
+      const deletion = db.query(`DELETE FROM public.${table} RETURNING id`)
+      if (table === 'ai_quote_eval_cases') expect((await deletion).rows).toEqual([])
+      else await expect(deletion).rejects.toMatchObject({ code: '42501' })
+    }
+    await expect(db.query('SELECT public.activate_ai_quote_knowledge($1)', [knowledge.id]))
+      .rejects.toMatchObject({ code: '42501', message: 'ADMIN_REQUIRED' })
+    await db.exec('RESET ROLE')
+    for (const table of aiTables) {
+      expect((await db.query(`SELECT * FROM public.${table} ORDER BY id`)).rows).toEqual(originals.get(table))
+    }
+  }
+
+  it('denies every AI read and write and activation to another active admin', async () => {
+    await assertAiAccessDenied(otherId)
+  })
+
+  it('denies every AI read and write and activation to a supervisor', async () => {
+    await assertAiAccessDenied(supervisorId)
+  })
+
+  it('uses the Auth account email rather than a matching profile email', async () => {
+    await db.exec('RESET ROLE')
+    await db.query("UPDATE public.user_profiles SET email='jimee@paintbuddyco.com.au' WHERE id=$1", [otherId])
+    await login(actorId)
+    try {
+      await assertAiAccessDenied(otherId)
+    } finally {
+      await db.exec('RESET ROLE')
+      await db.query("UPDATE public.user_profiles SET email='other@example.test' WHERE id=$1", [otherId])
+    }
+  })
+
+  it('allows the owner account with an upper-case Auth email', async () => {
+    await db.exec('RESET ROLE')
+    await db.query("UPDATE auth.users SET email='JIMEE@PAINTBUDDYCO.COM.AU' WHERE id=$1", [actorId])
+    await login(actorId)
+    try {
+      expect((await db.query('SELECT id FROM public.ai_quote_settings')).rows).toEqual([{ id: true }])
+      for (const table of tables) expect((await insert(table)).created_by).toBe(actorId)
+      const knowledge = await insert('ai_quote_knowledge')
+      expect((await db.query('SELECT public.activate_ai_quote_knowledge($1) AS id', [knowledge.id])).rows).toEqual([{ id: knowledge.id }])
+      expect((await db.query('UPDATE public.ai_quote_settings SET monthly_budget_usd=30 RETURNING id')).rows).toEqual([{ id: true }])
+    } finally {
+      await db.exec('RESET ROLE')
+      await db.query("UPDATE auth.users SET email='jimee@paintbuddyco.com.au' WHERE id=$1", [actorId])
+    }
+  })
 
   it('seeds a single monthly budget row with a 30 dollar default', async () => {
     expect((await db.query('SELECT id,monthly_budget_usd FROM public.ai_quote_settings')).rows).toEqual([{ id: true, monthly_budget_usd: '30.00' }])
@@ -95,9 +167,8 @@ describe.skipIf(!pgliteAvailable)('AI quote migration on ephemeral PostgreSQL', 
     await expect(insert(table, { created_by: otherId })).rejects.toMatchObject({ code: '42501' })
   })
 
-  it.each(tables)('preserves the creator when another admin updates %s', async table => {
+  it.each(tables)('preserves the creator when the owner updates %s', async table => {
     const row = await insert(table)
-    await login(otherId)
     expect((await db.query(`UPDATE public.${table} SET created_by=$2 WHERE id=$1 RETURNING created_by`, [row.id, otherId])).rows)
       .toEqual([{ created_by: actorId }])
   })
@@ -124,17 +195,38 @@ describe.skipIf(!pgliteAvailable)('AI quote migration on ephemeral PostgreSQL', 
     await expect(db.query(`SELECT * FROM public.${table}`)).rejects.toMatchObject({ code: '42501' })
   })
 
-  it('hides AI data and refuses activation for an inactive admin', async () => {
-    const row = await insert('ai_quote_knowledge')
+  it.each(['inactive', 'supervisor'] as const)('denies the allowed account when its profile is %s', async state => {
+    const knowledge = await insert('ai_quote_knowledge')
+    const originals = new Map<string, unknown[]>()
+    for (const table of tables) await insert(table)
+    for (const table of aiTables) originals.set(table, (await db.query(`SELECT * FROM public.${table} ORDER BY id`)).rows)
     await db.exec('RESET ROLE')
-    await db.query('UPDATE public.user_profiles SET is_active=false WHERE id=$1', [otherId])
-    await login(otherId)
+    await db.query('UPDATE public.user_profiles SET is_active=$2,role=$3 WHERE id=$1',
+      [actorId, state !== 'inactive', state === 'supervisor' ? 'supervisor' : 'admin'])
+    await login(actorId)
     try {
-      for (const table of tables) expect((await db.query(`SELECT * FROM public.${table}`)).rows).toEqual([])
-      await expect(db.query('SELECT public.activate_ai_quote_knowledge($1)', [row.id])).rejects.toMatchObject({ code: '42501' })
+      for (const table of aiTables) {
+        expect((await db.query(`SELECT * FROM public.${table}`)).rows).toEqual([])
+        const update = table === 'ai_quote_settings' ? 'monthly_budget_usd=50' : "created_at='2000-01-01'"
+        expect((await db.query(`UPDATE public.${table} SET ${update} RETURNING id`)).rows).toEqual([])
+        if (table === 'ai_quote_settings') {
+          await expect(db.query('INSERT INTO public.ai_quote_settings DEFAULT VALUES')).rejects.toMatchObject({ code: '42501' })
+        } else {
+          await expect(insert(table)).rejects.toMatchObject({ code: '42501' })
+        }
+        const deletion = db.query(`DELETE FROM public.${table} RETURNING id`)
+        if (table === 'ai_quote_eval_cases') expect((await deletion).rows).toEqual([])
+        else await expect(deletion).rejects.toMatchObject({ code: '42501' })
+      }
+      await expect(db.query('SELECT public.activate_ai_quote_knowledge($1)', [knowledge.id]))
+        .rejects.toMatchObject({ code: '42501', message: 'ADMIN_REQUIRED' })
     } finally {
       await db.exec('RESET ROLE')
-      await db.query('UPDATE public.user_profiles SET is_active=true WHERE id=$1', [otherId])
+      await db.query("UPDATE public.user_profiles SET is_active=true,role='admin' WHERE id=$1", [actorId])
+    }
+    await login(actorId)
+    for (const table of aiTables) {
+      expect((await db.query(`SELECT * FROM public.${table} ORDER BY id`)).rows).toEqual(originals.get(table))
     }
   })
 
@@ -159,11 +251,10 @@ describe.skipIf(!pgliteAvailable)('AI quote migration on ephemeral PostgreSQL', 
     const previous = await insert('ai_quote_knowledge')
     await db.query('SELECT public.activate_ai_quote_knowledge($1)', [previous.id])
     const draft = await insert('ai_quote_knowledge')
-    await login(otherId)
     expect((await db.query('SELECT public.activate_ai_quote_knowledge($1) AS id', [draft.id])).rows).toEqual([{ id: draft.id }])
     expect((await db.query('SELECT status FROM public.ai_quote_knowledge WHERE id=$1', [previous.id])).rows).toEqual([{ status: 'archived' }])
     expect((await db.query('SELECT status,approved_by,approved_at,updated_at FROM public.ai_quote_knowledge WHERE id=$1', [draft.id])).rows[0])
-      .toMatchObject({ status: 'active', approved_by: otherId, approved_at: expect.any(Date), updated_at: expect.any(Date) })
+      .toMatchObject({ status: 'active', approved_by: actorId, approved_at: expect.any(Date), updated_at: expect.any(Date) })
   })
 
   it('keeps the active version if the requested version does not exist', async () => {
@@ -380,15 +471,18 @@ describe.skipIf(!pgliteAvailable)('AI quote migration on ephemeral PostgreSQL', 
     await db.query('SELECT public.activate_ai_quote_knowledge($1)', [draft.id])
     const approved = (await db.query('SELECT approved_by,approved_at FROM public.ai_quote_knowledge WHERE id=$1', [draft.id])).rows
     expect(approved[0]).toMatchObject({ approved_by: actorId, approved_at: expect.any(Date) })
-    await login(otherId)
     expect((await forge()).rows).toEqual(approved)
+    await login(otherId)
+    expect((await forge()).rows).toEqual([])
+    await login(actorId)
+    expect((await db.query('SELECT approved_by,approved_at FROM public.ai_quote_knowledge WHERE id=$1', [draft.id])).rows).toEqual(approved)
   })
 
   it('rejects another admin finalizing a running run while allowing its creator', async () => {
     const run = await insert('ai_quote_runs')
     await login(otherId)
-    await expect(db.query("UPDATE public.ai_quote_runs SET status='succeeded',output='{}',completed_at=now() WHERE id=$1", [run.id]))
-      .rejects.toMatchObject({ code: '42501' })
+    expect((await db.query("UPDATE public.ai_quote_runs SET status='succeeded',output='{}',completed_at=now() WHERE id=$1 RETURNING id", [run.id])).rows)
+      .toEqual([])
     await login(actorId)
     expect((await db.query(`UPDATE public.ai_quote_runs SET status='succeeded',model='response-model',output='{"ok":true}',
       error_code=NULL,input_tokens=10,output_tokens=20,cache_read_tokens=30,cache_write_tokens=40,cost_usd=0.1234,completed_at=now()
@@ -411,21 +505,19 @@ describe.skipIf(!pgliteAvailable)('AI quote migration on ephemeral PostgreSQL', 
     const select = `SELECT status,model,output,error_code,input_tokens,output_tokens,cache_read_tokens,cache_write_tokens,cost_usd,
       completed_at FROM public.ai_quote_runs WHERE id=$1`
     const original = (await db.query(select, [run.id])).rows
-    await login(otherId)
     await db.query(`UPDATE public.ai_quote_runs SET status='running',model='forged',output='{}',error_code=NULL,
       input_tokens=100,output_tokens=100,cache_read_tokens=100,cache_write_tokens=100,cost_usd=100,completed_at=NULL WHERE id=$1`, [run.id])
     expect((await db.query(select, [run.id])).rows).toEqual(original)
   })
 
-  it.each(['running', 'succeeded'])('allows another admin to link and review a %s run with caller attribution', async status => {
+  it.each(['running', 'succeeded'])('allows the owner to link and review a %s run with caller attribution', async status => {
     const run = await insert('ai_quote_runs')
     await db.query('UPDATE public.ai_quote_runs SET status=$2 WHERE id=$1', [run.id, status])
     const evalCase = await insert('ai_quote_eval_cases')
     const quoteId = (await db.query<{ quote_id: string }>('SELECT quote_id FROM public.ai_quote_eval_cases WHERE id=$1', [evalCase.id])).rows[0].quote_id
-    await login(otherId)
     const review = (await db.query(`UPDATE public.ai_quote_runs SET quote_id=$2,review_confirmed_at='2000-01-01',review_confirmed_by=$3
-      WHERE id=$1 RETURNING quote_id,review_confirmed_by,review_confirmed_at`, [run.id, quoteId, actorId])).rows
-    expect(review[0]).toEqual({ quote_id: quoteId, review_confirmed_by: otherId, review_confirmed_at: expect.any(Date) })
+      WHERE id=$1 RETURNING quote_id,review_confirmed_by,review_confirmed_at`, [run.id, quoteId, otherId])).rows
+    expect(review[0]).toEqual({ quote_id: quoteId, review_confirmed_by: actorId, review_confirmed_at: expect.any(Date) })
     expect(review[0].review_confirmed_at).not.toEqual(new Date('2000-01-01'))
     await login(actorId)
     expect((await db.query(`UPDATE public.ai_quote_runs SET review_confirmed_at=NULL,review_confirmed_by=$2
