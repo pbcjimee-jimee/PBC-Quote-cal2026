@@ -302,6 +302,80 @@ describe('quote workspace structure', () => {
     formulaSelections: [{ scope: 'interior', selectedMin: 4, selectedMax: 1, rationale: 'Standard.' }],
   }
 
+  it.each(['interior', 'roof'] as const)('allocates AI Total using displayed per-area %s picks on apply and recalculate', async scope => {
+    const originalFetch = globalThis.fetch
+    const selectedMin = scope === 'roof' ? 1 : 3
+    const selectedMax = scope === 'roof' ? 2 : 5
+    const area = { id: 'ai-area', name: 'Bedroom', scope, active: true, position: 0 }
+    const draft = { ...aiDraft, areas: [{ scope, name: 'Bedroom' }],
+      workItems: [{ ...aiDraft.workItems[0], product: { ...aiDraft.workItems[0].product, id: '00000000-0000-4000-8000-000000000002' }, areaScope: scope }],
+      formulaSelections: [{ scope, selectedMin, selectedMax, rationale: 'Area specific.' }] }
+    globalThis.fetch = vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => ({ ok: true, data: { runId: '00000000-0000-4000-8000-000000000001', draft } }) })
+    vi.mocked(createQuote).mockReset().mockResolvedValue({ ok: false, error: 'Hold for inspection' })
+    const mounted = await mountQuoteForm({ areas: [area] })
+    try {
+      const notes = mounted.container.querySelectorAll('textarea')[0]
+      await act(async () => { notes.value = 'Repaint bedroom'; notes.dispatchEvent(new Event('input', { bubbles: true })) })
+      await act(async () => findButton(mounted.container, 'Create draft')!.dispatchEvent(new Event('click', { bubbles: true })))
+      await act(async () => findButton(mounted.container, 'Apply to quote')!.dispatchEvent(new Event('click', { bubbles: true })))
+      for (const recalculate of [false, true]) {
+        if (recalculate) await act(async () => findButton(mounted.container, 'Recalculate AI prices')!.dispatchEvent(new Event('click', { bubbles: true })))
+        await act(async () => window.dispatchEvent(new Event('pagehide')))
+        const stored = JSON.parse(mounted.storage.getItem(getQuoteDraftStorageKey('user-a'))!)
+        const totals = calculateMainQuoteTotals({ materials: stored.materials, selectedMin: stored.selectedMin, selectedMax: stored.selectedMax, areaFormulaSelections: stored.areaFormulaSelections, settings: DEFAULT_PRICING_SETTINGS })
+        expect(totals.finalTotal.eq(totals.areaBreakdown.finalTotal)).toBe(false)
+        expect(mounted.container.textContent).toContain(`$${totals.areaBreakdown.finalSubtotal.toFixed(2)}`)
+        expect(new Decimal(stored.jobberQuoteLines.at(-1).unitPrice).toFixed(2)).toBe(totals.areaBreakdown.finalSubtotal.toFixed(2))
+      }
+      await act(async () => findButton(mounted.container, 'Save quote')!.dispatchEvent(new Event('click', { bubbles: true })))
+      const saved = vi.mocked(createQuote).mock.calls[0][0] as ReturnType<typeof buildQuoteSavePayload>
+      expect(saved.jobberQuoteLines.at(-1)?.unitPrice).toBeGreaterThan(0)
+    } finally { await mounted.cleanup(); globalThis.fetch = originalFetch }
+  })
+
+  it.each(['create', 'update'] as const)('keeps AI provenance after %s warnings and retries the saved quote with its current version', async mode => {
+    routerPushMock.mockClear()
+    const aiDraftRunId = '00000000-0000-4000-8000-000000000001'
+    const id = mode === 'create' ? 'new-ai-quote' : 'quote-workspace-1'
+    const initialQuote = mode === 'update' ? createQuoteRecord({ version: 3 }) : undefined
+    const version = mode === 'create' ? 1 : 4
+    const warning = 'Quote saved, but the AI review record could not be updated.'
+    vi.mocked(createQuote).mockReset().mockResolvedValueOnce({ ok: true, data: { id, warning, savedVersion: version } })
+    vi.mocked(updateQuote).mockReset()
+    if (mode === 'update') vi.mocked(updateQuote).mockResolvedValueOnce({ ok: true, data: { id, warning, savedVersion: version } })
+    vi.mocked(updateQuote).mockResolvedValueOnce({ ok: true, data: { id, warning, savedVersion: version + 1 } })
+      .mockResolvedValueOnce({ ok: true, data: { id } })
+    const storage = new MemoryStorage()
+    storage.setItem(getQuoteDraftStorageKey('user-a', initialQuote?.id), JSON.stringify({ ...createEmptyQuoteFormDraft(), ownerId: 'user-a', aiDraftRunId, updatedAt: new Date().toISOString() }))
+    const mounted = await mountQuoteForm({ storage, initialQuote })
+    try {
+      await act(async () => findButton(mounted.container, 'Restore Draft')!.dispatchEvent(new Event('click', { bubbles: true })))
+      const save = () => findButton(mounted.container, initialQuote ? 'Save changes' : 'Save quote')!
+      await act(async () => save().dispatchEvent(new Event('click', { bubbles: true })))
+      expect(routerPushMock).not.toHaveBeenCalled()
+      expect(findElement(mounted.container, 'div', element => element.getAttribute('role') === 'alert' && element.textContent === warning)).toBeDefined()
+      await act(async () => window.dispatchEvent(new Event('pagehide')))
+      expect(JSON.parse(storage.getItem(getQuoteDraftStorageKey('user-a', initialQuote?.id))!).aiDraftRunId).toBe(aiDraftRunId)
+      await act(async () => save().dispatchEvent(new Event('click', { bubbles: true })))
+      expect(updateQuote).toHaveBeenLastCalledWith(expect.objectContaining({ id, expectedVersion: version, aiDraftRunId }))
+      expect(routerPushMock).not.toHaveBeenCalled()
+      await act(async () => save().dispatchEvent(new Event('click', { bubbles: true })))
+      expect(updateQuote).toHaveBeenLastCalledWith(expect.objectContaining({ id, expectedVersion: version + 1, aiDraftRunId }))
+      expect(routerPushMock).toHaveBeenCalledWith(`/quotes/${id}`)
+      expect(createQuote).toHaveBeenCalledTimes(mode === 'create' ? 1 : 0)
+    } finally { await mounted.cleanup() }
+  })
+
+  it('continues normal navigation for a non-AI save warning', async () => {
+    routerPushMock.mockClear()
+    vi.mocked(createQuote).mockReset().mockResolvedValueOnce({ ok: true, data: { id: 'manual-quote', warning: 'Saved with notice' } })
+    const mounted = await mountQuoteForm()
+    try {
+      await act(async () => findButton(mounted.container, 'Save quote')!.dispatchEvent(new Event('click', { bubbles: true })))
+      expect(routerPushMock).toHaveBeenCalledWith('/quotes/manual-quote')
+    } finally { await mounted.cleanup() }
+  })
+
   it.each([true, false])('passes the Jobber photo lookup and recalculates Total with the selected labour (photo adjustment: %s)', async include => {
     const originalFetch = globalThis.fetch
     const photoDraft: AiQuoteDraft = { ...aiDraft, areas: [aiDraft.areas[0]], workItems: [{ ...aiDraft.workItems[0], product: { ...aiDraft.workItems[0].product, id: '00000000-0000-4000-8000-000000000002' }, workingDays: '2', labourPerDay: '1', photoAdjustment: { workingDays: '3', labourPerDay: '3', reason: 'High ceiling', photoRefs: [7] } }] }

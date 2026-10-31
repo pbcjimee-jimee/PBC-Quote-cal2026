@@ -272,6 +272,22 @@ describe('planAiDraftApplication', () => {
     expect(result.basicTemplateApplied).toBe(false)
   })
 
+  it.each([{ clientVisible: false }, { quantity: '0' }, { quantity: '-1' }])('creates a visible positive-quantity Total instead of reusing %j', overrides => {
+    const existing = formLine({ id: 'unusable-total', name: 'Total', unitPrice: '0.00', ...overrides })
+    const result = planAiDraftApplication({
+      draft: draft(), selection: selection(), mode: 'append',
+      current: { ...current(), jobberQuoteLines: [existing] },
+    }).build([bedroom])
+    expect(result.jobberQuoteLines[0]).toBe(existing)
+    expect(result.totalLineId).not.toBe(existing.id)
+    expect(result.jobberQuoteLines.at(-1)).toMatchObject({ name: 'Total', clientVisible: true, quantity: '1' })
+    const allocated = reallocateAiLinePrices(result.jobberQuoteLines, {
+      [result.totalLineId]: { priceSource: 'allocated', priceWeight: 100, catalogUnitPrice: null },
+    }, '1100')
+    expect(allocated.lines[0]).toBe(existing)
+    expect(allocated.lines.at(-1)?.unitPrice).toBe('1000.00')
+  })
+
   it('keeps an optional Total separate from the main Total line', () => {
     const optional = formLine({ name: 'Total (option)', optional: true, jobberLineItemId: 'jobber-option' })
     const result = planAiDraftApplication({

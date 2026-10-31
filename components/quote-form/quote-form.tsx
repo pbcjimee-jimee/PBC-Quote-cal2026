@@ -367,6 +367,7 @@ export function QuoteForm({
   const [isPending, startTransition] = useTransition()
   const [quoteAreas, setQuoteAreas] = useState(() => sortQuoteAreas(areas))
   const [aiDraftRunId, setAiDraftRunId] = useState<string | null>(null)
+  const [savedAiQuote, setSavedAiQuote] = useState<{ id: string; version: number } | null>(null)
   const [aiReviewConfirmed, setAiReviewConfirmed] = useState(false)
   const hasAiReview = Boolean(aiDraftRunId) || aiReviewPending
   const requiresOwnerReview = hasAiReview && !aiAvailability.enabled && aiAvailability.reason === 'not_allowed'
@@ -939,7 +940,7 @@ export function QuoteForm({
       })
       metadata[next.totalLineId] = { priceSource: 'allocated', priceWeight: 100, catalogUnitPrice: null }
       const nextTotals = calculateMainQuoteTotals({ materials: next.materials, selectedMin, selectedMax, areaFormulaSelections: next.areaFormulaSelections, settings })
-      const allocated = reallocateAiLinePrices(next.jobberQuoteLines, metadata, nextTotals.finalTotal)
+      const allocated = reallocateAiLinePrices(next.jobberQuoteLines, metadata, nextTotals.areaBreakdown.finalTotal)
       setQuoteAreas(sortQuoteAreas(updatedAreas))
       setMaterials(next.materials)
       changeJobberQuoteLines(allocated.lines)
@@ -960,7 +961,7 @@ export function QuoteForm({
   }
 
   function recalculateAiPrices() {
-    const allocated = reallocateAiLinePrices(jobberQuoteLines, aiLineMeta, totals.finalTotal)
+    const allocated = reallocateAiLinePrices(jobberQuoteLines, aiLineMeta, totals.areaBreakdown.finalTotal)
     changeJobberQuoteLines(allocated.lines)
     setAiPriceNotice(describeAiAllocation(allocated.result))
     setAiPriceNoticeSuccess(allocated.result.status === 'allocated' && allocated.result.residual === '0.00')
@@ -1055,7 +1056,7 @@ export function QuoteForm({
     const input: QuoteFormSavePayloadInput = {
       aiDraftRunId: aiDraftRunId ?? undefined,
       aiReviewConfirmed: hasAiReview ? aiReviewConfirmed : undefined,
-      settings, initialQuoteId: initialQuote?.id, initialQuoteVersion: initialQuote?.version,
+      settings, initialQuoteId: savedAiQuote?.id ?? initialQuote?.id, initialQuoteVersion: savedAiQuote?.version ?? initialQuote?.version,
       syncJobber: action === 'sync', customerName, customerAddress, jobberQuoteId, jobberQuoteLookup,
       jobberQuoteDraft, jobberSnapshotRefreshedAt: jobberRefreshMetadata?.refreshedAt ?? null,
       jobberSnapshotChangeStatus: jobberRefreshMetadata?.status, jobberSnapshotChangeSummary: jobberRefreshMetadata?.summary,
@@ -1079,6 +1080,14 @@ export function QuoteForm({
 
         if (result.ok) {
           setAiReviewConfirmed(false)
+          if (result.data.warning && hasAiReview && !requiresOwnerReview) {
+            if (result.data.savedVersion !== undefined) {
+              setSavedAiQuote({ id: result.data.id, version: result.data.savedVersion })
+            }
+            setSaveError(result.data.warning)
+            setMobileState((current) => revealQuoteUiTarget(current, { section: 'review', field: 'summary' }))
+            return
+          }
           clearDraft()
           isNavigatingRef.current = true
           router.push(initialQuote ? quoteTargetPath : `/quotes/${result.data.id}`)
