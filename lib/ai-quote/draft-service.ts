@@ -16,6 +16,7 @@ import type { Database } from '@/lib/supabase/types'
 
 export async function generateQuoteDraft(supabase: SupabaseClient<Database>, input: {
   kind: 'quote_draft' | 'eval_draft'
+  model?: string
   memo: string
   jobberContext: DraftJobberContext | null
   photoFindings?: AiPhotoFinding[]
@@ -28,6 +29,7 @@ export async function generateQuoteDraft(supabase: SupabaseClient<Database>, inp
   | { ok: false; runId: string | null; errorCode: AiErrorCode | 'no_knowledge' }
 > {
   let runId: string | null = null
+  const model = input.model ?? AI_QUOTE_MODELS.draft
   try {
     const memo = redactContactDetails(input.memo)
     input.signal?.throwIfAborted()
@@ -36,7 +38,7 @@ export async function generateQuoteDraft(supabase: SupabaseClient<Database>, inp
     input.signal?.throwIfAborted()
     runId = await startRun(supabase, {
       kind: input.kind, memo, knowledgeId: knowledge.id, jobberQuoteId: input.jobberContext?.jobberQuoteId ?? null,
-      promptVersion: AI_QUOTE_PROMPT_VERSIONS.draft, model: AI_QUOTE_MODELS.draft,
+      promptVersion: AI_QUOTE_PROMPT_VERSIONS.draft, model,
     })
     let outcome: Parameters<typeof finishRun>[2] = { status: 'failed', errorCode: 'api_error' }
     try {
@@ -59,9 +61,9 @@ export async function generateQuoteDraft(supabase: SupabaseClient<Database>, inp
       const prompt = buildQuoteDraftPrompt({ knowledge, catalog, examples, jobberContext: input.jobberContext, memo, photoFindings })
       input.signal?.throwIfAborted()
       const result = await runStructuredClaudeRequest(input.client ?? createAnthropicClient(), {
-        ...prompt, model: AI_QUOTE_MODELS.draft, schema: aiDraftModelOutputSchema, maxTokens: AI_QUOTE_LIMITS.draftMaxTokens, signal: input.signal,
+        ...prompt, model, schema: aiDraftModelOutputSchema, maxTokens: AI_QUOTE_LIMITS.draftMaxTokens, signal: input.signal,
       })
-      outcome = { ...outcome, model: result.model ?? AI_QUOTE_MODELS.draft, usage: result.usage ?? undefined }
+      outcome = { ...outcome, model: result.model ?? model, usage: result.usage ?? undefined }
       input.signal?.throwIfAborted()
       if (!result.ok) {
         outcome.status = result.errorCode === 'refusal' ? 'refused' : 'failed'

@@ -13,7 +13,7 @@ import AiEvalSection from '@/components/settings/tabs/ai-eval-section'
 const metrics = { finalTotalDiffPct: '8.20', workingDaysDiffPct: '10.00', productMatchRate: '0.80', areaRecall: '1.00',
   areaPrecision: '1.00', publicLineCountDiff: 0 }
 const record: AiEvalCaseRecord = { id: 'case-1', quoteId: 'quote-1', quoteLabel: '#3000 · Interior',
-  memo: 'Paint walls and repair cracks.', leaks: [], lastMetrics: null }
+  memo: 'Paint walls and repair cracks.', leaks: [], lastMetrics: null, lastModel: null }
 let root: Root | null = null
 let cleanup: (() => void) | undefined
 let container: HTMLDivElement
@@ -156,7 +156,8 @@ describe('Accuracy check section', () => {
     await mount()
     await open()
     await click('Run comparison')
-    expect(container.textContent).toContain('about $8–10')
+    expect(container.textContent).toContain('Sonnet 5.5')
+    expect(container.textContent).toContain('a set of 20 costs about $2.5')
     expect(mocks.fetch).not.toHaveBeenCalled()
     await click('Start comparison')
     expect(mocks.fetch).toHaveBeenCalledTimes(1)
@@ -169,10 +170,59 @@ describe('Accuracy check section', () => {
     expect(container.textContent).toContain('80.0%')
     const headers = Array.from(container.querySelectorAll('th'))
     expect(headers.filter(header => header.getAttribute('scope') === 'col').map(header => header.textContent))
-      .toEqual(['Quote', 'Total difference %', 'Days difference %', 'Products matched %'])
+      .toEqual(['Quote', 'Model', 'Total difference %', 'Days difference %', 'Products matched %'])
+    expect(JSON.parse(mocks.fetch.mock.calls[0][1].body)).toEqual({ caseId: 'case-1', model: 'sonnet' })
+    expect(button('Run comparison').disabled).toBe(true)
     expect(headers.some(header => header.getAttribute('scope') === 'row')).toBe(true)
     expect(Array.from(container.querySelectorAll('div')).find(element => element.getAttribute('class') === 'pbc-tablewrap')).toBeDefined()
     expect(container.textContent).toContain('Sample quotes were part of the AI guide statistics, so results may look slightly better than real use.')
+  })
+
+  it('re-runs Sonnet results after switching to Opus and skips completed Opus cases', async () => {
+    mocks.list.mockResolvedValue({ ok: true, data: [
+      { ...record, lastMetrics: metrics, lastModel: 'claude-sonnet-5-5' },
+      { ...record, id: 'case-2', quoteId: 'quote-2', lastMetrics: metrics, lastModel: 'claude-opus-5-5' },
+      { ...record, id: 'case-3', quoteId: 'quote-3', memo: '', lastMetrics: null },
+    ] })
+    mocks.fetch.mockResolvedValue(response({ runId: 'opus-run', metrics }))
+    await mount()
+    await open()
+    expect(container.textContent).toContain('Sonnet, Opus')
+    const select = container.querySelectorAll('select')[0]
+    expect(select).toBeDefined()
+    expect(Array.from(container.querySelectorAll('label')).find(label => label.getAttribute('for') === select.getAttribute('id'))?.textContent).toBe('Model')
+    expect(select.options[0].selected).toBe(true)
+    await act(async () => { select.value = 'opus'; select.dispatchEvent(new Event('change', { bubbles: true })) })
+    expect(button('Run comparison').disabled).toBe(false)
+    await click('Run comparison')
+    const dialog = Array.from(container.querySelectorAll('div')).find(element => element.getAttribute('role') === 'dialog')
+    expect(dialog?.textContent).toContain('Opus 5.5')
+    expect(dialog?.textContent).toContain('a set of 20 costs about $9-10')
+    await click('Start comparison')
+    expect(mocks.fetch).toHaveBeenCalledTimes(1)
+    expect(JSON.parse(mocks.fetch.mock.calls[0][1].body)).toEqual({ caseId: 'case-1', model: 'opus' })
+    expect(button('Run comparison').disabled).toBe(true)
+    const rows = Array.from(container.querySelectorAll('tbody')[0].querySelectorAll('tr'))
+    expect(rows.map(row => row.querySelectorAll('td')[0]?.textContent)).toEqual(['Opus', 'Opus'])
+    expect(container.textContent).toContain('Results for 2 of 3 sample quotes (Opus)')
+  })
+
+  it('enables comparisons with missing metrics even when the last model matches', async () => {
+    mocks.list.mockResolvedValue({ ok: true, data: [{ ...record, lastModel: 'claude-sonnet-5-5' }] })
+    await mount()
+    await open()
+    expect(button('Run comparison').disabled).toBe(false)
+  })
+
+  it('keeps completed results disabled until a different model is selected', async () => {
+    mocks.list.mockResolvedValue({ ok: true, data: [{ ...record, lastMetrics: metrics, lastModel: 'claude-sonnet-5-5' }] })
+    await mount()
+    await open()
+    expect(button('Run comparison').disabled).toBe(true)
+    const select = container.querySelectorAll('select')[0]
+    expect(select).toBeDefined()
+    await act(async () => { select.value = 'opus'; select.dispatchEvent(new Event('change', { bubbles: true })) })
+    expect(button('Run comparison').disabled).toBe(false)
   })
 
   it('shows Below target using text rather than colour alone', async () => {

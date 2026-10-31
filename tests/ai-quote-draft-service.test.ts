@@ -44,6 +44,12 @@ beforeEach(() => {
 })
 
 describe('generate quote draft', () => {
+  it('uses the evaluation model for both the run and Claude request', async () => {
+    await generateQuoteDraft(supabase, { ...input(), kind: 'eval_draft', model: 'claude-opus-5-5' })
+    expect(mocks.startRun).toHaveBeenCalledWith(supabase, expect.objectContaining({ model: 'claude-opus-5-5' }))
+    expect(mocks.runStructuredClaudeRequest).toHaveBeenCalledWith(client, expect.objectContaining({ model: 'claude-opus-5-5' }))
+  })
+
   it('uses stored findings in the prompt and saves them with the capped draft', async () => {
     const photoFindings = [{ area: 'Stairwell', kind: 'access' as const, issue: 'High walls',
       suggestedTreatment: 'Use access equipment', photoRefs: [1], confidence: 'high' as const }]

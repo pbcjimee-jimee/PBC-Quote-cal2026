@@ -15,6 +15,14 @@ type Sample = Omit<AiEvalCaseRecord, 'id'> & { id: string | null }
 type Batch = 'notes' | 'comparison'
 const SET_LABEL = 'Accuracy check'
 const LEAK_LABELS: Record<string, string> = { price: 'price', days_or_litres: 'days or litres', product: 'a product name' }
+const MODELS = {
+  sonnet: { id: 'claude-sonnet-5-5', label: 'Sonnet 5.5', cost: '$2.5' },
+  opus: { id: 'claude-opus-5-5', label: 'Opus 5.5', cost: '$9-10' },
+} as const
+
+function modelLabel(model: string | null) {
+  return model === MODELS.sonnet.id ? 'Sonnet' : model === MODELS.opus.id ? 'Opus' : 'Unknown'
+}
 
 class LimitError extends Error {}
 
@@ -31,6 +39,7 @@ async function postEval<T>(path: string, body: unknown, signal: AbortSignal): Pr
 
 export default function AiEvalSection({ hasActiveGuide, aiAvailability }: AiEvalSectionProps) {
   const [samples, setSamples] = useState<Sample[]>([])
+  const [model, setModel] = useState<keyof typeof MODELS>('sonnet')
   const [busy, setBusy] = useState<{ message: string; cancelable: boolean } | null>(null)
   const [confirmation, setConfirmation] = useState<Batch | null>(null)
   const [editing, setEditing] = useState<{ quoteId: string; memo: string } | null>(null)
@@ -47,9 +56,11 @@ export default function AiEvalSection({ hasActiveGuide, aiAvailability }: AiEval
   const enabled = hasActiveGuide && aiAvailability.enabled
   const disabled = !enabled || busy !== null
   const pendingNotes = samples.filter(sample => !sample.memo.trim())
-  const pendingComparisons = samples.filter(sample => sample.id && sample.memo.trim() && !sample.lastMetrics)
-  const allHaveNotes = samples.length > 0 && samples.every(sample => sample.id && sample.memo.trim())
+  const selectedModel = MODELS[model]
+  const pendingComparisons = samples.filter(sample => sample.id && sample.memo.trim()
+    && (sample.lastMetrics === null || sample.lastModel !== selectedModel.id))
   const results = samples.filter(sample => sample.lastMetrics)
+  const resultModels = [...new Set(results.map(sample => modelLabel(sample.lastModel)))].join(', ')
   const summary = results.length ? summarizeEvalMetrics(results.map(sample => sample.lastMetrics!)) : null
 
   useEffect(() => {
@@ -96,7 +107,7 @@ export default function AiEvalSection({ hasActiveGuide, aiAvailability }: AiEval
       if (!result.ok) throw new Error('Suggestion failed')
       if (disposedRef.current) return
       setSamples(current => result.data.quotes.map(quote => current.find(sample => sample.quoteId === quote.quoteId)
-        ?? { ...quote, id: null, memo: '', leaks: [], lastMetrics: null }))
+        ?? { ...quote, id: null, memo: '', leaks: [], lastMetrics: null, lastModel: null }))
       setEditing(null)
       if (!result.data.quotes.length) setNotice('No eligible sample quotes yet; quotes need calculation rows and a priced public line.')
     })
@@ -118,7 +129,7 @@ export default function AiEvalSection({ hasActiveGuide, aiAvailability }: AiEval
       const result = await updateEvalCaseMemo({ id: sample.id, memo })
       if (!result.ok) throw new Error('Save failed')
       if (disposedRef.current) return
-      setSamples(current => current.map(record => record.quoteId === sample.quoteId ? { ...record, ...result.data, lastMetrics: null } : record))
+      setSamples(current => current.map(record => record.quoteId === sample.quoteId ? { ...record, ...result.data, lastMetrics: null, lastModel: null } : record))
       setEditing(null)
       setNotice('Sample notes saved.')
     })
@@ -144,11 +155,11 @@ export default function AiEvalSection({ hasActiveGuide, aiAvailability }: AiEval
             { setLabel: SET_LABEL, quoteId: sample.quoteId }, controller.signal)
           if (disposedRef.current || controller.signal.aborted) return
           setSamples(current => current.map(record => record.quoteId === sample.quoteId
-            ? { ...record, id: data.caseId, memo: data.memo, leaks: data.leaks, lastMetrics: null } : record))
+            ? { ...record, id: data.caseId, memo: data.memo, leaks: data.leaks, lastMetrics: null, lastModel: null } : record))
         } else {
-          const data = await postEval<{ runId: string; metrics: AiDraftComparison }>('/api/ai/eval/run', { caseId: sample.id }, controller.signal)
+          const data = await postEval<{ runId: string; metrics: AiDraftComparison }>('/api/ai/eval/run', { caseId: sample.id, model }, controller.signal)
           if (disposedRef.current || controller.signal.aborted) return
-          setSamples(current => current.map(record => record.quoteId === sample.quoteId ? { ...record, lastMetrics: data.metrics } : record))
+          setSamples(current => current.map(record => record.quoteId === sample.quoteId ? { ...record, lastMetrics: data.metrics, lastModel: selectedModel.id } : record))
         }
       }
       setNotice(kind === 'notes' ? 'Sample notes are ready; review them before comparing.' : 'Comparison complete.')
@@ -223,14 +234,20 @@ export default function AiEvalSection({ hasActiveGuide, aiAvailability }: AiEval
       </section>
       <section className="space-y-3" aria-labelledby={`${prefix}-compare`}>
         <h3 id={`${prefix}-compare`} className="pbc-paneltitle">3. Compare</h3>
-        <button type="button" className="pbc-btn pbc-btn--primary" disabled={disabled || !allHaveNotes || !pendingComparisons.length || editing !== null}
+        <div className="pbc-field max-w-xs"><label className="pbc-field__label" htmlFor={`${prefix}-model`}>Model</label>
+          <select id={`${prefix}-model`} className="pbc-input" value={model} disabled={disabled || editing !== null}
+            onChange={event => setModel(event.target.value === 'opus' ? 'opus' : 'sonnet')}>
+            <option value="sonnet">Sonnet 5.5 (default)</option><option value="opus">Opus 5.5</option>
+          </select></div>
+        <button type="button" className="pbc-btn pbc-btn--primary" disabled={disabled || !pendingComparisons.length || editing !== null}
           onClick={event => confirm('comparison', event.currentTarget)}>Run comparison</button>
         {summary ? <>
-          <p className="pbc-panelsub">Results for {results.length} of {samples.length} sample quotes.</p>
+          <p className="pbc-panelsub">Results for {results.length} of {samples.length} sample quotes ({resultModels}).</p>
           <div className="pbc-tablewrap" role="region" aria-label="Accuracy check results" tabIndex={0}>
-            <table className="pbc-table"><thead><tr><th scope="col">Quote</th><th scope="col">Total difference %</th>
+            <table className="pbc-table"><thead><tr><th scope="col">Quote</th><th scope="col">Model</th><th scope="col">Total difference %</th>
               <th scope="col">Days difference %</th><th scope="col">Products matched %</th></tr></thead>
               <tbody>{results.map(sample => <tr key={sample.quoteId}><th scope="row">{sample.quoteLabel}</th>
+                <td>{modelLabel(sample.lastModel)}</td>
                 <td>{new Decimal(sample.lastMetrics!.finalTotalDiffPct).toFixed(1)}%</td>
                 <td>{new Decimal(sample.lastMetrics!.workingDaysDiffPct).toFixed(1)}%</td>
                 <td>{new Decimal(sample.lastMetrics!.productMatchRate).mul(100).toFixed(1)}%</td></tr>)}</tbody></table>
@@ -253,7 +270,7 @@ export default function AiEvalSection({ hasActiveGuide, aiAvailability }: AiEval
       <h2 id={`${prefix}-confirm`}>{confirmation === 'notes' ? 'Write sample notes?' : 'Run the comparison?'}</h2>
       <p id={`${prefix}-cost`}>{confirmation === 'notes'
         ? 'AI will write notes one quote at a time; a set of 20 costs about $1.'
-        : 'AI will compare one quote at a time; a set of 20 costs about $8–10.'} You can cancel at any time.</p>
+        : `${selectedModel.label} will compare one quote at a time; a set of 20 costs about ${selectedModel.cost}.`} You can cancel at any time.</p>
       <div className="pbc-dialog__actions"><button ref={cancelRef} type="button" className="pbc-btn pbc-btn--ghost" onClick={() => setConfirmation(null)}>Cancel</button>
         <button ref={confirmRef} type="button" className="pbc-btn pbc-btn--primary" onClick={() => void runBatch(confirmation)}>{confirmation === 'notes' ? 'Write notes' : 'Start comparison'}</button></div>
     </div></div> : null}
