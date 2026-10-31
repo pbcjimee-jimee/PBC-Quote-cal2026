@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { getAiMonthlyBudgetStatus } from '@/lib/ai-quote/budget'
 import { safeErrorMessage } from '@/lib/actions/action-error'
 import { createAnthropicClient, runStructuredClaudeRequest } from '@/lib/ai-quote/anthropic'
-import { AI_QUOTE_LIMITS, AI_QUOTE_MODEL, AI_QUOTE_PROMPT_VERSIONS, getAiQuoteAvailability } from '@/lib/ai-quote/config'
+import { AI_QUOTE_LIMITS, AI_QUOTE_MODELS, AI_QUOTE_PROMPT_VERSIONS, getAiQuoteAvailability } from '@/lib/ai-quote/config'
 import { loadDraftCatalog, loadKnowledgeSource } from '@/lib/ai-quote/data'
 import { buildKnowledgePrompt, knowledgeOutputSchema } from '@/lib/ai-quote/knowledge-prompt'
 import { buildKnowledgeStats } from '@/lib/ai-quote/knowledge-stats'
@@ -42,7 +42,7 @@ export async function POST(request: Request) {
       return errorResponse(null, 429, `Monthly AI budget reached ($${budget.spentUsd} of $${budget.budgetUsd}). Change it in Settings > AI.`)
     }
     const runId = await startRun(supabase, {
-      kind: 'knowledge_build', promptVersion: AI_QUOTE_PROMPT_VERSIONS.knowledge, model: AI_QUOTE_MODEL,
+      kind: 'knowledge_build', promptVersion: AI_QUOTE_PROMPT_VERSIONS.knowledge, model: AI_QUOTE_MODELS.analysis,
     })
     let outcome: Parameters<typeof finishRun>[2] = { status: 'failed', errorCode: 'api_error' }
     try {
@@ -53,9 +53,9 @@ export async function POST(request: Request) {
       const prompt = buildKnowledgePrompt({ stats, quotes: source.quotes, catalog })
       request.signal.throwIfAborted()
       const result = await runStructuredClaudeRequest(createAnthropicClient(), {
-        ...prompt, schema: knowledgeOutputSchema, maxTokens: AI_QUOTE_LIMITS.knowledgeMaxTokens, signal: request.signal,
+        ...prompt, model: AI_QUOTE_MODELS.analysis, schema: knowledgeOutputSchema, maxTokens: AI_QUOTE_LIMITS.knowledgeMaxTokens, signal: request.signal,
       })
-      outcome = { ...outcome, model: result.model ?? AI_QUOTE_MODEL, usage: result.usage ?? undefined }
+      outcome = { ...outcome, model: result.model ?? AI_QUOTE_MODELS.analysis, usage: result.usage ?? undefined }
       request.signal.throwIfAborted()
       if (!result.ok) {
         const code = result.errorCode

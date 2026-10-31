@@ -7,12 +7,13 @@ export function isAiQuoteUserAllowed(email: string | null | undefined): boolean 
   return AI_QUOTE_ALLOWED_EMAILS.some(allowed => allowed === email?.trim().toLowerCase())
 }
 
-export const AI_QUOTE_MODEL = 'claude-opus-5-5'
+export const AI_QUOTE_MODELS = { analysis: 'claude-opus-5-5', draft: 'claude-sonnet-5-5' } as const
 
 export const AI_QUOTE_PROMPT_VERSIONS = {
-  draft: 'quote-draft-v3',
+  draft: 'quote-draft-v4',
   knowledge: 'knowledge-v1',
   evalMemo: 'eval-memo-v1',
+  photoAnalysis: 'photo-analysis-v1',
 } as const
 
 export const AI_QUOTE_LIMITS = {
@@ -27,6 +28,14 @@ export const AI_QUOTE_LIMITS = {
   knowledgeMaxTokens: 64000,
   evalMemoMaxTokens: 4000,
   monthlyBudgetUsdDefault: 30,
+  photoAnalysesPerDay: 20,
+  photoMax: 30,
+  photoCollectMs: 60000,
+  photoConcurrency: 6,
+  photoAnalysisMaxTokens: 8000,
+  photoAdjustmentDaysFactor: '1.5',
+  photoAdjustmentLabourAdd: 2,
+  photoAnalysisMaxAgeMs: 3600000,
 } as const
 
 export type AiQuoteAvailability =

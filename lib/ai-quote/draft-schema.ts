@@ -27,6 +27,12 @@ export const aiDraftModelOutputSchema = z.object({
     quantity: z.string(),
     workingDays: z.string(),
     labourPerDay: z.string(),
+    photoAdjustment: z.object({
+      workingDays: z.string(),
+      labourPerDay: z.string(),
+      reason: z.string(),
+      photoRefs: z.array(z.number()),
+    }).nullable(),
     rationale: z.string(),
   })),
   formulaSelections: z.array(z.object({

@@ -8,6 +8,7 @@ import type { AiQuoteAvailability } from '@/lib/ai-quote/config'
 import type { StatSummary } from '@/lib/ai-quote/knowledge-stats'
 import AiBudgetSection from '@/components/settings/tabs/ai-budget-section'
 import AiEvalSection from '@/components/settings/tabs/ai-eval-section'
+import OneDriveSection from '@/components/settings/tabs/onedrive-section'
 
 interface AiKnowledgeTabProps {
   initialKnowledge: AiKnowledgeRecord[]
@@ -251,6 +252,7 @@ export default function AiKnowledgeTab({ initialKnowledge, aiAvailability, onKno
           {pending === 'analyzing' ? ` · Analyzing past quotes — ${elapsed} seconds elapsed.` : notice ? ` · ${notice}` : ''}
         </p>
         {!aiAvailability.enabled ? <p className="pbc-alert pbc-alert--warning">{aiAvailability.message}</p> : <AiBudgetSection />}
+        {aiAvailability.enabled ? <OneDriveSection /> : null}
         {error ? <div className="space-y-3">
           <p role="alert" className="pbc-alert pbc-alert--danger">{error.message}</p>
           <button type="button" className="pbc-btn pbc-btn--ghost" disabled={pending !== null} onClick={() => void retry()}>Try again</button>

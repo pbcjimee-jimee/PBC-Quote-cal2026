@@ -2,7 +2,6 @@ import 'server-only'
 import Anthropic from '@anthropic-ai/sdk'
 import { zodOutputFormat } from '@anthropic-ai/sdk/helpers/zod'
 import type { z } from 'zod'
-import { AI_QUOTE_MODEL } from '@/lib/ai-quote/config'
 import type { AiUsage } from '@/lib/ai-quote/types'
 
 export type AiErrorCode = 'refusal' | 'max_tokens' | 'invalid_output' | 'rate_limited' | 'timeout' | 'api_error'
@@ -12,6 +11,7 @@ export type StructuredResult<T> =
   | { ok: false; errorCode: AiErrorCode; usage: AiUsage | null; model: string | null }
 
 export interface StructuredRequest<T> {
+  model: string
   schema: z.ZodType<T>
   system: Anthropic.TextBlockParam[]
   messages: Anthropic.MessageParam[]
@@ -44,7 +44,7 @@ export async function runStructuredClaudeRequest<T>(
       : { ...block })
     const format = zodOutputFormat(request.schema)
     const stream = client.beta.messages.stream({
-      model: AI_QUOTE_MODEL,
+      model: request.model,
       max_tokens: request.maxTokens,
       system,
       messages: request.messages,

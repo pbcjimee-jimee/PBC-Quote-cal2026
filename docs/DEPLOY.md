@@ -106,6 +106,27 @@ git ls-remote origin main
 - **Preview artifact를 Production으로 promote하지 않는다.** 공개 Supabase URL/key가 빌드에 고정되므로 Production은 main + Production 환경변수로 새로 build해야 한다.
 - 이 제한 Preview는 live Jobber E2E 검증을 대체하지 않는다. 새 Jobber 동작 변경은 별도 테스트 계정/명시 승인 절차가 필요하다. 원격 DB migration 이력의 날짜 차이를 이유로 재적용/repair하지 않는다.
 
+## AI 견적 · OneDrive 환경 변수 (2026-10-31)
+
+| 변수 | 환경 | 상태 |
+|---|---|---|
+| `ANTHROPIC_API_KEY` | Production only, Sensitive | 2026-10-31 등록 완료. Preview 금지(빌드 거부) |
+| `MICROSOFT_TENANT_ID`, `MICROSOFT_CLIENT_ID`, `MICROSOFT_CLIENT_SECRET`, `MICROSOFT_REDIRECT_URI` | Production only, 서버 전용 | P2. 미등록(사용자 승인 필요), Preview 금지(빌드 거부) |
+
+**Entra 앱 등록(사용자 수행, P2-G2)**
+1. Microsoft Entra 관리 센터 > App registrations > New registration
+   - 단일 테넌트("Accounts in this organizational directory only")
+   - 플랫폼: Web
+2. Redirect URI 두 개를 등록한다.
+   - `https://pbc-quote-cal2026-v2.vercel.app/api/microsoft/callback`
+   - `http://localhost:3000/api/microsoft/callback`
+3. API permissions에 Microsoft Graph 위임 권한 `Files.Read`, `User.Read`, `offline_access`를 추가하고, 관리자 동의(Grant admin consent)를 한다.
+4. Certificates & secrets에서 클라이언트 시크릿을 발급한다.
+5. 값을 넣는다.
+   - 테넌트 ID, 클라이언트 ID, 시크릿, 리디렉트 URI를 `.env.local`에 넣는다(로컬은 localhost URI).
+   - 승인 후 Vercel Production에 넣는다(운영 URI).
+6. 앱에서 연결한다: Settings > AI > OneDrive photos > Connect OneDrive. `jimee@paintbuddyco.com.au`로 로그인한다.
+
 ## 배포 훅 & 체크
 
 ### Pre-merge 체크

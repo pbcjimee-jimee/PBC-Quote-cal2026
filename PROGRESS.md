@@ -5,6 +5,42 @@
 
 ---
 
+## [구현 2026-10-31] AI 견적 후속 + P2 OneDrive 현장 사진 — 로컬 구현·검증 완료, 배포 전
+
+- **Model:** Claude Code 팀장(Opus 5.5/high)이 설계·분배·리뷰·통합·브라우저 QA를 하고, Orca Codex 워커(implementer `gpt-6.1-sol`/high)가 구현·검증했다.
+- **후속(사용자 실사용 피드백):**
+  - 연결 service는 저장된 이름·설명을 원문 그대로 쓰고, 줄바꿈을 유지한다.
+  - AI 줄은 Text로 만들고, Basic 템플릿과 가격이 있는 Total 줄을 맨 끝에 붙이며, 중복 줄을 제거한다.
+  - 활성 가이드를 직접 수정할 수 있다(새 버전으로 저장).
+  - 앱 월 예산 기본 $30을 Settings > AI에서 바꾼다.
+  - 정확도 비교 샘플을 20건으로 늘렸다.
+  - AI 전체(화면·서버·DB RLS)를 `jimee@paintbuddyco.com.au` 계정 하나로 제한했다.
+- **P2:**
+  - OneDrive 연결: PKCE OAuth, 읽기 전용, 소유자 계정 확인, 토큰 암호화.
+  - 견적 번호(없으면 주소 후보)로 사진 폴더를 찾는다.
+  - 사진 최대 30장을 썸네일로 읽어 EXIF를 제거한 뒤 Opus 5.5가 분석한다. 문제 부위와 접근 어려운 곳을 찾아 사진 번호를 근거로 붙인다.
+  - Sonnet 5.5가 초안을 쓴다. 사진 조정 상한은 일수 ×1.5, 인원 +2이고, 검토 화면에서 항목별로 끌 수 있다.
+  - 분석 1회당 첫 초안만 월 예산 예외로 둔다(자동 보안 검토 지적을 반영했다).
+- **모델 분담:** 분석은 Opus 5.5 high, 초안·정확도 비교는 Sonnet 5.5 high. 비용은 모델별로 계산한다.
+- **운영 반영:**
+  - 운영 DB에 적용한 마이그레이션 3개: `add_ai_quote_knowledge_and_runs`, `add_ai_quote_settings`, `restrict_ai_quote_data_to_owner`. 다른 admin은 0행인 것을 확인했다.
+  - Vercel Production에 `ANTHROPIC_API_KEY`를 등록했다.
+  - push·배포는 하지 않았다. 로컬 main에만 병합했다.
+- **검증:**
+  - `npm run verify` exit 0: 테스트 2,392 pass / 19 환경 skip, 빌드 29/29, audit 0.
+  - 모의 응답 브라우저 QA(1280·375px): 폴더 선택·후보·미연결·0장·30장 초과·재연결 상태, 분석→초안 진행, 검토 조정 행, 가로 넘침 0. 이 과정에서 중복 문구·정렬·조정 표시를 고쳤다.
+- **실측(Opus, 2026-10-31):** 가이드 분석 126초·$1.94, 초안 약 100초·$0.44~0.49.
+- **남은 승인 게이트:**
+  - P2-G2: Entra 앱 등록과 `.env.local` 입력(사용자)
+  - P2-G3: Vercel `MICROSOFT_*` 4개 등록
+  - P2-G4: 운영 DB `20261031130000` 적용
+  - P2-G5: 실제 사진 초안 실측과 Sonnet 정확도 비교(약 $5~10)
+  - P2-G6: push·배포
+  - 별도: 감사 actor 마이그레이션 `20261021094546`는 아직 운영 미적용이다.
+- **미검증:** 실제 Microsoft 로그인·Graph 썸네일 크기·EXIF, Sonnet 품질, Settings OneDrive 카드의 브라우저 렌더링(단위 테스트만 했다).
+
+---
+
 ## [구현 2026-10-30] AI 견적 자동화 P0+P1 — 로컬 구현·검증 완료, 운영 미적용
 
 - **Model:** Claude Code 팀장(Opus 5.5/high)이 분배·리뷰·통합·브라우저 QA를 하고, Orca Codex 워커(implementer `gpt-6.1-sol`/high)가 계획 Task 1~16과 후속 수정을 구현·검증했다.

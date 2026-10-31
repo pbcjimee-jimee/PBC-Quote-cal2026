@@ -48,7 +48,7 @@ export type Database = {
       ai_quote_runs: {
         Row: {
           id: string
-          kind: 'knowledge_build' | 'quote_draft' | 'eval_memo' | 'eval_draft'
+          kind: 'knowledge_build' | 'quote_draft' | 'eval_memo' | 'eval_draft' | 'photo_analysis'
           status: 'running' | 'succeeded' | 'failed' | 'refused'
           model: string
           prompt_version: string
@@ -321,6 +321,22 @@ export type Database = {
           updated_at?: string
         }
         Update: Partial<Database['public']['Tables']['jobber_tokens']['Insert']>
+        Relationships: []
+      }
+      microsoft_tokens: {
+        Row: {
+          user_id: string
+          account_email: string
+          access_token: string
+          refresh_token: string
+          scope: string | null
+          expires_at: string | null
+          connected_at: string
+          updated_at: string
+        }
+        Insert: Pick<Database['public']['Tables']['microsoft_tokens']['Row'], 'user_id' | 'account_email' | 'access_token' | 'refresh_token'> &
+          Partial<Omit<Database['public']['Tables']['microsoft_tokens']['Row'], 'user_id' | 'account_email' | 'access_token' | 'refresh_token'>>
+        Update: Partial<Database['public']['Tables']['microsoft_tokens']['Insert']>
         Relationships: []
       }
       pricing_settings: {

@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { getAiMonthlyBudgetStatus } from '@/lib/ai-quote/budget'
 import { safeErrorMessage } from '@/lib/actions/action-error'
 import { createAnthropicClient, runStructuredClaudeRequest } from '@/lib/ai-quote/anthropic'
-import { AI_QUOTE_LIMITS, AI_QUOTE_MODEL, AI_QUOTE_PROMPT_VERSIONS, getAiQuoteAvailability } from '@/lib/ai-quote/config'
+import { AI_QUOTE_LIMITS, AI_QUOTE_MODELS, AI_QUOTE_PROMPT_VERSIONS, getAiQuoteAvailability } from '@/lib/ai-quote/config'
 import { loadEvalReference, upsertEvalCase } from '@/lib/ai-quote/data'
 import { buildEvalMemoPrompt, detectEvalMemoLeaks, evalMemoOutputSchema } from '@/lib/ai-quote/eval-memo'
 import { redactContactDetails } from '@/lib/ai-quote/pii'
@@ -51,7 +51,7 @@ export async function POST(request: Request) {
     if (!reference) return errorResponse(null, 404, 'Reference quote not found.')
     request.signal.throwIfAborted()
     const runId = await startRun(supabase, {
-      kind: 'eval_memo', promptVersion: AI_QUOTE_PROMPT_VERSIONS.evalMemo, model: AI_QUOTE_MODEL,
+      kind: 'eval_memo', promptVersion: AI_QUOTE_PROMPT_VERSIONS.evalMemo, model: AI_QUOTE_MODELS.draft,
     })
     let outcome: Parameters<typeof finishRun>[2] = { status: 'failed', errorCode: 'api_error' }
     try {
@@ -61,9 +61,9 @@ export async function POST(request: Request) {
         publicLines: reference.publicLines.map(line => ({ name: line.name, description: line.description })),
       })
       const result = await runStructuredClaudeRequest(createAnthropicClient(), {
-        ...prompt, schema: evalMemoOutputSchema, maxTokens: AI_QUOTE_LIMITS.evalMemoMaxTokens, signal: request.signal,
+        ...prompt, model: AI_QUOTE_MODELS.draft, schema: evalMemoOutputSchema, maxTokens: AI_QUOTE_LIMITS.evalMemoMaxTokens, signal: request.signal,
       })
-      outcome = { ...outcome, model: result.model ?? AI_QUOTE_MODEL, usage: result.usage ?? undefined }
+      outcome = { ...outcome, model: result.model ?? AI_QUOTE_MODELS.draft, usage: result.usage ?? undefined }
       request.signal.throwIfAborted()
       if (!result.ok) {
         const code = result.errorCode

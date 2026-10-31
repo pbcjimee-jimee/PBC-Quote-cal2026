@@ -44,6 +44,30 @@ beforeEach(() => {
 })
 
 describe('generate quote draft', () => {
+  it('uses stored findings in the prompt and saves them with the capped draft', async () => {
+    const photoFindings = [{ area: 'Stairwell', kind: 'access' as const, issue: 'High walls',
+      suggestedTreatment: 'Use access equipment', photoRefs: [1], confidence: 'high' as const }]
+    mocks.loadDraftCatalog.mockResolvedValue({ productServices: [], products: [{ id: 'paint', name: 'Paint',
+      manufacturer: null, type: null, unit: 'tin', marketPrice: '100', actualPrice: '50', colorCode: null, active: true }] })
+    mocks.runStructuredClaudeRequest.mockResolvedValue({ ...success(), data: { ...output,
+      workItems: [{ productId: 'paint', areaScope: 'interior', areaName: 'Stairwell', quantity: '1',
+        workingDays: '2', labourPerDay: '1', rationale: 'Painting',
+        photoAdjustment: { workingDays: '4', labourPerDay: '5', reason: 'Photo 1 high walls', photoRefs: [1, 2] } }],
+    } })
+    const result = await generateQuoteDraft(supabase, { ...input(), photoFindings, photoCount: 1 })
+    expect(result.ok).toBe(true)
+    if (!result.ok) throw new Error('Expected success')
+    expect(result.draft.photoFindings).toEqual(photoFindings)
+    expect(result.draft.workItems[0].photoAdjustment).toEqual({ workingDays: '3', labourPerDay: '3',
+      reason: 'Photo 1 high walls', photoRefs: [1] })
+    const text = mocks.runStructuredClaudeRequest.mock.calls[0][1].messages[0].content
+    expect(text).toContain('<photo_findings>')
+    expect(text).toContain('High walls')
+    expect(mocks.finishRun).toHaveBeenCalledExactlyOnceWith(supabase, 'run-1', {
+      status: 'succeeded', output: result.draft, usage, model: 'actual-model',
+    })
+  })
+
   it('returns no_knowledge before starting a run or calling Claude', async () => {
     mocks.loadActiveKnowledge.mockResolvedValue(null)
     expect(await generateQuoteDraft(supabase, input())).toEqual({ ok: false, runId: null, errorCode: 'no_knowledge' })
@@ -57,7 +81,7 @@ describe('generate quote draft', () => {
     await generateQuoteDraft(supabase, { ...input(), kind: 'eval_draft', memo })
     expect(mocks.startRun).toHaveBeenCalledExactlyOnceWith(supabase, {
       kind: 'eval_draft', memo: 'call [phone] or [email] about walls', knowledgeId: 'guide-1',
-      jobberQuoteId: null, promptVersion: 'quote-draft-v3', model: 'claude-opus-5-5',
+      jobberQuoteId: null, promptVersion: 'quote-draft-v4', model: 'claude-sonnet-5-5',
     })
     const request = mocks.runStructuredClaudeRequest.mock.calls[0][1]
     expect(JSON.stringify(request)).not.toMatch(/0412|paint@example.com/)
@@ -90,7 +114,9 @@ describe('generate quote draft', () => {
     if (!result.ok) throw new Error('Expected success')
     expect(result.draft.publicLines[0]).toMatchObject({ kind: 'text', productServiceId: null, priceSource: 'none', priceWeight: 0, catalogUnitPrice: null, taxable: false })
     expect(result.draft.warnings.length).toBeGreaterThan(0)
-    expect(mocks.runStructuredClaudeRequest).toHaveBeenCalledWith(client, expect.objectContaining({ maxTokens: 32000, signal }))
+    expect(result.draft.photoFindings).toEqual([])
+    expect(mocks.runStructuredClaudeRequest.mock.calls[0][1].messages[0].content).not.toContain('<photo_findings>')
+    expect(mocks.runStructuredClaudeRequest).toHaveBeenCalledWith(client, expect.objectContaining({ model: 'claude-sonnet-5-5', maxTokens: 32000, signal }))
     expect(mocks.createAnthropicClient).not.toHaveBeenCalled()
     expect(mocks.finishRun).toHaveBeenCalledExactlyOnceWith(supabase, 'run-1', {
       status: 'succeeded', output: result.draft, usage, model: 'actual-model',

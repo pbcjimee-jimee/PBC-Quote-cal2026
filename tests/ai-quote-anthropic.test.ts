@@ -12,6 +12,7 @@ const usage = { inputTokens: 100, outputTokens: 20, cacheReadTokens: 30, cacheWr
 
 function request(): StructuredRequest<z.infer<typeof schema>> {
   return {
+    model: 'claude-sonnet-5-5',
     schema,
     system: [{ type: 'text', text: 'private instructions' }, { type: 'text', text: 'private catalog' }],
     messages: [{ role: 'user', content: 'private memo' }],
@@ -51,9 +52,10 @@ afterEach(() => {
 })
 
 describe('structured Claude requests', () => {
-  it('sends the pinned model, high effort, fallback, cache and generated JSON schema', async () => {
+  it.each(['claude-sonnet-5-5', 'claude-opus-5-5'])('sends requested %s with high effort, fallback, cache and generated JSON schema', async model => {
     const { client, stream, regularStream, finalMessage } = fakeClient()
     const input = request()
+    input.model = model
     const original = structuredClone({ system: input.system, messages: input.messages })
     input.system.forEach(Object.freeze)
     Object.freeze(input.system)
@@ -63,7 +65,7 @@ describe('structured Claude requests', () => {
     await runStructuredClaudeRequest(client, input)
 
     expect(stream).toHaveBeenCalledExactlyOnceWith({
-      model: 'claude-opus-5-5',
+      model,
       max_tokens: 32000,
       system: [
         { type: 'text', text: 'private instructions' },

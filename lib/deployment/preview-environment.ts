@@ -42,4 +42,8 @@ export function assertPreviewEnvironment(env: Record<string, string | undefined>
   if (env.ANTHROPIC_API_KEY) {
     throw new Error('Preview must not contain Anthropic credentials.')
   }
+
+  if (['MICROSOFT_TENANT_ID', 'MICROSOFT_CLIENT_ID', 'MICROSOFT_CLIENT_SECRET', 'MICROSOFT_REDIRECT_URI'].some(key => Boolean(env[key]))) {
+    throw new Error('Preview must not contain Microsoft credentials or callback configuration.')
+  }
 }

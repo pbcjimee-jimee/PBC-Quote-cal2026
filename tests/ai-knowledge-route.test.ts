@@ -9,7 +9,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock('@/lib/ai-quote/budget', () => ({ getAiMonthlyBudgetStatus: mocks.budget }))
 vi.mock('@/lib/ai-quote/config', async (importOriginal) => ({
   ...await importOriginal<typeof import('@/lib/ai-quote/config')>(),
-  getAiQuoteAvailability: mocks.availability, AI_QUOTE_MODEL: 'claude-opus-5-5',
+  getAiQuoteAvailability: mocks.availability, AI_QUOTE_MODELS: { analysis: 'claude-opus-5-5', draft: 'claude-sonnet-5-5' },
   AI_QUOTE_PROMPT_VERSIONS: { knowledge: 'knowledge-v1' }, AI_QUOTE_LIMITS: { knowledgeBuildsPerDay: 3, knowledgeMaxTokens: 64000 },
 }))
 vi.mock('@/lib/security/require-app-user', () => ({ requireRole: mocks.requireRole }))
@@ -99,7 +99,7 @@ describe('POST knowledge', () => {
     expect(response.status).toBe(200)
     expect(await response.json()).toEqual({ ok: true, data: { knowledgeId: 'knowledge-1', version: 2, runId: 'run-1' } })
     expect(mocks.startRun).toHaveBeenCalledWith(supabase, { kind: 'knowledge_build', promptVersion: 'knowledge-v1', model: 'claude-opus-5-5' })
-    expect(mocks.runStructuredClaudeRequest).toHaveBeenCalledWith(client, expect.objectContaining({ maxTokens: 64000, signal: req.signal }))
+    expect(mocks.runStructuredClaudeRequest).toHaveBeenCalledWith(client, expect.objectContaining({ model: 'claude-opus-5-5', maxTokens: 64000, signal: req.signal }))
     expect(mocks.insertKnowledgeDraft).toHaveBeenCalledWith(supabase, expect.objectContaining({ runId: 'run-1', styleGuide: output.styleGuide, pricingGuide: output.pricingGuide, sourceCounts: { quotes: 0, publicLines: 0, items: 0 } }))
     expect(mocks.finishRun).toHaveBeenCalledExactlyOnceWith(supabase, 'run-1', expect.objectContaining({ status: 'succeeded', output, usage, model: 'actual-model' }))
   })

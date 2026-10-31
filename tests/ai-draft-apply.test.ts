@@ -20,7 +20,7 @@ const product: AiQuoteDraftWorkItem['product'] = {
 function workItem(overrides: Partial<AiQuoteDraftWorkItem> = {}): AiQuoteDraftWorkItem {
   return {
     id: 'work-1', product, areaScope: 'interior', areaName: 'Bedroom 1',
-    quantity: '2.50', workingDays: '3.25', labourPerDay: '2.00', rationale: 'Two coats',
+    quantity: '2.50', workingDays: '3.25', labourPerDay: '2.00', rationale: 'Two coats', photoAdjustment: null,
     ...overrides,
   }
 }
@@ -37,7 +37,7 @@ function publicLine(overrides: Partial<AiQuoteDraftPublicLine> = {}): AiQuoteDra
 
 function draft(overrides: Partial<AiQuoteDraft> = {}): AiQuoteDraft {
   return {
-    summary: 'Paint bedroom', findings: [], questions: [], warnings: [],
+    summary: 'Paint bedroom', findings: [], photoFindings: [], questions: [], warnings: [],
     areas: [{ scope: 'interior', name: 'Bedroom 1' }],
     publicLines: [publicLine()], workItems: [workItem()],
     formulaSelections: [{ scope: 'interior', selectedMin: 3, selectedMax: 5, rationale: 'Typical work' }],
@@ -48,7 +48,7 @@ function draft(overrides: Partial<AiQuoteDraft> = {}): AiQuoteDraft {
 function selection(overrides: Partial<AiDraftSelection> = {}): AiDraftSelection {
   return {
     areas: new Set(['interior:Bedroom 1']), publicLines: new Set(['draft-line-1']),
-    workItems: new Set(['work-1']), formulaScopes: new Set(['interior']),
+    workItems: new Set(['work-1']), formulaScopes: new Set(['interior']), photoAdjustments: new Set(),
     ...overrides,
   }
 }
@@ -93,6 +93,12 @@ function generateLineIds() {
 }
 
 describe('planAiDraftApplication', () => {
+  it.each([true, false])('applies photo-adjusted labour only when selected (%s)', include => {
+    const item = workItem({ workingDays: '2', labourPerDay: '1', photoAdjustment: { workingDays: '3', labourPerDay: '3', reason: 'High ceiling', photoRefs: [7, 8] } })
+    const result = planAiDraftApplication({ draft: draft({ workItems: [item] }), selection: selection({ photoAdjustments: new Set(include ? ['work-1'] : []) }), mode: 'append', current: current() }).build([bedroom])
+    expect(result.materials[0]).toMatchObject({ workingDays: include ? '3' : '2', labourPerDay: include ? '3' : '1', memo: include ? 'AI: Two coats · Photo: High ceiling (photo 07, 08)' : 'AI: Two coats' })
+    expect(item.workingDays).toBe('2')
+  })
   it('reuses existing areas regardless of case and surrounding spaces', () => {
     const plan = planAiDraftApplication({
       draft: draft({ areas: [{ scope: 'interior', name: 'bedroom 1 ' }], workItems: [workItem({ areaName: ' BEDROOM 1 ' })] }),

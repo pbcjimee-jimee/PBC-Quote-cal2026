@@ -16,7 +16,7 @@ function raw(): AiDraftModelOutput {
     publicLines: [{ kind: 'line_item', productServiceId: 'service', name: 'Bedroom painting', description: 'Prepare and paint',
       quantity: '1', priceSource: 'catalog', priceWeight: 50, areaName: 'Bedroom', rationale: 'Requested in memo.' }],
     workItems: [{ productId: 'paint', areaScope: 'interior', areaName: 'Bedroom', quantity: '2',
-      workingDays: '1.5', labourPerDay: '2', rationale: 'Walls need preparation.' }],
+      workingDays: '1.5', labourPerDay: '2', rationale: 'Walls need preparation.', photoAdjustment: null }],
     formulaSelections: [{ scope: 'interior', selectedMin: 1, selectedMax: 5, rationale: 'Suitable range.' }],
   }
 }
@@ -26,6 +26,20 @@ function validate(input = raw(), data = catalog) {
 }
 
 describe('draft output schema', () => {
+  it('requires a nullable photo adjustment with structured evidence on each work item', () => {
+    const input = raw()
+    input.workItems[0].photoAdjustment = { workingDays: '3', labourPerDay: '3', reason: 'High walls', photoRefs: [1] }
+    expect(aiDraftModelOutputSchema.safeParse(input).success).toBe(true)
+    expect(aiDraftModelOutputSchema.safeParse({ ...input, workItems: [{ ...input.workItems[0], photoAdjustment: undefined }] }).success).toBe(false)
+    expect(aiDraftModelOutputSchema.safeParse({ ...input, workItems: [{ ...input.workItems[0], photoAdjustment: { photoRefs: ['1'] } }] }).success).toBe(false)
+  })
+
+  it('defaults photo findings and work adjustments for memo-only drafts', () => {
+    const draft = validate()
+    expect(draft.photoFindings).toEqual([])
+    expect(draft.workItems[0].photoAdjustment).toBeNull()
+  })
+
   it('accepts the structured shape without bounds and omits server fields', () => {
     const input = raw()
     input.publicLines[0].quantity = '-100'
@@ -39,6 +53,39 @@ describe('draft output schema', () => {
 })
 
 describe('draft server validation', () => {
+  it('caps photo increases while preserving the base values and filtering photo references', () => {
+    const input = raw()
+    input.workItems[0] = { ...input.workItems[0], workingDays: '2', labourPerDay: '1',
+      photoAdjustment: { workingDays: '4', labourPerDay: '5', reason: 'High walls\u0000', photoRefs: [0, 1, 2, 3, 31, 1.5] } }
+    expect(validateAiQuoteDraft(input, catalog, undefined, 2).workItems[0]).toMatchObject({
+      workingDays: '2', labourPerDay: '1',
+      photoAdjustment: { workingDays: '3', labourPerDay: '3', reason: 'High walls', photoRefs: [1, 2] },
+    })
+  })
+
+  it.each([
+    ['2', '1', 2], ['1', '0', 2], ['4', '5', 0], ['bad', 'NaN', 2],
+  ])('drops ineffective or unavailable photo adjustments (%s days, %s people, %s photos)', (days, labour, photoCount) => {
+    const input = raw()
+    input.workItems[0] = { ...input.workItems[0], workingDays: '2', labourPerDay: '1',
+      photoAdjustment: { workingDays: days, labourPerDay: labour, reason: 'Access', photoRefs: [1] } }
+    expect(validateAiQuoteDraft(input, catalog, undefined, photoCount).workItems[0].photoAdjustment).toBeNull()
+  })
+
+  it.each([
+    ['2', '1', '1', '2', '2', '2'],
+    ['2', '1', '3', '0', '3', '1'],
+    ['50', '11', '100', '100', '60', '12'],
+    ['1.01', '1', '10', '10', '1.51', '3'],
+    ['0', '0', '10', '10', '0', '2'],
+  ])('keeps increases within all limits for base %s days and %s people', (baseDays, baseLabour, days, labour, expectedDays, expectedLabour) => {
+    const input = raw()
+    input.workItems[0] = { ...input.workItems[0], workingDays: baseDays, labourPerDay: baseLabour,
+      photoAdjustment: { workingDays: days, labourPerDay: labour, reason: 'Access', photoRefs: [1] } }
+    expect(validateAiQuoteDraft(input, catalog, undefined, 1).workItems[0].photoAdjustment)
+      .toMatchObject({ workingDays: expectedDays, labourPerDay: expectedLabour })
+  })
+
   it('nulls unknown productServiceId and keeps text pricing with a warning', () => {
     const input = raw()
     input.publicLines[0].productServiceId = 'unknown'

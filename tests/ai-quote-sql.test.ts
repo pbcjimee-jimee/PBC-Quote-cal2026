@@ -18,7 +18,7 @@ describe.skipIf(!pgliteAvailable)('AI quote migration on ephemeral PostgreSQL', 
   let version = 0
 
   beforeAll(async () => {
-    db = await bootstrap({ through: '20261031235959' })
+    db = await bootstrap({ through: '20261031130000' })
     await db.exec(`CREATE OR REPLACE FUNCTION auth.uid() RETURNS UUID LANGUAGE sql STABLE AS $$
       SELECT nullif(current_setting('request.jwt.claim.sub', true), '')::UUID $$;
       UPDATE auth.users SET email='jimee@paintbuddyco.com.au' WHERE id='${actorId}';
@@ -53,6 +53,81 @@ describe.skipIf(!pgliteAvailable)('AI quote migration on ephemeral PostgreSQL', 
       (${entries.map(([key]) => key).join(',')}) VALUES (${entries.map((_, index) => `$${index + 1}`).join(',')}) RETURNING id,created_by`,
     entries.map(([, value]) => typeof value === 'object' && value !== null ? JSON.stringify(value) : value))).rows[0]
   }
+
+  describe('Microsoft connection tokens', () => {
+    beforeEach(async () => {
+      await db.exec('RESET ROLE; DELETE FROM public.microsoft_tokens')
+      await login(actorId)
+    })
+
+    async function insertToken(userId = actorId) {
+      return db.query(`INSERT INTO public.microsoft_tokens (user_id,account_email,access_token,refresh_token)
+        VALUES ($1,'jimee@paintbuddyco.com.au','encrypted-access','encrypted-refresh') RETURNING user_id`, [userId])
+    }
+
+    it('lets the allowed account create, read, update and delete its connection', async () => {
+      expect((await insertToken()).rows).toEqual([{ user_id: actorId }])
+      expect((await db.query('SELECT * FROM public.microsoft_tokens')).rows).toEqual([{
+        user_id: actorId, account_email: 'jimee@paintbuddyco.com.au', access_token: 'encrypted-access',
+        refresh_token: 'encrypted-refresh', scope: null, expires_at: null,
+        connected_at: expect.any(Date), updated_at: expect.any(Date),
+      }])
+      expect((await db.query(`UPDATE public.microsoft_tokens SET access_token='refreshed-access',refresh_token='refreshed-token',
+        scope='Files.Read',expires_at='2026-11-01',updated_at='2026-10-31' RETURNING access_token,refresh_token,scope,expires_at,updated_at`)).rows)
+        .toEqual([{
+          access_token: 'refreshed-access', refresh_token: 'refreshed-token', scope: 'Files.Read',
+          expires_at: new Date('2026-11-01'), updated_at: new Date('2026-10-31'),
+        }])
+      expect((await db.query('DELETE FROM public.microsoft_tokens RETURNING user_id')).rows).toEqual([{ user_id: actorId }])
+      expect((await db.query('SELECT * FROM public.microsoft_tokens')).rows).toEqual([])
+    })
+
+    it.each([otherId, supervisorId])('denies token reads and writes to another active account %s', async id => {
+      await insertToken()
+      const original = (await db.query('SELECT * FROM public.microsoft_tokens')).rows
+      await login(id)
+      expect((await db.query('SELECT * FROM public.microsoft_tokens')).rows).toEqual([])
+      expect((await db.query("UPDATE public.microsoft_tokens SET access_token='forged' RETURNING user_id")).rows).toEqual([])
+      expect((await db.query('DELETE FROM public.microsoft_tokens RETURNING user_id')).rows).toEqual([])
+      await expect(insertToken(id)).rejects.toMatchObject({ code: '42501' })
+      await login(actorId)
+      expect((await db.query('SELECT * FROM public.microsoft_tokens')).rows).toEqual(original)
+    })
+
+    it('rejects a different user ID on insert or update by the allowed account', async () => {
+      await expect(insertToken(otherId)).rejects.toMatchObject({ code: '42501' })
+      await insertToken()
+      await expect(db.query('UPDATE public.microsoft_tokens SET user_id=$1', [otherId])).rejects.toMatchObject({ code: '42501' })
+      expect((await db.query('SELECT user_id FROM public.microsoft_tokens')).rows).toEqual([{ user_id: actorId }])
+    })
+
+    it('hides rows belonging to other users even from the allowed account', async () => {
+      await db.exec('RESET ROLE')
+      await insertToken(otherId)
+      const original = (await db.query('SELECT * FROM public.microsoft_tokens')).rows
+      await login(actorId)
+      expect((await db.query('SELECT * FROM public.microsoft_tokens')).rows).toEqual([])
+      expect((await db.query("UPDATE public.microsoft_tokens SET access_token='forged' RETURNING user_id")).rows).toEqual([])
+      expect((await db.query('DELETE FROM public.microsoft_tokens RETURNING user_id')).rows).toEqual([])
+      await db.exec('RESET ROLE')
+      expect((await db.query('SELECT * FROM public.microsoft_tokens')).rows).toEqual(original)
+    })
+
+    it.each(['anon', 'service_role'])('denies every token operation to %s', async role => {
+      await insertToken()
+      await db.exec(`RESET ROLE; SET ROLE ${role}`)
+      await expect(db.query('SELECT * FROM public.microsoft_tokens')).rejects.toMatchObject({ code: '42501' })
+      await expect(insertToken(otherId)).rejects.toMatchObject({ code: '42501' })
+      await expect(db.query("UPDATE public.microsoft_tokens SET access_token='forged'")).rejects.toMatchObject({ code: '42501' })
+      await expect(db.query('DELETE FROM public.microsoft_tokens')).rejects.toMatchObject({ code: '42501' })
+    })
+  })
+
+  it('accepts photo analysis runs while rejecting unknown kinds', async () => {
+    const run = await insert('ai_quote_runs', { kind: 'photo_analysis' })
+    expect((await db.query('SELECT kind FROM public.ai_quote_runs WHERE id=$1', [run.id])).rows).toEqual([{ kind: 'photo_analysis' }])
+    await expect(insert('ai_quote_runs', { kind: 'bogus' })).rejects.toMatchObject({ code: '23514' })
+  })
 
   async function assertAiAccessDenied(id: string) {
     const originals = new Map<string, unknown[]>()

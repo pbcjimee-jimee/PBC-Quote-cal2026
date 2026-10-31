@@ -8,7 +8,7 @@ import type { Database, Json } from '@/lib/supabase/types'
 import type { ActionResult } from '@/lib/actions/types'
 import { safeErrorMessage } from '@/lib/actions/action-error'
 
-export type AiRunKind = 'knowledge_build' | 'quote_draft' | 'eval_memo' | 'eval_draft'
+export type AiRunKind = 'knowledge_build' | 'quote_draft' | 'eval_memo' | 'eval_draft' | 'photo_analysis'
 
 export async function hasPendingAiReview(supabase: SupabaseClient<Database>, quoteId: string): Promise<boolean> {
   const { count, error } = await supabase.from('ai_quote_runs').select('id', { count: 'exact', head: true })
@@ -95,6 +95,12 @@ export async function finishRun(supabase: SupabaseClient<Database>, runId: strin
   usage?: AiUsage
 }): Promise<void> {
   const usage = result.usage ?? { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 }
+  let model = result.model
+  if (model === undefined) {
+    const { data, error } = await supabase.from('ai_quote_runs').select('model').eq('id', runId).single()
+    if (error) throw error
+    model = data.model
+  }
   const { error } = await supabase.from('ai_quote_runs').update({
     status: result.status,
     ...(result.model === undefined ? {} : { model: result.model }),
@@ -102,7 +108,7 @@ export async function finishRun(supabase: SupabaseClient<Database>, runId: strin
     error_code: result.errorCode ?? null,
     input_tokens: usage.inputTokens, output_tokens: usage.outputTokens,
     cache_read_tokens: usage.cacheReadTokens, cache_write_tokens: usage.cacheWriteTokens,
-    cost_usd: estimateCostUsd(usage), completed_at: new Date().toISOString(),
+    cost_usd: estimateCostUsd(usage, model), completed_at: new Date().toISOString(),
   }).eq('id', runId)
   if (error) throw error
 }

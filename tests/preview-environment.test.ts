@@ -46,6 +46,10 @@ describe('Preview deployment safety', () => {
     ['JOBBER_CALLBACK_URL', 'https://production.example/api/jobber/callback'],
     ['JOBBER_TOKEN_ENCRYPTION_KEY', 'configured-key'],
     ['JOBBER_ACCESS_TOKEN', 'configured-token'],
+    ['MICROSOFT_TENANT_ID', 'tenant'],
+    ['MICROSOFT_CLIENT_ID', 'client'],
+    ['MICROSOFT_CLIENT_SECRET', 'secret'],
+    ['MICROSOFT_REDIRECT_URI', 'http://localhost:3000/api/microsoft/callback'],
   ])('rejects unsafe %s before deployment', (key, value) => {
     expect(() => assertPreviewEnvironment({ ...isolated(), [key]: value })).toThrow(/Preview/)
   })

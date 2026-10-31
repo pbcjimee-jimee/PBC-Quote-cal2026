@@ -8,7 +8,7 @@ vi.mock('@/lib/ai-quote/budget', () => ({ getAiMonthlyBudgetStatus: mocks.budget
 vi.mock('@/lib/ai-quote/config', async (importOriginal) => ({
   ...await importOriginal<typeof import('@/lib/ai-quote/config')>(), getAiQuoteAvailability: mocks.availability,
   AI_QUOTE_LIMITS: { evalMemosPerDay: 30, evalDraftsPerDay: 30, evalMemoMaxTokens: 4000 },
-  AI_QUOTE_MODEL: 'claude-opus-5-5', AI_QUOTE_PROMPT_VERSIONS: { evalMemo: 'eval-memo-v1' } }))
+  AI_QUOTE_MODELS: { analysis: 'claude-opus-5-5', draft: 'claude-sonnet-5-5' }, AI_QUOTE_PROMPT_VERSIONS: { evalMemo: 'eval-memo-v1' } }))
 vi.mock('@/lib/security/require-app-user', () => ({ requireRole: mocks.requireRole }))
 vi.mock('@/lib/supabase/server', () => ({ createClient: mocks.createClient }))
 vi.mock('@/lib/ai-quote/runs', () => ({ countRecentRuns: mocks.countRecentRuns, startRun: mocks.startRun, finishRun: mocks.finishRun }))
@@ -136,12 +136,12 @@ describe('eval memo execution', () => {
     const memo = 'Paint walls with Dulux Wash for 3 days, $200. Contact [email]'
     const leaks = ['price', 'days_or_litres', 'product']
     expect(await response.json()).toEqual({ ok: true, data: { caseId, memo, leaks } })
-    expect(mocks.startRun).toHaveBeenCalledWith(supabase, { kind: 'eval_memo', model: 'claude-opus-5-5', promptVersion: 'eval-memo-v1' })
+    expect(mocks.startRun).toHaveBeenCalledWith(supabase, { kind: 'eval_memo', model: 'claude-sonnet-5-5', promptVersion: 'eval-memo-v1' })
     expect(mocks.upsertCase).toHaveBeenCalledExactlyOnceWith(supabase, { setLabel: 'Launch', quoteId, memo, memoRunId: 'memo-run' })
     expect(mocks.finishRun).toHaveBeenCalledExactlyOnceWith(supabase, 'memo-run', { status: 'succeeded', model: 'claude-opus-5-5',
       usage, output: { memo, leaks } })
     const args = mocks.structured.mock.calls[0][1]
-    expect(args).toMatchObject({ maxTokens: 4000, signal: req.signal })
+    expect(args).toMatchObject({ model: 'claude-sonnet-5-5', maxTokens: 4000, signal: req.signal })
     const prompt = JSON.stringify(args.messages)
     expect(prompt).not.toContain('private@example.com')
     expect(prompt).not.toContain('9999')

@@ -7,10 +7,10 @@ const settings = { ...DEFAULT_PRICING_SETTINGS, f1LabourRate: 1000, f2LabourRate
 function item(id = 'p1', overrides: Partial<AiQuoteDraftWorkItem> = {}): AiQuoteDraftWorkItem {
   return { id, product: { id, name: 'Paint', manufacturer: null, type: null, unit: 'tin', marketPrice: '100',
     actualPrice: '40', active: true, colorCode: null }, areaScope: 'interior', areaName: 'Bedroom',
-    quantity: '1', workingDays: '1', labourPerDay: '1', rationale: '', ...overrides }
+    quantity: '1', workingDays: '1', labourPerDay: '1', rationale: '', photoAdjustment: null, ...overrides }
 }
 function draft(overrides: Partial<AiQuoteDraft> = {}): AiQuoteDraft {
-  return { summary: '', findings: [], questions: [], warnings: [], areas: [{ scope: 'interior', name: 'Bedroom' }],
+  return { summary: '', findings: [], photoFindings: [], questions: [], warnings: [], areas: [{ scope: 'interior', name: 'Bedroom' }],
     publicLines: [], workItems: [item()],
     formulaSelections: [{ scope: 'interior', selectedMin: 1, selectedMax: 1, rationale: '' }], ...overrides }
 }

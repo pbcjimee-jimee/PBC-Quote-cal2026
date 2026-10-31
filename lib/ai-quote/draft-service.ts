@@ -3,7 +3,7 @@ import 'server-only'
 import type Anthropic from '@anthropic-ai/sdk'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { createAnthropicClient, runStructuredClaudeRequest, type AiErrorCode } from '@/lib/ai-quote/anthropic'
-import { AI_QUOTE_LIMITS, AI_QUOTE_MODEL, AI_QUOTE_PROMPT_VERSIONS } from '@/lib/ai-quote/config'
+import { AI_QUOTE_LIMITS, AI_QUOTE_MODELS, AI_QUOTE_PROMPT_VERSIONS } from '@/lib/ai-quote/config'
 import { loadActiveKnowledge, loadDraftCatalog, loadQuoteExamples, loadSimilarQuoteCandidates } from '@/lib/ai-quote/data'
 import { buildQuoteDraftPrompt } from '@/lib/ai-quote/draft-prompt'
 import { aiDraftModelOutputSchema } from '@/lib/ai-quote/draft-schema'
@@ -11,13 +11,15 @@ import { validateAiQuoteDraft } from '@/lib/ai-quote/draft-validation'
 import { redactContactDetails } from '@/lib/ai-quote/pii'
 import { finishRun, startRun } from '@/lib/ai-quote/runs'
 import { rankSimilarQuotes } from '@/lib/ai-quote/similar-quotes'
-import type { AiQuoteDraft, DraftJobberContext } from '@/lib/ai-quote/types'
+import type { AiPhotoFinding, AiQuoteDraft, DraftJobberContext } from '@/lib/ai-quote/types'
 import type { Database } from '@/lib/supabase/types'
 
 export async function generateQuoteDraft(supabase: SupabaseClient<Database>, input: {
   kind: 'quote_draft' | 'eval_draft'
   memo: string
   jobberContext: DraftJobberContext | null
+  photoFindings?: AiPhotoFinding[]
+  photoCount?: number
   excludeQuoteIds?: string[]
   signal?: AbortSignal
   client?: Anthropic
@@ -34,7 +36,7 @@ export async function generateQuoteDraft(supabase: SupabaseClient<Database>, inp
     input.signal?.throwIfAborted()
     runId = await startRun(supabase, {
       kind: input.kind, memo, knowledgeId: knowledge.id, jobberQuoteId: input.jobberContext?.jobberQuoteId ?? null,
-      promptVersion: AI_QUOTE_PROMPT_VERSIONS.draft, model: AI_QUOTE_MODEL,
+      promptVersion: AI_QUOTE_PROMPT_VERSIONS.draft, model: AI_QUOTE_MODELS.draft,
     })
     let outcome: Parameters<typeof finishRun>[2] = { status: 'failed', errorCode: 'api_error' }
     try {
@@ -53,12 +55,13 @@ export async function generateQuoteDraft(supabase: SupabaseClient<Database>, inp
         const example = examplesById.get(id)
         return example ? [example] : []
       })
-      const prompt = buildQuoteDraftPrompt({ knowledge, catalog, examples, jobberContext: input.jobberContext, memo })
+      const photoFindings = input.photoFindings ?? []
+      const prompt = buildQuoteDraftPrompt({ knowledge, catalog, examples, jobberContext: input.jobberContext, memo, photoFindings })
       input.signal?.throwIfAborted()
       const result = await runStructuredClaudeRequest(input.client ?? createAnthropicClient(), {
-        ...prompt, schema: aiDraftModelOutputSchema, maxTokens: AI_QUOTE_LIMITS.draftMaxTokens, signal: input.signal,
+        ...prompt, model: AI_QUOTE_MODELS.draft, schema: aiDraftModelOutputSchema, maxTokens: AI_QUOTE_LIMITS.draftMaxTokens, signal: input.signal,
       })
-      outcome = { ...outcome, model: result.model ?? AI_QUOTE_MODEL, usage: result.usage ?? undefined }
+      outcome = { ...outcome, model: result.model ?? AI_QUOTE_MODELS.draft, usage: result.usage ?? undefined }
       input.signal?.throwIfAborted()
       if (!result.ok) {
         outcome.status = result.errorCode === 'refusal' ? 'refused' : 'failed'
@@ -66,7 +69,8 @@ export async function generateQuoteDraft(supabase: SupabaseClient<Database>, inp
           ? 'validation' : result.errorCode
         return { ok: false, runId, errorCode: result.errorCode }
       }
-      const draft = validateAiQuoteDraft(result.data, catalog)
+      const draft = validateAiQuoteDraft(result.data, catalog, undefined, input.photoCount ?? 0)
+      draft.photoFindings = photoFindings
       input.signal?.throwIfAborted()
       outcome = { status: 'succeeded', model: result.model, usage: result.usage, output: draft }
       return { ok: true, runId, draft }

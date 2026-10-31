@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   AI_QUOTE_DISABLED_MESSAGES,
   AI_QUOTE_LIMITS,
-  AI_QUOTE_MODEL,
+  AI_QUOTE_MODELS,
   AI_QUOTE_PROMPT_VERSIONS,
   getAiQuoteAvailability,
   isAiQuoteUserAllowed,
@@ -39,7 +39,7 @@ describe('AI quote availability', () => {
   })
 
   it('pins the model id without a date suffix', () => {
-    expect(AI_QUOTE_MODEL).toBe('claude-opus-5-5')
+    expect(AI_QUOTE_MODELS).toEqual({ analysis: 'claude-opus-5-5', draft: 'claude-sonnet-5-5' })
   })
 
   it('uses the confirmed limits and prompt versions', () => {
@@ -55,9 +55,17 @@ describe('AI quote availability', () => {
       knowledgeMaxTokens: 64000,
       evalMemoMaxTokens: 4000,
       monthlyBudgetUsdDefault: 30,
+      photoAnalysesPerDay: 20,
+      photoMax: 30,
+      photoCollectMs: 60000,
+      photoConcurrency: 6,
+      photoAnalysisMaxTokens: 8000,
+      photoAdjustmentDaysFactor: '1.5',
+      photoAdjustmentLabourAdd: 2,
+      photoAnalysisMaxAgeMs: 3600000,
     })
     expect(AI_QUOTE_PROMPT_VERSIONS).toEqual({
-      draft: 'quote-draft-v3', knowledge: 'knowledge-v1', evalMemo: 'eval-memo-v1',
+      draft: 'quote-draft-v4', knowledge: 'knowledge-v1', evalMemo: 'eval-memo-v1', photoAnalysis: 'photo-analysis-v1',
     })
   })
 })
