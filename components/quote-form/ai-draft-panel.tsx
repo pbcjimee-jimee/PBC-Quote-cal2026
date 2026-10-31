@@ -23,6 +23,14 @@ type PhotoFolders = { connected: boolean; selected: PhotoFolder | null; candidat
 type PhotoLabel = { ref: number; name: string }
 const APPLIED_STATUS = 'AI draft applied - review the lines and prices before Save & Sync.'
 
+// Show only the values the photos changed, e.g. "2 → 2.5 days".
+function adjustmentSummary(days: string, labour: string, adjustment: { workingDays: string; labourPerDay: string }): string {
+  const parts: string[] = []
+  if (Number(adjustment.workingDays) !== Number(days)) parts.push(`${days} → ${adjustment.workingDays} ${Number(adjustment.workingDays) === 1 ? 'day' : 'days'}`)
+  if (Number(adjustment.labourPerDay) !== Number(labour)) parts.push(`${labour} → ${adjustment.labourPerDay} ${Number(adjustment.labourPerDay) === 1 ? 'person' : 'people'}`)
+  return parts.join(' · ')
+}
+
 function PhotoRefs({ refs, labels }: { refs: number[]; labels: PhotoLabel[] }) {
   return <>{refs.map((ref, index) => <span key={ref} title={labels.find(label => label.ref === ref)?.name}>{index === 0 ? 'photo ' : ', '}{String(ref).padStart(2, '0')}</span>)}</>
 }
@@ -312,7 +320,7 @@ export function AiDraftPanel({ availability, hasActiveKnowledge, jobberContext, 
       </> : null}
       <div aria-live="polite" aria-atomic="true">
         <p role="status" className={loading || status === APPLIED_STATUS ? 'sr-only' : undefined}>{loading ? progress : status}</p>
-        {photoError ? <p>{photoError} {photoError.startsWith('Reconnect') ? <a href="/settings?tab=ai">Settings &gt; AI</a> : null}</p> : null}
+        {photoError ? <p>{photoError.startsWith('Reconnect') ? <>Reconnect OneDrive in <a href="/settings?tab=ai">Settings &gt; AI</a>.</> : photoError}</p> : null}
         {canContinueWithoutPhotos ? <button type="button" className="pbc-btn pbc-btn--ghost" disabled={disabled || loading || applying || !memo.trim()} onClick={() => void createDraft(true)}>Continue without photos</button> : null}
         {error ? <button type="button" className="pbc-btn pbc-btn--ghost" disabled={applying} onClick={() => void (error === 'apply' ? apply() : createDraft())}>Try again</button> : null}
       </div>
@@ -327,7 +335,7 @@ export function AiDraftPanel({ availability, hasActiveKnowledge, jobberContext, 
         <p className="pbc-bodytext">The Basic template and a Total line are added automatically.</p>
         <Checklist title="Materials and labour" items={draft.workItems.map(item => ({ id: item.id, label: `${item.product.name} · ${item.areaName} · Qty ${item.quantity} · ${item.workingDays} ${Number(item.workingDays) === 1 ? 'day' : 'days'} · ${item.labourPerDay} ${Number(item.labourPerDay) === 1 ? 'person' : 'people'}`, rationale: item.rationale,
           detail: item.photoAdjustment ? <div className="pbc-ai-draft__adjustment">
-            <p>{item.workingDays} → {item.photoAdjustment.workingDays} days · {item.labourPerDay} → {item.photoAdjustment.labourPerDay} people</p>
+            <p>{adjustmentSummary(item.workingDays, item.labourPerDay, item.photoAdjustment)}</p>
             <p>{item.photoAdjustment.reason} (<PhotoRefs refs={item.photoAdjustment.photoRefs} labels={photoLabels} />)</p>
             <label><input type="checkbox" checked={selection.photoAdjustments.has(item.id)} disabled={!selection.workItems.has(item.id) || applying} aria-label={`Include photo adjustment for ${item.product.name} · ${item.areaName}`} onChange={() => toggle('photoAdjustments', item.id)} /> Include photo adjustment</label>
           </div> : null,
