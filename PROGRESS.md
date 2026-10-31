@@ -37,7 +37,12 @@
   - P2-G5: 실제 사진 초안 실측과 Sonnet 정확도 비교(약 $5~10)
   - P2-G6: push·배포
   - 별도: 감사 actor 마이그레이션 `20261021094546`는 아직 운영 미적용이다.
-- **미검증:** 실제 Microsoft 로그인·Graph 썸네일 크기·EXIF, Sonnet 품질, Settings OneDrive 카드의 브라우저 렌더링(단위 테스트만 했다).
+- **배포 전 검토(2026-10-31):**
+  - 다른 admin의 AI 검토 우회를 막았다. 운영 DB에 `quote_has_pending_ai_review` 함수를 적용했고, 다른 admin은 대기 여부만 보고 AI 기록은 0건으로 보이는 것을 확인했다.
+  - 독립 Codex 분석 검토가 찾은 6건을 수정했다: 재시도 우회, 구역별 공식과 Total 금액 불일치, 기록 연결 실패 시 잠금 해제, 복제 우회, 숨김 Total 재사용, 주소 안내 문구.
+  - `npm run verify` exit 0: 테스트 2,427 pass, 빌드 29/29, audit 0.
+- **실연동 확인:** OneDrive 연결, 사진 분석(Opus 35초·$0.33), Sonnet 초안(43초·$0.21) 모두 localhost에서 성공했다.
+- **미검증:** Settings OneDrive 카드의 브라우저 렌더링(단위 테스트만 했다), Sonnet 정확도 비교.
 
 ---
 

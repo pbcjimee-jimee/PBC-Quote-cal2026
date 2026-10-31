@@ -76,6 +76,17 @@ describe('admin reviewed Jobber recovery actions', () => {
     expect(mocks.revalidatePath).toHaveBeenCalledWith(`/quotes/${quoteId}/edit`)
   })
 
+  it('allows local-only recovery with pending AI review without sending quote content', async () => {
+    const db = client()
+    db.rpc.mockImplementation(async (name?: string) => ({
+      data: name === 'quote_has_pending_ai_review' ? true : { id: quoteId, version: 7 }, error: null,
+    }) as never)
+    mocks.createClient.mockResolvedValue(db)
+    expect(await recoverJobberQuoteSync(await input())).toEqual({ ok: true, data: { id: quoteId, version: 7 } })
+    expect(db.rpc).toHaveBeenCalledExactlyOnceWith('recover_jobber_sync_operation', expect.any(Object))
+    expect(mocks.sync).not.toHaveBeenCalled()
+  })
+
   it('loads hidden links and existing pending deletes for the exact next-sync deletion preview', async () => {
     const db = client()
     db.quoteBuilder.single.mockResolvedValue({ data: { ...quote, jobber_pending_deleted_line_item_ids: ['prior-delete'] }, error: null })

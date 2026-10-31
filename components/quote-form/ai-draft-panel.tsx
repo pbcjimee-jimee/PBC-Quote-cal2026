@@ -302,7 +302,7 @@ export function AiDraftPanel({ availability, hasActiveKnowledge, jobberContext, 
       {!draft ? <>
         <label className="pbc-field__label" htmlFor={`${id}-notes`}>Job notes</label>
         <textarea ref={inputRef} id={`${id}-notes`} className="pbc-textarea" rows={5} maxLength={8000} value={memo} onChange={event => setMemo(event.target.value.slice(0, 8000))} disabled={disabled || loading || applying} aria-describedby={`${id}-privacy ${id}-count`} placeholder="e.g. Interior repaint: 3 bedrooms walls and ceilings, hallway, living room walls only. Bed 2 cracks above window need patching. Doors and frames in enamel. Low sheen." />
-        <div className="pbc-ai-draft__notes"><span id={`${id}-privacy`}>Do not include client names or phone numbers.</span><span id={`${id}-count`}>{memo.length} / 8000</span></div>
+        <div className="pbc-ai-draft__notes"><span id={`${id}-privacy`}>Do not include client names, addresses or phone numbers.</span><span id={`${id}-count`}>{memo.length} / 8000</span></div>
         {photoLookup ? <div className="pbc-ai-draft__photos">
           {lookupPending ? <p role="status">Finding site photos…</p> : photos && !photos.connected ? <p><a href="/settings?tab=ai">Connect OneDrive in Settings &gt; AI to include site photos.</a></p> : photos?.connected ? <>
             {photos.selected ? <>

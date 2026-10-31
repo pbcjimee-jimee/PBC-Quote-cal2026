@@ -112,7 +112,7 @@ export function planAiDraftApplication(input: {
         seenKeys.add(key)
         jobberQuoteLines.push(line)
       }
-      const totalIndex = jobberQuoteLines.findIndex(line => line.kind === 'line_item' && line.optional !== true && /^total\b/i.test(line.name.trim()))
+      const totalIndex = jobberQuoteLines.findIndex(line => line.kind === 'line_item' && line.optional !== true && line.clientVisible !== false && new Decimal(line.quantity).gt(0) && /^total\b/i.test(line.name.trim()))
       const existingTotal = totalIndex < 0 ? undefined : jobberQuoteLines.splice(totalIndex, 1)[0]
       // Saved Basic wording takes priority over AI versions of standard terms.
       const templateKeys = new Set(basicTemplate?.items.map(line => lineKey(line.name)))

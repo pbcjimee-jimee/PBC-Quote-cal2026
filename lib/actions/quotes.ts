@@ -25,7 +25,7 @@ import { paintComparisonSchema } from '@/lib/validators'
 import { calculateDisplayLabourTotals, calculateFormulaLabourDays, calculateLabourTotals } from '@/lib/quote-labour'
 import { requireRole } from '@/lib/security/require-app-user'
 import { createClient } from '@/lib/supabase/server'
-import { enforceAiReviewGate, linkRunAndConfirmReview } from '@/lib/ai-quote/runs'
+import { enforceAiReviewGate, hasPendingAiReview, linkRunAndConfirmReview } from '@/lib/ai-quote/runs'
 import { isAiQuoteUserAllowed } from '@/lib/ai-quote/config'
 import type { Database, Json } from '@/lib/supabase/types'
 import { jobberQuoteSnapshotSchema, pricingSettingsSchema, quoteSchema, type QuoteInput } from '@/lib/validators'
@@ -1195,7 +1195,7 @@ async function findExistingQuoteIdForJobberQuote(
   return { ok: true, data: { id: data?.[0]?.id ?? null, version: data?.[0]?.version ?? null } }
 }
 
-export async function createQuote(input: unknown): Promise<ActionResult<{ id: string; warning?: string }>> {
+export async function createQuote(input: unknown): Promise<ActionResult<{ id: string; warning?: string; savedVersion?: number }>> {
   const parsed = quoteSchema.safeParse(input)
   if (!parsed.success) {
     return { ok: false, error: parsed.error.message }
@@ -1312,10 +1312,10 @@ export async function createQuote(input: unknown): Promise<ActionResult<{ id: st
 
   revalidatePath('/quotes')
   revalidatePath(`/quotes/${quoteId}`)
-  return { ok: true, data: { id: quoteId, ...(warning ? { warning } : {}) } }
+  return { ok: true, data: { id: quoteId, ...(warning ? { warning, savedVersion: 1 } : {}) } }
 }
 
-export async function updateQuote(input: unknown): Promise<ActionResult<{ id: string; warning?: string }>> {
+export async function updateQuote(input: unknown): Promise<ActionResult<{ id: string; warning?: string; savedVersion?: number }>> {
   const inputRecord = typeof input === 'object' && input !== null ? input as Record<string, unknown> : {}
   const id = typeof inputRecord.id === 'string' ? inputRecord.id : ''
   if (!id.trim()) return { ok: false, error: 'Quote id is required' }
@@ -1478,7 +1478,7 @@ export async function updateQuote(input: unknown): Promise<ActionResult<{ id: st
 
   revalidatePath('/quotes')
   revalidatePath(`/quotes/${id}`)
-  return { ok: true, data: { id, ...(warning ? { warning } : {}) } }
+  return { ok: true, data: { id, ...(warning ? { warning, savedVersion: expectedVersion + 1 } : {}) } }
 }
 
 export async function duplicateQuote(sourceQuoteId: string): Promise<ActionResult<{ id: string }>> {
@@ -1508,6 +1508,16 @@ export async function duplicateQuote(sourceQuoteId: string): Promise<ActionResul
   if (!allowedUser.ok) return allowedUser
 
   const supabase = await createClient()
+
+  if (!isAiQuoteUserAllowed(allowedUser.user.email)) {
+    try {
+      if (await hasPendingAiReview(supabase, sourceId)) {
+        return { ok: false, error: 'This quote has an AI draft waiting for the owner to review. Duplicate it after the review.' }
+      }
+    } catch {
+      return { ok: false, error: 'Unable to verify the AI draft review. Please try again.' }
+    }
+  }
 
   const sourceQuoteResult = await getQuote(sourceId)
   if (!sourceQuoteResult.ok) return sourceQuoteResult
@@ -1674,6 +1684,11 @@ export async function retryJobberQuoteSync(quoteId: string): Promise<ActionResul
   if (error || !data) return { ok: false, error: 'Unable to load the saved quote. Please refresh and try again.' }
 
   try {
+    if (await hasPendingAiReview(supabase, id)) {
+      return { ok: false, error: isAiQuoteUserAllowed(allowedUser.user.email)
+        ? 'Confirm the AI draft review with Save & Sync before sending to Jobber.'
+        : 'This quote has an AI draft waiting for the owner to review. Save is available; Jobber sync stays locked until it is reviewed.' }
+    }
     const operation = await requestJobberSyncOperation(supabase, id, data.version)
     const isCurrentVersion = operation.quote_id === id && operation.quote_version === data.version
     if (!isCurrentVersion || operation.status === 'reconciliation_required') {

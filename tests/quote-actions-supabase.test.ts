@@ -17,6 +17,7 @@ const mocks = vi.hoisted(() => {
 
   return {
     createClient: vi.fn(),
+    hasPendingAiReview: vi.fn(),
     enforceAiReviewGate: vi.fn(),
     linkRunAndConfirmReview: vi.fn(),
     createServiceClient: vi.fn(),
@@ -49,6 +50,7 @@ vi.mock('@/lib/supabase/server', () => ({
   createServiceClient: mocks.createServiceClient,
 }))
 vi.mock('@/lib/ai-quote/runs', () => ({
+  hasPendingAiReview: mocks.hasPendingAiReview,
   enforceAiReviewGate: mocks.enforceAiReviewGate,
   linkRunAndConfirmReview: mocks.linkRunAndConfirmReview,
 }))
@@ -435,7 +437,7 @@ describe('quote actions against Supabase', () => {
     try {
       const input = { ...quoteInput, aiDraftRunId, syncJobber: true, aiReviewConfirmed: true }
       const result = mode === 'create' ? await createQuote(input) : await updateQuote({ ...input, id: quoteId })
-      expect(result).toMatchObject({ ok: true, data: { id: quoteId, warning: expect.stringContaining('AI review') } })
+      expect(result).toMatchObject({ ok: true, data: { id: quoteId, savedVersion: mode === 'create' ? 1 : quoteInput.expectedVersion + 1, warning: expect.stringContaining('AI review') } })
       expect(JSON.stringify(result)).not.toContain('private database detail')
       expect(mocks.linkRunAndConfirmReview).toHaveBeenCalledWith(expect.anything(), { quoteId, aiDraftRunId, confirm: true, userId: 'user-1', aiOwner: false })
       expect(rpc.mock.calls.some(([name]) => name === `${mode}_quote_with_jobber_sync`)).toBe(true)
@@ -580,6 +582,7 @@ describe('quote actions against Supabase', () => {
   })
   beforeEach(() => {
     vi.clearAllMocks()
+    mocks.hasPendingAiReview.mockReset().mockResolvedValue(false)
     mocks.enforceAiReviewGate.mockReset().mockResolvedValue({ ok: true, data: null })
     mocks.linkRunAndConfirmReview.mockReset().mockResolvedValue(undefined)
     mocks.syncJobberQuoteLineItems.mockReset()
@@ -1701,6 +1704,58 @@ describe('quote actions against Supabase', () => {
     expect(mocks.after).toHaveBeenCalledTimes(1)
     expect(mocks.runJobberSyncOperation).not.toHaveBeenCalled()
     expect(mocks.syncJobberQuoteLineItems).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    ['jimee@paintbuddyco.com.au', 'Confirm the AI draft review with Save & Sync before sending to Jobber.'],
+    ['admin@example.com', 'This quote has an AI draft waiting for the owner to review. Save is available; Jobber sync stays locked until it is reviewed.'],
+  ])('blocks pending AI review retry for %s before enqueueing', async (email, error) => {
+    persistenceFixture()
+    mocks.requireAllowedUser.mockResolvedValue({ ok: true, user: { id: 'user-1', email } })
+    mocks.hasPendingAiReview.mockResolvedValue(true)
+    expect(await retryJobberQuoteSync(quoteId)).toEqual({ ok: false, error })
+    expect(mocks.requestJobberSyncOperation).not.toHaveBeenCalled()
+    expect(mocks.runJobberSyncOperation).not.toHaveBeenCalled()
+  })
+
+  it('fails closed when the retry AI review RPC fails', async () => {
+    persistenceFixture()
+    mocks.hasPendingAiReview.mockRejectedValue(new Error('RPC unavailable'))
+    expect(await retryJobberQuoteSync(quoteId)).toEqual({ ok: false, error: 'Unable to retry Jobber sync safely. Please try again.' })
+    expect(mocks.requestJobberSyncOperation).not.toHaveBeenCalled()
+    expect(mocks.runJobberSyncOperation).not.toHaveBeenCalled()
+  })
+
+  it('allows retry without pending AI review', async () => {
+    persistenceFixture()
+    const operation = await mocks.getJobberSyncOperationForQuote()
+    mocks.requestJobberSyncOperation.mockResolvedValue(operation)
+    mocks.runJobberSyncOperation.mockResolvedValue({ status: 'succeeded' })
+    expect(await retryJobberQuoteSync(quoteId)).toEqual({ ok: true, data: { id: quoteId } })
+    expect(mocks.requestJobberSyncOperation).toHaveBeenCalledOnce()
+    expect(mocks.runJobberSyncOperation).toHaveBeenCalledWith(operation.id, expect.any(Object))
+  })
+
+  it('blocks a non-owner duplicating a pending AI quote', async () => {
+    const { rpc } = persistenceFixture()
+    mocks.hasPendingAiReview.mockResolvedValue(true)
+    expect(await duplicateQuote(quoteId)).toEqual({ ok: false, error: 'This quote has an AI draft waiting for the owner to review. Duplicate it after the review.' })
+    expect(rpc).not.toHaveBeenCalledWith('create_quote_with_jobber_sync', expect.anything())
+  })
+
+  it('allows the AI owner to duplicate a pending AI quote', async () => {
+    const { rpc } = persistenceFixture()
+    mocks.requireAllowedUser.mockResolvedValue({ ok: true, user: { id: 'user-1', email: 'jimee@paintbuddyco.com.au' } })
+    mocks.hasPendingAiReview.mockResolvedValue(true)
+    expect((await duplicateQuote(quoteId)).ok).toBe(true)
+    expect(rpc).toHaveBeenCalledWith('create_quote_with_jobber_sync', expect.anything())
+  })
+
+  it('fails closed when duplicate AI review verification fails', async () => {
+    const { rpc } = persistenceFixture()
+    mocks.hasPendingAiReview.mockRejectedValue(new Error('RPC unavailable'))
+    expect(await duplicateQuote(quoteId)).toEqual({ ok: false, error: 'Unable to verify the AI draft review. Please try again.' })
+    expect(rpc).not.toHaveBeenCalledWith('create_quote_with_jobber_sync', expect.anything())
   })
 
   it('does not run a duplicate retry request whose immutable operation already succeeded', async () => {

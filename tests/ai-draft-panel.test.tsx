@@ -60,6 +60,10 @@ async function notes(value = 'Repaint bedroom walls') {
 async function generate() { await notes(); await click('Create draft') }
 
 describe('AI draft panel', () => {
+  it('warns against entering client addresses in draft notes', () => {
+    expect(renderToStaticMarkup(createElement(AiDraftPanel, props))).toContain('Do not include client names, addresses or phone numbers.')
+  })
+
   const photoLookup = { quoteNumber: '3000', address: '15 Kingsway' }
   const folder = { id: 'folder-1', name: 'quote 3000 - Kingsway' }
   const photoDraft: AiQuoteDraft = { ...draft,
