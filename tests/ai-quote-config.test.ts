@@ -45,17 +45,18 @@ describe('AI quote availability', () => {
     expect(AI_QUOTE_LIMITS).toEqual({
       draftsPerDay: 20,
       knowledgeBuildsPerDay: 3,
-      evalMemosPerDay: 20,
-      evalDraftsPerDay: 20,
-      evalSetSize: 10,
+      evalMemosPerDay: 30,
+      evalDraftsPerDay: 30,
+      evalSetSize: 20,
       memoMaxLength: 8000,
       existingLinesMax: 60,
       draftMaxTokens: 32000,
       knowledgeMaxTokens: 64000,
       evalMemoMaxTokens: 4000,
+      monthlyBudgetUsdDefault: 30,
     })
     expect(AI_QUOTE_PROMPT_VERSIONS).toEqual({
-      draft: 'quote-draft-v2', knowledge: 'knowledge-v1', evalMemo: 'eval-memo-v1',
+      draft: 'quote-draft-v3', knowledge: 'knowledge-v1', evalMemo: 'eval-memo-v1',
     })
   })
 })
