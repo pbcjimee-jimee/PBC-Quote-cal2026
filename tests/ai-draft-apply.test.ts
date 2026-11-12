@@ -4,9 +4,11 @@ import {
   createAiDraftMaterialItem,
   planAiDraftApplication,
   reallocateAiLinePrices,
+  restoreAiOptionLineLinks,
   type AiDraftSelection,
 } from '@/components/quote-form/ai-draft-apply'
-import type { AreaFormulaSelections, JobberQuoteLineItemDraft } from '@/components/quote-form/types'
+import type { AreaFormulaSelections, JobberQuoteLineItemDraft, QuoteOptionItem } from '@/components/quote-form/types'
+import { getQuoteOptionImportFingerprint } from '@/components/quote-form/jobber-option-mapping'
 import type { AiQuoteDraft, AiQuoteDraftPublicLine, AiQuoteDraftWorkItem } from '@/lib/ai-quote/types'
 import type { AreaRecord } from '@/lib/areas/types'
 import type { QuoteLineTemplateRecord } from '@/lib/quote-line-templates/types'
@@ -19,7 +21,7 @@ const product: AiQuoteDraftWorkItem['product'] = {
 
 function workItem(overrides: Partial<AiQuoteDraftWorkItem> = {}): AiQuoteDraftWorkItem {
   return {
-    id: 'work-1', product, areaScope: 'interior', areaName: 'Bedroom 1',
+    id: 'work-1', optionalItemId: null, product, areaScope: 'interior', areaName: 'Bedroom 1',
     quantity: '2.50', workingDays: '3.25', labourPerDay: '2.00', rationale: 'Two coats', photoAdjustment: null,
     ...overrides,
   }
@@ -39,7 +41,7 @@ function draft(overrides: Partial<AiQuoteDraft> = {}): AiQuoteDraft {
   return {
     summary: 'Paint bedroom', findings: [], photoFindings: [], questions: [], warnings: [],
     areas: [{ scope: 'interior', name: 'Bedroom 1' }],
-    publicLines: [publicLine()], workItems: [workItem()],
+    publicLines: [publicLine()], optionalItems: [], workItems: [workItem()],
     formulaSelections: [{ scope: 'interior', selectedMin: 3, selectedMax: 5, rationale: 'Typical work' }],
     ...overrides,
   }
@@ -48,6 +50,7 @@ function draft(overrides: Partial<AiQuoteDraft> = {}): AiQuoteDraft {
 function selection(overrides: Partial<AiDraftSelection> = {}): AiDraftSelection {
   return {
     areas: new Set(['interior:Bedroom 1']), publicLines: new Set(['draft-line-1']),
+    optionalItems: new Set(),
     workItems: new Set(['work-1']), formulaScopes: new Set(['interior']), photoAdjustments: new Set(),
     ...overrides,
   }
@@ -59,7 +62,7 @@ function current() {
     exterior: { selectedMin: 2, selectedMax: 4 },
     roof: { selectedMin: 4, selectedMax: 5 },
   }
-  return { materials: [], jobberQuoteLines: [], areaFormulaSelections, areas: [] as AreaRecord[] }
+  return { materials: [], options: [] as QuoteOptionItem[], aiLineMeta: {}, jobberQuoteLines: [], areaFormulaSelections, areas: [] as AreaRecord[] }
 }
 
 function formLine(overrides: Partial<JobberQuoteLineItemDraft> = {}): JobberQuoteLineItemDraft {
@@ -96,7 +99,7 @@ describe('planAiDraftApplication', () => {
   it.each([true, false])('applies photo-adjusted labour only when selected (%s)', include => {
     const item = workItem({ workingDays: '2', labourPerDay: '1', photoAdjustment: { workingDays: '3', labourPerDay: '3', reason: 'High ceiling', photoRefs: [7, 8] } })
     const result = planAiDraftApplication({ draft: draft({ workItems: [item] }), selection: selection({ photoAdjustments: new Set(include ? ['work-1'] : []) }), mode: 'append', current: current() }).build([bedroom])
-    expect(result.materials[0]).toMatchObject({ workingDays: include ? '3' : '2', labourPerDay: include ? '3' : '1', memo: include ? 'AI: Two coats · Photo: High ceiling (photo 07, 08)' : 'AI: Two coats' })
+    expect(result.materials[0]).toMatchObject({ workingDays: include ? '3' : '2', labourPerDay: include ? '3' : '1', memo: '' })
     expect(item.workingDays).toBe('2')
   })
   it('reuses existing areas regardless of case and surrounding spaces', () => {
@@ -329,22 +332,181 @@ describe('planAiDraftApplication', () => {
   })
 })
 
+describe('AI optional item application', () => {
+  const optionalItem = { id: 'optional-1', name: 'Extra ceiling', description: 'Paint the ceiling', areaName: 'Bedroom 1', rationale: 'Optional work requested' }
+  const optionWork = workItem({ id: 'option-work', optionalItemId: optionalItem.id, photoAdjustment: { workingDays: '4', labourPerDay: '3', reason: 'Access', photoRefs: [1] } })
+
+  it('creates a normal priced line before Basic and a separate calculation card with adjusted labour', () => {
+    const result = planAiDraftApplication({
+      draft: draft({ optionalItems: [optionalItem], workItems: [workItem(), optionWork] }),
+      selection: selection({ optionalItems: new Set([optionalItem.id]), workItems: new Set(['work-1', optionWork.id]), photoAdjustments: new Set([optionWork.id]) }),
+      mode: 'append', templates: [template()], current: current(), generateId: generateLineIds(),
+    }).build([bedroom])
+    expect(result.materials).toHaveLength(1)
+    expect(result.jobberQuoteLines.map(line => line.name)).toEqual(['Paint walls', 'Extra ceiling', 'Vivid white', 'EXCEPTIONS', 'Total'])
+    expect(result.jobberQuoteLines[1]).toEqual({
+      id: 'new-line-2', kind: 'line_item', name: optionalItem.name, description: optionalItem.description,
+      quantity: '1', unitPrice: '0.00', taxable: true, clientVisible: true,
+      optional: false, recommended: false, selected: false, optionalWritePolicy: 'set_false', recommendedWritePolicy: 'set_false',
+    })
+    expect(result.options).toHaveLength(1)
+    expect(result.options[0]).toMatchObject({ id: 'new-line-3', title: optionalItem.name, selectedMin: 3, selectedMax: 5, isExpanded: true,
+      materials: [{ memo: '', areaId: bedroom.id, workingDays: '4', labourPerDay: '3' }] })
+    expect(result.optionLineLinks).toEqual([{ lineId: 'new-line-2', optionId: 'new-line-3' }])
+  })
+
+  it.each([
+    { scopes: ['roof', 'interior', 'interior'], selected: true, picks: [3, 5] },
+    { scopes: ['roof', 'interior'], selected: true, picks: [4, 5] },
+    { scopes: ['interior'], selected: false, picks: [1, 2] },
+    { scopes: ['exterior'], selected: true, picks: [2, 4] },
+    { scopes: [], selected: true, picks: [4, 1] },
+  ] as const)('uses the dominant scope, first scope on ties and current/default formula fallback: %j', ({ scopes, selected, picks }) => {
+    const items = scopes.map((areaScope, index) => workItem({ id: `optional-work-${index}`, optionalItemId: optionalItem.id, areaScope }))
+    const result = planAiDraftApplication({
+      draft: draft({ optionalItems: [optionalItem], workItems: items }),
+      selection: selection({ optionalItems: new Set([optionalItem.id]), workItems: new Set(items.map(item => item.id)), formulaScopes: new Set(selected ? ['interior', 'exterior', 'roof'] : []) }),
+      mode: 'append', current: current(),
+    }).build([bedroom])
+    expect([result.options[0].selectedMin, result.options[0].selectedMax]).toEqual(picks)
+  })
+
+  it.each(['existing', 'Basic', 'AI'] as const)('skips both the line and card for a duplicate %s name', duplicate => {
+    const result = planAiDraftApplication({
+      draft: draft({ optionalItems: [optionalItem], workItems: [optionWork], publicLines: duplicate === 'AI' ? [publicLine({ name: optionalItem.name })] : [] }),
+      selection: selection({ optionalItems: new Set([optionalItem.id]), workItems: new Set([optionWork.id]) }), mode: 'append',
+      templates: duplicate === 'Basic' ? [template([' EXTRA   CEILING '])] : [],
+      current: { ...current(), jobberQuoteLines: duplicate === 'existing' ? [formLine({ name: ' extra CEILING ' })] : [] },
+    }).build([bedroom])
+    expect(result.options).toEqual([])
+    expect(result.materials).toEqual([])
+    expect(result.optionLineLinks).toEqual([])
+    expect(result.removedDuplicateCount).toBe(1)
+  })
+
+  it.each(['append', 'replace'] as const)('keeps Jobber-linked and manual options while %s handles linked editable options', mode => {
+    const options = ['editable-option', 'jobber-option', 'manual-option'].map(id => ({ id, title: id, materials: [], selectedMin: 4 as const, selectedMax: 1 as const, isExpanded: false }))
+    const result = planAiDraftApplication({
+      draft: draft(), selection: selection(), mode,
+      current: { ...current(), options, jobberQuoteLines: [formLine({ id: 'editable' }), formLine({ id: 'linked', name: 'Linked', jobberLineItemId: 'jobber-1' })],
+        aiLineMeta: { editable: { priceSource: 'none', priceWeight: 0, catalogUnitPrice: null, optionId: 'editable-option' }, linked: { priceSource: 'none', priceWeight: 0, catalogUnitPrice: null, optionId: 'jobber-option' } } },
+    }).build([bedroom])
+    expect(result.options.map(option => option.id)).toEqual(mode === 'append' ? options.map(option => option.id) : ['jobber-option', 'manual-option'])
+    expect(options).toHaveLength(3)
+  })
+
+  it('applies nothing from a deselected optional item even when its work items remain selected', () => {
+    const plan = planAiDraftApplication({
+      draft: draft({ areas: [], publicLines: [], optionalItems: [optionalItem], workItems: [optionWork] }),
+      selection: selection({ areas: new Set(), workItems: new Set([optionWork.id]) }), mode: 'append', current: current(),
+    })
+    const result = plan.build([])
+    expect(plan.areasToCreate).toEqual([])
+    expect(result.materials).toEqual([])
+    expect(result.options).toEqual([])
+    expect(result.jobberQuoteLines.map(line => line.name)).toEqual(['Total'])
+  })
+
+  it('allows optional cards without selected materials and defaults their formula picks', () => {
+    const result = planAiDraftApplication({
+      draft: draft({ optionalItems: [optionalItem], workItems: [optionWork] }),
+      selection: selection({ optionalItems: new Set([optionalItem.id]), workItems: new Set() }), mode: 'append', current: current(),
+    }).build([])
+    expect(result.options[0]).toMatchObject({ materials: [], selectedMin: 4, selectedMax: 1 })
+  })
+
+  it('replaces orphan option cards with the same normalized title when creating a new optional line', () => {
+    const options: QuoteOptionItem[] = [
+      { id: 'orphan-1', title: ' EXTRA  ceiling ', materials: [], selectedMin: 4, selectedMax: 1, isExpanded: false },
+      { id: 'orphan-2', title: 'Extra ceiling', materials: [], selectedMin: 4, selectedMax: 1, isExpanded: false },
+      { id: 'unrelated', title: 'Other work', materials: [], selectedMin: 4, selectedMax: 1, isExpanded: false },
+    ]
+    const result = planAiDraftApplication({
+      draft: draft({ optionalItems: [optionalItem], workItems: [optionWork] }),
+      selection: selection({ optionalItems: new Set([optionalItem.id]), workItems: new Set([optionWork.id]) }),
+      mode: 'append', current: { ...current(), options },
+    }).build([bedroom])
+    expect(result.options.map(option => option.title)).toEqual(['Other work', optionalItem.name])
+    expect(result.options[1].materials).toHaveLength(1)
+    expect(result.optionLineLinks).toEqual([{ lineId: result.jobberQuoteLines[1].id, optionId: result.options[1].id }])
+    expect(options).toHaveLength(3)
+  })
+})
+
+describe('restoreAiOptionLineLinks', () => {
+  function option(id: string, title: string): QuoteOptionItem {
+    return { id, title, materials: [], selectedMin: 4, selectedMax: 1, isExpanded: false }
+  }
+
+  it('does not link Jobber-imported custom options or overwrite their line prices and keeps them reserved for Total', () => {
+    const imported: QuoteOptionItem = { ...option('imported-option', 'Optional ceiling'), sourceJobberLineItemIds: ['jobber-1'],
+      materials: [{ id: 'imported-material', name: 'Ceiling painting', marketPrice: '250.00', actualPrice: '250.00',
+        quantity: '1', workingDays: '0', labourPerDay: '0', isCustom: true }],
+    }
+    expect(getQuoteOptionImportFingerprint(imported)).not.toBeNull()
+    const existing = formLine({ id: 'existing-line', name: ' OPTIONAL   CEILING ', unitPrice: '325.00', jobberLineItemId: 'jobber-1' })
+    const lines = [existing, formLine({ id: 'total', name: 'Total' })]
+    const metadata = { total: { priceSource: 'allocated' as const, priceWeight: 100, catalogUnitPrice: null } }
+    const restored = restoreAiOptionLineLinks(lines, [imported], metadata)
+    expect(restored).toEqual(metadata)
+    expect(restored).not.toHaveProperty(existing.id)
+    const result = reallocateAiLinePrices(lines, restored, '1100', { [imported.id]: '250.00' })
+    expect(result.lines[0]).toBe(existing)
+    expect(result.lines.map(line => line.unitPrice)).toEqual(['325.00', '675.00'])
+  })
+
+  it('restores saved option links without subtracting their prices from Total and keeps unrelated manual prices reserved', () => {
+    const lines = [formLine({ id: 'extra', name: ' EXTRA   ceiling ', unitPrice: '250.00' }),
+      formLine({ id: 'empty', name: 'Optional trim', unitPrice: '87.40' }), formLine({ id: 'total', name: 'Total' })]
+    const metadata = { total: { priceSource: 'allocated' as const, priceWeight: 100, catalogUnitPrice: null } }
+    const restored = restoreAiOptionLineLinks(lines, [option('calculated', 'Extra ceiling'), option('manual', ' optional TRIM ')], metadata)
+    expect(restored).toEqual({ ...metadata,
+      extra: { priceSource: 'none', priceWeight: 0, catalogUnitPrice: null, optionId: 'calculated' },
+      empty: { priceSource: 'none', priceWeight: 0, catalogUnitPrice: null, optionId: 'manual' },
+    })
+    const result = reallocateAiLinePrices(lines, restored, '1100', { calculated: '300.00' })
+    expect(result.lines.map(line => line.unitPrice)).toEqual(['300.00', '87.40', '1000.00'])
+    const withManual = reallocateAiLinePrices([...lines, formLine({ unitPrice: '75.00', quantity: '2' })], restored, '1100', { calculated: '300.00' })
+    expect(withManual.lines.map(line => line.unitPrice)).toEqual(['300.00', '87.40', '850.00', '75.00'])
+    expect(metadata).toEqual({ total: { priceSource: 'allocated', priceWeight: 100, catalogUnitPrice: null } })
+  })
+
+  it.each([
+    { kind: 'text' as const }, { clientVisible: false }, { optional: true },
+    { paintComparisonKey: 'timber' }, { paintComparisonKey: '' },
+    { name: ' Total' }, { name: 'TOTAL Ex GST' }, { name: 'Totality' },
+  ])('never restores ineligible, paint comparison or Total lines: %j', overrides => {
+    const line = formLine({ name: 'Extra', ...overrides })
+    expect(restoreAiOptionLineLinks([line], [option('option-1', line.name)], {})).toEqual({})
+  })
+
+  it('preserves existing metadata and links each option at most once in line order', () => {
+    const existing = { priceSource: 'none' as const, priceWeight: 0, catalogUnitPrice: null, optionId: 'linked' }
+    const metadata = { existing }
+    const lines = [formLine({ id: 'existing', name: 'Extra' }), formLine({ id: 'first', name: 'Extra' }), formLine({ id: 'second', name: 'Extra' })]
+    const restored = restoreAiOptionLineLinks(lines, [option('linked', 'Extra'), option('available', 'Extra')], metadata)
+    expect(restored).toEqual({ existing, first: { priceSource: 'none', priceWeight: 0, catalogUnitPrice: null, optionId: 'available' } })
+    expect(restored.existing).toBe(existing)
+    expect(metadata).toEqual({ existing })
+  })
+})
+
 describe('createAiDraftMaterialItem', () => {
-  it('uses product snapshots with AI quantity, labour, canonical area and rationale memo', () => {
+  it('uses product snapshots with AI quantity, labour, canonical area and an empty memo', () => {
     const item = createAiDraftMaterialItem(workItem(), bedroom)
 
     expect(item).toMatchObject({
       productId: 'paint-1', name: 'Wall paint', manufacturer: 'Dulux', type: 'Paint', unit: '4L',
       productCode: 'WALL', marketPrice: '90.00', actualPrice: '90.00', isCustom: false,
       timberRole: 'none', quantity: '2.50', workingDays: '3.25', labourPerDay: '2.00',
-      areaId: 'area-1', areaName: 'Bedroom 1', areaScope: 'interior', memo: 'AI: Two coats',
+      areaId: 'area-1', areaName: 'Bedroom 1', areaScope: 'interior', memo: '',
     })
   })
 
-  it('limits the entire memo including its prefix to 500 characters and supports area without id', () => {
+  it('omits even a long rationale and supports an area without id', () => {
     const item = createAiDraftMaterialItem(workItem({ rationale: 'a'.repeat(600) }), { scope: 'roof', name: 'Roof' })
 
-    expect(item.memo).toBe(`AI: ${'a'.repeat(496)}`)
+    expect(item.memo).toBe('')
     expect(item.areaId).toBeUndefined()
     expect(item.areaName).toBe('Roof')
     expect(item.areaScope).toBe('roof')
@@ -352,6 +514,30 @@ describe('createAiDraftMaterialItem', () => {
 })
 
 describe('reallocateAiLinePrices', () => {
+  it('preserves a manual empty-option price while updating a calculated option and excluding both from Total', () => {
+    const lines = [formLine({ id: 'empty', unitPrice: '175.50' }), formLine({ id: 'calculated', unitPrice: '200' }), formLine({ id: 'total', name: 'Total' })]
+    const result = reallocateAiLinePrices(lines, {
+      empty: { priceSource: 'none', priceWeight: 0, catalogUnitPrice: null, optionId: 'empty-option' },
+      calculated: { priceSource: 'none', priceWeight: 0, catalogUnitPrice: null, optionId: 'calculated-option' },
+      total: { priceSource: 'allocated', priceWeight: 100, catalogUnitPrice: null },
+    }, '1100', { 'calculated-option': '350.25' })
+    expect(result.lines.map(line => line.unitPrice)).toEqual(['175.50', '350.25', '1000.00'])
+    expect(result.lines[0]).toBe(lines[0])
+  })
+  it('prices linked option lines from the subtotal without reserving or allocating Main Total', () => {
+    const lines = [formLine({ unitPrice: '100.00' }), formLine({ id: 'option', name: 'Extra', unitPrice: '250.00' }), formLine({ id: 'total', name: 'Total' })]
+    const metadata = {
+      option: { priceSource: 'allocated' as const, priceWeight: 100, catalogUnitPrice: null, optionId: 'option-1' },
+      total: { priceSource: 'allocated' as const, priceWeight: 100, catalogUnitPrice: null },
+    }
+    const result = reallocateAiLinePrices(lines, metadata, '1100', { 'option-1': '432.126' })
+    expect(result.lines.map(line => line.unitPrice)).toEqual(['100.00', '432.13', '900.00'])
+    expect(result.result.unitPrices).not.toHaveProperty('option')
+    const deleted = reallocateAiLinePrices(result.lines, metadata, '2200', {})
+    expect(deleted.lines.map(line => line.unitPrice)).toEqual(['100.00', '432.13', '1900.00'])
+    expect(reallocateAiLinePrices(result.lines, metadata, '2200').lines[1]).toBe(result.lines[1])
+    expect(reallocateAiLinePrices(lines, metadata, '1100', { 'option-1': '0' }).lines[1].unitPrice).toBe('0.00')
+  })
   it('puts the whole allocatable ex-GST amount on Total and keeps AI text at zero on recalculation', () => {
     const built = planAiDraftApplication({
       draft: draft(), selection: selection(), mode: 'append', templates: [template()],

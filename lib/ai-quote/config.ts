@@ -10,7 +10,7 @@ export function isAiQuoteUserAllowed(email: string | null | undefined): boolean 
 export const AI_QUOTE_MODELS = { analysis: 'claude-opus-5-5', draft: 'claude-sonnet-5-5' } as const
 
 export const AI_QUOTE_PROMPT_VERSIONS = {
-  draft: 'quote-draft-v4',
+  draft: 'quote-draft-v5',
   knowledge: 'knowledge-v1',
   evalMemo: 'eval-memo-v1',
   photoAnalysis: 'photo-analysis-v1',

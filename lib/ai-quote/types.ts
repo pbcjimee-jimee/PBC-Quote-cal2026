@@ -43,8 +43,17 @@ export interface AiQuoteDraftPublicLine {
   rationale: string
 }
 
+export interface AiQuoteDraftOptionalItem {
+  id: string
+  name: string
+  description: string
+  areaName: string | null
+  rationale: string
+}
+
 export interface AiQuoteDraftWorkItem {
   id: string
+  optionalItemId: string | null
   product: ProductRecord
   areaScope: AiScope
   areaName: string
@@ -63,6 +72,7 @@ export interface AiQuoteDraft {
   warnings: string[]
   areas: Array<{ scope: AiScope; name: string }>
   publicLines: AiQuoteDraftPublicLine[]
+  optionalItems: AiQuoteDraftOptionalItem[]
   workItems: AiQuoteDraftWorkItem[]
   formulaSelections: Array<{
     scope: AiScope

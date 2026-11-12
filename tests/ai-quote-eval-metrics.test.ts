@@ -7,11 +7,11 @@ const settings = { ...DEFAULT_PRICING_SETTINGS, f1LabourRate: 1000, f2LabourRate
 function item(id = 'p1', overrides: Partial<AiQuoteDraftWorkItem> = {}): AiQuoteDraftWorkItem {
   return { id, product: { id, name: 'Paint', manufacturer: null, type: null, unit: 'tin', marketPrice: '100',
     actualPrice: '40', active: true, colorCode: null }, areaScope: 'interior', areaName: 'Bedroom',
-    quantity: '1', workingDays: '1', labourPerDay: '1', rationale: '', photoAdjustment: null, ...overrides }
+    quantity: '1', workingDays: '1', labourPerDay: '1', rationale: '', photoAdjustment: null, optionalItemId: null, ...overrides }
 }
 function draft(overrides: Partial<AiQuoteDraft> = {}): AiQuoteDraft {
   return { summary: '', findings: [], photoFindings: [], questions: [], warnings: [], areas: [{ scope: 'interior', name: 'Bedroom' }],
-    publicLines: [], workItems: [item()],
+    publicLines: [], optionalItems: [], workItems: [item()],
     formulaSelections: [{ scope: 'interior', selectedMin: 1, selectedMax: 1, rationale: '' }], ...overrides }
 }
 const reference = { areaNames: ['bedroom'], productIds: ['p1'], totalWorkingDays: '1', finalTotal: '1100', publicLineCount: 2 }
@@ -21,6 +21,14 @@ function row(overrides: Partial<AiDraftComparison> = {}): AiDraftComparison {
 }
 
 describe('eval metrics', () => {
+  it('excludes optional calculations from total, working days and reference product matches', () => {
+    const result = compareDraftWithQuote({ draft: draft({ optionalItems: [{ id: 'option', name: 'Doors',
+      description: '', areaName: null, rationale: '' }], workItems: [item(), item('p2', { optionalItemId: 'option',
+      workingDays: '10', labourPerDay: '4', quantity: '10' })] }), settings,
+    reference: { ...reference, productIds: ['p1', 'p2'] } })
+    expect(result).toMatchObject({ finalTotalDiffPct: '10.00', workingDaysDiffPct: '0.00', productMatchRate: '0.50' })
+  })
+
   it('computes final total diff from real work items and scoped formula picks', () => {
     expect(compareDraftWithQuote({ draft: draft(), settings, reference })).toEqual(row({ workingDaysDiffPct: '0.00',
       productMatchRate: '1.00', areaRecall: '1.00', areaPrecision: '1.00' }))

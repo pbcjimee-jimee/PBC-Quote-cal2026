@@ -69,6 +69,27 @@ export function validateAiQuoteDraft(
     return trimmed
   }
 
+  const optionalItems: AiQuoteDraft['optionalItems'] = []
+  const optionalIds = new Map<string, string>()
+  const optionalNames = new Set<string>()
+  function nameKey(name: string): string {
+    return name.replace(/\s+/g, '').toLowerCase()
+  }
+  for (const item of cap(input.optionalItems, 10, 'Optional items')) {
+    const name = item.name.trim().slice(0, 200)
+    if (!name || /^total\b/i.test(name)) {
+      warnings.push('An optional item with an empty or Total name was removed.')
+      continue
+    }
+    const normalizedName = nameKey(name)
+    if (optionalIds.has(item.key) || optionalNames.has(normalizedName)) continue
+    const id = createId()
+    optionalIds.set(item.key, id)
+    optionalNames.add(normalizedName)
+    optionalItems.push({ id, name, description: item.description.slice(0, 4000),
+      areaName: item.areaName?.trim().slice(0, 80) || null, rationale: item.rationale })
+  }
+
   const publicLines: AiQuoteDraft['publicLines'] = []
   for (const line of cap(input.publicLines, 60, 'Public lines')) {
     const service = line.productServiceId === null ? undefined : services.get(line.productServiceId)
@@ -80,6 +101,7 @@ export function validateAiQuoteDraft(
       warnings.push('A public line with an empty name was removed.')
       continue
     }
+    if (optionalNames.has(nameKey(name)) || (service && optionalNames.has(nameKey(service.name)))) continue
     if (line.productServiceId !== null && !service) warnings.push('An unavailable product/service link was removed.')
     // A linked service keeps its stored name and description verbatim, like picking it by hand.
     publicLines.push({
@@ -94,6 +116,11 @@ export function validateAiQuoteDraft(
   }
   const workItems: AiQuoteDraft['workItems'] = []
   for (const item of cap(input.workItems, 150, 'Work items')) {
+    const optionalItemId = item.optionalKey === null ? null : optionalIds.get(item.optionalKey)
+    if (optionalItemId === undefined) {
+      warnings.push('A work item for an unknown optional item was removed.')
+      continue
+    }
     const product = products.get(item.productId)
     if (!product) {
       warnings.push('A work item with an unavailable product was removed.')
@@ -121,9 +148,14 @@ export function validateAiQuoteDraft(
       }
     }
     workItems.push({
-      id: createId(), product, areaScope: item.areaScope, areaName, quantity: amount,
+      id: createId(), optionalItemId, product, areaScope: item.areaScope, areaName, quantity: amount,
       workingDays, labourPerDay, rationale: item.rationale, photoAdjustment,
     })
+  }
+  for (const item of optionalItems) {
+    if (!workItems.some(work => work.optionalItemId === item.id)) {
+      warnings.push(`Optional item "${item.name}" has no calculation. Enter its price manually.`)
+    }
   }
   for (const area of input.areas) addArea(area.scope, area.name)
   const formulaSelections: AiQuoteDraft['formulaSelections'] = []
@@ -138,6 +170,6 @@ export function validateAiQuoteDraft(
   return {
     summary: input.summary, findings: cap(input.findings, 30, 'Findings'),
     photoFindings: [],
-    questions: cap(input.questions, 20, 'Questions'), warnings, areas, publicLines, workItems, formulaSelections,
+    questions: cap(input.questions, 20, 'Questions'), warnings, areas, publicLines, optionalItems, workItems, formulaSelections,
   }
 }

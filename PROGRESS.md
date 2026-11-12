@@ -5,6 +5,18 @@
 
 ---
 
+## [구현 2026-11-12] AI Optional 항목 분리 — 견적 폼 B1–B4
+
+- **Model:** Claude Code 팀장의 확정 계획을 Orca Codex implementer 워커가 구현·검증했다. 워커 터미널의 Codex 상태 줄 관측값: **GPT-6.1-Sol, effort xhigh**.
+- **구현:** 선택한 AI Optional 항목을 일반 가격 줄과 별도 Option 계산 카드로 만들고, Options 소계(Ex GST)를 적용·재계산 시 줄 가격으로 채운다. Main Total 배분에서 제외하며, 카드 삭제 시 기존 줄 가격을 유지한다. 중복 이름·Replace 연결 제거 규칙과 Jobber 연결 보호를 적용했다.
+- **검토·호환:** Optional items 체크리스트와 하위 자재·사진 조정 선택을 추가하고 Main 목록을 분리했다. 모든 AI 자재 memo는 빈 값이며, 기존 저장 초안과 Jobber 옵션 중복 감지는 호환한다.
+- **리뷰 후속 F1–F3:** 자재 없는 Option의 수동 가격을 재계산 때 유지하고, 저장 후 다시 연 견적은 이름으로 줄·Option 연결을 복원해 Main Total 차감을 막는다. 새 Optional 줄을 만들 때 같은 제목의 기존 고아 Option 카드를 제거한다.
+- **리뷰 후속 F5:** Jobber 가져오기 fingerprint가 있는 Option은 이름 기반 연결 복원에서 제외해 기존 줄의 수동 가격과 Main Total 차감을 유지한다. 계산형·빈 Option은 계속 연결한다.
+- **검증:** `npm.cmd run typecheck`, 변경 코드·테스트 파일 대상 `npm.cmd run lint -- ...`, 전체 `npm.cmd run test:run` 모두 exit 0. 리뷰 수정 후 Vitest 176 files pass / 3 files skip, **2,495 pass / 19 환경 skip**. 폼 적용·옵션 가격 재계산·카드 삭제 후 가격 유지·구형 초안 복원과 F1–F3·F5 회귀를 검증했다.
+- **제한:** owner 전용 접근·서버·DB·의존성은 변경하지 않았다. 실제 AI 호출·브라우저 QA·개발 서버·빌드·커밋·push·배포는 실행하지 않았다.
+
+---
+
 ## [구현 2026-10-31] AI 견적 후속 + P2 OneDrive 현장 사진 — 로컬 구현·검증 완료, 배포 전
 
 - **Model:** Claude Code 팀장(Opus 5.5/high)이 설계·분배·리뷰·통합·브라우저 QA를 하고, Orca Codex 워커(implementer `gpt-6.1-sol`/high)가 구현·검증했다.

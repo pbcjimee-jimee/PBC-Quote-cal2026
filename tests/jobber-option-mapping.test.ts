@@ -23,6 +23,21 @@ function line(overrides: Partial<JobberQuoteDraftLineItem> = {}): JobberQuoteDra
 }
 
 describe('jobber option import mapping', () => {
+  it('treats a same-title calculated option with materials as imported without changing import fingerprints', () => {
+    const candidate = buildJobberOptionImportCandidates([line({ name: 'Optional ceiling', totalPrice: 250 })])[0]
+    const option: QuoteOptionItem = {
+      id: 'calculated-option', title: '  OPTIONAL   ceiling ', selectedMin: 4, selectedMax: 1, isExpanded: true,
+      materials: [{ id: 'paint', name: 'Ceiling paint', marketPrice: '80', actualPrice: '50', quantity: '2', workingDays: '1', labourPerDay: '2', isCustom: false }],
+    }
+    expect(isJobberOptionCandidateAlreadyImported(candidate, [option])).toBe(true)
+    expect(isJobberOptionCandidateAlreadyImported(candidate, [{ ...option, materials: [] }])).toBe(false)
+    expect(isJobberOptionCandidateAlreadyImported(candidate, [{ ...option, title: 'Different option' }])).toBe(false)
+    const imported = convertJobberOptionCandidateToQuoteOption(candidate, prefix => `${prefix}-imported`)
+    imported.sourceJobberLineItemIds = []
+    imported.materials[0].marketPrice = '999'
+    imported.materials[0].actualPrice = '999'
+    expect(isJobberOptionCandidateAlreadyImported(candidate, [imported])).toBe(false)
+  })
   it('groups priced lines after a text option heading', () => {
     const candidates = buildJobberOptionImportCandidates([
       line({

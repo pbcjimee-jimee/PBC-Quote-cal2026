@@ -65,7 +65,7 @@ describe('AI quote availability', () => {
       photoAnalysisMaxAgeMs: 3600000,
     })
     expect(AI_QUOTE_PROMPT_VERSIONS).toEqual({
-      draft: 'quote-draft-v4', knowledge: 'knowledge-v1', evalMemo: 'eval-memo-v1', photoAnalysis: 'photo-analysis-v1',
+      draft: 'quote-draft-v5', knowledge: 'knowledge-v1', evalMemo: 'eval-memo-v1', photoAnalysis: 'photo-analysis-v1',
     })
   })
 })

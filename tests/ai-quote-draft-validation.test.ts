@@ -15,7 +15,8 @@ function raw(): AiDraftModelOutput {
     questions: ['Confirm colour?'], areas: [{ scope: 'interior', name: 'Bedroom' }],
     publicLines: [{ kind: 'line_item', productServiceId: 'service', name: 'Bedroom painting', description: 'Prepare and paint',
       quantity: '1', priceSource: 'catalog', priceWeight: 50, areaName: 'Bedroom', rationale: 'Requested in memo.' }],
-    workItems: [{ productId: 'paint', areaScope: 'interior', areaName: 'Bedroom', quantity: '2',
+    optionalItems: [],
+    workItems: [{ productId: 'paint', optionalKey: null, areaScope: 'interior', areaName: 'Bedroom', quantity: '2',
       workingDays: '1.5', labourPerDay: '2', rationale: 'Walls need preparation.', photoAdjustment: null }],
     formulaSelections: [{ scope: 'interior', selectedMin: 1, selectedMax: 5, rationale: 'Suitable range.' }],
   }
@@ -26,6 +27,17 @@ function validate(input = raw(), data = catalog) {
 }
 
 describe('draft output schema', () => {
+  it('requires optional items and nullable work-item keys without accepting model prices', () => {
+    const input = { ...raw(), optionalItems: [{ key: 'doors', name: 'Doors', description: 'Paint doors',
+      areaName: null, rationale: 'Optional in memo.', unitPrice: '500', total: '1000' }] }
+    const parsed = aiDraftModelOutputSchema.parse(input)
+    expect(parsed.optionalItems).toEqual([{ key: 'doors', name: 'Doors', description: 'Paint doors',
+      areaName: null, rationale: 'Optional in memo.' }])
+    expect(aiDraftModelOutputSchema.safeParse({ ...input, optionalItems: undefined }).success).toBe(false)
+    expect(aiDraftModelOutputSchema.safeParse({ ...input, workItems: [{ ...input.workItems[0], optionalKey: undefined }] }).success).toBe(false)
+    expect(aiDraftModelOutputSchema.safeParse({ ...input, workItems: [{ ...input.workItems[0], optionalKey: 'doors' }] }).success).toBe(true)
+  })
+
   it('requires a nullable photo adjustment with structured evidence on each work item', () => {
     const input = raw()
     input.workItems[0].photoAdjustment = { workingDays: '3', labourPerDay: '3', reason: 'High walls', photoRefs: [1] }
@@ -53,6 +65,113 @@ describe('draft output schema', () => {
 })
 
 describe('draft server validation', () => {
+  function optional(key = 'doors', name = 'Doors'): AiDraftModelOutput['optionalItems'][number] {
+    return { key, name, description: 'Paint doors', areaName: 'Bedroom', rationale: 'Optional in memo.' }
+  }
+
+  it('links optional calculations to generated IDs and leaves main calculations separate', () => {
+    const input = raw()
+    input.optionalItems = [optional()]
+    input.workItems.push({ ...input.workItems[0], optionalKey: 'doors' })
+    const result = validate(input)
+    expect(result.optionalItems).toEqual([{ id: expect.any(String), name: 'Doors', description: 'Paint doors',
+      areaName: 'Bedroom', rationale: 'Optional in memo.' }])
+    expect(result.workItems.map(item => item.optionalItemId)).toEqual([null, result.optionalItems[0].id])
+    expect(result.warnings).toEqual([])
+  })
+
+  it('caps optional items at ten and removes work for an item beyond the cap', () => {
+    const input = raw()
+    input.optionalItems = Array.from({ length: 11 }, (_, i) => optional(`option-${i}`, `Option ${i}`))
+    input.workItems = input.optionalItems.map(item => ({ ...input.workItems[0], optionalKey: item.key }))
+    const result = validate(input)
+    expect(result.optionalItems).toHaveLength(10)
+    expect(result.workItems).toHaveLength(10)
+    expect(result.warnings).toEqual(['Optional items limited to 10.', 'A work item for an unknown optional item was removed.'])
+  })
+
+  it('cleans optional text, trims names and areas, and limits field lengths', () => {
+    const input = raw()
+    input.optionalItems = [{ ...optional('do\u0000ors', `  ${'n'.repeat(201)}  `),
+      description: `Prepare:\r\n- sand\tthen paint\u0007${'d'.repeat(4000)}`,
+      areaName: `  ${'a'.repeat(81)}  `, rationale: 'Extra\u0000 in memo.' },
+    { ...optional('garage', 'Garage'), areaName: '  ' }]
+    input.workItems[0].optionalKey = 'do\u0000ors'
+    const result = validate(input)
+    expect(result.optionalItems[0]).toEqual({ id: expect.any(String), name: 'n'.repeat(200),
+      description: `Prepare:\n- sand\tthen paint${'d'.repeat(4000)}`.slice(0, 4000),
+      areaName: 'a'.repeat(80), rationale: 'Extra in memo.' })
+    expect(result.optionalItems[1].areaName).toBeNull()
+    expect(result.workItems[0].optionalItemId).toBe(result.optionalItems[0].id)
+  })
+
+  it.each(['  ', ' Total ', 'TOTAL ex GST', 'Total: painting'])('removes invalid optional name %j with a warning', name => {
+    const input = raw()
+    input.optionalItems = [optional('invalid', name), optional('valid', 'Totally painted')]
+    input.workItems[0].optionalKey = 'valid'
+    const result = validate(input)
+    expect(result.optionalItems.map(item => item.name)).toEqual(['Totally painted'])
+    expect(result.warnings).toHaveLength(1)
+    expect(result.warnings[0]).toMatch(/optional item.*removed/i)
+  })
+
+  it('keeps the first duplicate key or name ignoring name case and whitespace', () => {
+    const input = raw()
+    input.optionalItems = [optional('first', 'Garage doors'), optional('first', 'Ceilings'),
+      optional('duplicate-name', ' GARAGE\t DOORS '), optional('third', 'Fences')]
+    input.workItems = ['first', 'duplicate-name', 'third'].map(optionalKey => ({ ...input.workItems[0], optionalKey }))
+    const result = validate(input)
+    expect(result.optionalItems.map(item => item.name)).toEqual(['Garage doors', 'Fences'])
+    expect(result.workItems.map(item => item.optionalItemId)).toEqual(result.optionalItems.map(item => item.id))
+    expect(result.warnings).toContain('A work item for an unknown optional item was removed.')
+  })
+
+  it('removes unknown optional work before it can add areas or enter main calculations', () => {
+    const input = raw()
+    input.workItems.push({ ...input.workItems[0], optionalKey: 'unknown', areaName: 'Unknown area' })
+    const result = validate(input)
+    expect(result.workItems).toHaveLength(1)
+    expect(result.workItems[0].optionalItemId).toBeNull()
+    expect(result.areas).toEqual([{ scope: 'interior', name: 'Bedroom' }])
+    expect(result.warnings).toEqual(['A work item for an unknown optional item was removed.'])
+  })
+
+  it('warns when optional calculations are absent or removed by product validation', () => {
+    const input = raw()
+    input.optionalItems = [optional(), optional('garage', 'Garage')]
+    input.workItems.push({ ...input.workItems[0], optionalKey: 'garage', productId: 'missing' })
+    const result = validate(input)
+    expect(result.warnings).toEqual(['A work item with an unavailable product was removed.',
+      'Optional item "Doors" has no calculation. Enter its price manually.',
+      'Optional item "Garage" has no calculation. Enter its price manually.'])
+  })
+
+  it('applies quantity validation, labour clamping, photo caps and area creation to optional work', () => {
+    const input = raw()
+    input.areas = []
+    input.optionalItems = [optional()]
+    input.workItems = [{ ...input.workItems[0], optionalKey: 'doors', areaName: ' Garage ', quantity: '2.345',
+      workingDays: '2', labourPerDay: '1',
+      photoAdjustment: { workingDays: '10', labourPerDay: '10', reason: 'Photo 1 access', photoRefs: [0, 1, 2] } },
+    { ...input.workItems[0], optionalKey: 'doors', areaName: 'Garage', workingDays: '61', labourPerDay: '-1' },
+    { ...input.workItems[0], optionalKey: 'doors', quantity: '0' }]
+    const result = validateAiQuoteDraft(input, catalog, undefined, 1)
+    expect(result.workItems).toHaveLength(2)
+    expect(result.workItems[0]).toMatchObject({ optionalItemId: result.optionalItems[0].id, quantity: '2.35',
+      areaName: 'Garage', photoAdjustment: { workingDays: '3', labourPerDay: '3', photoRefs: [1] } })
+    expect(result.workItems[1]).toMatchObject({ workingDays: '60', labourPerDay: '0' })
+    expect(result.areas).toEqual([{ scope: 'interior', name: 'Garage' }])
+  })
+
+  it('removes duplicate optional Text lines including linked catalog names', () => {
+    const input = raw()
+    input.optionalItems = [optional('doors', 'Garage doors'), optional('painting', 'Painting')]
+    input.workItems = []
+    input.publicLines.push({ ...input.publicLines[0], kind: 'text', productServiceId: null, name: ' GARAGE\t DOORS ' },
+      { ...input.publicLines[0], kind: 'text', productServiceId: null, name: 'Main walls' })
+    expect(validate(input).publicLines.map(line => line.name)).toEqual(['Main walls'])
+  })
+
   it('caps photo increases while preserving the base values and filtering photo references', () => {
     const input = raw()
     input.workItems[0] = { ...input.workItems[0], workingDays: '2', labourPerDay: '1',

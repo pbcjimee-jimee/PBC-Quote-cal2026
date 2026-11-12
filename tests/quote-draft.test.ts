@@ -11,6 +11,13 @@ import {
 } from '@/components/quote-form/quote-draft'
 
 describe('quote form draft persistence', () => {
+  it.each([undefined, 'option-1'])('loads saved AI metadata with optional optionId %s', optionId => {
+    const metadata = { priceSource: 'none' as const, priceWeight: 0, catalogUnitPrice: null, ...(optionId === undefined ? {} : { optionId }) }
+    const draft = { ...createEmptyQuoteFormDraft(), aiLineMeta: { 'ai-line': metadata }, updatedAt: '2026-11-12T00:00:00.000Z' }
+    const stored = sanitizeQuoteFormDraftForStorage(draft)
+    const parsed = parseQuoteFormDraft(JSON.stringify(stored), new Date('2026-11-12T01:00:00.000Z'))
+    expect(parsed?.aiLineMeta).toEqual({ 'ai-line': metadata })
+  })
   it('uses separate draft keys for new and existing quotes', () => {
     expect(getQuoteDraftStorageKey('user-a')).toBe('pbc-quote-draft:user-a:new')
     expect(getQuoteDraftStorageKey('user-a', 'quote-1')).toBe('pbc-quote-draft:user-a:quote-1')
