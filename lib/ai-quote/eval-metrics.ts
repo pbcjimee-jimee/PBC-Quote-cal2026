@@ -30,7 +30,8 @@ export function compareDraftWithQuote(input: {
   reference: { areaNames: string[]; productIds: string[]; totalWorkingDays: string; finalTotal: string; publicLineCount: number }
 }): AiDraftComparison {
   const { draft, settings, reference } = input
-  const materials = draft.workItems.map(item => createAiDraftMaterialItem(item, { name: item.areaName, scope: item.areaScope }))
+  const mainWorkItems = draft.workItems.filter(item => item.optionalItemId === null)
+  const materials = mainWorkItems.map(item => createAiDraftMaterialItem(item, { name: item.areaName, scope: item.areaScope }))
   const areaFormulaSelections: AreaFormulaSelections = {
     interior: { selectedMin: 1, selectedMax: 1 },
     exterior: { selectedMin: 1, selectedMax: 1 },
@@ -41,7 +42,7 @@ export function compareDraftWithQuote(input: {
   }
   const totals = calculateMainQuoteTotals({ materials, settings, selectedMin: 1, selectedMax: 1, areaFormulaSelections })
   const referenceProducts = new Set(reference.productIds)
-  const draftProducts = new Set(draft.workItems.map(item => item.product.id))
+  const draftProducts = new Set(mainWorkItems.map(item => item.product.id))
   const referenceAreas = new Set(reference.areaNames.map(normalizeAreaKey).filter(Boolean))
   const draftAreas = new Set(draft.areas.map(area => normalizeAreaKey(area.name)).filter(Boolean))
   const matchingAreas = [...referenceAreas].filter(area => draftAreas.has(area)).length

@@ -12,6 +12,7 @@ const draftAiMetadataSchema = z.object({
   aiLineMeta: z.record(z.string(), z.object({
     priceSource: z.enum(['catalog', 'allocated', 'none']),
     priceWeight: z.number().min(0).max(100),
+    optionId: z.string().optional(),
     catalogUnitPrice: z.string().refine(value => { try { return new Decimal(value).isFinite() && new Decimal(value).gte(0) } catch { return false } }).nullable(),
   })).optional(),
 })
@@ -75,7 +76,7 @@ export interface QuoteDraftReadableStorage {
 
 export interface QuoteFormDraft {
   aiDraftRunId?: string | null
-  aiLineMeta?: Record<string, { priceSource: AiPriceSource; priceWeight: number; catalogUnitPrice: string | null }>
+  aiLineMeta?: Record<string, { priceSource: AiPriceSource; priceWeight: number; catalogUnitPrice: string | null; optionId?: string }>
   version: number
   customerName: string
   customerAddress: string

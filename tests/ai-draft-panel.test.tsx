@@ -13,7 +13,7 @@ const draft: AiQuoteDraft = {
   questions: ['Confirm the colour.'], warnings: ['Check preparation time.'],
   areas: [{ scope: 'interior', name: 'Bedroom' }],
   publicLines: [{ id: 'line-1', kind: 'line_item', name: 'Walls', description: 'Repaint', quantity: '1', productServiceId: null, priceSource: 'allocated', priceWeight: 100, catalogUnitPrice: null, taxable: true, areaName: 'Bedroom', rationale: 'Walls were requested.' }],
-  workItems: [], formulaSelections: [{ scope: 'interior', selectedMin: 4, selectedMax: 1, rationale: 'Standard repaint.' }],
+  optionalItems: [], workItems: [], formulaSelections: [{ scope: 'interior', selectedMin: 4, selectedMax: 1, rationale: 'Standard repaint.' }],
 }
 const fetchMock = vi.fn()
 const onApply = vi.fn()
@@ -68,11 +68,55 @@ describe('AI draft panel', () => {
   const folder = { id: 'folder-1', name: 'quote 3000 - Kingsway' }
   const photoDraft: AiQuoteDraft = { ...draft,
     photoFindings: [{ area: 'Bedroom', kind: 'access', issue: 'High ceiling', suggestedTreatment: 'Use a platform', photoRefs: [7, 8], confidence: 'high' }],
-    workItems: [{ id: 'work-1', product: { id: 'paint-1', name: 'Wall paint', manufacturer: null, type: null, unit: '4L', marketPrice: '80', actualPrice: '50', active: true, colorCode: null }, areaScope: 'interior', areaName: 'Bedroom', quantity: '1', workingDays: '2', labourPerDay: '1', rationale: 'Requested repaint.', photoAdjustment: { workingDays: '3', labourPerDay: '3', reason: 'High ceiling', photoRefs: [7] } }],
+    workItems: [{ id: 'work-1', optionalItemId: null, product: { id: 'paint-1', name: 'Wall paint', manufacturer: null, type: null, unit: '4L', marketPrice: '80', actualPrice: '50', active: true, colorCode: null }, areaScope: 'interior', areaName: 'Bedroom', quantity: '1', workingDays: '2', labourPerDay: '1', rationale: 'Requested repaint.', photoAdjustment: { workingDays: '3', labourPerDay: '3', reason: 'High ceiling', photoRefs: [7] } }],
   }
   function response(data: unknown, status = 200) {
     return { ok: status === 200, status, json: async () => ({ ok: status === 200, data }) }
   }
+  it('groups optional work separately, selects it by default and disables its descendants when deselected', async () => {
+    const optional = { id: 'optional-1', name: 'Ceiling repaint', description: '', areaName: 'Bedroom', rationale: 'Optional ceiling requested.' }
+    const optionalWork = { ...photoDraft.workItems[0], id: 'optional-work', optionalItemId: optional.id, product: { ...photoDraft.workItems[0].product, name: 'Ceiling paint' } }
+    const grouped = { ...photoDraft, optionalItems: [optional], workItems: [...photoDraft.workItems, optionalWork] }
+    fetchMock.mockResolvedValue(response({ runId: 'run-1', draft: grouped }))
+    await mount(); await generate()
+    const groups = Array.from(container.querySelectorAll('fieldset'))
+    const main = groups.find(group => group.querySelectorAll('legend')[0]?.textContent === 'Materials and labour')!
+    const optionalGroup = groups.find(group => group.querySelectorAll('legend')[0]?.textContent === 'Optional items')!
+    const children = groups.find(group => group.querySelectorAll('legend')[0]?.textContent === 'Ceiling repaint materials and labour')!
+    expect(main.textContent).toContain('Wall paint')
+    expect(main.textContent).not.toContain('Ceiling paint')
+    expect(optionalGroup.textContent).toContain('Ceiling paint')
+    const legends = groups.map(group => group.querySelectorAll('legend')[0]?.textContent)
+    expect(legends.indexOf('Optional items')).toBe(legends.indexOf('Quote lines') + 1)
+    expect(Array.from(optionalGroup.querySelectorAll('input')).every(input => input.checked)).toBe(true)
+    const why = Array.from(optionalGroup.querySelectorAll('button')).find(element => element.getAttribute('aria-label') === 'Why? Ceiling repaint · priced separately in Options')!
+    await act(async () => why.dispatchEvent(new MouseEvent('click', { bubbles: true })))
+    expect(optionalGroup.textContent).toContain(optional.rationale)
+    const parent = optionalGroup.querySelectorAll('input')[0]
+    await act(async () => { parent.checked = false; parent.dispatchEvent(new Event('change', { bubbles: true })) })
+    expect(children.disabled).toBe(true)
+    expect(Array.from(children.querySelectorAll('input')).find(input => input.getAttribute('aria-label')?.startsWith('Include photo adjustment'))?.disabled).toBe(true)
+    await act(async () => { parent.checked = true; parent.dispatchEvent(new Event('change', { bubbles: true })) })
+    const adjustment = Array.from(children.querySelectorAll('input')).find(input => input.getAttribute('aria-label') === 'Include photo adjustment for Ceiling paint · Bedroom')!
+    await act(async () => { adjustment.checked = false; adjustment.dispatchEvent(new Event('change', { bubbles: true })) })
+    await click('Apply to quote')
+    expect(onApply.mock.calls[0][0].selection.optionalItems).toEqual(new Set([optional.id]))
+    expect(onApply.mock.calls[0][0].selection.workItems).toEqual(new Set(['work-1', 'optional-work']))
+    expect(onApply.mock.calls[0][0].selection.photoAdjustments).toEqual(new Set(['work-1']))
+  })
+  it('allows only an optional item to be selected and rejects its selected children when the parent is off', async () => {
+    const optional = { id: 'optional-1', name: 'Ceiling repaint', description: '', areaName: null, rationale: '' }
+    fetchMock.mockResolvedValue(response({ runId: 'run-1', draft: { ...photoDraft, publicLines: [], formulaSelections: [], optionalItems: [optional], workItems: [{ ...photoDraft.workItems[0], optionalItemId: optional.id }] } }))
+    await mount(); await generate()
+    expect(button('Apply to quote').disabled).toBe(false)
+    await changeInput('Ceiling repaint · priced separately in Options', false)
+    expect(button('Apply to quote').disabled).toBe(true)
+    await click('Apply to quote')
+    expect(onApply).not.toHaveBeenCalled()
+    await changeInput('Ceiling repaint · priced separately in Options', true)
+    await click('Apply to quote')
+    expect(onApply.mock.calls[0][0].selection.optionalItems).toEqual(new Set([optional.id]))
+  })
   function photoResponses(overrides = {}) {
     fetchMock.mockResolvedValueOnce(response({ connected: true, selected: folder, candidates: [], photoCount: 35, ...overrides }))
       .mockResolvedValueOnce(response({ runId: 'photo-run', photoCount: 8, skippedCount: 1, findings: photoDraft.photoFindings, photoLabels: [{ ref: 7, name: 'ceiling.jpg' }, { ref: 8, name: 'platform.jpg' }] }))
@@ -220,7 +264,7 @@ describe('AI draft panel', () => {
     expect(container.textContent.indexOf(note!.textContent)).toBeLessThan(container.textContent.indexOf('Materials and labour'))
   })
   it('keeps selections independent and prevents applying an empty selection', async () => {
-    const withWork: AiQuoteDraft = { ...draft, workItems: [{ id: 'work-1', product: { id: 'paint-1', name: 'Wall paint', manufacturer: null, type: null, unit: '4L', marketPrice: '80', actualPrice: '50', active: true, colorCode: null }, areaScope: 'interior', areaName: 'Bedroom', quantity: '1', workingDays: '2', labourPerDay: '1', rationale: 'Requested repaint.', photoAdjustment: null }] }
+    const withWork: AiQuoteDraft = { ...draft, workItems: [{ id: 'work-1', optionalItemId: null, product: { id: 'paint-1', name: 'Wall paint', manufacturer: null, type: null, unit: '4L', marketPrice: '80', actualPrice: '50', active: true, colorCode: null }, areaScope: 'interior', areaName: 'Bedroom', quantity: '1', workingDays: '2', labourPerDay: '1', rationale: 'Requested repaint.', photoAdjustment: null }] }
     fetchMock.mockResolvedValue({ ok: true, status: 200, json: async () => ({ ok: true, data: { runId: 'run-1', draft: withWork } }) })
     await mount(); await generate()
     const checks = Array.from(container.querySelectorAll('input')).filter(input => input.getAttribute('type') === 'checkbox')
@@ -237,7 +281,7 @@ describe('AI draft panel', () => {
     expect(button('Apply to quote').disabled).toBe(false)
     expect(container.textContent).not.toContain('Select at least one item to apply.')
     await click('Apply to quote')
-    expect(onApply).toHaveBeenCalledWith(expect.objectContaining({ selection: { areas: new Set(['interior:Bedroom']), publicLines: new Set(['line-1']), workItems: new Set(), formulaScopes: new Set(), photoAdjustments: new Set() } }))
+    expect(onApply).toHaveBeenCalledWith(expect.objectContaining({ selection: { areas: new Set(['interior:Bedroom']), publicLines: new Set(['line-1']), optionalItems: new Set(), workItems: new Set(), formulaScopes: new Set(), photoAdjustments: new Set() } }))
   })
   it('explains preview and missing approved guide states', () => {
     expect(renderToStaticMarkup(createElement(AiDraftPanel, { ...props, availability: { enabled: false, reason: 'preview', message: 'AI quoting is unavailable in Preview.' } }))).toContain('AI quoting is unavailable in Preview.')
@@ -303,7 +347,7 @@ describe('AI draft panel', () => {
     expect(container.textContent).not.toContain('Walls were requested.')
   })
   it.each([['1', '1', '1 day · 1 person'], ['1.5', '2', '1.5 days · 2 people'], ['2', '1.00', '2 days · 1.00 person']])('uses singular and plural units for %s days and %s people', async (workingDays, labourPerDay, expected) => {
-    const withWork: AiQuoteDraft = { ...draft, workItems: [{ id: 'work-1', product: { id: 'paint-1', name: 'Wall paint', manufacturer: null, type: null, unit: '4L', marketPrice: '80', actualPrice: '50', active: true, colorCode: null }, areaScope: 'interior', areaName: 'Bedroom', quantity: '1', workingDays, labourPerDay, rationale: 'Requested repaint.', photoAdjustment: null }] }
+    const withWork: AiQuoteDraft = { ...draft, workItems: [{ id: 'work-1', optionalItemId: null, product: { id: 'paint-1', name: 'Wall paint', manufacturer: null, type: null, unit: '4L', marketPrice: '80', actualPrice: '50', active: true, colorCode: null }, areaScope: 'interior', areaName: 'Bedroom', quantity: '1', workingDays, labourPerDay, rationale: 'Requested repaint.', photoAdjustment: null }] }
     fetchMock.mockResolvedValue({ ok: true, status: 200, json: async () => ({ ok: true, data: { runId: 'run-1', draft: withWork } }) })
     await mount(); await generate()
     expect(container.textContent).toContain(`Wall paint · Bedroom · Qty 1 · ${expected}`)
@@ -323,7 +367,7 @@ describe('AI draft panel', () => {
     expect(container.textContent).toContain('Add to existing lines')
     expect(container.textContent).toContain('Replace AI-editable lines')
     await click('Apply to quote')
-    expect(onApply).toHaveBeenCalledWith({ runId: 'run-1', draft, selection: { areas: new Set(['interior:Bedroom']), publicLines: new Set(['line-1']), workItems: new Set(), formulaScopes: new Set(['interior']), photoAdjustments: new Set() }, mode: 'append' })
+    expect(onApply).toHaveBeenCalledWith({ runId: 'run-1', draft, selection: { areas: new Set(['interior:Bedroom']), publicLines: new Set(['line-1']), optionalItems: new Set(), workItems: new Set(), formulaScopes: new Set(['interior']), photoAdjustments: new Set() }, mode: 'append' })
     expect(container.textContent).not.toContain('Apply to quote')
     expect(button('Create new draft')).toBeDefined()
   })

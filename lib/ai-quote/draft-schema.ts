@@ -20,8 +20,16 @@ export const aiDraftModelOutputSchema = z.object({
     areaName: z.string().nullable(),
     rationale: z.string(),
   })),
+  optionalItems: z.array(z.object({
+    key: z.string(),
+    name: z.string(),
+    description: z.string(),
+    areaName: z.string().nullable(),
+    rationale: z.string(),
+  })),
   workItems: z.array(z.object({
     productId: z.string(),
+    optionalKey: z.string().nullable(),
     areaScope: scopeSchema,
     areaName: z.string(),
     quantity: z.string(),

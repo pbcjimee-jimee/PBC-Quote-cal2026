@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
+import { decimalFromInput } from '@/lib/quote-labour'
 import type { PricingSettings } from '@/lib/calculator'
 import type { QuoteRecord } from '@/lib/dev-data'
 import { createArea } from '@/lib/actions/areas'
@@ -9,7 +10,7 @@ import { resolveQuoteProductPrices } from '@/lib/actions/products'
 import { Icons } from '@/components/ui/icons'
 import { CustomerPanel, type JobberRefreshPreview } from './customer-panel'
 import { AiDraftPanel, type AiDraftPanelProps } from './ai-draft-panel'
-import { planAiDraftApplication, reallocateAiLinePrices } from './ai-draft-apply'
+import { planAiDraftApplication, reallocateAiLinePrices, restoreAiOptionLineLinks } from './ai-draft-apply'
 import type { AiQuoteAvailability } from '@/lib/ai-quote/config'
 import type { DraftJobberContext } from '@/lib/ai-quote/types'
 import { MaterialsPanel, type MaterialReorderUpdater } from './materials-panel'
@@ -919,12 +920,25 @@ export function QuoteForm({
     return 'AI prices could not be fully allocated. Review the quote line prices.'
   }
 
+  function describeAiOptions(lines: JobberQuoteLineItemDraft[], metadata: NonNullable<QuoteFormDraft['aiLineMeta']>): string {
+    const optionalLines = lines.filter(line => metadata[line.id]?.optionId !== undefined)
+    return [
+      optionalLines.length > 0 ? `${optionalLines.length} optional ${optionalLines.length === 1 ? 'item' : 'items'} priced separately in Options.` : '',
+      optionalLines.some(line => decimalFromInput(line.unitPrice).isZero()) ? 'Enter a price for optional items without a calculation.' : '',
+    ].filter(Boolean).join(' ')
+  }
+
+  function getAiOptionSubtotals(quoteOptions: QuoteOptionItem[], totalsByOption: ReturnType<typeof calculateQuoteOptionTotals>): Record<string, string> {
+    return Object.fromEntries(quoteOptions.filter(option => option.materials.length > 0)
+      .map(option => [option.id, totalsByOption[option.id].subtotal.toFixed(2)]))
+  }
+
   async function applyAiDraft({ runId, draft, selection, mode }: Parameters<AiDraftPanelProps['onApply']>[0]) {
     if (aiApplyRequestRef.current) return
     aiApplyRequestRef.current = true
     try {
       const updatedAreas = [...quoteAreas, ...createdAiAreasRef.current.filter(created => !quoteAreas.some(area => area.id === created.id))]
-      const plan = planAiDraftApplication({ draft, selection, mode, templates: quoteLineTemplates, current: { materials, jobberQuoteLines, areaFormulaSelections, areas: updatedAreas } })
+      const plan = planAiDraftApplication({ draft, selection, mode, templates: quoteLineTemplates, current: { materials, options, aiLineMeta, jobberQuoteLines, areaFormulaSelections, areas: updatedAreas } })
       for (const area of plan.areasToCreate) {
         const result = await createQuoteArea(area.scope, area.name, false)
         if (!result.ok) throw new Error('Unable to create quote area')
@@ -932,17 +946,24 @@ export function QuoteForm({
         updatedAreas.push(result.data)
       }
       const next = plan.build(updatedAreas)
-      const metadata: NonNullable<QuoteFormDraft['aiLineMeta']> = Object.fromEntries(
+      let metadata: NonNullable<QuoteFormDraft['aiLineMeta']> = Object.fromEntries(
         Object.entries(aiLineMeta).filter(([id]) => next.jobberQuoteLines.some(line => line.id === id)),
       )
       next.appliedLineIds.forEach(id => {
         metadata[id] = { priceSource: 'none', priceWeight: 0, catalogUnitPrice: null }
       })
+      next.optionLineLinks.forEach(({ lineId, optionId }) => {
+        metadata[lineId] = { priceSource: 'none', priceWeight: 0, catalogUnitPrice: null, optionId }
+      })
       metadata[next.totalLineId] = { priceSource: 'allocated', priceWeight: 100, catalogUnitPrice: null }
+      metadata = restoreAiOptionLineLinks(next.jobberQuoteLines, next.options, metadata)
       const nextTotals = calculateMainQuoteTotals({ materials: next.materials, selectedMin, selectedMax, areaFormulaSelections: next.areaFormulaSelections, settings })
-      const allocated = reallocateAiLinePrices(next.jobberQuoteLines, metadata, nextTotals.areaBreakdown.finalTotal)
+      const nextOptionTotals = calculateQuoteOptionTotals(next.options, settings)
+      const allocated = reallocateAiLinePrices(next.jobberQuoteLines, metadata, nextTotals.areaBreakdown.finalTotal,
+        getAiOptionSubtotals(next.options, nextOptionTotals))
       setQuoteAreas(sortQuoteAreas(updatedAreas))
       setMaterials(next.materials)
+      setOptions(next.options)
       changeJobberQuoteLines(allocated.lines)
       setAreaFormulaSelections(next.areaFormulaSelections)
       setAiLineMeta(metadata)
@@ -950,6 +971,7 @@ export function QuoteForm({
       setAiReviewConfirmed(false)
       setAiPriceNotice([
         describeAiAllocation(allocated.result),
+        describeAiOptions(allocated.lines, metadata),
         next.removedDuplicateCount > 0 ? `Removed ${next.removedDuplicateCount} duplicate ${next.removedDuplicateCount === 1 ? 'line' : 'lines'}.` : '',
         next.basicTemplateApplied ? '' : 'Basic template not found.',
       ].filter(Boolean).join(' '))
@@ -961,9 +983,10 @@ export function QuoteForm({
   }
 
   function recalculateAiPrices() {
-    const allocated = reallocateAiLinePrices(jobberQuoteLines, aiLineMeta, totals.areaBreakdown.finalTotal)
+    const allocated = reallocateAiLinePrices(jobberQuoteLines, aiLineMeta, totals.areaBreakdown.finalTotal,
+      getAiOptionSubtotals(options, optionTotals))
     changeJobberQuoteLines(allocated.lines)
-    setAiPriceNotice(describeAiAllocation(allocated.result))
+    setAiPriceNotice([describeAiAllocation(allocated.result), describeAiOptions(allocated.lines, aiLineMeta)].filter(Boolean).join(' '))
     setAiPriceNoticeSuccess(allocated.result.status === 'allocated' && allocated.result.residual === '0.00')
   }
 

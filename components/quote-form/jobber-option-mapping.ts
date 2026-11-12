@@ -92,7 +92,11 @@ export function isJobberOptionCandidateAlreadyImported(
   if (candidate.sourceLineIds.some((id) => importedIds.has(id))) return true
 
   const candidateFingerprint = getJobberOptionCandidateFingerprint(candidate)
-  return options.some((option) => getQuoteOptionImportFingerprint(option) === candidateFingerprint)
+  return options.some((option) => {
+    const fingerprint = getQuoteOptionImportFingerprint(option)
+    return fingerprint === candidateFingerprint || (option.materials.length > 0 && fingerprint === null
+      && normalizeOptionFingerprintText(option.title) === normalizeOptionFingerprintText(candidate.title))
+  })
 }
 
 export function buildJobberOptionImportCandidates(

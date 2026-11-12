@@ -2,7 +2,7 @@
 
 import { startTransition, useEffect, useId, useRef, useState, type ReactNode } from 'react'
 import type { AiQuoteAvailability } from '@/lib/ai-quote/config'
-import type { AiQuoteDraft, DraftJobberContext } from '@/lib/ai-quote/types'
+import type { AiQuoteDraft, AiQuoteDraftWorkItem, DraftJobberContext } from '@/lib/ai-quote/types'
 import type { AiDraftSelection, AiLineApplyMode } from './ai-draft-apply'
 import { AREA_SCOPE_LABELS } from '@/lib/areas/constants'
 
@@ -35,11 +35,12 @@ function PhotoRefs({ refs, labels }: { refs: number[]; labels: PhotoLabel[] }) {
   return <>{refs.map((ref, index) => <span key={ref} title={labels.find(label => label.ref === ref)?.name}>{index === 0 ? 'photo ' : ', '}{String(ref).padStart(2, '0')}</span>)}</>
 }
 
-function Checklist({ title, items, selected, onToggle }: {
+function Checklist({ title, items, selected, onToggle, disabled = false }: {
   title: string
   items: Array<{ id: string; label: string; rationale: string; detail?: ReactNode }>
   selected: Set<string>
   onToggle(id: string): void
+  disabled?: boolean
 }) {
   const id = useId()
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
@@ -54,7 +55,7 @@ function Checklist({ title, items, selected, onToggle }: {
   }
 
   return (
-    <fieldset className="pbc-ai-draft__group">
+    <fieldset className="pbc-ai-draft__group" disabled={disabled}>
       <legend>{title}</legend>
       {items.length === 0 ? <p className="pbc-bodytext">None suggested.</p> : items.map((item, index) => (
         <div key={item.id} className="pbc-ai-draft__item">
@@ -74,7 +75,7 @@ export function AiDraftPanel({ availability, hasActiveKnowledge, jobberContext, 
   const id = useId()
   const [memo, setMemo] = useState('')
   const [result, setResult] = useState<DraftResult | null>(null)
-  const [selection, setSelection] = useState<AiDraftSelection>({ areas: new Set(), publicLines: new Set(), workItems: new Set(), formulaScopes: new Set(), photoAdjustments: new Set() })
+  const [selection, setSelection] = useState<AiDraftSelection>({ areas: new Set(), publicLines: new Set(), optionalItems: new Set(), workItems: new Set(), formulaScopes: new Set(), photoAdjustments: new Set() })
   const [mode, setMode] = useState<AiLineApplyMode>('append')
   const [loading, setLoading] = useState(false)
   const [applying, setApplying] = useState(false)
@@ -96,7 +97,8 @@ export function AiDraftPanel({ availability, hasActiveKnowledge, jobberContext, 
   const headingRef = useRef<HTMLHeadingElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const disabled = !availability.enabled || !hasActiveKnowledge || dailyLimit
-  const hasSelection = [selection.publicLines, selection.workItems, selection.formulaScopes].some(items => items.size > 0)
+  const hasSelection = [selection.publicLines, selection.optionalItems, selection.formulaScopes].some(items => items.size > 0)
+    || Boolean(result?.draft.workItems.some(item => item.optionalItemId === null && selection.workItems.has(item.id)))
   const quoteNumber = photoLookup?.quoteNumber
   const address = photoLookup?.address
   const progress = `${phase === 'photos' ? 'Analysing photos…' : 'Writing the quote…'} ${elapsed}s`
@@ -230,6 +232,7 @@ export function AiDraftPanel({ availability, hasActiveKnowledge, jobberContext, 
       setSelection({
         areas: new Set(next.draft.areas.map(area => `${area.scope}:${area.name}`)),
         publicLines: new Set(next.draft.publicLines.map(line => line.id)),
+        optionalItems: new Set(next.draft.optionalItems.map(item => item.id)),
         workItems: new Set(next.draft.workItems.map(item => item.id)),
         formulaScopes: new Set(next.draft.formulaSelections.map(formula => formula.scope)),
         photoAdjustments: new Set(next.draft.workItems.filter(item => item.photoAdjustment).map(item => item.id)),
@@ -292,6 +295,16 @@ export function AiDraftPanel({ availability, hasActiveKnowledge, jobberContext, 
     })
   }
 
+  function reviewWorkItem(item: AiQuoteDraftWorkItem) {
+    return { id: item.id, label: `${item.product.name} · ${item.areaName} · Qty ${item.quantity} · ${item.workingDays} ${Number(item.workingDays) === 1 ? 'day' : 'days'} · ${item.labourPerDay} ${Number(item.labourPerDay) === 1 ? 'person' : 'people'}`, rationale: item.rationale,
+      detail: item.photoAdjustment ? <div className="pbc-ai-draft__adjustment">
+        <p>{adjustmentSummary(item.workingDays, item.labourPerDay, item.photoAdjustment)}</p>
+        <p>{item.photoAdjustment.reason} (<PhotoRefs refs={item.photoAdjustment.photoRefs} labels={photoLabels} />)</p>
+        <label><input type="checkbox" checked={selection.photoAdjustments.has(item.id)} disabled={!selection.workItems.has(item.id) || applying || (item.optionalItemId !== null && !selection.optionalItems.has(item.optionalItemId))} aria-label={`Include photo adjustment for ${item.product.name} · ${item.areaName}`} onChange={() => toggle('photoAdjustments', item.id)} /> Include photo adjustment</label>
+      </div> : null,
+    }
+  }
+
   const draft = result?.draft
   return (
     <section className="pbc-card pbc-card--pad pbc-ai-draft" aria-labelledby={`${id}-title`}>
@@ -332,14 +345,11 @@ export function AiDraftPanel({ availability, hasActiveKnowledge, jobberContext, 
         {draft.questions.length + draft.warnings.length > 0 ? <div className="pbc-alert pbc-alert--warning pbc-ai-draft__warnings"><h4>Check before saving</h4><ul>{[...draft.questions, ...draft.warnings].map((text, index) => <li key={index}>{text}</li>)}</ul></div> : null}
         {draft.findings.length > 0 ? <><h4>Findings</h4><ul>{draft.findings.map((finding, index) => <li key={index}>{finding.area}: {finding.issue} — {finding.evidence} <span className="pbc-bodytext">({finding.confidence} confidence)</span></li>)}</ul></> : null}
         <Checklist title="Quote lines" items={draft.publicLines.map(line => ({ id: line.id, label: `${line.name} · Qty ${line.quantity}`, rationale: line.rationale }))} selected={selection.publicLines} onToggle={key => toggle('publicLines', key)} />
+        <Checklist title="Optional items" items={draft.optionalItems.map(item => ({ id: item.id, label: `${item.name} · priced separately in Options`, rationale: item.rationale,
+          detail: <Checklist title={`${item.name} materials and labour`} items={draft.workItems.filter(workItem => workItem.optionalItemId === item.id).map(reviewWorkItem)} selected={selection.workItems} onToggle={key => toggle('workItems', key)} disabled={!selection.optionalItems.has(item.id) || applying} />,
+        }))} selected={selection.optionalItems} onToggle={key => toggle('optionalItems', key)} />
         <p className="pbc-bodytext">The Basic template and a Total line are added automatically.</p>
-        <Checklist title="Materials and labour" items={draft.workItems.map(item => ({ id: item.id, label: `${item.product.name} · ${item.areaName} · Qty ${item.quantity} · ${item.workingDays} ${Number(item.workingDays) === 1 ? 'day' : 'days'} · ${item.labourPerDay} ${Number(item.labourPerDay) === 1 ? 'person' : 'people'}`, rationale: item.rationale,
-          detail: item.photoAdjustment ? <div className="pbc-ai-draft__adjustment">
-            <p>{adjustmentSummary(item.workingDays, item.labourPerDay, item.photoAdjustment)}</p>
-            <p>{item.photoAdjustment.reason} (<PhotoRefs refs={item.photoAdjustment.photoRefs} labels={photoLabels} />)</p>
-            <label><input type="checkbox" checked={selection.photoAdjustments.has(item.id)} disabled={!selection.workItems.has(item.id) || applying} aria-label={`Include photo adjustment for ${item.product.name} · ${item.areaName}`} onChange={() => toggle('photoAdjustments', item.id)} /> Include photo adjustment</label>
-          </div> : null,
-        }))} selected={selection.workItems} onToggle={key => toggle('workItems', key)} />
+        <Checklist title="Materials and labour" items={draft.workItems.filter(item => item.optionalItemId === null).map(reviewWorkItem)} selected={selection.workItems} onToggle={key => toggle('workItems', key)} />
         <Checklist title="Formula picks" items={draft.formulaSelections.map(formula => ({ id: formula.scope, label: `${AREA_SCOPE_LABELS[formula.scope]}: low Formula ${formula.selectedMin}, high Formula ${formula.selectedMax}`, rationale: formula.rationale }))} selected={selection.formulaScopes} onToggle={key => toggle('formulaScopes', key)} />
         {hasExistingPublicLines ? <fieldset className="pbc-ai-draft__group"><legend>Apply quote lines</legend><label><input type="radio" name={`${id}-mode`} checked={mode === 'append'} onChange={() => setMode('append')} /> Add to existing lines</label><label><input type="radio" name={`${id}-mode`} checked={mode === 'replace'} onChange={() => setMode('replace')} /> Replace AI-editable lines</label></fieldset> : null}
         {!hasSelection ? <p className="pbc-bodytext" role="status">Select at least one item to apply.</p> : null}

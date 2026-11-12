@@ -28,6 +28,12 @@ export interface QuoteExample {
   workType: string
   publicLines: KnowledgeSourceQuote['publicLines']
   items: KnowledgeSourceQuote['items']
+  options: Array<{
+    title: string
+    selectedMin: number
+    selectedMax: number
+    items: KnowledgeSourceQuote['items']
+  }>
   formulaSelections: KnowledgeSourceQuote['formulaSelections']
 }
 
@@ -187,11 +193,25 @@ export async function loadSimilarQuoteCandidates(
 
 export async function loadQuoteExamples(supabase: SupabaseClient<Database>, ids: string[]): Promise<QuoteExample[]> {
   if (!ids.length) return []
-  const { data, error } = await supabase.from('quotes').select(SOURCE_SELECT).is('deleted_at', null).in('id', ids)
+  const select = `${SOURCE_SELECT}, quote_options(title, position, selected_min, selected_max, quote_option_items(area_name_snapshot, area_scope_snapshot, product_id, product_name_snapshot, quantity, working_days, labour_per_day, position))`
+  const { data, error } = await supabase.from('quotes').select(select).is('deleted_at', null).in('id', ids)
   if (error) throw error
-  return ((data ?? []) as unknown as SourceRow[]).map(row => {
+  type Row = SourceRow & {
+    quote_options: Array<Pick<Tables['quote_options']['Row'], 'title' | 'position' | 'selected_min' | 'selected_max'> & {
+      quote_option_items: SourceRow['quote_items']
+    }>
+  }
+  return ((data ?? []) as unknown as Row[]).map(row => {
     const { id, workType, publicLines, items, formulaSelections } = mapSource(row)
-    return { id, workType, publicLines, items, formulaSelections }
+    const options = [...row.quote_options].sort((a, b) => a.position - b.position).slice(0, 10).map(option => ({
+      title: option.title, selectedMin: option.selected_min, selectedMax: option.selected_max,
+      items: [...option.quote_option_items].sort((a, b) => a.position - b.position).slice(0, 30).map(item => ({
+        areaName: item.area_name_snapshot, areaScope: item.area_scope_snapshot,
+        productId: item.product_id, productName: item.product_name_snapshot, quantity: String(item.quantity),
+        workingDays: String(item.working_days ?? '0'), labourPerDay: String(item.labour_per_day ?? '0'),
+      })),
+    }))
+    return { id, workType, publicLines, items, options, formulaSelections }
   })
 }
 

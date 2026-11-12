@@ -46,6 +46,7 @@ function quote() {
       { area_name_snapshot: null, area_scope_snapshot: null, product_id: null,
         product_name_snapshot: 'Custom', quantity: '1.00', working_days: null, labour_per_day: null, position: 0 },
     ],
+    quote_options: [],
     jobber_quote_lines: [
       { kind: 'line_item', name: 'Bedroom', description: 'Walls', quantity: '1.00',
         unit_price: '1000.00', linked_product_or_service_id: 'service-1', position: 1 },
@@ -119,7 +120,51 @@ describe('AI quote data loaders', () => {
     const [example] = await loadQuoteExamples(db.client, ['quote-1'])
     expect(db.queries[0].chain.in).toHaveBeenCalledWith('id', ['quote-1'])
     expect(example.formulaSelections).toEqual({ interior: { min: 2, max: 4 } })
-    expect(Object.keys(example).sort()).toEqual(['formulaSelections', 'id', 'items', 'publicLines', 'workType'])
+    expect(Object.keys(example).sort()).toEqual(['formulaSelections', 'id', 'items', 'options', 'publicLines', 'workType'])
+    expect(example.options).toEqual([])
+  })
+
+  it('loads positioned example options and items without changing knowledge inputs', async () => {
+    const source = { ...quote(), quote_options: [
+      { title: 'Garage', position: 1, selected_min: 2, selected_max: 4, quote_option_items: [
+        { ...quote().quote_items[0], area_name_snapshot: 'Garage', position: 1 },
+        { ...quote().quote_items[1], position: 0 },
+      ] },
+      { title: 'Doors', position: 0, selected_min: 4, selected_max: 1, quote_option_items: [] },
+    ] }
+    const db = database({ quotes: { data: [source], error: null } })
+    const [example] = await loadQuoteExamples(db.client, ['quote-1'])
+    expect(example.options).toEqual([
+      { title: 'Doors', selectedMin: 4, selectedMax: 1, items: [] },
+      { title: 'Garage', selectedMin: 2, selectedMax: 4, items: [
+        { areaName: null, areaScope: null, productId: null, productName: 'Custom', quantity: '1.00',
+          workingDays: '0', labourPerDay: '0' },
+        { areaName: 'Garage', areaScope: 'interior', productId: 'paint-1', productName: 'Wall paint', quantity: '2.00',
+          workingDays: '1.50', labourPerDay: '2.00' },
+      ] },
+    ])
+    expect(db.queries[0].chain.select.mock.calls[0][0]).toContain('quote_options(title, position, selected_min, selected_max, quote_option_items(')
+    const result = await loadKnowledgeSource(db.client)
+    expect(result.quotes[0]).not.toHaveProperty('options')
+    expect(result.counts).toEqual({ quotes: 1, publicLines: 2, items: 2 })
+    expect(db.queries[1].chain.select.mock.calls[0][0]).not.toContain('quote_options')
+  })
+
+  it('caps examples at ten options and thirty items after sorting by position', async () => {
+    const source = { ...quote(), quote_options: Array.from({ length: 11 }, (_, i) => ({
+      title: `Option ${10 - i}`, position: 10 - i, selected_min: 1, selected_max: 5,
+      quote_option_items: Array.from({ length: 31 }, (_, j) => ({ ...quote().quote_items[0],
+        product_name_snapshot: `Paint ${30 - j}`, position: 30 - j })),
+    })) }
+    const db = database({ quotes: { data: [source], error: null } })
+    const [example] = await loadQuoteExamples(db.client, ['quote-1'])
+    expect(example.options).toHaveLength(10)
+    expect(example.options[0].title).toBe('Option 0')
+    expect(example.options[9].title).toBe('Option 9')
+    expect(example.options.every(option => option.items.length === 30)).toBe(true)
+    expect(example.options[0].items[0].productName).toBe('Paint 0')
+    expect(example.options[0].items[29].productName).toBe('Paint 29')
+    expect(source.quote_options[0].title).toBe('Option 10')
   })
 
   it('loads only active catalog rows and reuses RRP price normalization', async () => {

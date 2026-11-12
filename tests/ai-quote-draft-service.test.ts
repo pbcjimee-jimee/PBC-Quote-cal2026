@@ -24,7 +24,7 @@ const supabase = { client: 'session' } as unknown as SupabaseClient<Database>
 const client = { client: 'injected' } as unknown as Anthropic
 const usage = { inputTokens: 123, outputTokens: 45, cacheReadTokens: 20, cacheWriteTokens: 10 }
 const output: AiDraftModelOutput = {
-  summary: 'Paint walls', findings: [], questions: [], areas: [], workItems: [], formulaSelections: [],
+  summary: 'Paint walls', findings: [], questions: [], areas: [], optionalItems: [], workItems: [], formulaSelections: [],
   publicLines: [{ kind: 'line_item', productServiceId: 'missing-service', name: 'Painting', description: 'Prepare and paint',
     quantity: '1', priceSource: 'catalog', priceWeight: 100, areaName: null, rationale: 'Requested.' }],
 }
@@ -56,7 +56,7 @@ describe('generate quote draft', () => {
     mocks.loadDraftCatalog.mockResolvedValue({ productServices: [], products: [{ id: 'paint', name: 'Paint',
       manufacturer: null, type: null, unit: 'tin', marketPrice: '100', actualPrice: '50', colorCode: null, active: true }] })
     mocks.runStructuredClaudeRequest.mockResolvedValue({ ...success(), data: { ...output,
-      workItems: [{ productId: 'paint', areaScope: 'interior', areaName: 'Stairwell', quantity: '1',
+      workItems: [{ productId: 'paint', optionalKey: null, areaScope: 'interior', areaName: 'Stairwell', quantity: '1',
         workingDays: '2', labourPerDay: '1', rationale: 'Painting',
         photoAdjustment: { workingDays: '4', labourPerDay: '5', reason: 'Photo 1 high walls', photoRefs: [1, 2] } }],
     } })
@@ -87,7 +87,7 @@ describe('generate quote draft', () => {
     await generateQuoteDraft(supabase, { ...input(), kind: 'eval_draft', memo })
     expect(mocks.startRun).toHaveBeenCalledExactlyOnceWith(supabase, {
       kind: 'eval_draft', memo: 'call [phone] or [email] about walls', knowledgeId: 'guide-1',
-      jobberQuoteId: null, promptVersion: 'quote-draft-v4', model: 'claude-sonnet-5-5',
+      jobberQuoteId: null, promptVersion: 'quote-draft-v5', model: 'claude-sonnet-5-5',
     })
     const request = mocks.runStructuredClaudeRequest.mock.calls[0][1]
     expect(JSON.stringify(request)).not.toMatch(/0412|paint@example.com/)
@@ -99,7 +99,7 @@ describe('generate quote draft', () => {
       id: `quote-${i}`, workType: 'Interior', customerType: 'Residential', areaKeys: ['Bedroom'],
       lineNames: ['Bedroom walls'], createdAt: `2026-10-${20 + i}T00:00:00Z`,
     })))
-    const example = (id: string): QuoteExample => ({ id, workType: 'Interior', publicLines: [], items: [], formulaSelections: {} })
+    const example = (id: string): QuoteExample => ({ id, workType: 'Interior', publicLines: [], items: [], options: [], formulaSelections: {} })
     mocks.loadQuoteExamples.mockResolvedValue(['quote-2', 'quote-3', 'quote-4', 'quote-5'].map(example))
     await generateQuoteDraft(supabase, { ...input(), excludeQuoteIds: ['reference-quote'], jobberContext: {
       jobberQuoteId: 'jobber-1', workType: 'Interior', customerType: 'Residential', areaSqft: null, existingLines: [],

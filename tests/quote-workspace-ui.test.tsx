@@ -12,6 +12,7 @@ import type { AiQuoteDraft } from '@/lib/ai-quote/types'
 import type { QuoteLineTemplateRecord } from '@/lib/quote-line-templates/types'
 import Decimal from 'decimal.js'
 import { calculateMainQuoteTotals } from '@/components/quote-form/quote-calculation-totals'
+import { calculateQuoteOptionTotals } from '@/components/quote-form/quote-option-totals'
 import { buildQuoteSavePayload } from '@/components/quote-form/quote-save-payload'
 import { DEFAULT_PRICING_SETTINGS } from '@/lib/calculator'
 import type { QuoteRecord } from '@/lib/dev-data'
@@ -295,10 +296,10 @@ describe('quote workspace structure', () => {
   })
 
   const aiDraft: AiQuoteDraft = {
-    summary: 'Bedroom repaint', findings: [], photoFindings: [], questions: [], warnings: [],
+    summary: 'Bedroom repaint', findings: [], photoFindings: [], questions: [], warnings: [], optionalItems: [],
     areas: [{ scope: 'interior', name: 'Bedroom' }, { scope: 'interior', name: 'Hallway' }],
     publicLines: [{ id: 'ai-line', kind: 'text', name: 'AI wall painting', description: '', quantity: '1', productServiceId: null, priceSource: 'none', priceWeight: 0, catalogUnitPrice: null, taxable: false, areaName: 'Bedroom', rationale: 'Requested.' }],
-    workItems: [{ id: 'ai-work', product: { id: 'paint-1', name: 'AI wall paint', manufacturer: 'Dulux', type: 'Paint', unit: '4L', marketPrice: '80', rrpPrice: '90', actualPrice: '50', colorCode: null, active: true, productCode: 'WALL' }, areaScope: 'interior', areaName: 'Bedroom', quantity: '2', workingDays: '3', labourPerDay: '2', rationale: 'Two coats.', photoAdjustment: null }],
+    workItems: [{ id: 'ai-work', optionalItemId: null, product: { id: 'paint-1', name: 'AI wall paint', manufacturer: 'Dulux', type: 'Paint', unit: '4L', marketPrice: '80', rrpPrice: '90', actualPrice: '50', colorCode: null, active: true, productCode: 'WALL' }, areaScope: 'interior', areaName: 'Bedroom', quantity: '2', workingDays: '3', labourPerDay: '2', rationale: 'Two coats.', photoAdjustment: null }],
     formulaSelections: [{ scope: 'interior', selectedMin: 4, selectedMax: 1, rationale: 'Standard.' }],
   }
 
@@ -330,6 +331,103 @@ describe('quote workspace structure', () => {
       await act(async () => findButton(mounted.container, 'Save quote')!.dispatchEvent(new Event('click', { bubbles: true })))
       const saved = vi.mocked(createQuote).mock.calls[0][0] as ReturnType<typeof buildQuoteSavePayload>
       expect(saved.jobberQuoteLines.at(-1)?.unitPrice).toBeGreaterThan(0)
+    } finally { await mounted.cleanup(); globalThis.fetch = originalFetch }
+  })
+
+  it('applies AI optional calculations separately, recalculates their lines and preserves prices after card deletion', async () => {
+    const originalFetch = globalThis.fetch
+    const optional = { id: 'optional-1', name: 'Optional ceiling', description: 'Paint the ceiling', areaName: 'Bedroom', rationale: 'Optional request.' }
+    const empty = { ...optional, id: 'optional-2', name: 'Optional trim' }
+    const optionWork = { ...aiDraft.workItems[0], id: 'optional-work', optionalItemId: optional.id, workingDays: '1.75', labourPerDay: '1' }
+    const draft = { ...aiDraft, areas: [aiDraft.areas[0]], optionalItems: [optional, empty], workItems: [...aiDraft.workItems, optionWork] }
+    globalThis.fetch = vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => ({ ok: true, data: { runId: '00000000-0000-4000-8000-000000000001', draft } }) })
+    const mounted = await mountQuoteForm({ areas: [{ id: 'ai-area', name: 'Bedroom', scope: 'interior', active: true, position: 0 }] })
+    try {
+      const notes = mounted.container.querySelectorAll('textarea')[0]
+      await act(async () => { notes.value = 'Repaint bedroom and optional ceiling'; notes.dispatchEvent(new Event('input', { bubbles: true })) })
+      await act(async () => findButton(mounted.container, 'Create draft')!.dispatchEvent(new Event('click', { bubbles: true })))
+      await act(async () => findButton(mounted.container, 'Apply to quote')!.dispatchEvent(new Event('click', { bubbles: true })))
+      await settle()
+      await act(async () => window.dispatchEvent(new Event('pagehide')))
+      const readDraft = () => JSON.parse(mounted.storage.getItem(getQuoteDraftStorageKey('user-a'))!) as ReturnType<typeof createEmptyQuoteFormDraft>
+      const stored = readDraft()
+      const main = calculateMainQuoteTotals({ materials: stored.materials, selectedMin: stored.selectedMin, selectedMax: stored.selectedMax, areaFormulaSelections: stored.areaFormulaSelections, settings: DEFAULT_PRICING_SETTINGS })
+      const option = stored.options[0]
+      const subtotal = calculateQuoteOptionTotals(stored.options, DEFAULT_PRICING_SETTINGS)[option.id].subtotal.toFixed(2)
+      expect(stored.materials).toHaveLength(1)
+      expect(stored.materials[0].memo).toBe('')
+      expect(option.materials).toHaveLength(1)
+      expect(option.materials[0].memo).toBe('')
+      expect(stored.jobberQuoteLines.map(line => line.name)).toEqual(['AI wall painting', optional.name, empty.name, 'Total'])
+      expect(stored.jobberQuoteLines[1]).toMatchObject({ unitPrice: subtotal, optional: false, optionalWritePolicy: 'set_false', recommended: false, recommendedWritePolicy: 'set_false', selected: false })
+      expect(stored.aiLineMeta?.[stored.jobberQuoteLines[1].id]).toEqual({ priceSource: 'none', priceWeight: 0, catalogUnitPrice: null, optionId: option.id })
+      expect(stored.jobberQuoteLines.at(-1)?.unitPrice).toBe(main.areaBreakdown.finalSubtotal.toFixed(2))
+      expect(mounted.container.textContent).toContain('2 optional items priced separately in Options.')
+      expect(mounted.container.textContent).toContain('Enter a price for optional items without a calculation.')
+      const manualPrice = findElement(mounted.container, 'input', input => input.getAttribute('data-error-key') === `public:${stored.jobberQuoteLines[2].id}:unitPrice`)!
+      expect(manualPrice).toBeDefined()
+      await act(async () => { manualPrice.value = '175.50'; manualPrice.dispatchEvent(new Event('input', { bubbles: true })) })
+      const title = findElement(mounted.container, 'input', input => input.getAttribute('id') === `${option.id}-title`)
+      const card = findAncestorWithAttribute(title, 'data-expanded')!
+      const days = findElement(card, 'input', input => input.value === '1.75')!
+      expect(days).toBeDefined()
+      await act(async () => { days.value = '3.5'; days.dispatchEvent(new Event('input', { bubbles: true })) })
+      await act(async () => findButton(mounted.container, 'Recalculate AI prices')!.dispatchEvent(new Event('click', { bubbles: true })))
+      await act(async () => window.dispatchEvent(new Event('pagehide')))
+      const recalculated = readDraft()
+      const newSubtotal = calculateQuoteOptionTotals(recalculated.options, DEFAULT_PRICING_SETTINGS)[option.id].subtotal.toFixed(2)
+      expect(new Decimal(newSubtotal).gt(subtotal)).toBe(true)
+      expect(recalculated.jobberQuoteLines[1].unitPrice).toBe(newSubtotal)
+      expect(recalculated.jobberQuoteLines[2].unitPrice).toBe('175.50')
+      expect(recalculated.jobberQuoteLines.at(-1)?.unitPrice).toBe(stored.jobberQuoteLines.at(-1)?.unitPrice)
+      const remove = findElement(card, 'button', button => button.getAttribute('aria-label') === `Delete ${optional.name}`)!
+      await act(async () => remove.dispatchEvent(new Event('click', { bubbles: true })))
+      await act(async () => findButton(mounted.container, 'Recalculate AI prices')!.dispatchEvent(new Event('click', { bubbles: true })))
+      await act(async () => window.dispatchEvent(new Event('pagehide')))
+      const deleted = readDraft()
+      expect(deleted.options).toHaveLength(1)
+      expect(deleted.jobberQuoteLines[1].unitPrice).toBe(newSubtotal)
+      expect(deleted.jobberQuoteLines[2].unitPrice).toBe('175.50')
+      expect(deleted.jobberQuoteLines.at(-1)?.unitPrice).toBe(stored.jobberQuoteLines.at(-1)?.unitPrice)
+    } finally { await mounted.cleanup(); globalThis.fetch = originalFetch }
+  })
+
+  it.each([false, true])('restores saved optional line links on AI apply while preserving empty-option prices and manual reservations (manual: %s)', async includeManual => {
+    const originalFetch = globalThis.fetch
+    const savedLine = (id: string, name: string, unitPrice: string): QuoteRecord['jobberQuoteLines'][number] => ({
+      id, quoteId: 'quote-workspace-1', kind: 'line_item', name, description: '', quantity: '1', unitPrice, totalPrice: unitPrice,
+      taxable: true, clientVisible: true, jobberLineItemId: `jobber-${id}`, linkedProductOrServiceId: null,
+      position: 0, createdAt: '', updatedAt: '', optional: false,
+    })
+    const options = [createOptionRecord('old-empty', 'Optional trim', 0), createOptionRecord('old-calculated', 'Optional ceiling', 1)]
+    options[1].items = [{ id: 'old-paint', optionId: options[1].id, productId: null, productNameSnapshot: 'Ceiling paint',
+      marketPriceSnapshot: '80', actualPriceSnapshot: '50', quantity: '2', workingDays: '1', labourPerDay: '1',
+      areaId: null, areaNameSnapshot: null, areaScopeSnapshot: null, isCustom: true, position: 0 }]
+    const initialQuote = createQuoteRecord({ options, jobberQuoteLines: [
+      savedLine('empty-line', ' OPTIONAL   TRIM ', '175.50'), savedLine('calculated-line', 'Optional ceiling', '300.00'),
+      savedLine('old-total', 'Total', '1000.00'), ...(includeManual ? [savedLine('manual-line', 'Unrelated service', '100.00')] : []),
+    ] })
+    const draft = { ...aiDraft, areas: [aiDraft.areas[0]] }
+    globalThis.fetch = vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => ({ ok: true, data: { runId: '00000000-0000-4000-8000-000000000001', draft } }) })
+    const mounted = await mountQuoteForm({ initialQuote, areas: [{ id: 'ai-area', name: 'Bedroom', scope: 'interior', active: true, position: 0 }] })
+    try {
+      const notes = mounted.container.querySelectorAll('textarea')[0]
+      await act(async () => { notes.value = 'Repaint bedroom'; notes.dispatchEvent(new Event('input', { bubbles: true })) })
+      await act(async () => findButton(mounted.container, 'Create draft')!.dispatchEvent(new Event('click', { bubbles: true })))
+      await act(async () => findButton(mounted.container, 'Apply to quote')!.dispatchEvent(new Event('click', { bubbles: true })))
+      for (const recalculate of [false, true]) {
+        if (recalculate) await act(async () => findButton(mounted.container, 'Recalculate AI prices')!.dispatchEvent(new Event('click', { bubbles: true })))
+        await act(async () => window.dispatchEvent(new Event('pagehide')))
+        const stored = JSON.parse(mounted.storage.getItem(getQuoteDraftStorageKey('user-a', initialQuote.id))!) as ReturnType<typeof createEmptyQuoteFormDraft>
+        const main = calculateMainQuoteTotals({ materials: stored.materials, selectedMin: stored.selectedMin, selectedMax: stored.selectedMax, areaFormulaSelections: stored.areaFormulaSelections, settings: DEFAULT_PRICING_SETTINGS })
+        expect(stored.aiLineMeta?.['empty-line']).toEqual({ priceSource: 'none', priceWeight: 0, catalogUnitPrice: null, optionId: 'old-empty' })
+        expect(stored.aiLineMeta?.['calculated-line']?.optionId).toBe('old-calculated')
+        expect(stored.aiLineMeta?.['old-total']?.optionId).toBeUndefined()
+        expect(stored.aiLineMeta?.['manual-line']).toBeUndefined()
+        expect(stored.jobberQuoteLines.find(line => line.id === 'empty-line')?.unitPrice).toBe('175.50')
+        expect(stored.jobberQuoteLines.find(line => line.id === 'calculated-line')?.unitPrice).toBe(calculateQuoteOptionTotals(stored.options, DEFAULT_PRICING_SETTINGS)['old-calculated'].subtotal.toFixed(2))
+        expect(stored.jobberQuoteLines.at(-1)?.unitPrice).toBe(main.areaBreakdown.finalSubtotal.sub(includeManual ? '100' : '0').toFixed(2))
+      }
     } finally { await mounted.cleanup(); globalThis.fetch = originalFetch }
   })
 
