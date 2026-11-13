@@ -16,6 +16,7 @@ export interface QuoteFormSavePayloadInput {
   aiReviewConfirmed?: boolean
   settings: PricingSettings
   initialQuoteId?: string
+  replaceExistingQuoteId?: string
   initialQuoteVersion?: number
   syncJobber?: boolean
   customerName: string
@@ -77,7 +78,7 @@ export function calculateJobberSyncPreview({ pbcSubtotal, jobberQuoteLines }: Jo
     jobberPublicLineTotal,
     optionalLineTotal,
     withOptionalTotal: jobberPublicLineTotal.add(optionalLineTotal),
-    difference: pbcSubtotalDecimal.sub(jobberPublicLineTotal),
+    difference: pbcSubtotalDecimal.toDecimalPlaces(2).sub(jobberPublicLineTotal.toDecimalPlaces(2)),
   }
 }
 
@@ -218,5 +219,5 @@ export async function saveQuoteFormPayload(input: QuoteFormSavePayloadInput) {
         expectedVersion: input.initialQuoteVersion,
         syncJobber: input.syncJobber ?? false,
       })
-    : createQuote({ ...payload, syncJobber: input.syncJobber ?? false })
+    : createQuote({ ...payload, replaceExistingQuoteId: input.replaceExistingQuoteId, syncJobber: input.syncJobber ?? false })
 }

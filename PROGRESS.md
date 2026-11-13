@@ -5,6 +5,18 @@
 
 ---
 
+## [구현 2026-11-12] 견적 저장·Jobber 동기화 보완 — 로컬 커밋, push·배포 전
+
+- **범위:** [구현 계획](docs/superpowers/plans/2026-11-12-quote-jobber-hardening.md)의 Phases 1, 2A, 2B/3, 2B UI, 4A, 4B. Claude Code 팀장의 확정 계획을 Orca Codex implementer 워커가 순차 구현했다.
+- **Phase 1:** Jobber 번호는 정확히 일치할 때만 불러오며, 이미 저장된 견적을 덮어쓰려면 Replace saved quote 확인이 필요하다. `.5` 계산과 저장 전 숫자·필수 이름 검증을 보완했다.
+- **Phase 2A:** Save & Sync 전에 추가·수정·삭제 라인과 합계를 확인한다. Job에서 불러온 견적은 앱 저장만 허용하며 Jobber 동기화는 비활성화한다.
+- **Phases 2B/3, 2B UI:** 동기화 실패 원인과 다음 행동을 안내하고, 진행 상태를 자동 조회한다. 동기화가 시작되지 않은 저장에는 안내를, 목록에는 Sync issue 태그를 표시한다. 전송 전 첫 조회의 401 갱신과 요청 타임아웃을 적용했다.
+- **Phase 4A:** 오래된 견적 버전의 초안 복원에 경고한다. 상세 Refresh가 Job expenses를 함께 갱신하고, 조회 실패 시 이전 비용을 유지한다. Jobber 라인·Job·비용 조회 한도 초과를 알린다.
+- **Phase 4B:** DB 컬럼에 맞는 입력·계산 합계 상한, 읽기 쉬운 검증 오류, 기본 소수 두 자리 입력 제한을 적용했다. 기존 초안의 추가 소수 자릿수는 줄여 편집할 수 있다.
+- **상태:** 2026-11-13 최종 상태에서 팀장의 typecheck·lint·test:run(184 files passed / 2,893 tests passed, 3 files / 19 tests skipped)·production build 검증이 통과했다. 시각 검증은 컴파일된 CSS로 새 대화상자·배너·목록 태그를 1280px·375px에서 정적으로 재현한 범위이며, 인증된 앱의 브라우저 동작과 실제 Jobber 호출은 검증하지 않았다. `quote-jobber-sync-risk` 브랜치에 로컬 커밋한 상태로 push·배포하지 않았으며 DB 마이그레이션과 새 의존성은 없다.
+
+---
+
 ## [구현 2026-11-12] AI Optional 항목 분리 — 견적 폼 B1–B4
 
 - **Model:** Claude Code 팀장의 확정 계획을 Orca Codex implementer 워커가 구현·검증했다. 워커 터미널의 Codex 상태 줄 관측값: **GPT-6.1-Sol, effort xhigh**.

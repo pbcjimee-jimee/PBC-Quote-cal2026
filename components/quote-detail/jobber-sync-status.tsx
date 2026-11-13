@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState, useTransition } from 'react'
+import { useRouter } from 'next/navigation'
 import {
   checkJobberQuoteSync,
   getJobberSyncState,
@@ -14,6 +15,7 @@ export interface JobberSyncStatusProps {
   legacyFailed?: boolean
   jobberEnabled?: boolean
   jobberNotice?: string
+  saveNotice?: string
 }
 
 type LookupState =
@@ -32,6 +34,7 @@ function statusMessage(sync: SyncState): string {
   if (!sync.isCurrentVersion) {
     return 'An earlier sync is blocking this quote. It will not be treated as this quote’s successful or retryable sync.'
   }
+  if (sync.detailMessage) return sync.detailMessage
   if (sync.failureCode === 'line_kind_mismatch') {
     return 'Nothing was sent to Jobber. Please align the priced/text types in Jobber and this quote before retrying.'
   }
@@ -69,7 +72,8 @@ export function JobberSyncStatus({
   return <JobberSyncStatusScope key={props.quoteId} {...props} />
 }
 
-function JobberSyncStatusScope({ quoteId, legacyFailed = false }: JobberSyncStatusProps) {
+function JobberSyncStatusScope({ quoteId, legacyFailed = false, saveNotice }: JobberSyncStatusProps) {
+  const { refresh } = useRouter()
   const [lookup, setLookup] = useState<LookupState>({ status: 'loading', quoteId })
   const [actionFailure, setActionFailure] = useState<{ quoteId: string; message: string } | null>(null)
   const [isPending, startTransition] = useTransition()
@@ -77,22 +81,30 @@ function JobberSyncStatusScope({ quoteId, legacyFailed = false }: JobberSyncStat
   const [recovered, setRecovered] = useState(false)
   const scopeVersion = useRef(0)
   const requestVersion = useRef(0)
+  const lastSyncStatus = useRef<SyncState['status'] | undefined>(undefined)
+  const pollCount = useRef(0)
+  const [pollExhausted, setPollExhausted] = useState(false)
 
-  const loadStatus = useCallback(async (targetQuoteId: string, scope: number) => {
+  const loadStatus = useCallback(async (targetQuoteId: string, scope: number, polling = false) => {
     const version = requestVersion.current + 1
     requestVersion.current = version
     try {
       const result = await getJobberSyncState(targetQuoteId)
       if (requestVersion.current !== version || scopeVersion.current !== scope) return
-      setLookup(result.ok
-        ? { status: 'ready', quoteId: targetQuoteId, sync: result.data }
-        : { status: 'failure', quoteId: targetQuoteId })
+      if (result.ok) {
+        const wasActive = lastSyncStatus.current === 'queued' || lastSyncStatus.current === 'running'
+        lastSyncStatus.current = result.data?.status
+        setLookup({ status: 'ready', quoteId: targetQuoteId, sync: result.data })
+        if (wasActive && result.data?.status === 'succeeded') refresh()
+      } else if (!polling) {
+        setLookup({ status: 'failure', quoteId: targetQuoteId })
+      }
     } catch {
-      if (requestVersion.current === version && scopeVersion.current === scope) {
+      if (!polling && requestVersion.current === version && scopeVersion.current === scope) {
         setLookup({ status: 'failure', quoteId: targetQuoteId })
       }
     }
-  }, [])
+  }, [refresh])
 
   useEffect(() => {
     const scope = scopeVersion.current + 1
@@ -104,8 +116,34 @@ function JobberSyncStatusScope({ quoteId, legacyFailed = false }: JobberSyncStat
     }
   }, [loadStatus, quoteId])
 
+  const syncStatus = lookup.status === 'ready' ? lookup.sync?.status : undefined
+  const isSyncActive = syncStatus === 'queued' || syncStatus === 'running'
+
+  useEffect(() => {
+    if (!isSyncActive || isPending || reviewOpen || pollExhausted) return
+    const scope = scopeVersion.current
+    let inFlight = false
+    const timer = setInterval(async () => {
+      if (document.visibilityState === 'hidden' || inFlight || pollCount.current >= 40) return
+      inFlight = true
+      pollCount.current += 1
+      await loadStatus(quoteId, scope, true)
+      inFlight = false
+      if (scopeVersion.current === scope && pollCount.current >= 40) {
+        clearInterval(timer)
+        setPollExhausted(true)
+      }
+    }, 3000)
+    return () => {
+      clearInterval(timer)
+    }
+  }, [isSyncActive, isPending, reviewOpen, pollExhausted, loadStatus, quoteId])
+
   function runAction(action: () => Promise<ClientActionResult>) {
     setActionFailure(null)
+    requestVersion.current += 1
+    pollCount.current = 0
+    setPollExhausted(false)
     const actionQuoteId = quoteId
     const actionScope = scopeVersion.current
     startTransition(async () => {
@@ -165,6 +203,7 @@ function JobberSyncStatusScope({ quoteId, legacyFailed = false }: JobberSyncStat
       <div className={alertClass(sync, actionError !== null)} role={actionError ? 'alert' : 'status'} aria-live="polite">
         <span>
           <b>Jobber sync</b> — {statusMessage(sync)}
+          {isSyncActive && pollExhausted ? ' Still waiting for Jobber. Use Retry sync or Check Jobber.' : ''}
           {actionError ? ` ${actionError}` : ''}
         </span>
         {sync.canRetry ? (
@@ -192,6 +231,7 @@ function JobberSyncStatusScope({ quoteId, legacyFailed = false }: JobberSyncStat
   }
 
   return <>
+    {saveNotice ? <div className="pbc-alert pbc-alert--warning" role="alert">{saveNotice}</div> : null}
     {!recovered ? renderStatus() : null}
     <JobberSyncRecovery
       quoteId={quoteId}

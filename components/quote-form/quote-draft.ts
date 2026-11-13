@@ -75,6 +75,7 @@ export interface QuoteDraftReadableStorage {
 }
 
 export interface QuoteFormDraft {
+  baseQuoteVersion?: number | null
   aiDraftRunId?: string | null
   aiLineMeta?: Record<string, { priceSource: AiPriceSource; priceWeight: number; catalogUnitPrice: string | null; optionId?: string }>
   version: number
@@ -110,6 +111,7 @@ export function getQuoteDraftStorageKey(ownerId: string, quoteId?: string): stri
 export function createEmptyQuoteFormDraft(): QuoteFormDraft {
   return {
     version: QUOTE_DRAFT_VERSION,
+    baseQuoteVersion: null,
     aiDraftRunId: null,
     aiLineMeta: {},
     customerName: '',
@@ -385,13 +387,14 @@ function withoutOptionExpansion(option: QuoteOptionItem): Omit<QuoteOptionItem, 
 }
 
 export function getComparableQuoteDraftValue(draft: QuoteFormDraft): string {
-  return JSON.stringify({ ...draft, version: QUOTE_DRAFT_VERSION, updatedAt: '', options: draft.options.map(withoutOptionExpansion) })
+  return JSON.stringify({ ...draft, baseQuoteVersion: null, version: QUOTE_DRAFT_VERSION, updatedAt: '', options: draft.options.map(withoutOptionExpansion) })
 }
 
 export function sanitizeQuoteFormDraftForStorage(draft: QuoteFormDraft): QuoteFormStorageDraft {
   return {
     ...draft,
     version: QUOTE_DRAFT_VERSION,
+    baseQuoteVersion: draft.baseQuoteVersion ?? null,
     options: draft.options.map(withoutOptionExpansion),
     jobberQuoteDraft: draft.jobberQuoteDraft
       ? sanitizeJobberQuoteDraftForStorage(draft.jobberQuoteDraft)
@@ -615,6 +618,7 @@ export function parseQuoteFormDraft(value: string | null, now: Date = new Date()
 
   return {
     version: QUOTE_DRAFT_VERSION,
+    baseQuoteVersion: readNumber(parsed, 'baseQuoteVersion'),
     aiDraftRunId: aiMetadata.data.aiDraftRunId ?? null,
     aiLineMeta: aiMetadata.data.aiLineMeta ?? {},
     customerName,

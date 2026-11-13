@@ -21,6 +21,8 @@ describe('decimal input validation', () => {
     expect(isCompleteDecimalInputValue('.')).toBe(false)
     expect(isCompleteDecimalInputValue('0.')).toBe(true)
     expect(isCompleteDecimalInputValue('0.5')).toBe(true)
+    expect(isCompleteDecimalInputValue('.5')).toBe(true)
+    expect(isCompleteDecimalInputValue('5.')).toBe(true)
   })
 
   it('builds the proposed value for keypress and paste validation', () => {

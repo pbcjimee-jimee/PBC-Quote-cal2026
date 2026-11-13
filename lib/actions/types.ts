@@ -6,10 +6,11 @@ export type ActionErrorCode =
   | 'FORBIDDEN'
   | 'NOT_FOUND'
   | 'JOBBER_ERROR'
+  | 'EXISTING_QUOTE'
 
 export type ActionResult<T> =
   | { ok: true; data: T }
-  | { ok: false; error: string; code?: ActionErrorCode }
+  | { ok: false; error: string; code?: ActionErrorCode; existingQuoteId?: string }
 
 export function isDevNoAuthMode(): boolean {
   if (process.env.NODE_ENV === 'production') return false

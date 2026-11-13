@@ -28,7 +28,7 @@ import { createProductMaterialItem } from '@/components/quote-form/material-item
 import type { QuoteOptionItem } from '@/components/quote-form/types'
 import type { JobberOptionImportCandidate } from '@/components/quote-form/jobber-option-mapping'
 import { QuoteDetailView } from '@/components/quote-detail/quote-detail-view'
-import { QuoteCard } from '@/components/quote-list/quote-card'
+import { OverviewQuoteRow, QuoteCard } from '@/components/quote-list/quote-card'
 import { MonthFilterSelect } from '@/components/quote-list/month-filter-select'
 import { getMonthFilterHref, groupQuotesByYearMonth, filterQuotesByMonth } from '@/app/(app)/quotes/page'
 import type { QuoteRecord } from '@/lib/dev-data'
@@ -72,6 +72,19 @@ vi.mock('@/lib/actions/products', async () => {
 })
 
 describe('quote form pricing UI', () => {
+  it('shows saved snapshot truncation warnings on the detail page', () => {
+    const warnings = ['Only the first 100 line items were loaded from Jobber.', 'Only the first 5 jobs were loaded from Jobber.', 'Only the first 25 expenses were loaded for Job #42; totals may be incomplete.']
+    const jobberSnapshot = {
+      jobberQuoteId: 'jobber-1', sourceType: 'quote' as const, quoteNumber: '123', createdAt: '2026-11-12',
+      customerName: 'Customer', customerAddress: '', workType: '', areaSqft: null, customerType: '', sourceUrl: '',
+      productsAndServices: [], jobExpenses: [], jobExpensesError: null, loadWarnings: warnings,
+      financialSummary: { quoteTotal: 0, expensesTotal: 0, profit: 0, profitMarginPercent: null },
+    }
+    const markup = renderToStaticMarkup(createElement(QuoteDetailView, { quote: { ...quoteRecord, jobberSnapshot } }))
+    for (const warning of warnings) {
+      expect(markup).toContain(`<p class="pbc-alert pbc-alert--warning" role="status">${warning}</p>`)
+    }
+  })
   const quoteRecord: QuoteRecord = {
     id: 'quote-id-1',
     version: 1,
@@ -599,6 +612,14 @@ describe('quote form pricing UI', () => {
     expect(markup).toContain('<form')
     expect(markup).not.toContain(`/quotes/${quoteRecord.id}/duplicate`)
     expect(markup).toContain('Delete')
+  })
+
+  it.each([null, 'Jobber needs attention', ''])('shows a visible Sync issue tag only for a non-null error: %s', jobberSyncError => {
+    const markup = renderToStaticMarkup(createElement(OverviewQuoteRow, { quote: { ...quoteRecord, jobberSyncError } }))
+    expect(markup.includes('Sync issue')).toBe(jobberSyncError !== null)
+    expect(markup).toContain('Exterior')
+    if (jobberSyncError !== null) expect(markup).toContain('class="pbc-tag pbc-tag--warning">Sync issue</span>')
+    if (jobberSyncError) expect(markup).not.toContain(jobberSyncError)
   })
 
   it('uses an app confirmation dialog before deleting a quote', () => {
@@ -1188,6 +1209,22 @@ describe('quote form pricing UI', () => {
     expect(markup).toContain('Clear local drafts')
   })
 
+  it.each([
+    ['4321.428571', '4321.43', '0.00'],
+    ['4321.431', '4321.43', '0.00'],
+    ['4321.428571', '4321.42', '0.01'],
+    ['4321.428571', '4321.44', '-0.01'],
+    ['4321.425', '4321.424', '0.01'],
+  ])('compares displayed cents in the sync preview: %s minus %s = %s', (pbcSubtotal, jobberTotal, difference) => {
+    const preview = calculateJobberSyncPreview({
+      pbcSubtotal, jobberQuoteLines: [{ kind: 'line_item', quantity: '1', unitPrice: jobberTotal }],
+    })
+    expect(preview.pbcSubtotal.toString()).toBe(pbcSubtotal)
+    expect(preview.jobberPublicLineTotal.toString()).toBe(jobberTotal)
+    expect(preview.difference.toString()).toBe(new Decimal(difference).toString())
+    if (difference === '0.00') expect(preview.difference.isNegative()).toBe(false)
+  })
+
   it('calculates the Jobber sync preview from public lines with Decimal precision', () => {
     const preview = calculateJobberSyncPreview({
       pbcSubtotal: new Decimal('1000.10'),
@@ -1665,7 +1702,7 @@ describe('quote form pricing UI', () => {
   it('routes newly saved quotes directly to their detail page', () => {
     const source = readFileSync('components/quote-form/quote-form.tsx', 'utf8')
 
-    expect(source).toContain('router.push(initialQuote ? quoteTargetPath : `/quotes/${result.data.id}`)')
+    expect(source).toContain('initialQuote ? quoteTargetPath : `/quotes/${result.data.id}`')
     expect(source).not.toContain('router.push(quoteTargetPath)')
   })
 

@@ -37,6 +37,7 @@ export function OverviewQuoteRow({ quote }: { quote: QuoteRecord }) {
       </span>
       <span className="pbc-qrow__scope">
         <span className={`pbc-tag pbc-tag--${tone}`}>{tone === 'ext' ? 'Exterior' : 'Interior'}</span>
+        {quote.jobberSyncError !== null ? <span className="pbc-tag pbc-tag--warning">Sync issue</span> : null}
       </span>
       <span className="pbc-qrow__days">{quote.workingDays} <i>days</i></span>
       <span className="pbc-qrow__date">{savedDate}</span>

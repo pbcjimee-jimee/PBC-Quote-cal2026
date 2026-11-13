@@ -78,6 +78,7 @@ describe('durable Jobber runner transport', () => {
       accessToken: 'access-1',
       graphqlVersion: '2025-04-16',
       journal,
+      refreshAccessToken: expect.any(Function),
     })
   })
 
@@ -145,5 +146,33 @@ describe('durable Jobber runner transport', () => {
     expect(mocks.read).toHaveBeenNthCalledWith(2, 'remote-1', {
       accessToken: 'access-2', graphqlVersion: '2025-04-16',
     })
+  })
+
+  it('wires refresh into the durable client and caches refreshed credentials for later reads', async () => {
+    mocks.sync.mockImplementationOnce(async (_id, _input, options) => {
+      expect(await options.refreshAccessToken()).toBe('access-2')
+      return { createdLineItemIds: [], editedLineItemIds: [], deletedLineItemIds: [], syncedLineItems: [], expectedLineItems: [] }
+    })
+    const transport = createDurableJobberTransport()
+    await transport.sync('remote-1', input, { beforeMutation: vi.fn(), afterMutation: vi.fn() })
+    await transport.read('remote-1')
+    expect(mocks.refreshToken).toHaveBeenCalledExactlyOnceWith('refresh-1', expect.any(Object), 'owner-1')
+    expect(mocks.read).toHaveBeenCalledWith('remote-1', { accessToken: 'access-2', graphqlVersion: '2025-04-16' })
+    expect(mocks.getToken).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not offer refresh for a configured static access token', async () => {
+    mocks.getToken.mockResolvedValueOnce(null)
+    mocks.getConfig.mockReturnValueOnce({ graphqlVersion: '2025-04-16', accessToken: 'static' })
+    await createDurableJobberTransport().sync('remote-1', input, { beforeMutation: vi.fn(), afterMutation: vi.fn() })
+    expect(mocks.sync.mock.calls[0][2]).not.toHaveProperty('refreshAccessToken')
+  })
+
+  it.each(['not_connected', 'not_configured'])('throws a typed connection error for %s', async (reason) => {
+    if (reason === 'not_connected') mocks.getToken.mockResolvedValueOnce(null)
+    else mocks.getMissingKeys.mockReturnValueOnce(['missing'])
+    await expect(createDurableJobberTransport().sync('remote-1', input, { beforeMutation: vi.fn(), afterMutation: vi.fn() }))
+      .rejects.toMatchObject({ name: 'JobberNotConnectedError' })
+    expect(mocks.sync).not.toHaveBeenCalled()
   })
 })

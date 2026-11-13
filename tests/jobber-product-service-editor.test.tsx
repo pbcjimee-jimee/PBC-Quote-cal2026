@@ -97,9 +97,10 @@ describe('JobberProductServiceEditor', () => {
     expect(selectedRow).not.toContain('aria-label="Edit Access notes"')
   })
 
-  it('adds stable public line and field error keys to every rendered editor field', () => {
+  it.each([undefined, 'line-1', 'text-1'])('adds stable error keys on desktop and the controlled mobile editor (%s)', editingLineId => {
     const markup = renderToStaticMarkup(createElement(JobberProductServiceEditor, {
       value: lines,
+      editingLineId,
       onChange: () => undefined,
     }))
 

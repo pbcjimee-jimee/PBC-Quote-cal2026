@@ -1,4 +1,4 @@
-import type { JobberCustomField, JobberExpense, JobberExpenseUser, JobberJobDetail, JobberQuote, JobberQuoteAddress } from './client'
+import type { JobberCustomField, JobberExpense, JobberExpenseUser, JobberJob, JobberJobDetail, JobberQuote, JobberQuoteAddress, JobberReadConnection } from './client'
 import { calculateFinancialSummary } from './financial-summary'
 import type { JobberQuoteFinancialSummary } from './financial-summary'
 
@@ -18,6 +18,7 @@ export interface JobberQuoteDraft {
   productsAndServices: JobberQuoteDraftLineItem[]
   jobExpenses: JobberQuoteDraftJobExpenses[]
   jobExpensesError: string | null
+  loadWarnings?: string[]
   financialSummary: JobberQuoteFinancialSummary
 }
 
@@ -265,7 +266,20 @@ function mapExpense(expense: JobberExpense): JobberQuoteDraftExpense {
   }
 }
 
+function getLoadWarnings(lineItems: JobberQuote['lineItems'], jobs?: JobberReadConnection<JobberJob> | null): string[] {
+  const warnings: string[] = []
+  if (lineItems.pageInfo?.hasNextPage) warnings.push('Only the first 100 line items were loaded from Jobber.')
+  if (jobs?.pageInfo?.hasNextPage) warnings.push('Only the first 5 jobs were loaded from Jobber.')
+  for (const job of jobs?.nodes ?? []) {
+    if (job.expenses.pageInfo?.hasNextPage) {
+      warnings.push(`Only the first 25 expenses were loaded for Job #${job.jobNumber}; totals may be incomplete.`)
+    }
+  }
+  return warnings
+}
+
 export function mapJobberQuoteToDraft(quote: JobberQuote): JobberQuoteDraft {
+  const loadWarnings = getLoadWarnings(quote.lineItems, quote.jobs)
   const customFields = collectCustomFields(quote)
   const quoteText = buildQuoteText(quote)
   const jobType = getJobType(customFields)
@@ -293,6 +307,7 @@ export function mapJobberQuoteToDraft(quote: JobberQuote): JobberQuoteDraft {
     productsAndServices,
     jobExpenses,
     jobExpensesError: null,
+    ...(loadWarnings.length ? { loadWarnings } : {}),
     financialSummary: calculateFinancialSummary(productsAndServices, jobExpenses),
   }
 }
@@ -329,6 +344,7 @@ function buildJobText(job: JobberJobDetail): string {
 }
 
 export function mapJobberJobToDraft(job: JobberJobDetail): JobberQuoteDraft {
+  const loadWarnings = getLoadWarnings(job.lineItems, { nodes: [job] })
   const customFields = collectJobCustomFields(job)
   const jobText = buildJobText(job)
   const jobType = getJobType(customFields)
@@ -364,6 +380,7 @@ export function mapJobberJobToDraft(job: JobberJobDetail): JobberQuoteDraft {
     productsAndServices,
     jobExpenses,
     jobExpensesError: null,
+    ...(loadWarnings.length ? { loadWarnings } : {}),
     financialSummary: calculateFinancialSummary(productsAndServices, jobExpenses, job.total),
   }
 }

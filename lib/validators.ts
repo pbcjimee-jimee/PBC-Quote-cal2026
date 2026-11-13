@@ -9,6 +9,13 @@ const pricingMarginSchema = z.number()
   .min(0, { message: PRICING_MARGIN_MIN_MESSAGE })
   .lt(1, { message: PRICING_MARGIN_MAX_MESSAGE })
 
+const workingDaysSchema = z.number({ error: 'Enter valid working days.' })
+  .nonnegative('Working days must be 0 or more.')
+  .max(999.99, 'Working days must be 999.99 or less.')
+const labourPerDaySchema = z.number({ error: 'Enter valid labour per day.' })
+  .nonnegative('Labour per day must be 0 or more.')
+  .max(999.99, 'Labour per day must be 999.99 or less.')
+
 export const jobberQuoteSnapshotSchema = z.object({
   jobberQuoteId: z.string(),
   sourceType: z.enum(['quote', 'job']),
@@ -52,6 +59,7 @@ export const jobberQuoteSnapshotSchema = z.object({
     })),
   })),
   jobExpensesError: z.string().nullable(),
+  loadWarnings: z.array(z.string().max(200)).max(8).optional(),
   financialSummary: z.object({
     quoteTotal: z.number(),
     expensesTotal: z.number(),
@@ -74,13 +82,16 @@ const quoteItemSchema = z.object({
   timberRole: z.enum(['none', 'shared', 'finish']).optional(),
   sourceItemId: z.string().min(1).max(100).optional(),
   productId: z.string().uuid().optional(),
-  productNameSnapshot: z.string().min(1),
-  memo: z.string().max(4000).optional(),
-  marketPriceSnapshot: z.number().nonnegative(),
-  actualPriceSnapshot: z.number().nonnegative(),
-  quantity: z.number().positive(),
-  workingDays: z.number().nonnegative().optional(),
-  labourPerDay: z.number().nonnegative().optional(),
+  productNameSnapshot: z.string({ error: 'Enter a material name.' }).min(1, 'Enter a material name.'),
+  memo: z.string().max(4000, 'Material memo must be 4000 characters or fewer.').optional(),
+  marketPriceSnapshot: z.number({ error: 'Enter a valid market price.' })
+    .nonnegative('Market price must be 0 or more.').max(99999999.99, 'Market price must be 99,999,999.99 or less.'),
+  actualPriceSnapshot: z.number({ error: 'Enter a valid actual price.' })
+    .nonnegative('Actual price must be 0 or more.').max(99999999.99, 'Actual price must be 99,999,999.99 or less.'),
+  quantity: z.number({ error: 'Enter a valid quantity.' })
+    .positive('Quantity must be greater than 0.').max(99999999.99, 'Quantity must be 99,999,999.99 or less.'),
+  workingDays: workingDaysSchema.optional(),
+  labourPerDay: labourPerDaySchema.optional(),
   areaId: z.string().min(1).optional(),
   areaNameSnapshot: z.string().min(1).optional(),
   areaScopeSnapshot: z.enum(['interior', 'exterior', 'roof']).optional(),
@@ -88,17 +99,17 @@ const quoteItemSchema = z.object({
   position: z.number().int().nonnegative().default(0),
 })
 
-const quoteOptionSchema = z.object({
-  title: z.string().trim().min(1),
-  selectedMin: z.number().int().min(1).max(5) as z.ZodType<1 | 2 | 3 | 4 | 5>,
-  selectedMax: z.number().int().min(1).max(5) as z.ZodType<1 | 2 | 3 | 4 | 5>,
-  items: z.array(quoteItemSchema).default([]),
-  position: z.number().int().nonnegative().default(0),
+const formulaSelectionSchema = z.object({
+  selectedMin: z.number().int('Choose a formula from 1 to 5.').min(1, 'Choose a formula from 1 to 5.').max(5, 'Choose a formula from 1 to 5.') as z.ZodType<1 | 2 | 3 | 4 | 5>,
+  selectedMax: z.number().int('Choose a formula from 1 to 5.').min(1, 'Choose a formula from 1 to 5.').max(5, 'Choose a formula from 1 to 5.') as z.ZodType<1 | 2 | 3 | 4 | 5>,
 })
 
-const formulaSelectionSchema = z.object({
-  selectedMin: z.number().int().min(1).max(5) as z.ZodType<1 | 2 | 3 | 4 | 5>,
-  selectedMax: z.number().int().min(1).max(5) as z.ZodType<1 | 2 | 3 | 4 | 5>,
+const quoteOptionSchema = z.object({
+  title: z.string().trim().min(1, 'Enter an option title.'),
+  selectedMin: formulaSelectionSchema.shape.selectedMin,
+  selectedMax: formulaSelectionSchema.shape.selectedMax,
+  items: z.array(quoteItemSchema).default([]),
+  position: z.number().int().nonnegative().default(0),
 })
 
 const areaFormulaSelectionsSchema = z.object({
@@ -108,7 +119,7 @@ const areaFormulaSelectionsSchema = z.object({
 })
 
 const quoteMemoSchema = z.object({
-  body: z.string().trim().min(1).max(4000),
+  body: z.string().trim().min(1, 'Enter a memo.').max(4000, 'Memo must be 4000 characters or fewer.'),
   position: z.number().int().nonnegative().default(0),
 })
 
@@ -123,11 +134,14 @@ const jobberSnapshotChangeSummaryItemSchema = z.object({
 
 export const jobberQuoteLineSchema = z.object({
   kind: z.enum(['line_item', 'text']),
-  name: z.string().trim().min(1).max(200),
-  description: z.string().trim().max(PUBLIC_LINE_DESCRIPTION_MAX_LENGTH).optional(),
-  quantity: z.number().nonnegative().optional(),
-  unitPrice: z.number().finite().min(-99999999.99).max(99999999.99).optional(),
-  totalPrice: z.number().finite().min(-99999999.99).max(99999999.99).optional(),
+  name: z.string({ error: 'Enter a line name.' }).trim().min(1, 'Enter a line name.').max(200, 'Line name must be 200 characters or fewer.'),
+  description: z.string().trim().max(PUBLIC_LINE_DESCRIPTION_MAX_LENGTH, 'Line description must be 4000 characters or fewer.').optional(),
+  quantity: z.number({ error: 'Enter a valid quantity.' }).nonnegative('Quantity must be 0 or more.')
+    .max(99999999.99, 'Quantity must be 99,999,999.99 or less.').optional(),
+  unitPrice: z.number({ error: 'Enter a valid unit price.' }).finite('Enter a valid unit price.')
+    .min(-99999999.99, 'Unit price must be -99,999,999.99 or more.').max(99999999.99, 'Unit price must be 99,999,999.99 or less.').optional(),
+  totalPrice: z.number({ error: 'Enter a valid line total.' }).finite('Enter a valid line total.')
+    .min(-99999999.99, 'Line total must be -99,999,999.99 or more.').max(99999999.99, 'Line total must be 99,999,999.99 or less.').optional(),
   optional: z.boolean().nullable().optional(),
   recommended: z.boolean().nullable().optional(),
   selected: z.boolean().nullable().optional(),
@@ -146,7 +160,7 @@ export const jobberQuoteLineSchema = z.object({
     context.addIssue({
       code: 'custom',
       path: ['quantity'],
-      message: 'Line item quantity is required',
+      message: 'Enter a line quantity.',
     })
   }
 
@@ -154,7 +168,7 @@ export const jobberQuoteLineSchema = z.object({
     context.addIssue({
       code: 'custom',
       path: ['unitPrice'],
-      message: 'Line item unit price is required',
+      message: 'Enter a line unit price.',
     })
   }
 })
@@ -177,6 +191,7 @@ export const paintComparisonSchema = z.object({
 })
 
 export const quoteSchema = z.object({
+  replaceExistingQuoteId: z.string().trim().min(1).max(100).optional(),
   aiDraftRunId: z.string().uuid().optional(),
   aiReviewConfirmed: z.boolean().optional(),
   paintComparisons: z.array(paintComparisonSchema).max(1).default([]),
@@ -192,14 +207,18 @@ export const quoteSchema = z.object({
   jobberSaveMode: jobberSaveModeSchema.optional(),
   jobberQuoteLines: z.array(jobberQuoteLineSchema).default([]),
   deletedJobberLineItemIds: z.array(z.string().trim().min(1)).default([]),
-  areaSqft: z.number().int().nonnegative().optional(),
+  areaSqft: z.number({ error: 'Enter a valid area.' }).int('Area must be a whole number.').nonnegative('Area must be 0 or more.').optional(),
   workType: z.string().optional(),
-  workingDays: z.number().nonnegative(),
-  labourPerDay: z.number().nonnegative(),
-  materialMarket: z.number().nonnegative(),
-  materialActual: z.number().nonnegative(),
-  selectedMin: z.number().int().min(1).max(5) as z.ZodType<1 | 2 | 3 | 4 | 5>,
-  selectedMax: z.number().int().min(1).max(5) as z.ZodType<1 | 2 | 3 | 4 | 5>,
+  workingDays: z.number({ error: 'Enter valid total working days.' })
+    .nonnegative('Total working days must be 0 or more.').max(999.99, 'Total working days must be 999.99 or less.'),
+  labourPerDay: z.number({ error: 'Enter valid total labour days.' })
+    .nonnegative('Total labour days must be 0 or more.').max(999.99, 'Total labour days must be 999.99 or less.'),
+  materialMarket: z.number({ error: 'Enter a valid material market total.' })
+    .nonnegative('Material market total must be 0 or more.').max(99999999.99, 'Material market total must be 99,999,999.99 or less.'),
+  materialActual: z.number({ error: 'Enter a valid material actual total.' })
+    .nonnegative('Material actual total must be 0 or more.').max(99999999.99, 'Material actual total must be 99,999,999.99 or less.'),
+  selectedMin: formulaSelectionSchema.shape.selectedMin,
+  selectedMax: formulaSelectionSchema.shape.selectedMax,
   areaFormulaSelections: areaFormulaSelectionsSchema.optional(),
   items: z.array(quoteItemSchema),
   options: z.array(quoteOptionSchema).default([]),
@@ -233,6 +252,12 @@ export const quoteSchema = z.object({
 export type QuoteInput = z.infer<typeof quoteSchema>
 export type JobberSaveModeInput = z.infer<typeof jobberSaveModeSchema>
 export type JobberQuoteLineInput = z.infer<typeof jobberQuoteLineSchema>
+
+export function formatQuoteValidationError(error: z.ZodError): string {
+  const message = error.issues[0]?.message ?? 'Enter valid quote values.'
+  const remaining = error.issues.length - 1
+  return `Check the quote values: ${message}${remaining > 0 ? ` (+${remaining} more)` : ''}`
+}
 
 export const quoteLineTemplateItemSchema = z.object({
   kind: z.enum(['line_item', 'text']),

@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, useTransition } from 'react'
+import { findSavedQuoteForJobberQuote } from '@/lib/actions/quotes'
 import { useRouter } from 'next/navigation'
 import { decimalFromInput } from '@/lib/quote-labour'
 import type { PricingSettings } from '@/lib/calculator'
@@ -60,6 +61,8 @@ import {
   mapQuoteOptionsToState,
 } from './quote-record-mappers'
 import { calculateJobberSyncPreview, saveQuoteFormPayload, type QuoteFormSavePayloadInput } from './quote-save-payload'
+import { buildJobberSyncPlan } from './jobber-sync-plan'
+import { JobberSyncConfirmDialog } from './jobber-sync-confirm-dialog'
 import type { AreaRecord } from '@/lib/areas/types'
 import { AREA_SCOPE_SORT_ORDER, AREA_SCOPES, AREA_SCOPE_LABELS } from '@/lib/areas/constants'
 import type {
@@ -96,6 +99,7 @@ type JobberLookupType = 'quote' | 'job'
 type QuoteSaveAction = 'local' | 'sync'
 
 const QUOTE_MOBILE_ACTIONS_QUERY = '(max-width: 1023.98px)'
+const JOB_SOURCE_SYNC_NOTICE = 'Loaded from a Jobber Job. Jobber sync is available only for quotes loaded as a Quote.'
 
 function subscribeToQuoteActionLayout(onChange: () => void): () => void {
   const media = window.matchMedia?.(QUOTE_MOBILE_ACTIONS_QUERY)
@@ -170,6 +174,7 @@ function isJobberQuoteResponse(value: unknown): value is JobberQuoteResponse {
     Array.isArray(data.jobExpenses) &&
     data.jobExpenses.every(isJobberQuoteDraftJobExpenses) &&
     (data.jobExpensesError === null || typeof data.jobExpensesError === 'string') &&
+    (data.loadWarnings === undefined || (Array.isArray(data.loadWarnings) && data.loadWarnings.every(warning => typeof warning === 'string'))) &&
     isJobberQuoteFinancialSummary(data.financialSummary)
   )
 }
@@ -363,6 +368,9 @@ export function QuoteForm({
   const [formIssues, setFormIssues] = useState<QuoteFormIssue[]>([])
   const formRootRef = useRef<HTMLElement>(null)
   const saveRequestRef = useRef(false)
+  const [syncConfirmationTrigger, setSyncConfirmationTrigger] = useState<HTMLButtonElement | null>(null)
+  const syncTriggerRef = useRef<HTMLButtonElement | null>(null)
+  const [initialLineNames] = useState(() => new Map(initialQuote?.jobberQuoteLines.flatMap(line => line.jobberLineItemId ? [[line.jobberLineItemId, line.name] as const] : [])))
   const knownOptionIdsRef = useRef(new Set(initialQuote?.options.map((option) => option.id) ?? []))
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
@@ -399,6 +407,18 @@ export function QuoteForm({
   const [selectedMax, setSelectedMax] = useState<FormulaNumber>(initialQuote?.selectedMax ?? 1)
   const [areaFormulaSelections, setAreaFormulaSelections] = useState<AreaFormulaSelections>(() => getInitialAreaFormulaSelections(initialQuote))
   const [saveError, setSaveError] = useState<string | null>(null)
+  const [savedJobberQuote, setSavedJobberQuote] = useState<{ id: string; inTrash: boolean; quoteNumber: string } | null>(null)
+  const [replacement, setReplacement] = useState<{ id: string; action: QuoteSaveAction } | null>(null)
+  const replacementTriggerRef = useRef<HTMLElement | null>(null)
+  const replacementCancelRef = useRef<HTMLButtonElement>(null)
+  const replacementOpenRef = useRef<HTMLButtonElement>(null)
+  const replacementConfirmRef = useRef<HTMLButtonElement>(null)
+  useEffect(() => {
+    if (!replacement) return
+    replacementCancelRef.current?.focus?.()
+    const trigger = replacementTriggerRef.current
+    return () => trigger?.focus?.()
+  }, [replacement])
   const [pendingSaveAction, setPendingSaveAction] = useState<QuoteSaveAction | null>(null)
   const [jobberFetchError, setJobberFetchError] = useState<string | null>(null)
   const [copyMaterialsError, setCopyMaterialsError] = useState<string | null>(null)
@@ -485,9 +505,12 @@ export function QuoteForm({
   const draftStorageKey = useMemo(() => getQuoteDraftStorageKey(userId ?? '', initialQuote?.id), [initialQuote?.id, userId])
   const quoteTargetPath = initialQuote ? `/quotes/${initialQuote.id}` : '/quotes'
   const cancelTargetPath = quoteTargetPath
+  const baseQuoteVersion = savedAiQuote?.version ?? initialQuote?.version ?? null
+  const isStaleDraft = Boolean(initialQuote && availableDraft && availableDraft.baseQuoteVersion !== baseQuoteVersion)
 
   const currentDraft = useMemo<QuoteFormDraft>(() => ({
     ...createEmptyQuoteFormDraft(),
+    baseQuoteVersion,
     aiDraftRunId,
     aiLineMeta,
     customerName,
@@ -512,6 +535,7 @@ export function QuoteForm({
     jobberQuoteDraft,
     updatedAt: new Date().toISOString(),
   }), [
+    baseQuoteVersion,
     aiDraftRunId,
     aiLineMeta,
     areaFormulaSelections,
@@ -731,7 +755,13 @@ export function QuoteForm({
     jobberQuoteLines.length > 0
   const hasJobberTarget = jobberQuoteId.trim().length > 0 ||
     deletedJobberLineItemIds.length > 0
-  const canSyncJobberQuote = jobberEnabled && hasJobberTarget
+  const isJobSource = jobberQuoteDraft?.sourceType === 'job'
+  const canSyncJobberQuote = jobberEnabled && hasJobberTarget && !isJobSource
+  const jobberSyncPlan = useMemo(() => {
+    const knownLineNames = new Map(initialLineNames)
+    for (const line of jobberQuoteDraft?.productsAndServices ?? []) knownLineNames.set(line.id, line.name)
+    return buildJobberSyncPlan({ lines: jobberQuoteLines, deletedJobberLineItemIds, knownLineNames })
+  }, [initialLineNames, jobberQuoteDraft, jobberQuoteLines, deletedJobberLineItemIds])
   const jobberSyncPreview = useMemo(() => calculateJobberSyncPreview({
     pbcSubtotal: totals.areaBreakdown.finalSubtotal,
     jobberQuoteLines,
@@ -1029,6 +1059,7 @@ export function QuoteForm({
     const lookup = jobberQuoteLookup.trim()
     setJobberFetchError(null)
     setJobberRefreshPreview(null)
+    setSavedJobberQuote(null)
     if (!lookup) {
       setJobberFetchError(`Enter a Jobber ${jobberLookupType === 'job' ? 'Job' : 'Quote'} number first.`)
       return
@@ -1064,6 +1095,12 @@ export function QuoteForm({
       }
 
       applyJobberDraftToForm(payload.data, lookup)
+      try {
+        const saved = await findSavedQuoteForJobberQuote({ jobberQuoteId: payload.data.jobberQuoteId, quoteNumber: payload.data.quoteNumber })
+        if (saved.ok && saved.data) setSavedJobberQuote({ ...saved.data, quoteNumber: payload.data.quoteNumber })
+      } catch {
+        // Saving checks the identity again if this advisory lookup is unavailable.
+      }
     } catch {
       setJobberFetchError('Unable to fetch Jobber quote.')
     } finally {
@@ -1071,15 +1108,17 @@ export function QuoteForm({
     }
   }
 
-  function saveQuote(action: QuoteSaveAction = 'local') {
-    if (action === 'sync' && !jobberEnabled) return
+  function saveQuote(action: QuoteSaveAction = 'local', replaceExistingQuoteId?: string, syncConfirmed = false) {
+    if (action === 'sync' && !canSyncJobberQuote) return
     if (action === 'sync' && isAiSyncBlocked) return
     if (copyMaterialsRequestRef.current || saveRequestRef.current) return
+    if (!replaceExistingQuoteId && !syncConfirmed) replacementTriggerRef.current = action === 'sync' ? syncTriggerRef.current : document.activeElement instanceof HTMLElement ? document.activeElement : null
 
     const input: QuoteFormSavePayloadInput = {
       aiDraftRunId: aiDraftRunId ?? undefined,
       aiReviewConfirmed: hasAiReview ? aiReviewConfirmed : undefined,
       settings, initialQuoteId: savedAiQuote?.id ?? initialQuote?.id, initialQuoteVersion: savedAiQuote?.version ?? initialQuote?.version,
+      replaceExistingQuoteId,
       syncJobber: action === 'sync', customerName, customerAddress, jobberQuoteId, jobberQuoteLookup,
       jobberQuoteDraft, jobberSnapshotRefreshedAt: jobberRefreshMetadata?.refreshedAt ?? null,
       jobberSnapshotChangeStatus: jobberRefreshMetadata?.status, jobberSnapshotChangeSummary: jobberRefreshMetadata?.summary,
@@ -1093,9 +1132,12 @@ export function QuoteForm({
       setMobileState((current) => revealQuoteUiTarget(current, issues[0]))
       return
     }
-    saveRequestRef.current = true
-
     setSaveError(null)
+    if (action === 'sync' && !syncConfirmed && !replaceExistingQuoteId) {
+      setSyncConfirmationTrigger(syncTriggerRef.current)
+      return
+    }
+    saveRequestRef.current = true
     setPendingSaveAction(action)
     startTransition(async () => {
       try {
@@ -1113,8 +1155,14 @@ export function QuoteForm({
           }
           clearDraft()
           isNavigatingRef.current = true
-          router.push(initialQuote ? quoteTargetPath : `/quotes/${result.data.id}`)
+          router.push(action === 'sync' && result.data.syncStarted === false
+            ? `/quotes/${result.data.id}?sync=not-started`
+            : initialQuote ? quoteTargetPath : `/quotes/${result.data.id}`)
         } else {
+          if (!initialQuote && result.code === 'EXISTING_QUOTE' && result.existingQuoteId) {
+            setReplacement({ id: result.existingQuoteId, action })
+            return
+          }
           setSaveError(result.error)
           setMobileState((current) => revealQuoteUiTarget(current, { section: 'review', field: 'summary' }))
         }
@@ -1177,9 +1225,9 @@ export function QuoteForm({
             </button>
             <button
               type="button"
-              onClick={() => saveQuote('sync')}
+              onClick={event => { syncTriggerRef.current = event.currentTarget; saveQuote('sync') }}
               disabled={isSaveBlocked || !canSyncJobberQuote || isAiSyncBlocked}
-              title={requiresOwnerReview ? 'AI draft waiting for owner review.' : isAiSyncBlocked ? 'Confirm the AI draft review before syncing to Jobber.' : !jobberEnabled ? jobberNotice : canSyncJobberQuote ? 'Save app changes and update Jobber' : 'Fetch a Jobber quote before syncing'}
+              title={isJobSource ? JOB_SOURCE_SYNC_NOTICE : requiresOwnerReview ? 'AI draft waiting for owner review.' : isAiSyncBlocked ? 'Confirm the AI draft review before syncing to Jobber.' : !jobberEnabled ? jobberNotice : canSyncJobberQuote ? 'Save app changes and update Jobber' : 'Fetch a Jobber quote before syncing'}
               className="pbc-btn pbc-btn--ghost"
             >
               {Icons.refresh({ size: 15 })} {jobberSaveLabel}
@@ -1201,11 +1249,13 @@ export function QuoteForm({
       <QuoteWorkspaceNav activeSection={mobileState.activeSection} onSectionChange={changeWorkspaceSection} issues={formIssues} />
       {formIssues.length ? <p id="quote-field-errors" className="pbc-alert pbc-alert--danger" role="alert">{formIssues.length} field {formIssues.length === 1 ? 'needs' : 'need'} attention. {formIssues[0].message}</p> : null}
       {availableDraft ? (
-        <div className="pbc-alert pbc-alert--warning">
-          <span>Unsaved draft found from {new Date(availableDraft.updatedAt).toLocaleString('en-AU')}.</span>
+        <div className={`pbc-alert pbc-alert--warning${isStaleDraft ? ' pbc-alert--stack' : ''}`}>
+          <span>{isStaleDraft
+            ? `This draft was made from an older version of this quote (${new Date(availableDraft.updatedAt).toLocaleString('en-AU')}). Restoring it replaces newer saved changes when you save, and may remove Jobber lines added since.`
+            : `Unsaved draft found from ${new Date(availableDraft.updatedAt).toLocaleString('en-AU')}.`}</span>
           <span className="pbc-alert__actions">
             <button type="button" onClick={() => restoreDraft(availableDraft)} className="pbc-btn pbc-btn--primary pbc-btn--sm">
-              Restore Draft
+              {isStaleDraft ? 'Restore anyway' : 'Restore Draft'}
             </button>
             <button type="button" onClick={discardStoredDraft} className="pbc-btn pbc-btn--ghost pbc-btn--sm">
               Discard
@@ -1247,6 +1297,19 @@ export function QuoteForm({
             jobberEnabled={jobberEnabled}
             jobberNotice={jobberNotice}
           />
+          {isJobSource ? <p role="status" className="pbc-alert pbc-alert--warning">{JOB_SOURCE_SYNC_NOTICE}</p> : null}
+          {!initialQuote && savedJobberQuote ? (
+            <div role="alert" className="pbc-alert pbc-alert--warning pbc-alert--stack">
+              <span>{savedJobberQuote.inTrash
+                ? 'A quote for this Jobber quote is in Trash. Restore it before saving.'
+                : `A saved quote already exists for Jobber quote ${savedJobberQuote.quoteNumber}. Saving here would replace its materials, options and memos.`}</span>
+              <span className="pbc-alert__actions">
+                <button type="button" className="pbc-btn pbc-btn--ghost pbc-btn--sm" onClick={() => requestNavigation(savedJobberQuote.inTrash ? '/quotes/trash' : `/quotes/${savedJobberQuote.id}`)}>
+                  {savedJobberQuote.inTrash ? 'Open Trash' : 'Open saved quote'}
+                </button>
+              </span>
+            </div>
+          ) : null}
           {aiAvailability.enabled || aiAvailability.reason !== 'not_allowed' ? <AiDraftPanel
             availability={aiAvailability}
             hasActiveKnowledge={hasActiveAiKnowledge}
@@ -1384,10 +1447,41 @@ export function QuoteForm({
         <button type="button" onClick={() => saveQuote('local')} disabled={isSaveBlocked} className="pbc-btn pbc-btn--primary pbc-btn--sm">
           {Icons.check({ size: 14 })} {mobileSaveLabel}
         </button>
-        <button type="button" onClick={() => saveQuote('sync')} disabled={isSaveBlocked || !canSyncJobberQuote || isAiSyncBlocked} title={requiresOwnerReview ? 'AI draft waiting for owner review.' : isAiSyncBlocked ? 'Confirm the AI draft review before syncing to Jobber.' : !jobberEnabled ? jobberNotice : undefined} aria-label={jobberSaveLabel} className="pbc-btn pbc-btn--ghost pbc-btn--sm">
+        <button type="button" onClick={event => { syncTriggerRef.current = event.currentTarget; saveQuote('sync') }} disabled={isSaveBlocked || !canSyncJobberQuote || isAiSyncBlocked} title={isJobSource ? JOB_SOURCE_SYNC_NOTICE : requiresOwnerReview ? 'AI draft waiting for owner review.' : isAiSyncBlocked ? 'Confirm the AI draft review before syncing to Jobber.' : !jobberEnabled ? jobberNotice : undefined} aria-label={jobberSaveLabel} className="pbc-btn pbc-btn--ghost pbc-btn--sm">
           {isPending && pendingSaveAction === 'sync' ? 'Syncing...' : 'Save & Sync'}
         </button>
       </div>
+      {syncConfirmationTrigger ? <JobberSyncConfirmDialog
+        plan={jobberSyncPlan}
+        preview={jobberSyncPreview}
+        isEditMode={Boolean(initialQuote)}
+        returnFocusTo={syncConfirmationTrigger}
+        onCancel={() => setSyncConfirmationTrigger(null)}
+        onConfirm={() => { setSyncConfirmationTrigger(null); saveQuote('sync', undefined, true) }}
+      /> : null}
+      {replacement ? (
+        <div className="pbc-dialogbackdrop" role="presentation">
+          <div role="dialog" aria-modal="true" aria-labelledby="replace-quote-title" aria-describedby="replace-quote-description" className="pbc-dialog"
+            onKeyDown={(event) => {
+              if (event.key === 'Escape') setReplacement(null)
+              if (event.key === 'Tab') {
+                event.preventDefault()
+                const buttons = [replacementCancelRef.current, replacementOpenRef.current, replacementConfirmRef.current]
+                const index = buttons.findIndex(button => button === document.activeElement)
+                buttons[(index + (event.shiftKey ? -1 : 1) + buttons.length) % buttons.length]?.focus?.()
+              }
+            }}
+          >
+            <h2 id="replace-quote-title">Replace the saved quote?</h2>
+            <p id="replace-quote-description">A saved quote already exists for this Jobber quote. Replacing it overwrites its materials, options, public lines and memos with what is on this screen. This cannot be undone.</p>
+            <div className="pbc-dialog__actions">
+              <button ref={replacementCancelRef} type="button" className="pbc-btn pbc-btn--ghost" onClick={() => setReplacement(null)}>Cancel</button>
+              <button ref={replacementOpenRef} type="button" className="pbc-btn pbc-btn--ghost" onClick={() => { setReplacement(null); requestNavigation(`/quotes/${replacement.id}`) }}>Open saved quote</button>
+              <button ref={replacementConfirmRef} type="button" className="pbc-btn pbc-btn--danger" onClick={() => { setReplacement(null); saveQuote(replacement.action, replacement.id) }}>Replace saved quote</button>
+            </div>
+          </div>
+        </div>
+      ) : null}
       {pendingNavigation ? (
         <div className="pbc-dialogbackdrop">
           <div role="dialog" aria-modal="true" aria-labelledby="leave-dialog-title" aria-describedby="leave-dialog-description" className="pbc-dialog">
