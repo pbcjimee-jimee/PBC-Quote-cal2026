@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { revalidatePath } from 'next/cache'
-import { createQuote, deleteQuote, duplicateQuote, getQuote, refreshJobberQuoteSnapshot, retryJobberQuoteSync, updateQuote } from '@/lib/actions/quotes'
+import { createQuote, deleteQuote, duplicateQuote, findSavedQuoteForJobberQuote, getQuote, refreshJobberQuoteSnapshot, retryJobberQuoteSync, updateQuote } from '@/lib/actions/quotes'
 import { createProduct, updateProduct } from '@/lib/actions/products'
 import { resetDevData } from '@/lib/dev-data'
 
@@ -10,6 +10,56 @@ vi.mock('next/cache', () => ({
 vi.mock('server-only', () => ({}))
 
 describe('quote actions', () => {
+  it('reports that dev saves never start a requested sync', async () => {
+    const input = { workingDays: 0, labourPerDay: 0, materialMarket: 0, materialActual: 0, selectedMin: 1, selectedMax: 1, items: [] }
+    const created = await createQuote({ ...input, syncJobber: true })
+    expect(created).toMatchObject({ ok: true, data: { syncStarted: false } })
+    if (!created.ok) throw new Error(created.error)
+    expect(await updateQuote({ ...input, id: created.data.id, syncJobber: true })).toMatchObject({ ok: true, data: { syncStarted: false } })
+    const plain = await updateQuote({ ...input, id: created.data.id })
+    if (!plain.ok) throw new Error(plain.error)
+    expect(plain.data).not.toHaveProperty('syncStarted')
+  })
+
+  it('blocks Job sync in dev create and update while preserving local saves', async () => {
+    const jobberSnapshot = {
+      jobberQuoteId: 'job-123', sourceType: 'job', quoteNumber: '123', createdAt: '2026-11-12T00:00:00Z', customerName: 'Job customer',
+      customerAddress: '12 Paint St', workType: 'Interior', areaSqft: null, customerType: 'Residential', sourceUrl: 'https://secure.getjobber.com/jobs/123',
+      productsAndServices: [], jobExpenses: [], jobExpensesError: null,
+      financialSummary: { quoteTotal: 0, expensesTotal: 0, profit: 0, profitMarginPercent: null },
+    }
+    const input = { jobberQuoteId: 'job-123', jobberSnapshot, workingDays: 0, labourPerDay: 0, materialMarket: 0, materialActual: 0, selectedMin: 1, selectedMax: 1, items: [] }
+    const refusal = { ok: false, code: 'VALIDATION', error: 'Loaded from a Jobber Job. Jobber sync is available only for quotes loaded as a Quote.' }
+    expect(await createQuote({ ...input, syncJobber: true })).toEqual(refusal)
+    const created = await createQuote(input)
+    if (!created.ok) throw new Error(created.error)
+    const id = created.data.id
+    expect(await createQuote({ ...input, jobberSnapshot: undefined, syncJobber: true, replaceExistingQuoteId: id })).toEqual(refusal)
+    expect(await updateQuote({ ...input, id, syncJobber: true })).toEqual(refusal)
+    expect(await updateQuote({ ...input, id, jobberSnapshot: undefined, syncJobber: true })).toEqual(refusal)
+    expect((await updateQuote({ ...input, id, jobberSnapshot: undefined, syncJobber: false })).ok).toBe(true)
+    expect((await createQuote({ ...input, syncJobber: false, replaceExistingQuoteId: id })).ok).toBe(true)
+  })
+
+  it('requires explicit replacement in dev mode and preserves saved data until confirmed', async () => {
+    const input = { customerName: 'Original', jobberQuoteId: 'phase-1-quote', workingDays: 0, labourPerDay: 0, materialMarket: 0, materialActual: 0, selectedMin: 1, selectedMax: 1, items: [], memos: [{ body: 'Keep this memo', position: 0 }] }
+    const created = await createQuote(input)
+    if (!created.ok) throw new Error(created.error)
+    expect(await findSavedQuoteForJobberQuote({ jobberQuoteId: input.jobberQuoteId })).toEqual({ ok: true, data: { id: created.data.id, inTrash: false } })
+    for (const replaceExistingQuoteId of [undefined, 'wrong-id']) {
+      expect(await createQuote({ ...input, customerName: 'Replacement', memos: [], replaceExistingQuoteId })).toMatchObject({ ok: false, code: 'EXISTING_QUOTE', existingQuoteId: created.data.id })
+    }
+    expect(await getQuote(created.data.id)).toMatchObject({ ok: true, data: { customerName: 'Original', version: 1, memos: [expect.objectContaining({ body: 'Keep this memo' })] } })
+    expect(await createQuote({ ...input, customerName: 'Replacement', memos: [], replaceExistingQuoteId: created.data.id })).toEqual({ ok: true, data: { id: created.data.id } })
+    expect(await getQuote(created.data.id)).toMatchObject({ ok: true, data: { customerName: 'Replacement', version: 2, memos: [] } })
+    const duplicate = await duplicateQuote(created.data.id)
+    expect(duplicate.ok).toBe(true)
+    if (duplicate.ok) expect(duplicate.data.id).not.toBe(created.data.id)
+    expect(await deleteQuote(created.data.id, 2)).toMatchObject({ ok: true })
+    expect(await findSavedQuoteForJobberQuote({ jobberQuoteId: input.jobberQuoteId })).toEqual({ ok: true, data: { id: created.data.id, inTrash: true } })
+    expect(await createQuote({ ...input, replaceExistingQuoteId: created.data.id })).toMatchObject({ ok: false, error: expect.stringContaining('Trash') })
+    expect(await findSavedQuoteForJobberQuote({ quoteNumber: 'unsaved' })).toEqual({ ok: true, data: null })
+  })
   it('rejects an AI run in dev no-auth mode instead of saving unverifiable provenance', async () => {
     const input = { workingDays: 0, labourPerDay: 0, materialMarket: 0, materialActual: 0, selectedMin: 1, selectedMax: 1, items: [], aiDraftRunId: '00000000-0000-4000-8000-000000000001' }
     expect(await createQuote(input)).toMatchObject({ ok: false, code: 'VALIDATION' })

@@ -101,7 +101,7 @@
 6. 옵션(add-on) 견적 추가/편집 → 자체 final_total (메인에 합산 안 함)
 7. Internal memos 작성/편집 → `quote_memos`에만 저장, Jobber fetch/write-back 제외
 8. [Save quote] → Server Action → 영속 quote wrapper RPC(`sync_requested=false`) → DB만 저장, 새 견적은 저장 후 `/quotes/{id}`로 이동
-   [Save & Sync to Jobber] → 같은 wrapper RPC(`sync_requested=true`) → quote/version의 불변 operation snapshot enqueue → `after()`가 best-effort로 executor 시작. 실제 Jobber quote id가 없으면 sync 버튼 비활성
+   [Save & Sync to Jobber] → client preflight → 라인 변경·삭제·합계 확인 대화상자 → 같은 wrapper RPC(`sync_requested=true`) → quote/version의 불변 operation snapshot enqueue → `after()`가 best-effort로 executor 시작. Jobber 연결 대상이 없거나 Job에서 불러온 견적이면 sync 버튼 비활성
 9. Quote detail에서 [Refresh from Jobber] → 최신 Jobber snapshot 저장, 마지막 refresh 시간 표시, 이전 snapshot과 다른 경우 변경 요약 알림
 ```
 
@@ -119,7 +119,7 @@
 - read query와 write mutation client를 분리한다.
 - write mutation은 확정된 quote line item update mutation만 allowlist한다.
 - UI/Server Action에서 raw GraphQL 문서를 전달하지 않는다.
-- 일반 저장과 Jobber 동기화 저장은 UI에서 분리한다. Jobber write-back은 사용자가 `Save & Sync to Jobber`를 선택한 경우에만 실행한다.
+- 일반 저장과 Jobber 동기화 저장은 UI에서 분리한다. `Save & Sync to Jobber`는 변경·삭제·합계 확인 후 실행하며, Job에서 불러온 견적은 서버에서도 동기화를 거부한다.
 - local quote 저장과 operation enqueue는 하나의 DB transaction이다. operation은 저장된 customer-visible line/deletion intent만 스냅샷하고 자재·원가·토큰·raw error를 포함하지 않는다.
 - `after()`는 queue가 아니라 실행 kick이다. callback이 유실되어도 queued operation은 DB에 남고 안전한 Retry로 다시 시작할 수 있다.
 - executor는 5분 lease의 단일 claim과 mutation별 `sending`/`applied` journal을 사용한다. 외부 mutation이 시작된 후의 오류·응답 유실·lease 만료는 재전송하지 않고 `reconciliation_required`로 차단한다.

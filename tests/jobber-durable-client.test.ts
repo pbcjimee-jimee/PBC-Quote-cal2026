@@ -2,6 +2,8 @@ import { describe, expect, it, vi } from 'vitest'
 import {
   fetchDurableJobberQuoteLineItems,
   JobberLineKindMismatchError,
+  JobberKnownLineMissingError,
+  JobberDeleteAllLinesError,
   syncJobberQuoteLineItems,
 } from '@/lib/jobber/client'
 import type { JobberSyncMutationStep } from '@/lib/jobber/sync-types'
@@ -38,6 +40,90 @@ function durableOptions(
 }
 
 describe('durable Jobber quote transport', () => {
+  const input = {
+    saveMode: 'priced_line_items' as const, finalTotal: '10', finalTotalIncludesGst: true,
+    lines: [{ kind: 'line_item' as const, name: 'Line', quantity: 1, unitPrice: 10, position: 0 }],
+  }
+  const created = () => new Response(JSON.stringify({ data: {
+    quoteCreateLineItems: { createdLineItems: [{ id: 'created' }], userErrors: [] },
+  } }))
+
+  it('throws a typed delete-all error before starting a mutation', async () => {
+    const fetcher = vi.fn().mockResolvedValue(page([line('only-line')]))
+    const options = durableOptions(fetcher)
+    await expect(syncJobberQuoteLineItems('quote-id', { ...input, lines: [], deletedJobberLineItemIds: ['only-line'] }, options))
+      .rejects.toBeInstanceOf(JobberDeleteAllLinesError)
+    expect(options.journal.beforeMutation).not.toHaveBeenCalled()
+  })
+
+  it('refreshes the initial 401 read once and uses the refreshed token through mutation and readback', async () => {
+    const fetcher = vi.fn()
+      .mockResolvedValueOnce(new Response(null, { status: 401 }))
+      .mockResolvedValueOnce(page([]))
+      .mockResolvedValueOnce(created())
+      .mockResolvedValueOnce(page([line('created')]))
+    const options = durableOptions(fetcher)
+    const refreshAccessToken = vi.fn(async () => {
+      expect(options.journal.beforeMutation).not.toHaveBeenCalled()
+      return 'refreshed'
+    })
+    await expect(syncJobberQuoteLineItems('quote-id', input, { ...options, refreshAccessToken }))
+      .resolves.toMatchObject({ createdLineItemIds: ['created'] })
+    expect(refreshAccessToken).toHaveBeenCalledTimes(1)
+    expect(fetcher.mock.calls.map(([, init]) => init.headers.Authorization))
+      .toEqual(['Bearer token', 'Bearer refreshed', 'Bearer refreshed', 'Bearer refreshed'])
+    expect(options.accessToken).toBe('token')
+  })
+
+  it('does not refresh a second unauthorized preflight read', async () => {
+    const fetcher = vi.fn().mockImplementation(async () => new Response(null, { status: 401 }))
+    const options = durableOptions(fetcher)
+    const refreshAccessToken = vi.fn().mockResolvedValue('refreshed')
+    await expect(syncJobberQuoteLineItems('quote-id', input, { ...options, refreshAccessToken })).rejects.toMatchObject({ status: 401 })
+    expect(fetcher).toHaveBeenCalledTimes(2)
+    expect(refreshAccessToken).toHaveBeenCalledTimes(1)
+    expect(options.journal.beforeMutation).not.toHaveBeenCalled()
+  })
+
+  it.each(['writing', 'readback'])('does not refresh or resend on a 401 during %s after mutation begins', async (phase) => {
+    const fetcher = vi.fn().mockResolvedValueOnce(page([]))
+    if (phase === 'readback') fetcher.mockResolvedValueOnce(created())
+    fetcher.mockResolvedValueOnce(new Response(null, { status: 401 }))
+    const options = durableOptions(fetcher)
+    const refreshAccessToken = vi.fn().mockResolvedValue('refreshed')
+    await expect(syncJobberQuoteLineItems('quote-id', input, { ...options, refreshAccessToken })).rejects.toMatchObject({ status: 401 })
+    expect(refreshAccessToken).not.toHaveBeenCalled()
+    expect(options.journal.beforeMutation).toHaveBeenCalledTimes(1)
+    expect(fetcher).toHaveBeenCalledTimes(phase === 'readback' ? 3 : 2)
+  })
+
+  it.each([undefined, 25])('adds a fresh timeout signal on every query attempt with override %s', async (requestTimeoutMs) => {
+    const timeout = vi.spyOn(AbortSignal, 'timeout')
+    try {
+      const fetcher = vi.fn()
+        .mockResolvedValueOnce(new Response(null, { status: 429 }))
+        .mockResolvedValueOnce(page([]))
+      await fetchDurableJobberQuoteLineItems('quote-id', {
+        ...durableOptions(fetcher), throttleRetryDelayMs: 0, requestTimeoutMs,
+      })
+      expect(timeout.mock.calls).toEqual([[requestTimeoutMs ?? 30_000], [requestTimeoutMs ?? 30_000]])
+      const signals = fetcher.mock.calls.map(([, init]) => init.signal)
+      expect(signals.every((signal) => signal instanceof AbortSignal)).toBe(true)
+      expect(signals[0]).not.toBe(signals[1])
+    } finally { timeout.mockRestore() }
+  })
+
+  it.each([undefined, 25])('uses the mutation timeout without retrying its 429, override %s', async (requestTimeoutMs) => {
+    const timeout = vi.spyOn(AbortSignal, 'timeout')
+    try {
+      const fetcher = vi.fn().mockResolvedValueOnce(page([])).mockResolvedValueOnce(new Response(null, { status: 429 }))
+      await expect(syncJobberQuoteLineItems('quote-id', input, { ...durableOptions(fetcher), requestTimeoutMs }))
+        .rejects.toMatchObject({ status: 429 })
+      expect(timeout.mock.calls).toEqual([[requestTimeoutMs ?? 30_000], [requestTimeoutMs ?? 60_000]])
+      expect(fetcher).toHaveBeenCalledTimes(2)
+    } finally { timeout.mockRestore() }
+  })
+
   it('reads every page before treating the quote line set as complete', async () => {
     const fetcher = vi.fn()
       .mockResolvedValueOnce(page([line('first')], true, 'next-page'))
@@ -154,7 +240,7 @@ describe('durable Jobber quote transport', () => {
       saveMode: 'priced_line_items',
       lines: [{ kind: 'line_item', name: 'Known', jobberLineItemId: 'missing', position: 0 }],
       finalTotal: '0', finalTotalIncludesGst: true,
-    }, options)).rejects.toThrow('missing')
+    }, options)).rejects.toBeInstanceOf(JobberKnownLineMissingError)
     expect(options.journal.beforeMutation).not.toHaveBeenCalled()
   })
 

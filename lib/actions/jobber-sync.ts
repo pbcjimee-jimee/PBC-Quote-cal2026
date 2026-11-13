@@ -38,6 +38,7 @@ export type SyncState = {
   failureCode: string | null
   isCurrentVersion: boolean
   canRetry: boolean
+  detailMessage: string | null
 }
 
 function safeFailureCode(code: string | null): string | null {
@@ -48,10 +49,10 @@ function safeFailureCode(code: string | null): string | null {
 async function readQuoteVersion(
   supabase: Awaited<ReturnType<typeof createClient>>,
   quoteId: string,
-): Promise<{ id: string; version: number }> {
+): Promise<{ id: string; version: number; jobber_sync_error: string | null }> {
   const { data, error } = await supabase
     .from('quotes')
-    .select('id, version')
+    .select('id, version, jobber_sync_error')
     .eq('id', quoteId)
     .is('deleted_at', null)
     .single()
@@ -61,7 +62,7 @@ async function readQuoteVersion(
 
 function toSyncState(
   operation: SyncOperation,
-  quote: { id: string; version: number },
+  quote: { id: string; version: number; jobber_sync_error: string | null },
 ): SyncState {
   const isCurrentVersion = operation.quote_id === quote.id && operation.quote_version === quote.version
   return {
@@ -70,6 +71,9 @@ function toSyncState(
     failureCode: safeFailureCode(operation.failure_code),
     isCurrentVersion,
     canRetry: isCurrentVersion && (operation.status === 'queued' || operation.status === 'retryable'),
+    detailMessage: isCurrentVersion && ['retryable', 'reconciliation_required'].includes(operation.status)
+      ? quote.jobber_sync_error ?? null
+      : null,
   }
 }
 

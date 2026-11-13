@@ -5,11 +5,13 @@ import { isJobberDisabledInPreview, JOBBER_DISABLED_MESSAGE } from '@/lib/jobber
 
 interface QuoteDetailPageProps {
   params: Promise<{ id: string }>
+  searchParams: Promise<{ sync?: string | string[] }>
 }
 
-export default async function QuoteDetailPage({ params }: QuoteDetailPageProps) {
+export default async function QuoteDetailPage({ params, searchParams }: QuoteDetailPageProps) {
   const jobberEnabled = !isJobberDisabledInPreview()
   const { id } = await params
+  const { sync } = await searchParams
   const result = await getQuote(id)
   if (!result.ok) {
     return (
@@ -32,6 +34,7 @@ export default async function QuoteDetailPage({ params }: QuoteDetailPageProps) 
     <QuoteDetailView
       quote={quote}
       jobberEnabled={jobberEnabled}
+      syncNotStarted={sync === 'not-started'}
       jobberNotice={jobberEnabled ? undefined : JOBBER_DISABLED_MESSAGE}
     />
   )

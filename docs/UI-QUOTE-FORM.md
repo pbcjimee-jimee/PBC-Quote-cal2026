@@ -304,12 +304,15 @@ F2  L460 + Labour 30%
       → 실패: inline saveError(red) + pendingSaveAction reset
 
 [Save & Sync to Jobber] 클릭
-  → 실제 Jobber quote id가 있거나 삭제할 기존 Jobber line id가 있을 때만 활성화
+  → Jobber 연결 대상이 있고 Job에서 불러온 견적이 아닐 때만 활성화
+  → client preflight 통과 → Send these changes to Jobber? 대화상자에서 라인 변경·삭제와 합계를 확인
   → createQuote()/updateQuote() Server Action 호출(syncJobber=true)
   → DB wrapper가 quote 저장+version snapshot operation enqueue를 하나의 transaction으로 완료
   → after() best-effort kick이 operation ID를 DB에서 다시 읽어 durable executor 시작
-  → callback 유실·preflight 실패에도 local quote/operation은 유지되며 안전한 Retry로 재시작 가능
+  → callback 유실·executor preflight 실패에도 local quote/operation은 유지되며 안전한 Retry로 재시작 가능
 ```
+
+New Quote 저장 시 같은 Jobber 견적의 저장본이 있으면 `Replace the saved quote?` 확인 후에만 덮어쓴다. 취소하거나 기존 저장본을 열 수 있다.
 
 Quote detail의 `JobberSyncStatus`는 operation을 별도로 조회한다. 현재 quote identity/version의 `queued`/`retryable`에서만 `Retry sync`를 표시하고, `running`/불확 결과는 `Check Jobber`로 read-only 재대조한다. `Check Jobber`는 remote read 실패, 기록과 remote 불일치, 로컬 resolve 실패, authoritative readback 실패를 서로 다른 고정 안전 문구로 안내하며 raw reason/API/DB 오류를 노출하지 않는다. 확인된 `succeeded`만 성공으로 표시하고 나머지는 재전송 차단을 유지한다. 이전 quote의 blocking operation, legacy failed에 durable record가 없는 경우, status/action transport 실패에는 재전송 버튼을 표시하지 않는다. action 경고는 quote identity에 scope되어 다른 quote로 전환되면 표시하지 않는다. 버튼은 action 중 disabled이며 alert content는 작은 폭에서 세로로 stack한다.
 
@@ -326,7 +329,7 @@ Quote detail의 `JobberSyncStatus`는 operation을 별도로 조회한다. 현�
 - "New Quote": 페이지 타이틀
 - 미저장 변경사항 있으면 타이틀 옆에 파란 점 (·)
 - [Save quote]: primary action 버튼. 앱 DB에만 저장.
-- [Save & Sync to Jobber]: secondary action 버튼. fetch/link된 실제 Jobber quote id가 있을 때만 활성화.
+- [Save & Sync to Jobber]: secondary action 버튼. Jobber 연결 대상이 있고 Job에서 불러온 견적이 아닐 때 활성화하며, 전송 전 확인 대화상자를 거친다.
 ## Product & Service catalog import
 
 - Settings > Product & Service tab manages the Jobber `Products and Services Export` CSV format: `Name, Description, Category, Unit Price, Unit Cost, Bookable, Duration Minutes, Quantity Enabled, Minimum Quantity, Maximum Quantity, Taxable, Active`.

@@ -23,6 +23,7 @@ interface QuoteDetailViewProps {
   quote: QuoteRecord
   jobberEnabled?: boolean
   jobberNotice?: string
+  syncNotStarted?: boolean
 }
 
 const DETAIL_PREVIEW_LIMIT = 8
@@ -280,6 +281,7 @@ export function QuoteDetailView({
   quote,
   jobberEnabled = true,
   jobberNotice = 'Jobber is unavailable.',
+  syncNotStarted = false,
 }: QuoteDetailViewProps) {
   const materialTotal = itemMaterialTotal(quote)
   const subtotal = new Decimal(quote.subtotal)
@@ -380,10 +382,11 @@ export function QuoteDetailView({
           <p className="pbc-alert pbc-alert--warning" role="status">{jobberNotice}</p>
         ) : null}
 
-        {jobberEnabled && (quote.jobberQuoteId || quote.jobberSyncStatus === 'failed') ? (
+        {jobberEnabled && (syncNotStarted || quote.jobberQuoteId || quote.jobberSyncStatus === 'failed') ? (
           <JobberSyncStatus
             quoteId={quote.id}
             legacyFailed={quote.jobberSyncStatus === 'failed'}
+            saveNotice={syncNotStarted ? 'Quote saved, but Jobber sync did not start. Check the Jobber sync status below.' : undefined}
           />
         ) : null}
 

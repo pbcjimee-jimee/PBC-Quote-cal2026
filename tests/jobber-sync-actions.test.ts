@@ -33,12 +33,12 @@ const reconciliationMessages = {
   blocked: 'This sync could not be confirmed safely. Nothing was resent. It remains blocked for manual inspection.',
 }
 
-function quoteVersionClient(version = 4) {
+function quoteVersionClient(version = 4, summary: string | null = null) {
   const builder = {
     select: vi.fn(() => builder),
     eq: vi.fn(() => builder),
     is: vi.fn(() => builder),
-    single: vi.fn(async () => ({ data: { id: quoteId, version }, error: null })),
+    single: vi.fn(async () => ({ data: { id: quoteId, version, jobber_sync_error: summary }, error: null })),
   }
   return { client: { from: vi.fn(() => builder), rpc: vi.fn() }, builder }
 }
@@ -101,6 +101,7 @@ describe('Jobber sync status actions', () => {
         failureCode: 'preflight_failed',
         isCurrentVersion: true,
         canRetry: true,
+        detailMessage: null,
       },
     })
   })
@@ -121,6 +122,25 @@ describe('Jobber sync status actions', () => {
         canRetry: false,
       }),
     })
+  })
+
+  it.each([
+    ['retryable', 4, quoteId, true],
+    ['reconciliation_required', 4, quoteId, true],
+    ['queued', 4, quoteId, false],
+    ['running', 4, quoteId, false],
+    ['succeeded', 4, quoteId, false],
+    ['superseded', 4, quoteId, false],
+    ['retryable', 3, quoteId, false],
+    ['reconciliation_required', 3, quoteId, false],
+    ['retryable', 4, 'another-quote', false],
+  ])('shows a summary only for the current failed operation: %s/%s/%s', async (status, version, ownerId, show) => {
+    const summary = 'Nothing was sent to Jobber. Retry the sync.'
+    const { client, builder } = quoteVersionClient(4, summary)
+    mocks.createClient.mockResolvedValueOnce(client)
+    mocks.getOperation.mockResolvedValueOnce(operation({ status, quote_version: version, quote_id: ownerId }))
+    expect(await getJobberSyncState(quoteId)).toMatchObject({ ok: true, data: { detailMessage: show ? summary : null } })
+    expect(builder.select).toHaveBeenCalledWith('id, version, jobber_sync_error')
   })
 
   it('reports success only after an existing uncertain operation is authoritatively confirmed', async () => {

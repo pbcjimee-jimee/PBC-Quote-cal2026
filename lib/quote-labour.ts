@@ -1,7 +1,7 @@
 import Decimal from 'decimal.js'
 
 function isCompleteDecimalText(value: string): boolean {
-  return /^\d+(?:\.\d*)?$/.test(value)
+  return /^(?:\d+\.?\d*|\.\d+)$/.test(value)
 }
 
 export interface LabourLineInput {

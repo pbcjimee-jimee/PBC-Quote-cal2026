@@ -19,6 +19,7 @@ import {
   getSharedJobberConnectionToken,
   getUsableSharedJobberConnectionToken,
   refreshSharedJobberConnectionToken,
+  JobberReconnectRequiredError,
 } from '@/lib/jobber/tokens'
 import { encryptTokenValue } from '@/lib/jobber/token-encryption'
 
@@ -260,8 +261,9 @@ describe('jobber tokens', () => {
       })
     mocks.refreshAccessToken.mockRejectedValueOnce(new Error('Jobber token refresh failed with status 401'))
 
-    await expect(getUsableSharedJobberConnectionToken(config))
-      .rejects.toThrow('Jobber connection expired. Reconnect Jobber from Settings.')
+    const result = getUsableSharedJobberConnectionToken(config)
+    await expect(result).rejects.toBeInstanceOf(JobberReconnectRequiredError)
+    await expect(result).rejects.toThrow('Jobber connection expired. Reconnect Jobber from Settings.')
   })
 
   it.each(['production', 'development', 'test'])('does not consume Jobber refresh tokens without an encryption key in %s', async (nodeEnv) => {

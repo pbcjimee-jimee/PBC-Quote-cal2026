@@ -3,6 +3,7 @@ import {
   clearLocalQuoteDrafts,
   createEmptyQuoteFormDraft,
   getQuoteDraftStorageKey,
+  getComparableQuoteDraftValue,
   hasMeaningfulQuoteDraft,
   isLocalDraftJobberQuoteDraft,
   parseQuoteFormDraft,
@@ -11,6 +12,25 @@ import {
 } from '@/components/quote-form/quote-draft'
 
 describe('quote form draft persistence', () => {
+  it.each([7, null, undefined])('round-trips base quote version %s without changing the draft schema', baseQuoteVersion => {
+    const draft = { ...createEmptyQuoteFormDraft(), baseQuoteVersion, updatedAt: '2026-11-12T00:00:00.000Z' }
+    const stored = sanitizeQuoteFormDraftForStorage(draft)
+    const parsed = parseQuoteFormDraft(JSON.stringify(stored), new Date('2026-11-12T01:00:00.000Z'))
+    expect(stored.version).toBe(3)
+    expect(stored.baseQuoteVersion).toBe(baseQuoteVersion ?? null)
+    expect(parsed?.baseQuoteVersion).toBe(baseQuoteVersion ?? null)
+  })
+
+  it.each([1, 2, 3])('reads pre-existing schema %s drafts without a base version as null', version => {
+    const draft = { ...createEmptyQuoteFormDraft(), version, baseQuoteVersion: undefined, updatedAt: '2026-11-12T00:00:00.000Z' }
+    expect(parseQuoteFormDraft(JSON.stringify(draft), new Date('2026-11-12T01:00:00.000Z'))?.baseQuoteVersion).toBeNull()
+  })
+
+  it('does not treat the base version as an edit or meaningful quote input', () => {
+    const pristine = createEmptyQuoteFormDraft()
+    expect(getComparableQuoteDraftValue({ ...pristine, baseQuoteVersion: 7 })).toBe(getComparableQuoteDraftValue(pristine))
+    expect(hasMeaningfulQuoteDraft({ ...pristine, baseQuoteVersion: 7 })).toBe(false)
+  })
   it.each([undefined, 'option-1'])('loads saved AI metadata with optional optionId %s', optionId => {
     const metadata = { priceSource: 'none' as const, priceWeight: 0, catalogUnitPrice: null, ...(optionId === undefined ? {} : { optionId }) }
     const draft = { ...createEmptyQuoteFormDraft(), aiLineMeta: { 'ai-line': metadata }, updatedAt: '2026-11-12T00:00:00.000Z' }

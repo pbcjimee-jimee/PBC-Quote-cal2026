@@ -18,7 +18,7 @@ export function signedPublicDecimalFromInput(value: Decimal | number | string | 
 function parseSignedDecimal(value: Decimal | number | string | null | undefined): Decimal | null {
   if (value instanceof Decimal) return value.isFinite() ? value : null
   const text = String(value ?? '').trim()
-  if (!/^[+-]?\d+(?:\.\d*)?$/.test(text)) return null
+  if (!/^[+-]?(?:\d+\.?\d*|\.\d+)$/.test(text)) return null
   const parsed = new Decimal(text)
   return parsed.isFinite() ? parsed : null
 }

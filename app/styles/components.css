@@ -811,6 +811,8 @@
 .pbc-tag { font-size: 11px; font-weight: 700; padding: 4px 10px; border-radius: 999px; }
 .pbc-tag--int { background: var(--primary-soft); color: var(--primary); }
 .pbc-tag--ext { background: var(--lo-soft); color: var(--lo); }
+.pbc-tag--warning { background: var(--warning-soft); color: var(--warning); white-space: nowrap; }
+.pbc-qrow__scope:has(.pbc-tag--warning) { display: flex; flex-wrap: wrap; gap: 6px; align-items: flex-start; }
 .pbc-qrow__days { font-size: 13px; font-weight: 700; color: var(--foreground); }
 .pbc-qrow__days i { font-style: normal; font-weight: 500; color: var(--muted-2); font-size: 11px; }
 .pbc-qrow__date { font-size: 12.5px; color: var(--muted); font-weight: 500; }
@@ -1076,6 +1078,8 @@
   .pbc-qhead { display: none; }
   .pbc-qrow { grid-template-columns: 40px minmax(0, 1fr) 116px 24px; grid-row-gap: 8px; }
   .pbc-qrow__scope, .pbc-qrow__days, .pbc-qrow__date { display: none; }
+  .pbc-qrow__scope:has(.pbc-tag--warning) { grid-column: 2 / -2; grid-row: 2; }
+  .pbc-qrow__scope .pbc-tag:not(.pbc-tag--warning) { display: none; }
 }
 
 @media (max-width: 1023.98px) {
@@ -1171,6 +1175,7 @@
   .pbc-monthselect select { width: 100%; min-width: 0; }
   .pbc-qrow { grid-template-columns: 40px minmax(0, 1fr) 24px; padding: 14px 12px; }
   .pbc-qrow__amt { grid-column: 2 / 3; grid-row: 2; text-align: left; }
+  .pbc-qrow__scope:has(.pbc-tag--warning) { grid-row: 3; }
   .pbc-rate { grid-template-columns: auto minmax(0, 1fr); }
   .pbc-rate__money { grid-column: 1 / -1; }
   .pbc-tabs { width: 100%; }

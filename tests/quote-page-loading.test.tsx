@@ -32,6 +32,7 @@ vi.mock('next/link', () => ({
 
 import QuoteNewPage from '@/app/(app)/quotes/new/page'
 import QuoteEditPage from '@/app/(app)/quotes/[id]/edit/page'
+import QuoteDetailPage from '@/app/(app)/quotes/[id]/page'
 
 const savedQuote: QuoteRecord = {
   id: 'saved-quote', version: 1, customerName: 'Saved customer', customerAddress: null,
@@ -72,6 +73,25 @@ describe('quote pages require trustworthy calculation data', () => {
     dom?.cleanup()
     dom = undefined
     vi.unstubAllEnvs()
+  })
+
+  it.each([
+    { sync: 'not-started', disabled: false, expected: true },
+    { sync: undefined, disabled: false, expected: false },
+    { sync: 'started', disabled: false, expected: false },
+    { sync: '', disabled: false, expected: false },
+    { sync: ['not-started', 'started'], disabled: false, expected: false },
+    { sync: 'not-started', disabled: true, expected: false },
+  ])('detail save notice for $sync with Jobber disabled=$disabled', async ({ sync, disabled, expected }) => {
+    vi.stubEnv('VERCEL_ENV', disabled ? 'preview' : 'production')
+    const page = await QuoteDetailPage({
+      params: Promise.resolve({ id: savedQuote.id }), searchParams: Promise.resolve({ sync }),
+    })
+    const html = renderToStaticMarkup(page)
+    const notice = 'Quote saved, but Jobber sync did not start. Check the Jobber sync status below.'
+    expect(html.includes(notice)).toBe(expected)
+    if (expected) expect(html).toContain(`class="pbc-alert pbc-alert--warning" role="alert">${notice}`)
+    expect(mocks.getQuote).toHaveBeenCalledWith(savedQuote.id)
   })
 
   for (const mode of ['new', 'edit'] as const) {

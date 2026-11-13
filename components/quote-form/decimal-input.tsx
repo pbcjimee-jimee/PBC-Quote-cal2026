@@ -14,6 +14,7 @@ interface DecimalInputProps extends Omit<InputHTMLAttributes<HTMLInputElement>, 
   labelClassName?: string
   inputClassName?: string
   warningClassName?: string
+  maxDecimals?: number
 }
 
 const CONTROL_KEYS = new Set([
@@ -37,17 +38,24 @@ export function DecimalInput({
   labelClassName,
   inputClassName,
   warningClassName,
+  maxDecimals = 2,
   ...inputProps
 }: DecimalInputProps) {
   const [warning, setWarning] = useState<string | null>(null)
 
-  function rejectInvalidInput() {
-    setWarning(DECIMAL_INPUT_WARNING)
+  function getInputWarning(nextValue: string): string | null {
+    if (!isDecimalInputValue(nextValue)) return DECIMAL_INPUT_WARNING
+    const nextDecimals = nextValue.split('.')[1]?.length ?? 0
+    const currentDecimals = value.split('.')[1]?.length ?? 0
+    return nextDecimals > maxDecimals && nextDecimals > currentDecimals
+      ? 'Use at most two decimal places.'
+      : null
   }
 
   function changeValue(nextValue: string) {
-    if (!isDecimalInputValue(nextValue)) {
-      rejectInvalidInput()
+    const nextWarning = getInputWarning(nextValue)
+    if (nextWarning) {
+      setWarning(nextWarning)
       return
     }
 
@@ -67,9 +75,10 @@ export function DecimalInput({
       event.currentTarget.selectionStart,
       event.currentTarget.selectionEnd
     )
-    if (!isDecimalInputValue(nextValue)) {
+    const nextWarning = getInputWarning(nextValue)
+    if (nextWarning) {
       event.preventDefault()
-      rejectInvalidInput()
+      setWarning(nextWarning)
     }
   }
 
@@ -84,9 +93,10 @@ export function DecimalInput({
       event.currentTarget.selectionStart,
       event.currentTarget.selectionEnd
     )
-    if (!isDecimalInputValue(nextValue)) {
+    const nextWarning = getInputWarning(nextValue)
+    if (nextWarning) {
       event.preventDefault()
-      rejectInvalidInput()
+      setWarning(nextWarning)
     }
   }
 

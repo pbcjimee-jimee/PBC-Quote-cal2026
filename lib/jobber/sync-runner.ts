@@ -10,6 +10,7 @@ import {
 } from './client'
 import { checkDurableJobberSync } from './sync-reconciliation'
 import { runDurableJobberSync } from './sync-execution'
+import { JobberNotConnectedError } from './sync-failure'
 import {
   createJobberSyncStore,
   parseNullableJobberSyncOperation,
@@ -39,11 +40,11 @@ export function createDurableJobberTransport(): DurableJobberTransport {
     credentialsPromise ??= (async () => {
       const config = getJobberConfig()
       if (getMissingGraphqlConfigKeys(config).length > 0) {
-        throw new Error('Jobber sync is not configured')
+        throw new JobberNotConnectedError('not_configured')
       }
       const token = await getUsableSharedJobberConnectionToken(config)
       const accessToken = token?.accessToken ?? config.accessToken
-      if (!accessToken) throw new Error('Jobber is not connected')
+      if (!accessToken) throw new JobberNotConnectedError('not_connected')
       return {
         config,
         token,
@@ -53,11 +54,33 @@ export function createDurableJobberTransport(): DurableJobberTransport {
     return credentialsPromise
   }
 
+  async function refreshCredentials(credentials: LoadedCredentials): Promise<string> {
+    if (!credentials.token) throw new JobberNotConnectedError('not_connected')
+    const refreshed = await refreshSharedJobberConnectionToken(
+      credentials.token.refreshToken,
+      credentials.config,
+      requireSharedJobberConnectionOwnerId(credentials.token),
+    )
+    credentialsPromise = Promise.resolve({
+      config: credentials.config,
+      token: refreshed,
+      options: {
+        accessToken: refreshed.accessToken,
+        graphqlVersion: credentials.config.graphqlVersion,
+      },
+    })
+    return refreshed.accessToken
+  }
+
   return {
     async sync(quoteId, input, journal) {
       assertJobberEnabled()
-      const { options } = await loadCredentials()
-      return syncJobberQuoteLineItems(quoteId, input, { ...options, journal })
+      const credentials = await loadCredentials()
+      return syncJobberQuoteLineItems(quoteId, input, {
+        ...credentials.options,
+        journal,
+        ...(credentials.token ? { refreshAccessToken: () => refreshCredentials(credentials) } : {}),
+      })
     },
 
     async read(quoteId) {
@@ -69,20 +92,8 @@ export function createDurableJobberTransport(): DurableJobberTransport {
         if (!(error instanceof JobberApiError) || error.status !== 401 || !credentials.token) throw error
       }
 
-      const refreshed = await refreshSharedJobberConnectionToken(
-        credentials.token.refreshToken,
-        credentials.config,
-        requireSharedJobberConnectionOwnerId(credentials.token),
-      )
-      credentialsPromise = Promise.resolve({
-        config: credentials.config,
-        token: refreshed,
-        options: {
-          accessToken: refreshed.accessToken,
-          graphqlVersion: credentials.config.graphqlVersion,
-        },
-      })
-      const current = await credentialsPromise
+      await refreshCredentials(credentials)
+      const current = await loadCredentials()
       return fetchDurableJobberQuoteLineItems(quoteId, current.options)
     },
   }

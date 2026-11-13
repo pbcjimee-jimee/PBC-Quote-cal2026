@@ -1,5 +1,6 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { runDurableJobberSync } from '@/lib/jobber/sync-execution'
+import { JobberApiError, JobberKnownLineMissingError, JobberLineKindMismatchError } from '@/lib/jobber/client'
 import type { DurableJobberTransport, JobberSyncStore, SyncOperation } from '@/lib/jobber/sync-types'
 
 function operation(overrides: Partial<SyncOperation> = {}): SyncOperation {
@@ -38,6 +39,54 @@ function transport(sync: DurableJobberTransport['sync']): DurableJobberTransport
 }
 
 describe('runDurableJobberSync', () => {
+  beforeEach(() => { vi.spyOn(console, 'error').mockImplementation(() => undefined) })
+  afterEach(() => { vi.restoreAllMocks() })
+
+  it('returns a classified preflight summary and logs metadata without line content or raw error text', async () => {
+    const storage = store(operation({ desired_payload: {
+      saveMode: 'priced_line_items', finalTotal: '0', finalTotalIncludesGst: true,
+      lines: [{ kind: 'line_item', name: 'Private line\nname', position: 0, jobberLineItemId: 'private-id' }],
+    } }))
+    const error = new JobberKnownLineMissingError('private-id')
+    const result = await runDurableJobberSync(storage, 'operation-id', transport(async () => { throw error }))
+    expect(result).toMatchObject({ status: 'retryable', detail: 'remote_line_missing', message: expect.stringContaining('"Private line name" no longer exists') })
+    expect(storage.finish).toHaveBeenCalledWith('operation-id', 'claim-token', 'retryable', undefined)
+    expect(console.error).toHaveBeenCalledExactlyOnceWith('[jobber-sync]', {
+      operationId: 'operation-id', phase: 'preflight', detail: 'remote_line_missing', name: 'JobberKnownLineMissingError',
+    })
+    expect(JSON.stringify(vi.mocked(console.error).mock.calls)).not.toMatch(/private-id|Private line|Known Jobber line item|stack/)
+  })
+
+  it('returns the uncertain classified message after a mutation and retains the default failure code', async () => {
+    const storage = store()
+    const result = await runDurableJobberSync(storage, 'operation-id', transport(async (_id, _payload, journal) => {
+      await journal.beforeMutation({ key: 'create:0', kind: 'create', request: { lineItems: [] } })
+      throw new JobberApiError('secret access token', 401)
+    }))
+    expect(result).toMatchObject({ status: 'blocked', detail: 'reconnect_required', message: 'Jobber sync stopped partway and its result is uncertain. Use Check Jobber on this quote before doing anything else.' })
+    expect(storage.finish).toHaveBeenCalledWith('operation-id', 'claim-token', 'reconciliation_required', undefined)
+    expect(console.error).toHaveBeenCalledExactlyOnceWith('[jobber-sync]', {
+      operationId: 'operation-id', phase: 'writing', detail: 'reconnect_required', name: 'JobberApiError', status: 401,
+    })
+  })
+
+  it('preserves the only custom database failure code for a preflight line-kind mismatch', async () => {
+    const storage = store()
+    const result = await runDurableJobberSync(storage, 'operation-id', transport(async () => { throw new JobberLineKindMismatchError('id') }))
+    expect(storage.finish).toHaveBeenCalledWith('operation-id', 'claim-token', 'retryable', 'line_kind_mismatch')
+    expect(result).toMatchObject({ status: 'retryable', detail: 'line_kind_mismatch', message: expect.stringContaining('priced/text types') })
+  })
+
+  it('drops unbounded metadata and logs only once even if failure finalization also throws', async () => {
+    const storage = store()
+    vi.mocked(storage.finish).mockRejectedValue(new Error('secret finish failure'))
+    const result = await runDurableJobberSync(storage, 'operation-id', transport(async () => {
+      throw { name: 'secret-token-' + 'a'.repeat(50), status: 999, statusCode: 200.5, message: 'secret' }
+    }))
+    expect(result).toMatchObject({ status: 'blocked', detail: 'unknown', message: expect.stringContaining('result is uncertain') })
+    expect(console.error).toHaveBeenCalledExactlyOnceWith('[jobber-sync]', { operationId: 'operation-id', phase: 'preflight', detail: 'unknown' })
+  })
+
   it('does not mutate when the claim is not acquired', async () => {
     const current = operation({ status: 'running', claim_token: undefined })
     const storage = store(current)

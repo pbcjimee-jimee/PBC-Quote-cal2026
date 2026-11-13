@@ -45,6 +45,11 @@ export interface JobberProperty {
   customFields?: JobberCustomField[]
 }
 
+export interface JobberReadConnection<T> {
+  nodes: T[]
+  pageInfo?: { hasNextPage: boolean }
+}
+
 export interface JobberQuote {
   id: string
   quoteNumber: string
@@ -55,12 +60,8 @@ export interface JobberQuote {
   jobberWebUri: string
   client: JobberClient | null
   property: JobberProperty | null
-  lineItems: {
-    nodes: JobberQuoteLineItem[]
-  }
-  jobs?: {
-    nodes: JobberJob[]
-  } | null
+  lineItems: JobberReadConnection<JobberQuoteLineItem>
+  jobs?: JobberReadConnection<JobberJob> | null
 }
 
 export interface JobberJob {
@@ -69,9 +70,7 @@ export interface JobberJob {
   title: string | null
   jobStatus: string
   jobberWebUri: string
-  expenses: {
-    nodes: JobberExpense[]
-  }
+  expenses: JobberReadConnection<JobberExpense>
 }
 
 export interface JobberJobDetail extends JobberJob {
@@ -87,9 +86,7 @@ export interface JobberJobDetail extends JobberJob {
     quoteNumber: string
     jobberWebUri: string
   } | null
-  lineItems: {
-    nodes: JobberQuoteLineItem[]
-  }
+  lineItems: JobberReadConnection<JobberQuoteLineItem>
   visits?: {
     nodes: JobberVisit[]
   }
@@ -164,6 +161,19 @@ export interface FetchJobberQuoteOptions {
   maxThrottleRetries?: number
   preferFullQuoteQuery?: boolean
   journal?: JobberSyncJournal
+  refreshAccessToken?: () => Promise<string>
+  requestTimeoutMs?: number
+}
+
+export class JobberNotFoundError extends Error {
+  constructor(readonly lookup: string, readonly candidates: string[] = []) {
+    super('Jobber lookup not found')
+    this.name = 'JobberNotFoundError'
+  }
+}
+
+function normalizeJobberNumber(value: string): string {
+  return value.trim().replace(/^(?:quote|job)\b/i, '').replace(/^[#\s]+/, '').toLowerCase()
 }
 
 export class JobberApiError extends Error {
@@ -216,6 +226,20 @@ export class JobberLineKindMismatchError extends Error {
   constructor(readonly lineItemId: string) {
     super(`Known Jobber line item ${lineItemId} has a different line kind`)
     this.name = 'JobberLineKindMismatchError'
+  }
+}
+
+export class JobberKnownLineMissingError extends Error {
+  constructor(readonly lineItemId: string) {
+    super(`Known Jobber line item is missing: ${lineItemId}`)
+    this.name = 'JobberKnownLineMissingError'
+  }
+}
+
+export class JobberDeleteAllLinesError extends Error {
+  constructor() {
+    super('Jobber sync cannot delete every quote line item')
+    this.name = 'JobberDeleteAllLinesError'
   }
 }
 
@@ -347,6 +371,7 @@ const JOBBER_QUOTE_QUERY = `
             description
           }
         }
+        pageInfo { hasNextPage }
       }
     }
   }
@@ -404,6 +429,7 @@ const JOBBER_QUOTE_LITE_QUERY = `
             description
           }
         }
+        pageInfo { hasNextPage }
       }
     }
   }
@@ -411,7 +437,7 @@ const JOBBER_QUOTE_LITE_QUERY = `
 
 const JOBBER_QUOTE_SEARCH_LOOKUP_QUERY = `
   query PbcQuoteSearchLookup($term: String!) {
-    quotes(searchTerm: $term, first: 10) {
+    quotes(searchTerm: $term, first: 25) {
       nodes {
         id
         quoteNumber
@@ -515,8 +541,10 @@ const JOBBER_QUOTE_JOBS_QUERY = `
                 }
               }
             }
+            pageInfo { hasNextPage }
           }
         }
+        pageInfo { hasNextPage }
       }
     }
   }
@@ -626,6 +654,7 @@ const JOBBER_JOB_QUERY = `
             description
           }
         }
+        pageInfo { hasNextPage }
       }
       expenses(first: 25) {
         nodes {
@@ -650,6 +679,7 @@ const JOBBER_JOB_QUERY = `
             }
           }
         }
+        pageInfo { hasNextPage }
       }
     }
   }
@@ -690,7 +720,7 @@ const JOBBER_JOB_VISITS_QUERY = `
 
 const JOBBER_JOB_SEARCH_QUERY = `
   query PbcJobSearch($term: String!) {
-    jobs(searchTerm: $term, first: 10) {
+    jobs(searchTerm: $term, first: 25) {
       nodes {
         id
         jobNumber
@@ -779,7 +809,7 @@ function hasHiddenObjectPermissionError(errors: unknown): boolean {
   ))
 }
 
-function getQuoteFromPayload(payload: unknown): JobberQuote {
+function getQuoteFromPayload(payload: unknown, lookup: string): JobberQuote {
   if (!isRecord(payload)) throw new Error('Invalid Jobber response')
   const errors = payload.errors
   if (Array.isArray(errors) && errors.length > 0) {
@@ -788,7 +818,7 @@ function getQuoteFromPayload(payload: unknown): JobberQuote {
 
   const data = payload.data
   if (!isRecord(data) || !isRecord(data.quote)) {
-    throw new Error('Jobber quote not found')
+    throw new JobberNotFoundError(lookup)
   }
 
   const quote = data.quote as unknown as JobberQuote
@@ -812,22 +842,22 @@ function getQuoteSearchResultFromPayload(payload: unknown, searchTerm: string): 
 
   const data = payload.data
   if (!isRecord(data) || !isRecord(data.quotes)) {
-    throw new Error('Jobber quote not found')
+    throw new JobberNotFoundError(searchTerm)
   }
 
   const nodes = data.quotes.nodes
   if (!Array.isArray(nodes) || nodes.length === 0) {
-    throw new Error('Jobber quote not found')
+    throw new JobberNotFoundError(searchTerm)
   }
 
   const exactQuote = nodes.find((node) => (
     isRecord(node) &&
     typeof node.quoteNumber === 'string' &&
-    node.quoteNumber.toLowerCase() === searchTerm.toLowerCase()
+    normalizeJobberNumber(node.quoteNumber) === normalizeJobberNumber(searchTerm)
   ))
-  const quote = exactQuote ?? nodes[0]
+  const quote = exactQuote
   if (!isRecord(quote) || typeof quote.id !== 'string' || typeof quote.quoteNumber !== 'string') {
-    throw new Error('Jobber quote not found')
+    throw new JobberNotFoundError(searchTerm, nodes.flatMap(node => isRecord(node) && typeof node.quoteNumber === 'string' ? [node.quoteNumber] : []).slice(0, 3))
   }
 
   return {
@@ -918,7 +948,7 @@ function getStrictQuoteLineItemsPage(payload: unknown): JobberConnectionPage<Job
   }
 }
 
-function getQuoteJobsFromPayload(payload: unknown): JobberJob[] {
+function getQuoteJobsFromPayload(payload: unknown): JobberReadConnection<JobberJob> {
   if (!isRecord(payload)) throw new Error('Invalid Jobber response')
   const errors = payload.errors
   const data = payload.data
@@ -940,11 +970,17 @@ function getQuoteJobsFromPayload(payload: unknown): JobberJob[] {
     if (Array.isArray(errors) && errors.length > 0) {
       throw new JobberGraphqlError(formatGraphqlErrors(errors))
     }
-    return []
+    return { nodes: [] }
   }
 
   const visibleJobs = jobs.nodes.filter(isRecord) as unknown as JobberJob[]
-  if (visibleJobs.length > 0) return visibleJobs
+  const connection: JobberReadConnection<JobberJob> = {
+    nodes: visibleJobs,
+    ...(isRecord(jobs.pageInfo) && typeof jobs.pageInfo.hasNextPage === 'boolean'
+      ? { pageInfo: { hasNextPage: jobs.pageInfo.hasNextPage } }
+      : {}),
+  }
+  if (visibleJobs.length > 0) return connection
 
   if (hasHiddenObjectPermissionError(errors)) {
     throw new JobberPermissionError('Jobber hid Job or Expense data due to permissions. Turn on Jobs Read and Expenses Read, save the app, then Reconnect Jobber so the current token receives the new access.')
@@ -953,10 +989,10 @@ function getQuoteJobsFromPayload(payload: unknown): JobberJob[] {
     throw new JobberGraphqlError(formatGraphqlErrors(errors))
   }
 
-  return visibleJobs
+  return connection
 }
 
-function getJobFromPayload(payload: unknown): JobberJobDetail {
+function getJobFromPayload(payload: unknown, lookup: string): JobberJobDetail {
   if (!isRecord(payload)) throw new Error('Invalid Jobber response')
   const errors = payload.errors
   if (hasHiddenObjectPermissionError(errors)) {
@@ -968,7 +1004,7 @@ function getJobFromPayload(payload: unknown): JobberJobDetail {
 
   const data = payload.data
   if (!isRecord(data) || !isRecord(data.job)) {
-    throw new Error('Jobber job not found')
+    throw new JobberNotFoundError(lookup)
   }
 
   return data.job as unknown as JobberJobDetail
@@ -1006,21 +1042,25 @@ function getJobSearchResultFromPayload(payload: unknown, searchTerm: string): Jo
 
   const data = payload.data
   if (!isRecord(data) || !isRecord(data.jobs)) {
-    throw new Error('Jobber job not found')
+    throw new JobberNotFoundError(searchTerm)
   }
 
   const nodes = data.jobs.nodes
   if (!Array.isArray(nodes) || nodes.length === 0) {
-    throw new Error('Jobber job not found')
+    throw new JobberNotFoundError(searchTerm)
   }
 
   const exactJob = nodes.find((node) => (
     isRecord(node) &&
-    typeof node.jobNumber === 'number' &&
-    String(node.jobNumber) === searchTerm.trim()
+    typeof node.id === 'string' &&
+    (typeof node.jobNumber === 'number' || typeof node.jobNumber === 'string') &&
+    normalizeJobberNumber(String(node.jobNumber)) === normalizeJobberNumber(searchTerm)
   ))
 
-  return (exactJob ?? nodes[0]) as unknown as JobberJobSearchResult
+  if (!exactJob) {
+    throw new JobberNotFoundError(searchTerm, nodes.flatMap(node => isRecord(node) && (typeof node.jobNumber === 'number' || typeof node.jobNumber === 'string') ? [String(node.jobNumber)] : []).slice(0, 3))
+  }
+  return exactJob as unknown as JobberJobSearchResult
 }
 
 function hasThrottleError(errors: unknown): boolean {
@@ -1141,7 +1181,10 @@ async function postJobberGraphql(
   }
 
   for (let attempt = 0; attempt <= maxRetries; attempt += 1) {
-    const response = await fetcher(JOBBER_GRAPHQL_URL, requestInit)
+    const response = await fetcher(JOBBER_GRAPHQL_URL, {
+      ...requestInit,
+      signal: AbortSignal.timeout(options.requestTimeoutMs ?? (allowMutation ? 60_000 : 30_000)),
+    })
 
     if (response.status === 429 && attempt < maxRetries) {
       await delay(getHttpRetryDelayMs(response, options, attempt))
@@ -1465,16 +1508,16 @@ export async function fetchJobberQuote(
 ): Promise<JobberQuote> {
   if (!options.preferFullQuoteQuery) {
     const lightweightPayload = await postJobberGraphql(JOBBER_QUOTE_LITE_QUERY, { id: quoteId }, options)
-    return getQuoteFromPayload(lightweightPayload)
+    return getQuoteFromPayload(lightweightPayload, quoteId)
   }
 
   const payload = await postJobberGraphql(JOBBER_QUOTE_QUERY, { id: quoteId }, options)
   if (shouldUseLightweightQuoteQuery(payload)) {
     const lightweightPayload = await postJobberGraphql(JOBBER_QUOTE_LITE_QUERY, { id: quoteId }, options)
-    return getQuoteFromPayload(lightweightPayload)
+    return getQuoteFromPayload(lightweightPayload, quoteId)
   }
 
-  return getQuoteFromPayload(payload)
+  return getQuoteFromPayload(payload, quoteId)
 }
 
 async function fetchJobberQuoteLineItems(
@@ -1506,7 +1549,14 @@ async function durableJobberQuoteLineSync(
   options: FetchJobberQuoteOptions,
   journal: JobberSyncJournal,
 ): Promise<JobberQuoteLineSyncResult> {
-  const currentLineItems = await fetchDurableJobberQuoteLineItems(quoteId, options)
+  let currentLineItems: JobberQuoteLineItem[]
+  try {
+    currentLineItems = await fetchDurableJobberQuoteLineItems(quoteId, options)
+  } catch (error) {
+    if (!(error instanceof JobberApiError) || error.status !== 401 || !options.refreshAccessToken) throw error
+    options = { ...options, accessToken: await options.refreshAccessToken() }
+    currentLineItems = await fetchDurableJobberQuoteLineItems(quoteId, options)
+  }
   const currentById = new Map(currentLineItems.map((item) => [item.id, item]))
   const mutationItems = buildJobberQuoteLineMutationItems(input).map((item, index) => ({
     ...item,
@@ -1521,7 +1571,7 @@ async function durableJobberQuoteLineSync(
     }
     desiredKnownIds.add(item.jobberLineItemId)
     const current = currentById.get(item.jobberLineItemId)
-    if (!current) throw new Error(`Known Jobber line item is missing: ${item.jobberLineItemId}`)
+    if (!current) throw new JobberKnownLineMissingError(item.jobberLineItemId)
     if (currentLineKind(current) !== item.kind) {
       throw new JobberLineKindMismatchError(item.jobberLineItemId)
     }
@@ -1539,7 +1589,7 @@ async function durableJobberQuoteLineSync(
   const deleteCandidateIds = desiredDeletedIds.filter((id) => currentById.has(id) && !desiredKnownIds.has(id))
   const resultingCount = currentLineItems.length + createItems.length - deleteCandidateIds.length
   if (deleteCandidateIds.length > 0 && resultingCount === 0) {
-    throw new Error('Jobber sync cannot delete every quote line item')
+    throw new JobberDeleteAllLinesError()
   }
 
   if (editItems.length > 0) {
@@ -1789,17 +1839,28 @@ export async function searchJobberQuote(
   searchTerm: string,
   options: FetchJobberQuoteOptions
 ): Promise<JobberQuote> {
-  const lookupPayload = await postJobberGraphql(JOBBER_QUOTE_SEARCH_LOOKUP_QUERY, { term: searchTerm }, options)
+  const lookupPayload = await postJobberGraphql(JOBBER_QUOTE_SEARCH_LOOKUP_QUERY, { term: normalizeJobberNumber(searchTerm) }, options)
   const quote = getQuoteSearchResultFromPayload(lookupPayload, searchTerm.trim())
   return fetchJobberQuote(quote.id, options)
 }
 
-export async function fetchJobberQuoteJobs(
+export function fetchJobberQuoteJobs(
   quoteId: string,
   options: FetchJobberQuoteOptions
-): Promise<JobberJob[]> {
+): Promise<JobberJob[]>
+export function fetchJobberQuoteJobs(
+  quoteId: string,
+  options: FetchJobberQuoteOptions,
+  includePageInfo: true
+): Promise<JobberReadConnection<JobberJob>>
+export async function fetchJobberQuoteJobs(
+  quoteId: string,
+  options: FetchJobberQuoteOptions,
+  includePageInfo = false
+): Promise<JobberJob[] | JobberReadConnection<JobberJob>> {
   const payload = await postJobberGraphql(JOBBER_QUOTE_JOBS_QUERY, { id: quoteId }, options)
-  return getQuoteJobsFromPayload(payload)
+  const connection = getQuoteJobsFromPayload(payload)
+  return includePageInfo ? connection : connection.nodes
 }
 
 async function fetchJobberJobVisits(
@@ -1815,7 +1876,7 @@ export async function fetchJobberJob(
   options: FetchJobberQuoteOptions
 ): Promise<JobberJobDetail> {
   const payload = await postJobberGraphql(JOBBER_JOB_QUERY, { id: jobId }, options)
-  const job = getJobFromPayload(payload)
+  const job = getJobFromPayload(payload, jobId)
 
   try {
     const visits = await fetchJobberJobVisits(jobId, options)
@@ -1835,7 +1896,7 @@ export async function searchJobberJob(
   searchTerm: string,
   options: FetchJobberQuoteOptions
 ): Promise<JobberJobDetail> {
-  const payload = await postJobberGraphql(JOBBER_JOB_SEARCH_QUERY, { term: searchTerm }, options)
+  const payload = await postJobberGraphql(JOBBER_JOB_SEARCH_QUERY, { term: normalizeJobberNumber(searchTerm) }, options)
   const result = getJobSearchResultFromPayload(payload, searchTerm)
   return fetchJobberJob(result.id, options)
 }

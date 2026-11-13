@@ -165,6 +165,9 @@ export function JobberQuoteSummary({
 
   return (
     <div className="pbc-softpanel">
+      {quote.loadWarnings?.map(warning => (
+        <p key={warning} className="pbc-alert pbc-alert--warning" role="status">{warning}</p>
+      ))}
       <div className="grid gap-3 sm:grid-cols-3">
         <div>
           <p className="pbc-field__label uppercase">{sourceLabel}</p>

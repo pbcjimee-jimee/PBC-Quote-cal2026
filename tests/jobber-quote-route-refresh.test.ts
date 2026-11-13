@@ -8,8 +8,14 @@ const mocks = vi.hoisted(() => {
       this.name = 'JobberApiError'
     }
   }
+  class MockJobberNotFoundError extends Error {
+    constructor(readonly lookup: string, readonly candidates: string[] = []) { super('Jobber lookup not found') }
+  }
 
   return {
+    fetchJobberJob: vi.fn(),
+    searchJobberJob: vi.fn(),
+    searchJobberQuote: vi.fn(),
     fetchJobberQuote: vi.fn(),
     fetchJobberQuoteJobs: vi.fn(),
     refreshSharedJobberConnectionToken: vi.fn(),
@@ -22,16 +28,18 @@ const mocks = vi.hoisted(() => {
     requireRole: vi.fn(),
     mapJobberQuoteToDraft: vi.fn(),
     JobberApiError: MockJobberApiError,
+    JobberNotFoundError: MockJobberNotFoundError,
   }
 })
 
 vi.mock('@/lib/jobber/client', () => ({
-  fetchJobberJob: vi.fn(),
+  fetchJobberJob: mocks.fetchJobberJob,
   fetchJobberQuote: mocks.fetchJobberQuote,
   fetchJobberQuoteJobs: mocks.fetchJobberQuoteJobs,
-  searchJobberJob: vi.fn(),
-  searchJobberQuote: vi.fn(),
+  searchJobberJob: mocks.searchJobberJob,
+  searchJobberQuote: mocks.searchJobberQuote,
   JobberApiError: mocks.JobberApiError,
+  JobberNotFoundError: mocks.JobberNotFoundError,
   JobberPermissionError: class JobberPermissionError extends Error {},
 }))
 
@@ -47,7 +55,7 @@ vi.mock('@/lib/jobber/dev-tokens', () => ({
 }))
 
 vi.mock('@/lib/jobber/mapper', () => ({
-  mapJobberJobToDraft: vi.fn(),
+  mapJobberJobToDraft: (job: unknown) => job,
   mapJobberQuoteToDraft: mocks.mapJobberQuoteToDraft,
 }))
 
@@ -64,6 +72,7 @@ import { GET as jobberQuoteRoute } from '@/app/api/jobber/quote/[quoteId]/route'
 describe('jobber quote route token refresh', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    for (const mock of [mocks.fetchJobberJob, mocks.fetchJobberQuote, mocks.searchJobberJob, mocks.searchJobberQuote]) mock.mockReset()
     process.env.NEXT_PUBLIC_DEV_NO_AUTH = 'false'
     process.env.JOBBER_GRAPHQL_VERSION = '2025-04-16'
 
@@ -99,10 +108,74 @@ describe('jobber quote route token refresh', () => {
         id: 'Z2lkOi8vSm9iYmVyL1F1b3RlLzE=',
         jobs: { nodes: [] },
       })
-    mocks.fetchJobberQuoteJobs.mockResolvedValue([])
+    mocks.fetchJobberQuoteJobs.mockResolvedValue({ nodes: [] })
     mocks.mapJobberQuoteToDraft.mockReturnValue({
       jobberQuoteId: 'Z2lkOi8vSm9iYmVyL1F1b3RlLzE=',
     })
+  })
+
+  async function lookupUrl(kind: 'quote' | 'job', lookup: string) {
+    return jobberQuoteRoute(new NextRequest(`http://localhost/api/jobber/quote/${encodeURIComponent(lookup)}?type=${kind}`), { params: Promise.resolve({ quoteId: encodeURIComponent(lookup) }) })
+  }
+
+  it('passes jobs pageInfo through to the snapshot mapper', async () => {
+    const jobs = { nodes: [], pageInfo: { hasNextPage: true } }
+    mocks.fetchJobberQuoteJobs.mockResolvedValueOnce(jobs)
+    expect((await lookupUrl('quote', 'Z2lkOi8vSm9iYmVyL1F1b3RlLzE=')).status).toBe(200)
+    expect(mocks.mapJobberQuoteToDraft).toHaveBeenCalledWith(expect.objectContaining({ jobs }))
+  })
+
+  it.each(['quote', 'job'] as const)('uses the GID first for numeric %s URL paths', async kind => {
+    const byId = kind === 'quote' ? mocks.fetchJobberQuote : mocks.fetchJobberJob
+    const search = kind === 'quote' ? mocks.searchJobberQuote : mocks.searchJobberJob
+    byId.mockReset().mockResolvedValue({ id: 'found' })
+    const result = await lookupUrl(kind, `https://secure.getjobber.com/${kind}s/123`)
+    expect(result.status).toBe(200)
+    expect(byId).toHaveBeenCalledWith(Buffer.from(`gid://Jobber/${kind === 'quote' ? 'Quote' : 'Job'}/123`).toString('base64'), expect.anything())
+    expect(search).not.toHaveBeenCalled()
+  })
+
+  it.each(['quote', 'job'] as const)('falls back to one exact numeric search when a %s URL ID fails', async kind => {
+    const byId = kind === 'quote' ? mocks.fetchJobberQuote : mocks.fetchJobberJob
+    const search = kind === 'quote' ? mocks.searchJobberQuote : mocks.searchJobberJob
+    byId.mockReset().mockRejectedValue(new mocks.JobberNotFoundError('gid'))
+    search.mockResolvedValue({ id: 'found' })
+    expect((await lookupUrl(kind, `https://secure.getjobber.com/${kind}s/123`)).status).toBe(200)
+    expect(byId).toHaveBeenCalledTimes(1)
+    expect(search).toHaveBeenCalledExactlyOnceWith('123', expect.anything())
+  })
+
+  it.each([401, 429])('never searches as a fallback for HTTP %s', async status => {
+    for (const kind of ['quote', 'job'] as const) {
+      const byId = kind === 'quote' ? mocks.fetchJobberQuote : mocks.fetchJobberJob
+      const search = kind === 'quote' ? mocks.searchJobberQuote : mocks.searchJobberJob
+      byId.mockReset().mockRejectedValue(new mocks.JobberApiError('private upstream error', status))
+      expect((await lookupUrl(kind, `https://secure.getjobber.com/${kind}s/123`)).status).toBe(502)
+      expect(search).not.toHaveBeenCalled()
+      expect(byId).toHaveBeenCalledTimes(status === 401 ? 2 : 1)
+    }
+  })
+
+  it.each(['quote', 'job'] as const)('maps a missing %s to a safe 404 with candidate numbers', async kind => {
+    const search = kind === 'quote' ? mocks.searchJobberQuote : mocks.searchJobberJob
+    search.mockRejectedValue(new mocks.JobberNotFoundError('123', ['1234', '1235', '1236']))
+    const result = await lookupUrl(kind, '123')
+    expect(result.status).toBe(404)
+    expect(await result.json()).toEqual({ ok: false, error: `No Jobber ${kind} matches "123". Check the number and try again. Similar numbers: 1234, 1235, 1236.` })
+  })
+
+  it('limits the displayed lookup to 60 characters and omits empty suggestions', async () => {
+    mocks.searchJobberQuote.mockRejectedValue(new mocks.JobberNotFoundError('x'.repeat(80)))
+    const result = await lookupUrl('quote', 'x'.repeat(80))
+    expect(result.status).toBe(404)
+    expect(await result.json()).toEqual({ ok: false, error: `No Jobber quote matches "${'x'.repeat(60)}". Check the number and try again.` })
+  })
+
+  it('returns 404 after the URL ID and exact fallback search both miss', async () => {
+    mocks.fetchJobberQuote.mockReset().mockRejectedValue(new Error('ID unavailable'))
+    mocks.searchJobberQuote.mockRejectedValue(new mocks.JobberNotFoundError('123'))
+    expect((await lookupUrl('quote', 'https://secure.getjobber.com/quotes/123')).status).toBe(404)
+    expect(mocks.searchJobberQuote).toHaveBeenCalledExactlyOnceWith('123', expect.anything())
   })
 
   it('returns 503 in Vercel Preview before auth, token, or GraphQL access', async () => {
@@ -157,7 +230,7 @@ describe('jobber quote route token refresh', () => {
     expect(mocks.fetchJobberQuoteJobs).toHaveBeenCalledWith('Z2lkOi8vSm9iYmVyL1F1b3RlLzE=', {
       accessToken: 'new-access',
       graphqlVersion: '2025-04-16',
-    })
+    }, true)
   })
 
   it('does not call Jobber GraphQL when the stored token scope is not read-only', async () => {

@@ -4,7 +4,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it, vi } from 'vitest'
 import { QuoteForm } from '@/components/quote-form/quote-form'
 import { createEmptyQuoteFormDraft, getQuoteDraftStorageKey } from '@/components/quote-form/quote-draft'
-import { createQuote, updateQuote } from '@/lib/actions/quotes'
+import { createQuote, findSavedQuoteForJobberQuote, updateQuote } from '@/lib/actions/quotes'
 import { searchProducts } from '@/lib/actions/products'
 import { createArea } from '@/lib/actions/areas'
 import type { AiQuoteAvailability } from '@/lib/ai-quote/config'
@@ -26,6 +26,7 @@ vi.mock('next/navigation', () => ({
 }))
 vi.mock('@/lib/actions/quotes', () => ({
   createQuote: vi.fn(),
+  findSavedQuoteForJobberQuote: vi.fn().mockResolvedValue({ ok: true, data: null }),
   refreshJobberQuoteSnapshot: vi.fn(),
   updateQuote: vi.fn(),
 }))
@@ -145,6 +146,12 @@ function findButton(container: TestElement, label: string) {
   return findElement(container, 'button', (button) => button.textContent.trim() === label)
 }
 
+async function confirmJobberSync(container: TestElement) {
+  const dialog = findElement(container, 'div', element => element.getAttribute('role') === 'dialog')!
+  expect(dialog.textContent).toContain('Send these changes to Jobber?')
+  await act(async () => findButton(dialog, 'Save & Sync to Jobber')!.dispatchEvent(new Event('click', { bubbles: true })))
+}
+
 function findAncestorWithAttribute(element: TestElement | undefined, name: string): TestElement | undefined {
   let current = element?.parentElement ?? null
   while (current) {
@@ -233,6 +240,50 @@ async function mountQuoteForm(options: {
 }
 
 describe('quote workspace structure', () => {
+  it.each([
+    { existing: true, baseQuoteVersion: 3, stale: true },
+    { existing: true, baseQuoteVersion: null, stale: true },
+    { existing: true, baseQuoteVersion: undefined, stale: true },
+    { existing: true, baseQuoteVersion: 4, stale: false },
+    { existing: false, baseQuoteVersion: null, stale: false },
+    { existing: false, baseQuoteVersion: 3, stale: false },
+  ])('renders the appropriate draft banner: existing=$existing base=$baseQuoteVersion', async ({ existing, baseQuoteVersion, stale }) => {
+    const storage = new MemoryStorage()
+    const initialQuote = existing ? createQuoteRecord({ version: 4 }) : undefined
+    const updatedAt = new Date().toISOString()
+    const date = new Date(updatedAt).toLocaleString('en-AU')
+    storage.setItem(getQuoteDraftStorageKey('user-a', initialQuote?.id), JSON.stringify({
+      ...createEmptyQuoteFormDraft(), baseQuoteVersion, ownerId: 'user-a', customerName: 'Recovered customer', updatedAt,
+    }))
+    const mounted = await mountQuoteForm({ storage, initialQuote })
+    try {
+      expect(mounted.container.textContent).toContain(stale
+        ? `This draft was made from an older version of this quote (${date}). Restoring it replaces newer saved changes when you save, and may remove Jobber lines added since.`
+        : `Unsaved draft found from ${date}.`)
+      expect(findButton(mounted.container, stale ? 'Restore anyway' : 'Restore Draft')).toBeDefined()
+      expect(findButton(mounted.container, stale ? 'Restore anyway' : 'Restore Draft')?.parentElement?.parentElement?.getAttribute('class'))
+        .toBe(`pbc-alert pbc-alert--warning${stale ? ' pbc-alert--stack' : ''}`)
+      expect(findButton(mounted.container, stale ? 'Restore Draft' : 'Restore anyway')).toBeUndefined()
+      expect(findButton(mounted.container, 'Discard')).toBeDefined()
+      await act(async () => findButton(mounted.container, stale ? 'Restore anyway' : 'Restore Draft')!.dispatchEvent(new Event('click', { bubbles: true })))
+      expect(findWorkspace(mounted.container, 'details')?.querySelectorAll('input')[0].value).toBe('Recovered customer')
+      expect(mounted.container.textContent).not.toContain('This draft was made from an older version')
+    } finally { await mounted.cleanup() }
+  })
+
+  it('leaves an untouched saved quote pristine and writes its base version after an edit', async () => {
+    const initialQuote = createQuoteRecord({ version: 8 })
+    const mounted = await mountQuoteForm({ initialQuote })
+    const storageKey = getQuoteDraftStorageKey('user-a', initialQuote.id)
+    try {
+      window.dispatchEvent(new Event('pagehide'))
+      expect(mounted.storage.getItem(storageKey)).toBeNull()
+      const input = findWorkspace(mounted.container, 'details')!.querySelectorAll('input')[0]
+      await act(async () => { input.value = 'Updated customer'; input.dispatchEvent(new Event('input', { bubbles: true })) })
+      window.dispatchEvent(new Event('pagehide'))
+      expect(JSON.parse(mounted.storage.getItem(storageKey)!)).toMatchObject({ baseQuoteVersion: 8, customerName: 'Updated customer' })
+    } finally { await mounted.cleanup() }
+  })
   it.each([375, 1280])('locks sync for a non-owner pending review and keeps local Save available at %spx', async viewportWidth => {
     const mounted = await mountQuoteForm({
       aiAvailability: { enabled: false, reason: 'not_allowed', message: 'AI quoting is not enabled for your account.' },
@@ -268,6 +319,7 @@ describe('quote workspace structure', () => {
       await act(async () => { checkbox.checked = true; checkbox.dispatchEvent(new Event('change', { bubbles: true })) })
       expect(findButton(mounted.container, 'Save & Sync')?.disabled).toBe(false)
       await act(async () => findButton(mounted.container, 'Save & Sync')!.dispatchEvent(new Event('click', { bubbles: true })))
+      await confirmJobberSync(mounted.container)
       expect(updateQuote).toHaveBeenLastCalledWith(expect.objectContaining({ syncJobber: true, aiReviewConfirmed: true }))
       expect(mounted.container.querySelectorAll('input').find(input => input.getAttribute('aria-label') === 'I reviewed the AI draft lines and prices')?.checked).toBe(false)
     } finally { await mounted.cleanup() }
@@ -444,7 +496,7 @@ describe('quote workspace structure', () => {
     vi.mocked(updateQuote).mockResolvedValueOnce({ ok: true, data: { id, warning, savedVersion: version + 1 } })
       .mockResolvedValueOnce({ ok: true, data: { id } })
     const storage = new MemoryStorage()
-    storage.setItem(getQuoteDraftStorageKey('user-a', initialQuote?.id), JSON.stringify({ ...createEmptyQuoteFormDraft(), ownerId: 'user-a', aiDraftRunId, updatedAt: new Date().toISOString() }))
+    storage.setItem(getQuoteDraftStorageKey('user-a', initialQuote?.id), JSON.stringify({ ...createEmptyQuoteFormDraft(), baseQuoteVersion: initialQuote?.version ?? null, ownerId: 'user-a', aiDraftRunId, updatedAt: new Date().toISOString() }))
     const mounted = await mountQuoteForm({ storage, initialQuote })
     try {
       await act(async () => findButton(mounted.container, 'Restore Draft')!.dispatchEvent(new Event('click', { bubbles: true })))
@@ -453,7 +505,7 @@ describe('quote workspace structure', () => {
       expect(routerPushMock).not.toHaveBeenCalled()
       expect(findElement(mounted.container, 'div', element => element.getAttribute('role') === 'alert' && element.textContent === warning)).toBeDefined()
       await act(async () => window.dispatchEvent(new Event('pagehide')))
-      expect(JSON.parse(storage.getItem(getQuoteDraftStorageKey('user-a', initialQuote?.id))!).aiDraftRunId).toBe(aiDraftRunId)
+      expect(JSON.parse(storage.getItem(getQuoteDraftStorageKey('user-a', initialQuote?.id))!)).toMatchObject({ aiDraftRunId, baseQuoteVersion: version })
       await act(async () => save().dispatchEvent(new Event('click', { bubbles: true })))
       expect(updateQuote).toHaveBeenLastCalledWith(expect.objectContaining({ id, expectedVersion: version, aiDraftRunId }))
       expect(routerPushMock).not.toHaveBeenCalled()
@@ -949,6 +1001,8 @@ describe('quote workspace structure', () => {
         syncSave.dispatchEvent(new Event('click', { bubbles: true, cancelable: true }))
         await Promise.resolve()
       })
+      expect(updateQuoteMock).not.toHaveBeenCalled()
+      await confirmJobberSync(mounted.container)
       expect(updateQuoteMock).toHaveBeenCalledTimes(1)
       expect(updateQuoteMock).toHaveBeenCalledWith(expect.objectContaining({ syncJobber: true }))
       expect(localSave?.disabled).toBe(true)
@@ -1094,5 +1148,313 @@ describe('quote workspace structure', () => {
     } finally {
       await mounted.cleanup()
     }
+  })
+})
+
+describe('Jobber sync preflight and confirmation', () => {
+  const jobSnapshot: NonNullable<QuoteRecord['jobberSnapshot']> = {
+    jobberQuoteId: 'job-123', sourceType: 'job', quoteNumber: '123', createdAt: '2026-11-12T00:00:00Z',
+    customerName: 'Job customer', customerAddress: '12 Paint St', workType: 'Interior', areaSqft: null,
+    customerType: 'Residential', sourceUrl: 'https://secure.getjobber.com/jobs/123', productsAndServices: [],
+    jobExpenses: [], jobExpensesError: null,
+    financialSummary: { quoteTotal: 0, expensesTotal: 0, profit: 0, profitMarginPercent: null },
+  }
+  const savedLine: QuoteRecord['jobberQuoteLines'][number] = {
+    id: 'saved-line', quoteId: 'quote-workspace-1', kind: 'line_item', name: 'Saved name', description: '',
+    quantity: '1', unitPrice: '10', totalPrice: '10', taxable: true, clientVisible: true, position: 0,
+    jobberLineItemId: 'saved-remote', linkedProductOrServiceId: null, createdAt: '2026-11-12', updatedAt: '2026-11-12',
+  }
+
+  it.each(['Save & Sync to Jobber', 'Save & Sync'])('preflight prevents %s from opening the dialog', async label => {
+    vi.mocked(updateQuote).mockReset()
+    const mounted = await mountQuoteForm({ initialQuote: createQuoteRecord({ jobberQuoteId: 'quote-123', jobberQuoteLines: [{ ...savedLine, quantity: '1,5' }] }) })
+    try {
+      await act(async () => findButton(mounted.container, label)!.dispatchEvent(new Event('click', { bubbles: true })))
+      expect(mounted.container.textContent).toContain('Check the highlighted quote fields before saving.')
+      expect(mounted.container.textContent).not.toContain('Send these changes to Jobber?')
+      expect(updateQuote).not.toHaveBeenCalled()
+    } finally { await mounted.cleanup() }
+  })
+
+  it.each(['Save & Sync to Jobber', 'Save & Sync'])('%s can cancel without saving and restores its own trigger', async label => {
+    vi.mocked(updateQuote).mockReset()
+    const mounted = await mountQuoteForm({ initialQuote: createQuoteRecord({ jobberQuoteId: 'quote-123' }) })
+    try {
+      const trigger = findButton(mounted.container, label)!
+      await act(async () => trigger.dispatchEvent(new Event('click', { bubbles: true })))
+      const dialog = findElement(mounted.container, 'div', element => element.getAttribute('role') === 'dialog')!
+      await act(async () => findButton(dialog, 'Cancel')!.dispatchEvent(new Event('click', { bubbles: true })))
+      expect(updateQuote).not.toHaveBeenCalled()
+      expect(mounted.container.textContent).not.toContain('Send these changes to Jobber?')
+      expect(mounted.document.activeElement).toBe(trigger)
+    } finally { await mounted.cleanup() }
+  })
+
+  it('uses snapshot names and initially saved names for hidden rows, with the calculated totals', async () => {
+    const mounted = await mountQuoteForm({ initialQuote: createQuoteRecord({ jobberQuoteId: 'quote-123',
+      jobberSnapshot: { ...jobSnapshot, sourceType: 'quote', productsAndServices: [{ id: 'snapshot-remote', name: 'Snapshot name', category: 'SERVICE', description: '', quantity: 1, unitPrice: 10, totalPrice: 10, linkedName: null }] },
+      jobberQuoteLines: [
+        { ...savedLine, clientVisible: false },
+        { ...savedLine, id: 'snapshot-line', jobberLineItemId: 'snapshot-remote', name: 'Edited name', clientVisible: false },
+        { ...savedLine, id: 'visible-line', jobberLineItemId: 'visible-remote' },
+      ],
+    }) })
+    try {
+      await act(async () => findButton(mounted.container, 'Save & Sync')!.dispatchEvent(new Event('click', { bubbles: true })))
+      const dialog = findElement(mounted.container, 'div', element => element.getAttribute('role') === 'dialog')!
+      for (const text of ['Delete 2 line(s) from Jobber', 'Saved name', 'Snapshot name', 'Update 1 existing line(s)', '$0.00', '$10.00', '-$10.00']) expect(dialog.textContent).toContain(text)
+      expect(dialog.textContent).not.toContain('Edited name')
+    } finally { await mounted.cleanup() }
+  })
+
+  it.each(['saved', 'fetched'] as const)('disables both Sync actions for a %s Job while local Save remains available', async source => {
+    const originalFetch = globalThis.fetch
+    globalThis.fetch = vi.fn().mockResolvedValue({ json: async () => ({ ok: true, data: jobSnapshot }) })
+    vi.mocked(createQuote).mockReset().mockResolvedValue({ ok: false, error: 'Held for inspection' })
+    vi.mocked(updateQuote).mockReset().mockResolvedValue({ ok: false, error: 'Held for inspection' })
+    vi.mocked(findSavedQuoteForJobberQuote).mockReset().mockResolvedValue({ ok: true, data: null })
+    const mounted = await mountQuoteForm({ initialQuote: source === 'saved' ? createQuoteRecord({ jobberQuoteId: 'job-123', jobberSnapshot: jobSnapshot }) : undefined })
+    try {
+      if (source === 'fetched') {
+        const lookup = findElement(mounted.container, 'input', input => input.getAttribute('data-error-key') === 'details:form:jobberQuoteId')!
+        await act(async () => { lookup.value = '123'; lookup.dispatchEvent(new Event('input', { bubbles: true })) })
+        await act(async () => findButton(mounted.container, 'Fetch')!.dispatchEvent(new Event('click', { bubbles: true })))
+      }
+      const notice = 'Loaded from a Jobber Job. Jobber sync is available only for quotes loaded as a Quote.'
+      for (const label of ['Save & Sync to Jobber', 'Save & Sync']) {
+        const button = findButton(mounted.container, label)!
+        expect(button.disabled).toBe(true)
+        expect(button.getAttribute('title')).toBe(notice)
+      }
+      expect(findWorkspace(mounted.container, 'details')?.textContent).toContain(notice)
+      expect(findButton(mounted.container, 'Save')?.disabled).toBe(false)
+      await act(async () => findButton(mounted.container, 'Save')!.dispatchEvent(new Event('click', { bubbles: true })))
+      expect(source === 'saved' ? updateQuote : createQuote).toHaveBeenCalledWith(expect.objectContaining({ syncJobber: false }))
+      expect(mounted.container.textContent).not.toContain('Send these changes to Jobber?')
+    } finally { await mounted.cleanup(); globalThis.fetch = originalFetch }
+  })
+})
+
+describe('new quote replacement confirmation', () => {
+  const fetchedQuote = {
+    jobberQuoteId: 'jobber-123', sourceType: 'quote', quoteNumber: '123', createdAt: '2026-11-12T00:00:00Z',
+    customerName: 'Fetched customer', customerAddress: '12 Paint St', workType: 'Interior', areaSqft: null,
+    customerType: 'Residential', sourceUrl: 'https://secure.getjobber.com/quotes/123', productsAndServices: [],
+    jobExpenses: [], jobExpensesError: null,
+    financialSummary: { quoteTotal: 0, expensesTotal: 0, profit: 0, profitMarginPercent: null },
+  }
+  const refusal = { ok: false as const, code: 'EXISTING_QUOTE' as const, existingQuoteId: 'saved-123', error: 'Confirmation required' }
+
+  function dialogButton(container: TestElement, label: string) {
+    const dialog = findElement(container, 'div', element => element.getAttribute('role') === 'dialog')
+    return dialog ? findButton(dialog, label) : undefined
+  }
+
+  function mountReplacementForm(options: Parameters<typeof mountQuoteForm>[0] = {}) {
+    return mountQuoteForm({ aiAvailability: { enabled: false, reason: 'not_allowed', message: 'AI quoting is not enabled for your account.' }, ...options })
+  }
+
+  async function click(container: TestElement, label: string) {
+    const button = dialogButton(container, label) ?? findButton(container, label)!
+    await act(async () => button.dispatchEvent(new Event('click', { bubbles: true })))
+  }
+
+  async function fetchQuote(container: TestElement) {
+    const lookup = findElement(container, 'input', input => input.getAttribute('data-error-key') === 'details:form:jobberQuoteId')!
+    await act(async () => { lookup.value = '123'; lookup.dispatchEvent(new Event('input', { bubbles: true })) })
+    await click(container, 'Fetch')
+  }
+
+  it.each([{ loadWarnings: undefined }, { loadWarnings: [] }, { loadWarnings: ['Only the first 100 line items were loaded from Jobber.', 'Only the first 5 jobs were loaded from Jobber.'] }])('accepts optional fetch warnings and renders status alerts: $loadWarnings', async ({ loadWarnings }) => {
+    const originalFetch = globalThis.fetch
+    globalThis.fetch = vi.fn().mockResolvedValue({ json: async () => ({ ok: true, data: { ...fetchedQuote, loadWarnings } }) })
+    const mounted = await mountReplacementForm()
+    try {
+      await fetchQuote(mounted.container)
+      expect(mounted.container.textContent).not.toContain('Jobber returned an unexpected response.')
+      expect(findWorkspace(mounted.container, 'details')?.querySelectorAll('input')[0].value).toBe('Fetched customer')
+      for (const warning of loadWarnings ?? []) {
+        const alert = findElement(mounted.container, 'p', element => element.textContent === warning)
+        expect(alert?.getAttribute('role')).toBe('status')
+        expect(alert?.getAttribute('class')).toContain('pbc-alert pbc-alert--warning')
+      }
+    } finally { await mounted.cleanup(); globalThis.fetch = originalFetch }
+  })
+
+  it.each([{ loadWarnings: null }, { loadWarnings: 'warning' }, { loadWarnings: [123] }])('rejects malformed loadWarnings in a Jobber response: $loadWarnings', async ({ loadWarnings }) => {
+    const originalFetch = globalThis.fetch
+    globalThis.fetch = vi.fn().mockResolvedValue({ json: async () => ({ ok: true, data: { ...fetchedQuote, loadWarnings } }) })
+    const mounted = await mountReplacementForm()
+    try {
+      await fetchQuote(mounted.container)
+      expect(mounted.container.textContent).toContain('Jobber returned an unexpected response.')
+    } finally { await mounted.cleanup(); globalThis.fetch = originalFetch }
+  })
+
+  async function key(container: TestElement, key: string, shiftKey = false) {
+    const dialog = findElement(container, 'div', element => element.getAttribute('role') === 'dialog')!
+    const event = new Event('keydown', { bubbles: true, cancelable: true })
+    Object.assign(event, { key, shiftKey })
+    await act(async () => dialog.dispatchEvent(event))
+  }
+
+  it.each([
+    { existing: false, syncRequested: true, syncStarted: false },
+    { existing: false, syncRequested: true, syncStarted: true },
+    { existing: false, syncRequested: true, syncStarted: undefined },
+    { existing: false, syncRequested: false, syncStarted: false },
+    { existing: true, syncRequested: true, syncStarted: false },
+    { existing: true, syncRequested: true, syncStarted: true },
+    { existing: true, syncRequested: true, syncStarted: undefined },
+    { existing: true, syncRequested: false, syncStarted: false },
+  ])('navigates after save: existing=$existing requested=$syncRequested started=$syncStarted', async ({ existing, syncRequested, syncStarted }) => {
+    const originalFetch = globalThis.fetch
+    globalThis.fetch = vi.fn().mockResolvedValue({ json: async () => ({ ok: true, data: fetchedQuote }) })
+    vi.mocked(findSavedQuoteForJobberQuote).mockReset().mockResolvedValue({ ok: true, data: null })
+    const initialQuote = existing ? createQuoteRecord({ jobberQuoteId: 'jobber-123' }) : undefined
+    const id = initialQuote?.id ?? 'saved-result'
+    const save = vi.mocked(existing ? updateQuote : createQuote)
+    save.mockReset().mockResolvedValue({ ok: true, data: { id, ...(syncStarted !== undefined ? { syncStarted } : {}) } })
+    routerPushMock.mockClear()
+    const mounted = await mountReplacementForm({ initialQuote })
+    try {
+      if (!existing) await fetchQuote(mounted.container)
+      await click(mounted.container, syncRequested ? 'Save & Sync' : 'Save')
+      if (syncRequested) await confirmJobberSync(mounted.container)
+      expect(save).toHaveBeenCalledWith(expect.objectContaining({ syncJobber: syncRequested }))
+      expect(routerPushMock).toHaveBeenCalledWith(`/quotes/${id}${syncRequested && syncStarted === false ? '?sync=not-started' : ''}`)
+    } finally {
+      await mounted.cleanup()
+      globalThis.fetch = originalFetch
+    }
+  })
+
+  it.each(['Save quote', 'Save & Sync to Jobber', 'Save', 'Save & Sync'])('confirms and repeats %s with the same payload and exact replacement ID', async label => {
+    const originalFetch = globalThis.fetch
+    globalThis.fetch = vi.fn().mockResolvedValue({ json: async () => ({ ok: true, data: fetchedQuote }) })
+    vi.mocked(findSavedQuoteForJobberQuote).mockReset().mockResolvedValue({ ok: true, data: null })
+    vi.mocked(createQuote).mockReset().mockResolvedValueOnce(refusal).mockResolvedValueOnce({ ok: true, data: { id: 'saved-123' } })
+    routerPushMock.mockClear()
+    const mounted = await mountReplacementForm({ viewportWidth: label.includes('quote') || label.includes('Jobber') ? 1280 : 375 })
+    try {
+      await fetchQuote(mounted.container)
+      const trigger = findButton(mounted.container, label)!
+      mounted.document.activeElement = trigger
+      await click(mounted.container, label)
+      if (label.includes('Sync')) {
+        expect(createQuote).not.toHaveBeenCalled()
+        await confirmJobberSync(mounted.container)
+      } else {
+        expect(mounted.container.textContent).not.toContain('Send these changes to Jobber?')
+      }
+      expect(createQuote).toHaveBeenCalledTimes(1)
+      const dialog = findElement(mounted.container, 'div', element => element.getAttribute('role') === 'dialog')!
+      expect(dialog.getAttribute('aria-modal')).toBe('true')
+      expect(dialog.textContent).toContain('Replace the saved quote?')
+      expect(dialog.textContent).toContain('A saved quote already exists for this Jobber quote. Replacing it overwrites its materials, options, public lines and memos with what is on this screen. This cannot be undone.')
+      expect(mounted.document.activeElement).toBe(dialogButton(mounted.container, 'Cancel'))
+      await key(mounted.container, 'Tab')
+      expect(mounted.document.activeElement).toBe(findButton(mounted.container, 'Open saved quote'))
+      await key(mounted.container, 'Tab')
+      expect(mounted.document.activeElement).toBe(findButton(mounted.container, 'Replace saved quote'))
+      await key(mounted.container, 'Tab')
+      expect(mounted.document.activeElement).toBe(dialogButton(mounted.container, 'Cancel'))
+      await key(mounted.container, 'Tab', true)
+      expect(mounted.document.activeElement).toBe(findButton(mounted.container, 'Replace saved quote'))
+      await click(mounted.container, 'Replace saved quote')
+      expect(createQuote).toHaveBeenCalledTimes(2)
+      expect(vi.mocked(createQuote).mock.calls[1][0]).toEqual({ ...vi.mocked(createQuote).mock.calls[0][0] as object, replaceExistingQuoteId: 'saved-123' })
+      expect(createQuote).toHaveBeenLastCalledWith(expect.objectContaining({ syncJobber: label.includes('Sync') }))
+      expect(routerPushMock).toHaveBeenCalledWith('/quotes/saved-123')
+      expect(mounted.container.textContent).not.toContain('Replace the saved quote?')
+      expect(mounted.container.textContent).not.toContain('Send these changes to Jobber?')
+    } finally { await mounted.cleanup(); globalThis.fetch = originalFetch }
+  })
+
+  it.each(['Cancel', 'Escape'])('dismisses with %s without writing again and restores trigger focus', async method => {
+    vi.mocked(createQuote).mockReset().mockResolvedValue(refusal)
+    const mounted = await mountReplacementForm()
+    try {
+      const trigger = findButton(mounted.container, 'Save quote')!
+      mounted.document.activeElement = trigger
+      await click(mounted.container, 'Save quote')
+      if (method === 'Escape') await key(mounted.container, 'Escape')
+      else await click(mounted.container, 'Cancel')
+      expect(createQuote).toHaveBeenCalledTimes(1)
+      expect(mounted.container.textContent).not.toContain('Replace the saved quote?')
+      expect(mounted.document.activeElement).toBe(trigger)
+    } finally { await mounted.cleanup() }
+  })
+
+  it('opens the saved quote from the dialog through the unsaved-changes guard', async () => {
+    vi.mocked(createQuote).mockReset().mockResolvedValue(refusal)
+    routerPushMock.mockClear()
+    const mounted = await mountReplacementForm()
+    try {
+      const customer = findElement(mounted.container, 'input', input => input.getAttribute('data-error-key') === 'details:form:customerName')!
+      await act(async () => { customer.value = 'Unsaved changes'; customer.dispatchEvent(new Event('input', { bubbles: true })) })
+      await click(mounted.container, 'Save quote')
+      await click(mounted.container, 'Open saved quote')
+      expect(mounted.container.textContent).toContain('Save draft before leaving?')
+      expect(routerPushMock).not.toHaveBeenCalled()
+      await click(mounted.container, 'Leave without draft')
+      expect(routerPushMock).toHaveBeenCalledWith('/quotes/saved-123')
+      expect(createQuote).toHaveBeenCalledTimes(1)
+    } finally { await mounted.cleanup() }
+  })
+
+  it.each([false, true])('shows a saved quote warning after Fetch with inTrash=%s and guards navigation', async inTrash => {
+    const originalFetch = globalThis.fetch
+    globalThis.fetch = vi.fn().mockResolvedValue({ json: async () => ({ ok: true, data: fetchedQuote }) })
+    vi.mocked(findSavedQuoteForJobberQuote).mockReset().mockResolvedValue({ ok: true, data: { id: 'saved-123', inTrash } })
+    routerPushMock.mockClear()
+    const mounted = await mountReplacementForm()
+    try {
+      await fetchQuote(mounted.container)
+      expect(findSavedQuoteForJobberQuote).toHaveBeenCalledWith({ jobberQuoteId: 'jobber-123', quoteNumber: '123' })
+      const details = findWorkspace(mounted.container, 'details')!
+      expect(details.textContent).toContain(inTrash
+        ? 'A quote for this Jobber quote is in Trash. Restore it before saving.'
+        : 'A saved quote already exists for Jobber quote 123. Saving here would replace its materials, options and memos.')
+      const banner = findButton(details, inTrash ? 'Open Trash' : 'Open saved quote')?.parentElement?.parentElement
+      expect(banner?.getAttribute('class')).toBe('pbc-alert pbc-alert--warning pbc-alert--stack')
+      expect(banner?.getAttribute('role')).toBe('alert')
+      await click(mounted.container, inTrash ? 'Open Trash' : 'Open saved quote')
+      expect(routerPushMock).not.toHaveBeenCalled()
+      expect(mounted.container.textContent).toContain('Save draft before leaving?')
+      await click(mounted.container, 'Leave without draft')
+      expect(routerPushMock).toHaveBeenCalledWith(inTrash ? '/quotes/trash' : '/quotes/saved-123')
+    } finally { await mounted.cleanup(); globalThis.fetch = originalFetch }
+  })
+
+  it('clears a previous warning on another Fetch and ignores advisory lookup failures', async () => {
+    const originalFetch = globalThis.fetch
+    globalThis.fetch = vi.fn().mockResolvedValueOnce({ json: async () => ({ ok: true, data: fetchedQuote }) })
+      .mockResolvedValueOnce({ json: async () => ({ ok: true, data: { ...fetchedQuote, jobberQuoteId: 'jobber-456', quoteNumber: '456' } }) })
+    vi.mocked(findSavedQuoteForJobberQuote).mockReset().mockResolvedValueOnce({ ok: true, data: { id: 'saved-123', inTrash: false } }).mockRejectedValueOnce(new Error('unavailable'))
+    const mounted = await mountReplacementForm()
+    try {
+      await fetchQuote(mounted.container)
+      expect(mounted.container.textContent).toContain('A saved quote already exists for Jobber quote 123.')
+      await fetchQuote(mounted.container)
+      expect(mounted.container.textContent).not.toContain('A saved quote already exists for Jobber quote')
+      expect(mounted.container.textContent).not.toContain('Unable to fetch Jobber quote.')
+      expect(findButton(mounted.container, 'Save quote')?.disabled).toBe(false)
+    } finally { await mounted.cleanup(); globalThis.fetch = originalFetch }
+  })
+
+  it('does not run the advisory lookup or replacement flow in Edit mode', async () => {
+    const originalFetch = globalThis.fetch
+    globalThis.fetch = vi.fn().mockResolvedValue({ json: async () => ({ ok: true, data: fetchedQuote }) })
+    vi.mocked(findSavedQuoteForJobberQuote).mockClear()
+    vi.mocked(updateQuote).mockReset().mockResolvedValueOnce(refusal)
+    const mounted = await mountReplacementForm({ initialQuote: createQuoteRecord({ jobberQuoteId: 'jobber-123' }) })
+    try {
+      await click(mounted.container, 'Refresh from Jobber')
+      expect(findSavedQuoteForJobberQuote).not.toHaveBeenCalled()
+      await click(mounted.container, 'Save changes')
+      expect(mounted.container.textContent).not.toContain('Replace the saved quote?')
+      expect(mounted.container.textContent).toContain(refusal.error)
+    } finally { await mounted.cleanup(); globalThis.fetch = originalFetch }
   })
 })

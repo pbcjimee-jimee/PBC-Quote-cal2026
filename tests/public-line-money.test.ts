@@ -27,12 +27,12 @@ describe('signed public price input', () => {
   })
   it.each([
     ['-150.25', '-150.25'], ['+400.00', '400'], ['  -0.01 ', '-0.01'],
-    ['0.005', '0.005'], ['-0', '0'], ['400.', '400'],
+    ['0.005', '0.005'], ['-0', '0'], ['400.', '400'], ['.5', '0.5'], ['-.5', '-0.5'], ['+.5', '0.5'],
   ])('preserves signed decimal %s as %s', (input, expected) => {
     expect(signedPublicDecimalFromInput(input).toString()).toBe(expected)
   })
 
-  it.each(['', '-', '+', '.', '1e3', 'NaN', 'Infinity', '--4', '-.5', '1,000'])('does not treat malformed %s as a price', (input) => {
+  it.each(['', '-', '+', '.', '1e3', 'NaN', 'Infinity', '--4', '1,000'])('does not treat malformed %s as a price', (input) => {
     expect(signedPublicDecimalFromInput(input).isZero()).toBe(true)
   })
 
@@ -43,5 +43,9 @@ describe('signed public price input', () => {
 
   it('keeps negative material and labour input excluded by the unsigned parser', () => {
     expect(decimalFromInput('-150.25').toString()).toBe('0')
+  })
+
+  it.each([['.5', '0.5'], ['5.', '5'], ['.', '0'], ['', '0'], ['2ea', '0']])('parses unsigned input %s as %s', (input, expected) => {
+    expect(decimalFromInput(input).toString()).toBe(expected)
   })
 })

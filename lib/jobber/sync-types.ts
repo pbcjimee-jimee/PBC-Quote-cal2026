@@ -1,4 +1,5 @@
 import type { JobberQuoteLineItem, JobberQuoteLineSyncResult } from './client'
+import type { SyncFailureDetail } from './sync-failure'
 import type {
   BuildJobberQuoteLinePayloadInput,
   JobberQuoteLineMutationItem,
@@ -97,8 +98,8 @@ export interface DurableJobberTransport {
 
 export type SyncRunResult =
   | { status: 'succeeded'; operation: SyncOperation }
-  | { status: 'retryable'; reason: string; operation?: SyncOperation }
-  | { status: 'blocked'; reason: string; operation?: SyncOperation }
+  | { status: 'retryable'; reason: string; operation?: SyncOperation; detail?: SyncFailureDetail; message?: string }
+  | { status: 'blocked'; reason: string; operation?: SyncOperation; detail?: SyncFailureDetail; message?: string }
   | { status: 'not_claimed'; reason: 'claim_not_acquired'; operation: SyncOperation }
   | {
     status: 'failed'

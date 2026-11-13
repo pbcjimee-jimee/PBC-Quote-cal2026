@@ -4,6 +4,9 @@ import { assertJobberReadOnlyScopes, type JobberConfig } from './config'
 import { assertJobberEnabled } from './environment'
 import { getTokenExpiresAt, refreshAccessToken } from './oauth'
 import { assertJobberTokenStorageConfigured, decryptTokenValue, encryptTokenValue } from './token-encryption'
+import { JobberReconnectRequiredError } from './sync-failure'
+
+export { JobberReconnectRequiredError } from './sync-failure'
 
 export interface StoredJobberToken {
   ownerUserId?: string
@@ -75,7 +78,7 @@ export async function refreshSharedJobberConnectionToken(
         return latestToken
       }
 
-      throw new Error('Jobber connection expired. Reconnect Jobber from Settings.')
+      throw new JobberReconnectRequiredError()
     }
     throw error
   }

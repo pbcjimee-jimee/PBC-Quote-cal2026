@@ -339,6 +339,7 @@ describe('jobber client', () => {
         'X-JOBBER-GRAPHQL-VERSION': '2025-01-20',
       },
       body: expect.stringContaining('"id":"encoded-quote-id"'),
+      signal: expect.any(AbortSignal),
     })
     const calls = fetcher.mock.calls as unknown as Array<[string, RequestInit]>
     expect(calls[0][1].body).toEqual(expect.stringContaining('query PbcQuoteLite'))
@@ -406,7 +407,7 @@ describe('jobber client', () => {
     const calls = fetcher.mock.calls as unknown as Array<[string, RequestInit]>
     expect(calls[0][1].body).toEqual(expect.stringContaining('"term":"2345"'))
     expect(calls[0][1].body).toEqual(expect.stringContaining('query PbcQuoteSearchLookup'))
-    expect(calls[0][1].body).toEqual(expect.stringContaining('quotes(searchTerm: $term, first: 10)'))
+    expect(calls[0][1].body).toEqual(expect.stringContaining('quotes(searchTerm: $term, first: 25)'))
     expect(calls[0][1].body).not.toEqual(expect.stringContaining('lineItems(first: 100)'))
     expect(calls[0][1].body).not.toEqual(expect.stringContaining('customFields'))
     expect(calls[0][1].body).not.toEqual(expect.stringContaining('tags(first: 20)'))
@@ -466,7 +467,7 @@ describe('jobber client', () => {
     expect(job.title).toBe('Carolyn job')
     const calls = fetcher.mock.calls as unknown as Array<[string, RequestInit]>
     expect(calls[0][1].body).toEqual(expect.stringContaining('"term":"2345"'))
-    expect(calls[0][1].body).toEqual(expect.stringContaining('jobs(searchTerm: $term, first: 10)'))
+    expect(calls[0][1].body).toEqual(expect.stringContaining('jobs(searchTerm: $term, first: 25)'))
     expect(calls[0][1].body).not.toEqual(expect.stringContaining('lineItems(first: 25)'))
     expect(calls[0][1].body).not.toEqual(expect.stringContaining('visits(first: 25)'))
     expect(calls[0][1].body).not.toEqual(expect.stringContaining('expenses(first: 25)'))

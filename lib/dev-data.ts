@@ -941,7 +941,7 @@ export function changeDevQuoteLifecycle(input: QuoteLifecycleInput, restore: boo
   return null
 }
 
-function devJobberIdentity(input: { jobberQuoteId?: string | null; jobberSnapshot?: JobberQuoteDraft | null }): string[] {
+function devJobberIdentity(input: { jobberQuoteId?: string | null; jobberSnapshot?: Pick<JobberQuoteDraft, 'quoteNumber'> | null }): string[] {
   const keys = [input.jobberQuoteId?.trim(), input.jobberSnapshot?.quoteNumber?.trim()].filter((key): key is string => Boolean(key))
   if (input.jobberQuoteId) {
     try {
@@ -952,10 +952,11 @@ function devJobberIdentity(input: { jobberQuoteId?: string | null; jobberSnapsho
   return keys
 }
 
-export function findDevQuoteByJobberIdentity(input: DevQuoteInput, excludeId?: string): { quote: QuoteRecord | null; error: string | null } {
+export function findDevQuoteByJobberIdentity(input: Parameters<typeof devJobberIdentity>[0], excludeId?: string, includeTrash = false): { quote: QuoteRecord | null; error: string | null; inTrash?: boolean } {
   const keys = devJobberIdentity(input)
   const matches = store.quotes.filter((quote) => quote.id !== excludeId && devJobberIdentity(quote).some((key) => keys.includes(key)))
-  if (matches.some((quote) => store.deletedQuotes[quote.id])) return { quote: null, error: 'QUOTE_IN_TRASH' }
+  const trashedQuote = matches.find((quote) => store.deletedQuotes[quote.id])
+  if (trashedQuote) return includeTrash ? { quote: trashedQuote, error: null, inTrash: true } : { quote: null, error: 'QUOTE_IN_TRASH' }
   if (matches.length > 1) return { quote: null, error: 'QUOTE_JOBBER_CONFLICT' }
   return { quote: matches[0] ?? null, error: null }
 }

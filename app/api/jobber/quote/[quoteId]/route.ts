@@ -4,6 +4,7 @@ import {
   fetchJobberQuote,
   fetchJobberQuoteJobs,
   JobberApiError,
+  JobberNotFoundError,
   JobberPermissionError,
   searchJobberJob,
   searchJobberQuote,
@@ -44,6 +45,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
   }
 
   const { quoteId } = await context.params
+  const sourceType = request.nextUrl.searchParams.get('type') === 'job' ? 'job' : 'quote'
   try {
     const userId = await getJobberTokenUserId()
     let token = userId
@@ -53,7 +55,6 @@ export async function GET(request: NextRequest, context: RouteContext) {
       return NextResponse.json({ ok: false, error: 'Jobber is not connected. Connect Jobber first.' }, { status: 409 })
     }
 
-    const sourceType = request.nextUrl.searchParams.get('type') === 'job' ? 'job' : 'quote'
     let accessToken = token?.accessToken ?? config.accessToken
     const refreshCurrentToken = async () => {
       if (!token) return null
@@ -83,7 +84,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
     }, refreshCurrentToken)
     const draft = mapJobberQuoteToDraft({
       ...quote,
-      jobs: { nodes: jobs },
+      jobs,
     })
 
     return NextResponse.json({
@@ -94,6 +95,11 @@ export async function GET(request: NextRequest, context: RouteContext) {
       },
     })
   } catch (error) {
+    if (error instanceof JobberNotFoundError) {
+      const lookup = decodeURIComponent(quoteId).slice(0, 60)
+      const similar = error.candidates.length ? ` Similar numbers: ${error.candidates.slice(0, 3).join(', ')}.` : ''
+      return NextResponse.json({ ok: false, error: `No Jobber ${sourceType} matches "${lookup}". Check the number and try again.${similar}` }, { status: 404 })
+    }
     if (error instanceof JobberAuthError) {
       return NextResponse.json({ ok: false, error: 'Login is required to fetch Jobber quotes' }, { status: 401 })
     }
@@ -111,7 +117,7 @@ async function fetchQuoteJobsWithoutBlockingQuote(
   refreshAccessToken: () => Promise<string | null>
 ): Promise<{ jobs: Awaited<ReturnType<typeof fetchJobberQuoteJobs>>; error: string | null }> {
   try {
-    const jobs = await fetchJobberQuoteJobs(quoteId, options)
+    const jobs = await fetchJobberQuoteJobs(quoteId, options, true)
     return { jobs, error: null }
   } catch (error) {
     if (error instanceof JobberApiError && error.status === 401) {
@@ -121,15 +127,15 @@ async function fetchQuoteJobsWithoutBlockingQuote(
           const jobs = await fetchJobberQuoteJobs(quoteId, {
             ...options,
             accessToken: refreshedAccessToken,
-          })
+          }, true)
           return { jobs, error: null }
         } catch (retryError) {
-          return { jobs: [], error: getJobExpensesErrorMessage(retryError) }
+          return { jobs: { nodes: [] }, error: getJobExpensesErrorMessage(retryError) }
         }
       }
     }
 
-    return { jobs: [], error: getJobExpensesErrorMessage(error) }
+    return { jobs: { nodes: [] }, error: getJobExpensesErrorMessage(error) }
   }
 }
 
@@ -153,6 +159,7 @@ async function getJobberTokenUserId(): Promise<string | null> {
 interface JobberLookup {
   value: string
   mode: 'id' | 'search'
+  fallbackSearch?: string
 }
 
 interface FetchOptions {
@@ -169,6 +176,10 @@ function normalizeJobberLookup(input: string, sourceType: 'quote' | 'job'): Jobb
 
     const pathPattern = sourceType === 'job' ? /\/jobs\/([^/?#]+)/ : /\/quotes\/([^/?#]+)/
     const pathId = url.pathname.match(pathPattern)?.[1]
+    if (pathId && /^\d+$/.test(pathId)) {
+      const resource = sourceType === 'job' ? 'Job' : 'Quote'
+      return { value: Buffer.from(`gid://Jobber/${resource}/${pathId}`).toString('base64'), mode: 'id', fallbackSearch: pathId }
+    }
     if (pathId) return normalizeJobberLookup(pathId, sourceType)
   } catch {}
 
@@ -184,7 +195,12 @@ async function fetchQuote(
   options: FetchOptions
 ) {
   if (lookup.mode === 'id') {
-    return fetchJobberQuote(lookup.value, options)
+    try {
+      return await fetchJobberQuote(lookup.value, options)
+    } catch (error) {
+      if (!lookup.fallbackSearch || (error instanceof JobberApiError && [401, 429].includes(error.status))) throw error
+      return searchJobberQuote(lookup.fallbackSearch, options)
+    }
   }
 
   return searchJobberQuote(lookup.value, options)
@@ -217,7 +233,12 @@ async function fetchJob(
   options: FetchOptions
 ) {
   if (lookup.mode === 'id') {
-    return fetchJobberJob(lookup.value, options)
+    try {
+      return await fetchJobberJob(lookup.value, options)
+    } catch (error) {
+      if (!lookup.fallbackSearch || (error instanceof JobberApiError && [401, 429].includes(error.status))) throw error
+      return searchJobberJob(lookup.fallbackSearch, options)
+    }
   }
 
   return searchJobberJob(lookup.value, options)

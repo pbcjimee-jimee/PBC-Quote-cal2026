@@ -3,6 +3,7 @@ import { buildQuoteSavePayload, type QuoteFormSavePayloadInput } from './quote-s
 import type { QuoteFormIssue, QuoteUiTarget } from './quote-mobile-state'
 import { parsePublicLineMoney } from '@/lib/public-line-money'
 import { calculatePaintComparison, getMaterialLogicalKey } from '@/lib/quote-paint-comparison'
+import { isCompleteDecimalInputValue } from './decimal-input-utils'
 
 const MATERIAL_FIELDS: Record<string, string> = {
   productNameSnapshot: 'name', marketPriceSnapshot: 'marketPrice', actualPriceSnapshot: 'marketPrice',
@@ -11,8 +12,35 @@ const MATERIAL_FIELDS: Record<string, string> = {
 }
 
 export function getQuoteFormIssues(input: QuoteFormSavePayloadInput): QuoteFormIssue[] {
-  const moneyIssues: QuoteFormIssue[] = input.jobberQuoteLines.flatMap(line => parsePublicLineMoney(line.unitPrice).ok ? [] : [{ section: 'public' as const, entityId: line.id, field: 'unitPrice', message: 'Enter a valid signed unit price within the supported range.' }])
-  if (moneyIssues.length) return moneyIssues
+  const formatIssues: QuoteFormIssue[] = []
+  for (const line of input.jobberQuoteLines) {
+    const target = { section: 'public' as const, entityId: line.id }
+    if (!line.name.trim()) formatIssues.push({ ...target, field: 'name', message: 'Enter a line name.' })
+    if (line.paintComparisonKey) continue
+    if (line.kind === 'line_item') {
+      if (!isCompleteDecimalInputValue(line.quantity.trim())) {
+        formatIssues.push({ ...target, field: 'quantity', message: 'Enter a valid quantity using numbers only.' })
+      } else if (/\.\d{3,}$/.test(line.quantity.trim())) {
+        formatIssues.push({ ...target, field: 'quantity', message: 'Use at most two decimal places.' })
+      }
+    }
+    if (!parsePublicLineMoney(line.unitPrice).ok) {
+      formatIssues.push({ ...target, field: 'unitPrice', message: 'Enter a valid signed unit price within the supported range.' })
+    } else if (/\.\d{3,}$/.test(line.unitPrice.trim())) {
+      formatIssues.push({ ...target, field: 'unitPrice', message: 'Use at most two decimal places.' })
+    }
+  }
+  for (const group of [{ materials: input.materials, optionId: undefined }, ...input.options.map(option => ({ materials: option.materials, optionId: option.id }))]) {
+    for (const item of group.materials) {
+      for (const field of ['quantity', 'marketPrice', 'workingDays', 'labourPerDay'] as const) {
+        const value = String(item[field] ?? '').trim()
+        if (value && !isCompleteDecimalInputValue(value)) {
+          formatIssues.push({ section: 'work', entityId: item.id, optionId: group.optionId, scope: item.areaScope ?? 'unassigned', field, message: 'Enter a valid number.' })
+        }
+      }
+    }
+  }
+  if (formatIssues.length) return formatIssues
   if (input.paintComparison) {
     const calculation = calculatePaintComparison({ ...input, comparison: input.paintComparison })
     const applied = input.jobberQuoteLines.some(line => line.paintComparisonKey === input.paintComparison?.key)
